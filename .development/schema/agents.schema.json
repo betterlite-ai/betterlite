@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite agents",
+  "description": "Which CLI and model plays each role, how a run is started, and the limits the dispatcher enforces.",
+  "type": "object",
+  "properties": {
+    "policy": {
+      "$ref": "#/$defs/Policy"
+    },
+    "roles": {
+      "$ref": "#/$defs/Roles"
+    },
+    "runners": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Runner"
+      }
+    },
+    "worktrees": {
+      "description": "Directory for task worktrees, relative to the repository root.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "worktrees",
+    "runners",
+    "roles",
+    "policy"
+  ],
+  "$defs": {
+    "OutputMode": {
+      "description": "file: the runner writes its final JSON answer to {output}. claude-json: stdout is Claude's JSON result and the answer is its structured_output.",
+      "type": "string",
+      "enum": [
+        "file",
+        "claude-json"
+      ]
+    },
+    "Policy": {
+      "type": "object",
+      "properties": {
+        "max_hook_blocks": {
+          "description": "Times the Stop hook sends an agent back before it lets the run end red.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "max_review_rounds": {
+          "description": "Review rounds before a task goes back to the architect.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "review_by_other_vendor": {
+          "description": "The reviewer always runs on a different vendor than the worker whose change it reads.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "review_by_other_vendor",
+        "max_review_rounds",
+        "max_hook_blocks"
+      ]
+    },
+    "Role": {
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "The role's rules file, relative to .development/.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ladder": {
+          "description": "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rung"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "instructions",
+        "ladder"
+      ]
+    },
+    "Roles": {
+      "type": "object",
+      "properties": {
+        "planner": {
+          "$ref": "#/$defs/Role"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/Role"
+        },
+        "worker": {
+          "$ref": "#/$defs/Role"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "worker",
+        "reviewer",
+        "planner"
+      ]
+    },
+    "Rung": {
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runner": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "timeout_minutes": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "runner",
+        "model",
+        "effort",
+        "attempts",
+        "timeout_minutes"
+      ]
+    },
+    "Runner": {
+      "description": "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output} and {instructions}.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputMode"
+        },
+        "program": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vendor": {
+          "$ref": "#/$defs/Vendor"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "vendor",
+        "program",
+        "args",
+        "output"
+      ]
+    },
+    "Vendor": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "anthropic"
+      ]
+    }
+  }
+}

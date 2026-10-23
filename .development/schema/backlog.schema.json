@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite backlog",
+  "description": "Every task, its status and its dependencies. Only the architect edits it, on main.",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BacklogEntry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "tasks"
+  ],
+  "$defs": {
+    "BacklogEntry": {
+      "type": "object",
+      "properties": {
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^B[0-9]{3}$"
+          }
+        },
+        "file": {
+          "description": "Task file under .development/, for example tasks/B004-openai-chat.yaml. Null until the task is written.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^B[0-9]{3}$"
+        },
+        "milestone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "milestone",
+        "title",
+        "status",
+        "depends_on"
+      ]
+    },
+    "Status": {
+      "type": "string",
+      "enum": [
+        "todo",
+        "in-progress",
+        "done",
+        "blocked"
+      ]
+    }
+  }
+}

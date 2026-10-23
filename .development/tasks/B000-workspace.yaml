@@ -1,0 +1,80 @@
+id: B000
+title: Workspace, gates and licensing
+description: >-
+  Create the cargo workspace every later task builds in, with every gate switched on from the first commit.
+  Copy each file under .development/templates/ to the same path at the repository root, byte for byte.
+  Add one crate, crates/betterlite, holding the betterlite binary: a clap CLI that answers --version and --help and does nothing else yet.
+  Write AGENTS.md as a short map for agents: the build and test commands, where things live, and a pointer to .development/roles/worker.md and .development/rules.yaml for the rules.
+  Write README.md for people: what betterlite is (a LiteLLM-compatible AI gateway in Rust), that it is MIT licensed, and that THIRD_PARTY_NOTICES.md carries LiteLLM's notice.
+  The task is done when cargo gate run B000 passes. That proves every base check works on the empty workspace.
+scope:
+  paths:
+    - Cargo.toml
+    - rust-toolchain.toml
+    - clippy.toml
+    - deny.toml
+    - typos.toml
+    - sgconfig.yml
+    - .ast-grep/**
+    - .pre-commit-config.yaml
+    - .gitignore
+    - LICENSE
+    - THIRD_PARTY_NOTICES.md
+    - README.md
+    - AGENTS.md
+    - crates/betterlite/**
+  lint_tables: true
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/LICENSE
+    why: The MIT text and the enterprise carve-out that THIRD_PARTY_NOTICES.md reflects.
+  - url: https://openai.com/index/harness-engineering/
+    why: AGENTS.md stays a short map of about 100 lines that points to deeper docs instead of holding every rule.
+  - url: https://docs.rs/clap/4.6.7/clap/_derive/index.html
+    why: "The derive API for the CLI, including #[command(version)]."
+dod:
+  - text: Every file under .development/templates/ exists at the same path at the root with identical bytes.
+    proof: [templates-copied]
+  - text: betterlite --version prints exactly "betterlite 0.1.0" and exits 0.
+    proof: [version-flag]
+  - text: AGENTS.md has at most 100 lines and points to .development/roles/worker.md.
+    proof: [agents-map]
+  - text: README.md names the MIT license and points to THIRD_PARTY_NOTICES.md.
+    proof: [readme]
+  - text: The workspace formats, builds, lints and tests clean under the full lint table.
+    proof: [fmt, clippy, tests, doctests, crates]
+  - text: Licenses, bans and advisories pass and no dependency is unused.
+    proof: [deny, shear]
+  - text: The prek hooks pass on every tracked file.
+    proof: [hooks]
+checks:
+  optional: []
+  commands:
+    - id: templates-copied
+      why: a template file is missing at the root or differs from .development/templates/
+      run: |-
+        cd .development/templates && find . -type f | while read -r file; do cmp -s "$file" "../../$file" || { echo "differs or missing at the root: $file"; exit 1; }; done
+    - id: version-flag
+      why: the binary does not answer --version with betterlite 0.1.0
+      run: test "$(cargo run --locked --quiet -p betterlite -- --version)" = "betterlite 0.1.0"
+    - id: agents-map
+      why: AGENTS.md is missing, longer than 100 lines, or does not point to .development/roles/worker.md
+      run: test -f AGENTS.md && test "$(wc -l < AGENTS.md)" -le 100 && grep -q '\.development/roles/worker\.md' AGENTS.md
+    - id: readme
+      why: README.md does not name the license or the notice file
+      run: grep -q 'MIT' README.md && grep -q 'THIRD_PARTY_NOTICES.md' README.md
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Gateway behavior of any kind. Config loading, HTTP serving and providers come in later tasks.
+  - CI workflows under .github/. The repository has no remote yet.
+  - Changes to .development/, .claude/, .codex/ or .cargo/config.toml.
+pitfalls:
+  - The lint table denies println!. clap prints --version and --help itself, so main needs no print macro.
+  - The lint table denies std::process::exit. Return std::process::ExitCode from main.
+  - The crate manifest needs version.workspace, edition.workspace, license.workspace, publish.workspace and [lints] workspace = true, or the crates check fails.
+  - cargo deny downloads the advisory database on its first run, so the deny check needs network once.
+  - The hooks check runs prek on tracked files only, so commit before running the gate.
+  - Pick dependency versions released at least 7 days ago.
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

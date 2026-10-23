@@ -1,0 +1,95 @@
+id: B002
+title: Load LiteLLM config.yaml into typed config
+description: >-
+  Add crates/betterlite-config. It reads a LiteLLM config.yaml and returns typed structs the rest of betterlite uses, so users keep the config file they already have.
+  Cover what the next tasks need: model_list (model_name; litellm_params with model, api_base, api_key, api_version, timeout, stream_timeout, max_retries, rpm, tpm and weight; model_info.id), general_settings.master_key, router_settings (routing_strategy, num_retries, timeout, allowed_fails, cooldown_time, fallbacks), litellm_settings (num_retries, request_timeout, drop_params) and environment_variables.
+  A value written as os.environ/NAME resolves from the environment at load time, the way LiteLLM's get_secret does. The environment reaches the loader through its constructor as a lookup the caller supplies, so tests pass a map and only the binary passes the real process environment.
+  Any key betterlite does not support yet makes loading fail with one error that lists every such key by its path, for example router_settings.routing_strategy_args. Nothing is dropped silently, and several deployments under one model_name stay several deployments in file order.
+  Parse YAML with serde-saphyr (serde_yaml is deprecated) and collect ignored keys with serde_ignored instead of a hand-written visitor.
+  Copy LiteLLM's 23 example configs from the pinned commit into crates/betterlite-config/tests/fixtures/litellm/ byte for byte and snapshot what loading each one gives, with insta: the typed config summary, or the error with its full list of unsupported keys.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-config/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3241-L3272
+    why: The six top-level sections of a LiteLLM config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L322-L544
+    why: Every litellm_params key LiteLLM knows; betterlite types the ones listed in the description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L147-L172
+    why: The router_settings keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L189
+    why: How LiteLLM resolves os.environ/NAME.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5511
+    why: LiteLLM also supports an include key that pulls in other files; betterlite reports it as unsupported for now.
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/example_config_yaml
+    why: The 23 example configs to copy as fixtures.
+  - url: https://docs.rs/serde_ignored/0.1.14/serde_ignored/
+    why: Collects every ignored key path in one pass.
+  - url: https://docs.rs/secrecy/0.10.3/secrecy/
+    why: api_key and master_key never show up in Debug output or logs.
+dod:
+  - text: The fixtures are LiteLLM's 23 example configs, byte for byte.
+    proof: [fixtures-pinned]
+  - text: Every fixture has an insta snapshot of its load result, and none of them panics.
+    proof: [config-tests]
+  - text: An unsupported key fails loading with one error that lists every unsupported key path.
+    proof: [config-tests]
+  - text: Several deployments under one model_name load as several deployments, in file order.
+    proof: [config-tests]
+  - text: os.environ/NAME resolves through the supplied lookup, and a missing variable fails with the variable name and the key path.
+    proof: [config-tests]
+  - text: Debug output of a loaded config never contains an api_key or master_key value.
+    proof: [config-tests]
+  - text: Every mutant in the loader is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the config crate's tests fail, do not exist, or have snapshots that were not accepted
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail
+    - id: fixtures-pinned
+      why: a fixture is missing or differs from LiteLLM's file at the pinned commit
+      run: |
+        cd crates/betterlite-config/tests/fixtures/litellm && test "$(ls | wc -l)" -eq 23 && sha256sum --check --quiet <<'SUMS'
+        957be25ca8542b43d8a2516906d5cf3f0a2768afbe1179e073adc56466cce7c8  adaptive_router_example.yaml
+        7495d37bb6efe4c377144d9e653effd1382831ec3f647b63f9987c23275049e3  agentcore_websearch_config.yaml
+        98dfe240731906fe825972c5dc100e73eb1d46b2ca7059d645b2480d778f5dc0  aliases_config.yaml
+        b306f8919bfc10de887d35bc1bfb8e16a8f35ed70cc54a5b7fb2f3ec6fc61d2f  azure_config.yaml
+        27d8f1a59d1bb0430d6f8540c9e44cd8c09951298b775ce04ed8c5e0689509b8  bing_grounding_websearch_config.yaml
+        6b168aeb8a039aa4dc24a70e4c5024359b16e5660f347d141bee462ed894dee1  code_interpreter_interception_config.yaml
+        1fde91fec97b594b3897f512773aa8aa0d1c3b340f655af78b19dd394bd4d58c  disable_schema_update.yaml
+        8a88589a298eca0d612b969da8ea5f04645ea336abd9ddf8da0ab67930bba96a  enterprise_config.yaml
+        0dc529bd4972dc0481879edf76fe75b99e4dafb6b7a3b7fb8f5b1079b20bb634  _health_check_test_config.yaml
+        8e4073d3333c6d41016ff8261e2e4fd13b85c82d16625c866b7efe59545db00a  langfuse_config.yaml
+        873e6d9d2e93bc4f0ffaa537a59f92b29a8c076f3412dad2c0c66f8c471adec8  load_balancer.yaml
+        a3a7cc9ed77a07076ada68fd44738f541f3e18ef0668a6ff087884ba0db7cee0  multi_instance_simple_config.yaml
+        3a5dacc02a4a5a7c6f5872632a2ec03128778ff13bdaf331bb122ab6bb0cbfe6  oai_misc_config.yaml
+        bbbfba8cf5668f661c6bb9d37aed72903673cddb4629c1a3defe58e79ec5734d  opentelemetry_config.yaml
+        6903d7ea76bf79fb47190decbd98c34c454ec32e01b4f44a0e1a446dc6a72ebb  otel_test_config.yaml
+        129f5f367ba3215bfe62f48319fee9103b85440749a585db4e92250256df4a35  pass_through_config.yaml
+        15f8364728986a572db1e313b3791d7db2b7fa47934ebe95da212737390f276a  reject_clientside_metadata_tags_config.yaml
+        a484a837f869c7f1b77f5f1f9a0bbd863e47d11693f47e83991f936b2093cadc  simple_config.yaml
+        924642887e84af86dbd788bd9558b77e7af9bcc92ef8e7652e1e9555d4b42f62  spend_tracking_config.yaml
+        a0de39d51331621e8e2a3b954bdef8704f639736e5d9d65fc0b2802a31b11a29  store_model_db_config.yaml
+        be429c1a9b50334d089fe744836d9371b76747c7961c52260da3cbb5e9db6eeb  test_pipeline_config.yaml
+        689e980c55b4f50100661a759b5b94076a50f1fb13d10e26c7c11446b052f347  tool_permission_example.yaml
+        bef1b876adab44d96110fecb5d5e169f63d51eff54032993a2f9943961f0b1dd  websearch_interception_config.yaml
+        SUMS
+oracle_cases: []
+deviations:
+  - what: Keys betterlite does not support yet stop the process at startup with a list of them.
+    why: LiteLLM accepts and quietly ignores many keys, so a typo or an unsupported feature runs with different behavior than the user wrote down. A loud failure is cheaper than a silent one.
+out_of_scope:
+  - Behavior behind the keys (routing, retries, fallbacks). This task only loads and types them.
+  - The include key, secret managers other than environment variables, and config stored in a database.
+pitfalls:
+  - "std::env::var is disallowed outside the config path. The one place that reads the real process environment gets one #[expect(clippy::disallowed_methods, reason = ...)]."
+  - std::env::set_var is unsafe in edition 2024 and unsafe code is forbidden. That is one more reason the environment comes in through the constructor.
+  - LiteLLM accepts numbers written as strings in some fields. Follow what the fixtures need and snapshot the result instead of guessing.
+  - Run cargo insta review or cargo insta accept locally to write the snapshots, then commit them. The gate runs with INSTA_UPDATE=no.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

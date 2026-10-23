@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite rules",
+  "description": "The code rules every role works by. Workers follow them, reviewers cite them by id, checks enforce what a tool can.",
+  "type": "object",
+  "properties": {
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Rule"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "rules"
+  ],
+  "$defs": {
+    "Example": {
+      "type": "object",
+      "properties": {
+        "instead_of": {
+          "description": "Code that breaks the rule.",
+          "type": "string",
+          "minLength": 1
+        },
+        "write": {
+          "description": "The same intent written by the rule.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "instead_of",
+        "write"
+      ]
+    },
+    "Rule": {
+      "type": "object",
+      "properties": {
+        "enforced_by": {
+          "description": "Ids of checks in checks.yaml that fail when the rule is broken. Empty when only a review can tell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "example": {
+          "$ref": "#/$defs/Example"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "reviewed": {
+          "description": "True when the reviewer reads every change for this rule.",
+          "type": "boolean"
+        },
+        "statement": {
+          "description": "What the code does, stated as an instruction.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "description": "The rule in a few words.",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "Why the rule exists.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "statement",
+        "why",
+        "enforced_by",
+        "reviewed",
+        "example"
+      ]
+    }
+  }
+}

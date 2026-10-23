@@ -1,0 +1,102 @@
+# .development
+
+This folder drives the agents that build betterlite, a Rust rewrite of LiteLLM's proxy under the MIT license. The work runs as a pyramid. The architect (the main session, with Max) owns the backlog and merges. A planner turns backlog entries into task files. Workers on cheaper models build one task each in their own worktree, and a reviewer from the other vendor reads every change the gate let through. The gate, a Rust CLI in gate/, decides what's done: every check is a command that exits 0 or doesn't, and every agent's final answer is JSON that must match its schema. LiteLLM 1.105.1 is the behavioral spec, and from B001 on an oracle harness runs it next to betterlite on the same requests.
+
+## The pyramid
+
+| Role | Played by (agents.yaml) | Writes | Answers with |
+|---|---|---|---|
+| Architect | main Claude session with Max | backlog, specs, merges | numbered questions for Max |
+| Planner | Codex gpt-6-astra, xhigh effort | task files on a plan branch | report JSON |
+| Worker | Codex gpt-reserve, then gpt-6-astra | code on its task branch | report JSON |
+| Reviewer | Claude Sonnet, or Codex gpt-6-astra when the worker was Claude | nothing | review JSON |
+
+Each role has its rules in roles/ and its output format in schema/. The worker and reviewer rows are what `cargo gate dispatch <ID>` runs; the planner is started by the architect as roles/architect.md describes. Models, effort, attempts and timeouts live in agents.yaml, so changing who plays a role is a one-line edit that `cargo gate validate` checks.
+
+The dispatcher climbs the worker ladder. Each attempt runs the worker on the task, reads its report, runs the gate, and checks the report against the repository: every crate added to a Cargo.toml must be a chosen option in the report's prior art. A failure goes back to the next attempt as feedback, and a rung that runs out of attempts, or a worker that answers blocked, hands the task to the next rung. When the gate passes, the reviewer reads the diff against the reviewed rules. Its findings go back to the worker for up to max_review_rounds rounds. The run ends ready to merge, or with an error the architect handles. Every prompt, answer and log of a run is kept under .git/betterlite/<ID>/.
+
+Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Codex through .codex/hooks.json, Claude through the agent files in .claude/agents/. The hook runs the gate and validates the report, and sends the agent back with the failing lines up to max_hook_blocks times. So most failures get fixed inside one attempt, and the dispatcher's own gate run is the backstop.
+
+## Files
+
+- backlog.yaml lists every task with its milestone, status and dependencies. Only the architect edits it, on main.
+- tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls and budget.
+- rules.yaml is the code standard: 25 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
+- checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
+- agents.yaml maps roles to runners, models and limits.
+- roles/ holds the rules for the architect, planner, worker and reviewer.
+- schema/ holds the JSON Schemas for every format above plus the report and review answers. `cargo gate schema` generates them from the gate's Rust types, and `cargo gate validate` fails when a file breaks its schema or a schema is out of date.
+- templates/ holds the files B000 copies to the root byte for byte: workspace manifest with the deny-everything lint table, clippy.toml, deny.toml, typos and ast-grep config, prek hooks, LICENSE and THIRD_PARTY_NOTICES.md.
+- gate/ is the gate's source. `cargo gate` runs it from the repository root through the alias in .cargo/config.toml.
+
+## Repository
+
+The code lives at https://github.com/betterlite-ai/betterlite, a public repository in an org whose only member is Max. Every change reaches main through a pull request and the merge queue, with rebase merges only, auto-merge on, and branches deleted after merge. Commits use the no-reply address 66359507+HardMax71@users.noreply.github.com, set in this clone's git config.
+
+On a fresh clone: open the folder in Claude Code and accept the workspace trust dialog, so the worker agents' Stop hook runs, then run `cargo gate validate`. The dispatcher passes Codex `--dangerously-bypass-hook-trust`, since the only hook it runs is .codex/hooks.json from this repository.
+
+## Decisions
+
+Max's product decisions so far. A task that contradicts one of them is wrong, not the decision.
+
+- 2026-10-24: betterlite reimplements LiteLLM's proxy without its enterprise directory, from scratch but better, so wire names stay LiteLLM's: x-litellm-* response headers, litellm_params keys, LITELLM_* environment variables.
+- 2026-10-24: config keys betterlite does not support yet stop startup with a list of them (B002).
+- 2026-10-24: keys, spend and budgets (M4) reuse LiteLLM's Postgres schema, [schema.prisma](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma) at the pinned commit, so an existing LiteLLM database works with betterlite.
+- 2026-10-24: the LICENSE names Max Azatian as copyright holder.
+
+## Writing a task
+
+The gate reads every format into Rust types that reject unknown fields, missing fields, duplicate keys, comments and anchors; only when_exists and link may be left out. Comments are rejected because an unquoted ` #` silently cuts the rest of a YAML value. On top of the types, validate checks what types can't: ids look like B004, every DoD item names checks the task actually runs, every rule names real checks or is reviewed, runner arguments use only known placeholders, globs parse, links use https, dependencies exist and don't form a cycle, and every task file is in the backlog.
+
+- Every DoD item names the checks that fail when the outcome is missing. A check is a shell command run from the repository root; exit 0 passes.
+- A test check uses `cargo nextest run ... --no-tests=fail`, so a filter that matches nothing fails instead of passing.
+- Behavior LiteLLM has belongs in oracle cases, not in prose.
+- LiteLLM links point at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce, never at main.
+- Keep a task between 400 and 800 changed lines. Bigger work gets split.
+- scope.paths lists exactly what the task may touch. Shared files like Cargo.toml and deny.toml go in only when the task needs them.
+
+## Gate commands
+
+| Command | What it does |
+|---|---|
+| `cargo gate validate` | Checks every spec file under .development/ and that the schemas are current |
+| `cargo gate list <ID>` | Prints every check the task runs |
+| `cargo gate run <ID>` | Runs them all and prints PASS, FAIL or SKIP per check; logs go to .git/betterlite/<ID>/gate/ |
+| `cargo gate run <ID> --only <check>` | Runs one check (repeat --only for more) |
+| `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer |
+| `cargo gate schema` | Regenerates schema/ after a change to the gate's types |
+| `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
+
+The base is `GATE_BASE` when it is set, otherwise the merge base with origin/main, otherwise with main. Every command check gets `GATE_TASK`, `GATE_BASE`, `GATE_LOG_DIR` and `GATE_ORACLE_CASES` in its environment, and none of the variables cargo sets for the gate itself, so each check uses the toolchain its own worktree pins.
+
+## LiteLLM at the pinned release
+
+The oracle pins litellm[proxy] 1.105.1, released 2026-10-14 from [d665dc1a](https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce). It was the newest release at least 7 days old on 2026-10-23. These numbers size the backlog:
+
+| What | Count | Source |
+|---|---|---|
+| Providers | 184 | [provider_endpoints_support.json](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/provider_endpoints_support.json) |
+| Providers with chat completions, responses, messages, embeddings | 142, 130, 128, 35 | same file |
+| OpenAI-style routes | 127 | [_types.py#L339-L490](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L339-L490) |
+| Anthropic-style routes | 9 | [_types.py#L551-L561](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L551-L561) |
+| Config sections | 6 | [_types.py#L3241-L3272](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3241-L3272) |
+| general_settings keys | 107 | [_types.py#L2698-L3238](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2698-L3238) |
+| router_settings keys | 19 | [router.py#L147-L172](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L147-L172) |
+| Routing strategies (default simple-shuffle) | 5 | [router.py#L866](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L866) |
+| Database tables | 90 | [schema.prisma](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma) |
+| Model price entries | 4460 | [model_prices_and_context_window.json](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json) |
+| Lines in proxy_server.py and router.py | 20,379 and 14,759 | [proxy_server.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py), [router.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py) |
+
+The counts come from parsing those files at the pinned commit (json and ast for the Python, `wc -l` for line counts). The last row is why the file-size check exists.
+
+## Why it's built this way
+
+- A rule written in a prompt doesn't stop an agent; a check in code does. So every DoD item points at a command, every agent answer has a schema, and the Stop hook won't let an agent finish red.
+- The mechanical middle of the pyramid (worktrees, attempts, escalation, the gate run, picking the reviewer) is the dispatcher, a program, because an orchestrating model forgets steps and a loop doesn't. Models do the parts that need judgment: planning, building, reviewing.
+- The reviewer runs on the other vendor than the worker, so the two don't share the same blind spots.
+- Anthropic's [harness for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) kept a fixed feature list that agents could only mark as passing. Task files and the backlog are read-only for workers, and specs-untouched enforces it.
+- Anthropic's [C compiler built by parallel agents](https://www.anthropic.com/engineering/building-c-compiler) used GCC as a known-good oracle and kept test output short with details in log files. The oracle harness and the gate's one-line-per-check output follow that.
+- Cursor's [long-running agents](https://cursor.com/blog/scaling-agents) found locks and flat teams stall, while planners plus workers that grind on one task scale. The architect assigns tasks, so workers never claim or lock anything.
+- OpenAI's [harness engineering](https://openai.com/index/harness-engineering/) kept AGENTS.md as a short map and enforced architecture mechanically. Crate layering lives in deny.toml wrappers and the rules live in rules.yaml.
+- [SWE-bench](https://arxiv.org/abs/2310.06770) defines done as tests that go from failing to passing while the rest keep passing. Test checks with `--no-tests=fail`, plus the mutants check, carry that idea.
+- Codex [subagents](https://developers.openai.com/codex/subagents) share one checkout, so parallel workers would collide. The dispatcher gives each task its own worktree instead.

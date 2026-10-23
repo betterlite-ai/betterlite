@@ -1,0 +1,9 @@
+id: no-deref-impls
+language: rust
+severity: error
+message: Deref on a type that is not a smart pointer hides which methods run; call the inner value explicitly
+rule:
+  kind: impl_item
+  has:
+    field: trait
+    regex: ^((std|core)::ops::|ops::)?Deref(Mut)?$

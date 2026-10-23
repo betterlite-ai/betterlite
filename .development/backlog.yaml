@@ -1,0 +1,145 @@
+tasks:
+  - id: B000
+    milestone: M0 foundation
+    title: Workspace, gates and licensing
+    status: todo
+    depends_on: []
+    file: tasks/B000-workspace.yaml
+  - id: B001
+    milestone: M0 foundation
+    title: Oracle harness against the pinned LiteLLM
+    status: todo
+    depends_on: [B000]
+    file: tasks/B001-oracle.yaml
+  - id: B002
+    milestone: M0 foundation
+    title: Load LiteLLM config.yaml into typed config
+    status: todo
+    depends_on: [B000]
+    file: tasks/B002-config.yaml
+  - id: B003
+    milestone: M0 foundation
+    title: HTTP server, health routes and master key auth
+    status: todo
+    depends_on: [B001, B002]
+    file: tasks/B003-server.yaml
+  - id: B004
+    milestone: M1 openai data plane
+    title: OpenAI chat completions without streaming
+    status: todo
+    depends_on: [B003]
+    file: tasks/B004-openai-chat.yaml
+  - id: B005
+    milestone: M1 openai data plane
+    title: Streaming chat completions
+    status: todo
+    depends_on: [B004]
+    file: tasks/B005-chat-streaming.yaml
+  - id: B006
+    milestone: M1 openai data plane
+    title: OpenAI embeddings
+    status: todo
+    depends_on: [B004]
+    file: tasks/B006-embeddings.yaml
+  - id: B007
+    milestone: M1 openai data plane
+    title: Model list
+    status: todo
+    depends_on: [B003]
+    file: tasks/B007-models.yaml
+  - id: B008
+    milestone: M2 routing
+    title: Load balancing across deployments of one model
+    status: todo
+    depends_on: [B004]
+    file: tasks/B008-load-balancing.yaml
+  - id: B009
+    milestone: M2 routing
+    title: Retries and timeouts
+    status: todo
+    depends_on: [B008]
+    file: null
+  - id: B010
+    milestone: M2 routing
+    title: Fallbacks and cooldowns
+    status: todo
+    depends_on: [B009]
+    file: null
+  - id: B011
+    milestone: M3 providers
+    title: Anthropic through chat completions
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B012
+    milestone: M3 providers
+    title: Anthropic Messages API
+    status: todo
+    depends_on: [B011]
+    file: null
+  - id: B013
+    milestone: M3 providers
+    title: Azure OpenAI
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B014
+    milestone: M3 providers
+    title: Bedrock Converse
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B015
+    milestone: M3 providers
+    title: Vertex AI and Gemini
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B016
+    milestone: M3 providers
+    title: OpenAI-compatible hosts
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B017
+    milestone: M3 providers
+    title: Responses API
+    status: todo
+    depends_on: [B005]
+    file: null
+  - id: B018
+    milestone: M4 proxy features
+    title: Virtual keys
+    status: todo
+    depends_on: [B003]
+    file: null
+  - id: B019
+    milestone: M4 proxy features
+    title: Spend tracking and cost
+    status: todo
+    depends_on: [B018]
+    file: null
+  - id: B020
+    milestone: M4 proxy features
+    title: Budgets and rate limits
+    status: todo
+    depends_on: [B019]
+    file: null
+  - id: B021
+    milestone: M4 proxy features
+    title: Response caching
+    status: todo
+    depends_on: [B008]
+    file: null
+  - id: B022
+    milestone: M4 proxy features
+    title: OpenTelemetry logging
+    status: todo
+    depends_on: [B004]
+    file: null
+  - id: B023
+    milestone: M4 proxy features
+    title: Admin API for keys
+    status: todo
+    depends_on: [B018]
+    file: null

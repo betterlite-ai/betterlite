@@ -1,0 +1,61 @@
+worktrees: ../betterlite-worktrees
+runners:
+  - id: codex-worker
+    vendor: openai
+    program: codex
+    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
+    output: file
+  - id: codex-reviewer
+    vendor: openai
+    program: codex
+    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, read-only, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
+    output: file
+  - id: claude-worker
+    vendor: anthropic
+    program: claude
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --allowedTools, "Bash(cargo:*)", "Bash(git:*)", "Bash(ls:*)", "Bash(rg:*)", Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
+    output: claude-json
+  - id: claude-reviewer
+    vendor: anthropic
+    program: claude
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
+    output: claude-json
+roles:
+  worker:
+    instructions: roles/worker.md
+    ladder:
+      - runner: codex-worker
+        model: gpt-reserve
+        effort: high
+        attempts: 3
+        timeout_minutes: 90
+      - runner: codex-worker
+        model: gpt-6-astra
+        effort: high
+        attempts: 2
+        timeout_minutes: 120
+  reviewer:
+    instructions: roles/reviewer.md
+    ladder:
+      - runner: claude-reviewer
+        model: sonnet
+        effort: high
+        attempts: 1
+        timeout_minutes: 30
+      - runner: codex-reviewer
+        model: gpt-6-astra
+        effort: high
+        attempts: 1
+        timeout_minutes: 30
+  planner:
+    instructions: roles/planner.md
+    ladder:
+      - runner: codex-worker
+        model: gpt-6-astra
+        effort: xhigh
+        attempts: 1
+        timeout_minutes: 60
+policy:
+  review_by_other_vendor: true
+  max_review_rounds: 2
+  max_hook_blocks: 6

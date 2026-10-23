@@ -1,0 +1,46 @@
+id: B006
+title: OpenAI embeddings
+description: >-
+  Serve POST /embeddings, /v1/embeddings, /engines/{model}/embeddings and /openai/deployments/{model}/embeddings for openai/ deployments, reusing the routing, auth, client and error mapping from B004.
+  The input can be a string, an array of strings, or arrays of token ids, and encoding_format can be float or base64, as in the OpenAI API.
+  The typed request and response models live in betterlite-openai next to the chat models. Write the cases under tools/oracle/cases/embeddings/ and match LiteLLM on all of them.
+scope:
+  paths:
+    - crates/betterlite-server/**
+    - crates/betterlite-openai/**
+    - tools/oracle/cases/embeddings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1234-L1305
+    why: How LiteLLM calls the OpenAI embeddings endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L339-L490
+    why: The four embeddings routes among LiteLLM's OpenAI routes.
+  - url: https://platform.openai.com/docs/api-reference/embeddings/create
+    why: The request and response fields.
+dod:
+  - text: Every listed embeddings case matches LiteLLM on the client response and on the request sent upstream.
+    proof: [oracle]
+  - text: The embeddings code reuses B004's routing, auth, client and error mapping instead of copying it.
+    proof: [similarity, embeddings-tests]
+checks:
+  optional: []
+  commands:
+    - id: embeddings-tests
+      why: the embeddings tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/embedding/)'
+oracle_cases:
+  - tools/oracle/cases/embeddings/string-input.yaml
+  - tools/oracle/cases/embeddings/array-input.yaml
+  - tools/oracle/cases/embeddings/token-input.yaml
+  - tools/oracle/cases/embeddings/base64.yaml
+  - tools/oracle/cases/embeddings/engines-path.yaml
+  - tools/oracle/cases/embeddings/upstream-400.yaml
+deviations: []
+out_of_scope:
+  - Embeddings from providers other than openai/.
+  - Cost tracking for embeddings.
+pitfalls:
+  - Test names must contain embedding so the embeddings-tests filter selects them.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

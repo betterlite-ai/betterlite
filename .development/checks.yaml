@@ -1,0 +1,133 @@
+tools:
+  - name: rustc
+    version_command: rustc --version
+    expect: rustc 1.98.0
+  - name: cargo-nextest
+    version_command: cargo nextest --version
+    expect: cargo-nextest 0.9.140
+  - name: cargo-deny
+    version_command: cargo deny --version
+    expect: cargo-deny 0.20.2
+  - name: cargo-shear
+    version_command: cargo install --list | grep '^cargo-shear '
+    expect: cargo-shear v1.13.1
+  - name: cargo-llvm-cov
+    version_command: cargo llvm-cov --version
+    expect: cargo-llvm-cov 0.8.7
+  - name: cargo-mutants
+    version_command: cargo mutants --version
+    expect: cargo-mutants 27.1.0
+  - name: typos
+    version_command: typos --version
+    expect: typos-cli 1.48.0
+  - name: ast-grep
+    version_command: ast-grep --version
+    expect: ast-grep 0.45.3
+  - name: similarity-rs
+    version_command: similarity-rs --version
+    expect: similarity-rs 0.5.0
+  - name: prek
+    version_command: prek --version
+    expect: prek 0.4.9
+  - name: zizmor
+    version_command: zizmor --version
+    expect: zizmor 1.26.1
+  - name: uv
+    version_command: uv --version
+    expect: uv 0.11.14
+  - name: jq
+    version_command: jq --version
+    expect: jq-1.7
+  - name: timeout
+    version_command: timeout --version
+    expect: timeout (GNU coreutils) 9.7
+
+settings:
+  always_in_scope:
+    - Cargo.lock
+  budget_excludes:
+    - Cargo.lock
+    - "**/fixtures/**"
+    - "**/snapshots/**"
+    - tools/oracle/cases/**
+    - tools/oracle/litellm/uv.lock
+  file_size:
+    roots: [crates, tools]
+    src_max_lines: 500
+    test_max_lines: 1000
+
+base:
+  builtin:
+    - id: task-file
+      why: checks.yaml, backlog.yaml, every task file and the JSON Schemas must match the format
+    - id: tools
+      why: every CLI tool must be at the exact version pinned in checks.yaml
+    - id: scope
+      why: changed files must stay inside the task's scope.paths
+    - id: lint-table
+      why: "[workspace.lints] in the root Cargo.toml changes only in a task with scope.lint_tables"
+    - id: diff-budget
+      why: the change must fit the task's changed-line budget
+    - id: expect-budget
+      why: "new #[expect(...)] attributes must fit the task's budget"
+    - id: file-size
+      why: no Rust source file may grow past the line limits in settings.file_size
+    - id: crates
+      why: every crate inherits the workspace lints, is MIT, and keeps the LiteLLM name out of its name
+  commands:
+    - id: committed
+      why: every change must be committed, so the branch is exactly what gets merged
+      run: |-
+        git status --porcelain --untracked-files=all | sed "s/^/uncommitted: /" | grep . && exit 1 || exit 0
+    - id: specs-untouched
+      why: a task branch never changes .development/, .claude/, .codex/ or .cargo/config.toml
+      run: git diff --exit-code --stat "$GATE_BASE" -- .development .claude .codex .cargo/config.toml
+    - id: fmt
+      why: rustfmt decides the layout
+      run: cargo fmt --all --check
+    - id: clippy
+      why: the lint table is the code standard and warnings are errors
+      run: cargo clippy --workspace --all-targets --locked -- -D warnings
+    - id: tests
+      why: the whole test suite passes
+      run: cargo nextest run --workspace --locked --no-tests=warn
+    - id: doctests
+      why: documentation examples compile and pass
+      run: |-
+        if cargo metadata --format-version 1 --no-deps --locked | jq -e '[.packages[].targets[].kind[]] | index("lib")' > /dev/null; then cargo test --workspace --doc --locked; else echo "no library crate yet, so no doctests"; fi
+    - id: deny
+      why: licenses, advisories, bans, crate layering and sources follow deny.toml
+      run: cargo deny --locked check
+    - id: shear
+      why: no unused dependencies
+      run: cargo shear
+    - id: hooks
+      why: the prek pre-commit hooks pass on every file (hygiene, test placement, ast-grep rules, typos, rustfmt)
+      run: prek run --all-files
+    - id: similarity
+      why: no two functions are near copies of each other
+      run: similarity-rs $(ls -d crates tools 2>/dev/null) --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates
+    - id: notice
+      why: the MIT license and Berri AI's notice for LiteLLM stay in place
+      run: grep -q '^MIT License' LICENSE && grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
+    - id: no-enterprise
+      why: nothing refers to LiteLLM's proprietary enterprise code
+      run: "! git grep -nIE 'litellm_enterprise|BerriAI/litellm/(blob|tree)/[^/[:space:]]+/enterprise/' -- . ':(exclude).development'"
+    - id: no-attribution
+      why: commit messages carry no co-author or generator lines
+      run: "! git log --format=%B \"$GATE_BASE\"..HEAD | grep -qiE '^co-authored-by:|claude-session|claude\\.ai/code|generated with'"
+    - id: workflows
+      why: GitHub workflows pass zizmor's audit
+      run: zizmor --offline .github
+      when_exists: .github/workflows
+
+optional:
+  - id: coverage
+    why: line coverage of the workspace stays at or above 85 percent
+    run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
+  - id: mutants
+    why: every mutant in the changed Rust code is caught by a test
+    run: git diff "$GATE_BASE" -- '*.rs' > "$GATE_LOG_DIR/mutants.diff" && cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --output "$GATE_LOG_DIR"
+  - id: oracle
+    why: betterlite answers the oracle cases the same way the pinned LiteLLM does
+    run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES

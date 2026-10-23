@@ -1,0 +1,46 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+too-many-lines-threshold = 40
+cognitive-complexity-threshold = 15
+too-many-arguments-threshold = 5
+excessive-nesting-threshold = 4
+max-fn-params-bools = 1
+max-struct-bools = 2
+allowed-idents-below-min-chars = []
+
+disallowed-types = [
+  { path = "std::any::Any", reason = "type erasure defeats typed wire models" },
+  { path = "serde_json::Value", reason = "use a typed wire model; untyped JSON lives only in a passthrough field that says why in its #[expect]" },
+  { path = "serde_json::Map", reason = "use a typed wire model; untyped JSON lives only in a passthrough field that says why in its #[expect]" },
+  { path = "std::sync::OnceLock", reason = "no global state: pass dependencies through constructors" },
+  { path = "std::sync::LazyLock", reason = "no global state: pass dependencies through constructors" },
+  { path = "once_cell::sync::Lazy", reason = "no global state: pass dependencies through constructors" },
+  { path = "once_cell::sync::OnceCell", reason = "no global state: pass dependencies through constructors" },
+  { path = "anyhow::Error", reason = "errors are typed thiserror enums" },
+  { path = "eyre::Report", reason = "errors are typed thiserror enums" },
+]
+
+disallowed-methods = [
+  { path = "std::env::var", reason = "configuration enters through the config crate only" },
+  { path = "std::env::var_os", reason = "configuration enters through the config crate only" },
+  { path = "std::env::vars", reason = "configuration enters through the config crate only" },
+  { path = "std::env::vars_os", reason = "configuration enters through the config crate only" },
+  { path = "std::thread::sleep", reason = "blocks the async runtime; use tokio::time::sleep" },
+  { path = "std::thread::spawn", reason = "detached threads outlive shutdown; spawn into a JoinSet or TaskTracker the server owns" },
+  { path = "tokio::spawn", reason = "detached tasks outlive shutdown and lose their errors; spawn into a JoinSet or TaskTracker the server owns" },
+  { path = "tokio::task::spawn", reason = "detached tasks outlive shutdown and lose their errors; spawn into a JoinSet or TaskTracker the server owns" },
+  { path = "tokio::task::spawn_blocking", reason = "spawn blocking work into a JoinSet the server owns" },
+  { path = "tokio::sync::mpsc::unbounded_channel", reason = "an unbounded queue grows with untrusted input; use mpsc::channel with a capacity" },
+  { path = "std::sync::mpsc::channel", reason = "an unbounded queue grows with untrusted input; use a bounded channel" },
+  { path = "std::ffi::OsStr::to_string_lossy", reason = "a mangled name is worse than a refused one; handle the None from to_str" },
+  { path = "std::path::Path::to_string_lossy", reason = "a mangled path is worse than a refused one; handle the None from to_str" },
+  { path = "std::string::String::from_utf8_lossy", reason = "refuse bytes that are not UTF-8 instead of mangling them" },
+  { path = "std::time::Duration::from_secs_f64", reason = "panics on negative or huge values; use Duration::try_from_secs_f64" },
+  { path = "std::time::Duration::from_secs_f32", reason = "panics on negative or huge values; use Duration::try_from_secs_f32" },
+  { path = "reqwest::Client::new", reason = "outbound clients come from the one HTTP client crate so TLS, proxy and timeout settings apply" },
+  { path = "reqwest::Client::builder", reason = "outbound clients come from the one HTTP client crate so TLS, proxy and timeout settings apply" },
+]

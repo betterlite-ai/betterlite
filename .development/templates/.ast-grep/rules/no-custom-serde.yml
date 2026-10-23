@@ -1,0 +1,18 @@
+id: no-custom-serde
+language: rust
+severity: error
+message: serialization belongs to Serde derives and library calls
+rule:
+  any:
+    - kind: impl_item
+      has: { field: trait, regex: '\b(Serialize|Deserialize|SerializeAs|DeserializeAs|DeserializeSeed|Serializer|Deserializer|Visitor|SeqAccess|MapAccess|EnumAccess|VariantAccess|SerializeSeq|SerializeTuple|SerializeTupleStruct|SerializeTupleVariant|SerializeMap|SerializeStruct|SerializeStructVariant)\b' }
+    - kind: function_item
+      has: { field: name, regex: '^(serialize|deserialize|serialize_as|deserialize_as)$' }
+    - kind: function_item
+      regex: '^fn\s+\w+[^{]*\b(Serializer|Deserializer)\b[^{]*\{'
+    - kind: attribute_item
+      regex: 'remote\s*=\s*"Self"|\bserde\s*\([^)]*\bbound\s*(\(|=)'
+    - kind: macro_invocation
+      regex: '^(with_prefix|serde_conv|forward_to_deserialize_any)!'
+    - kind: call_expression
+      regex: '^[\w:.]*disable_recursion_limit\s*\('

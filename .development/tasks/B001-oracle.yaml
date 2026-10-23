@@ -1,0 +1,85 @@
+id: B001
+title: Oracle harness against the pinned LiteLLM
+description: >-
+  Build tools/oracle, a binary crate named betterlite-oracle that runs LiteLLM and betterlite side by side and diffs what they do.
+  LiteLLM 1.105.1 is the behavioral spec. When a case passes, betterlite answered the client and called the provider the same way LiteLLM did.
+  For each case the harness starts a mock provider on a free local port, boots each gateway with the case's config pointed at that mock, sends the case's request to both gateways, and compares two things: the response each gateway returned to the client, and the requests each gateway sent to the provider.
+  LiteLLM runs from a uv project in tools/oracle/litellm whose pyproject.toml pins litellm[proxy]==1.105.1 and whose uv.lock pins everything under it, started with uv run --locked.
+  betterlite runs as target/debug/betterlite --config <file> --host 127.0.0.1 --port <port>. Until betterlite serves routes, --self-check boots a second LiteLLM in betterlite's place, so the harness proves itself on its own.
+
+  A case is one YAML file read into Rust types with deny_unknown_fields. Its fields are name; config (LiteLLM config.yaml text, where the literal {{upstream}} becomes the mock's base URL); env (extra environment variables for both gateways); request (method, path, headers, body); upstream (canned answers in order, each with status, headers and either body or events, where events is a list of SSE data lines); and compare (headers, response header names whose values must match; headers_present, response header names both gateways must send with values that may differ, such as x-litellm-call-id; upstream_headers, request header names compared on the provider side; ignore, a list of JSON pointers each with a why).
+
+  The CLI is cargo run -p betterlite-oracle -- [--self-check] <case file or directory>... It exits 0 when every case matches, 1 when any case differs, and 2 when the harness itself fails. It prints one line per case, PASS <name> or FAIL <name>: <first differing JSON pointer>, and writes both client responses, both sets of provider requests, a diff and both gateway logs under target/oracle/<name>/.
+
+  Seed the case set with the cases the next tasks need: tools/oracle/cases/health/liveliness.yaml, tools/oracle/cases/chat/openai-basic.yaml (a non-streaming chat completion) and tools/oracle/cases/chat/openai-stream.yaml (the same request with stream true and an SSE answer).
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/**
+  lint_tables: false
+references:
+  - url: https://www.anthropic.com/engineering/building-c-compiler
+    why: GCC as a known-good oracle for a from-scratch rewrite; this harness plays that role with LiteLLM.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L707-L782
+    why: The --host, --port and --config flags and their HOST and PORT environment variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L380
+    why: LITELLM_LOCAL_MODEL_COST_MAP=True keeps LiteLLM from fetching the price map over the network at startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1960-L1980
+    why: GET /health/liveliness is unauthenticated, so the harness polls it to know a gateway is up.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/_openai_record_replay_proxy.py
+    why: LiteLLM's own record and replay proxy, for ideas on routing a provider through api_base. Read it, do not port it.
+  - url: https://docs.astral.sh/uv/concepts/projects/sync/
+    why: uv lock, uv lock --check and uv run --locked.
+dod:
+  - text: tools/oracle/litellm pins litellm[proxy]==1.105.1 and its uv.lock is current.
+    proof: [litellm-pinned, litellm-lock]
+  - text: Case files parse strictly. An unknown field, a missing field or a duplicate key is rejected with the file name in the error.
+    proof: [oracle-tests]
+  - text: The comparator reports the first differing JSON pointer and honors the ignore list and all three header lists. Each of these behaviors has a test.
+    proof: [oracle-tests, mutants]
+  - text: --self-check passes on every seed case, so LiteLLM matches itself after normalization.
+    proof: [self-check]
+  - text: Two self-checks running at the same time both pass, so ports and directories never collide between workers.
+    proof: [self-check-parallel]
+  - text: Both gateways run offline with LITELLM_LOCAL_MODEL_COST_MAP=True.
+    proof: [offline-cost-map]
+checks:
+  optional: [mutants]
+  commands:
+    - id: litellm-pinned
+      why: the LiteLLM pin is missing or not exactly 1.105.1
+      run: grep -q '"litellm\[proxy\]==1.105.1"' tools/oracle/litellm/pyproject.toml
+    - id: litellm-lock
+      why: tools/oracle/litellm/uv.lock does not match its pyproject.toml
+      run: uv lock --check --project tools/oracle/litellm
+    - id: oracle-tests
+      why: the oracle's own tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+    - id: self-check
+      why: LiteLLM does not match itself on the seed cases, so normalization or the mock is wrong
+      run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases
+    - id: self-check-parallel
+      why: two harness runs at once collide on ports or directories
+      run: cargo build --locked --quiet -p betterlite-oracle && { target/debug/betterlite-oracle --self-check tools/oracle/cases & first=$!; target/debug/betterlite-oracle --self-check tools/oracle/cases & second=$!; wait "$first" && wait "$second"; }
+    - id: offline-cost-map
+      why: the harness does not keep LiteLLM off the network at startup
+      run: grep -rq 'LITELLM_LOCAL_MODEL_COST_MAP' tools/oracle/src
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Any betterlite route. The harness only learns to start betterlite; B003 makes betterlite answer.
+  - Comparing every upstream header. LiteLLM forwards through the OpenAI SDK, and the SDK adds x-stainless-* and user-agent headers betterlite does not send.
+  - Recording real provider traffic. Every case uses the mock provider.
+pitfalls:
+  - LiteLLM needs several seconds to boot. Poll GET /health/liveliness until it answers 200 instead of sleeping a fixed time, and give up with exit 2 after 120 seconds.
+  - Bind port 0 to get free ports, since two workers can run the oracle at the same time.
+  - Group cases by config text so each gateway boots once per distinct config, not once per case.
+  - Kill both gateways and the mock on every exit path, a failed case included, so no process outlives the run.
+  - uv may download a Python interpreter on the first run. That lands in uv's own cache and is expected.
+  - "The crate needs reqwest::Client::builder and serde_json::Value, both disallowed in gateway code. Use one crate-level #![expect(clippy::disallowed_types, reason = ...)] and one #[expect(clippy::disallowed_methods, reason = ...)] on the client constructor, not one per use."
+  - Root Cargo.toml members becomes ["crates/*", "tools/*"]. A members glob that matches no directory breaks cargo. That is why B000 left tools/* out.
+  - reqwest with rustls pulls in webpki-root-certs under CDLA-Permissive-2.0. Allow it in deny.toml as an exception for that one crate, not as a global license.
+budget:
+  max_changed_lines: 900
+  max_new_expects: 2

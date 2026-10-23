@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite task",
+  "description": "One unit of work for one worker: what to build, how it is proven done, and the commands that prove it.",
+  "type": "object",
+  "properties": {
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "checks": {
+      "$ref": "#/$defs/TaskChecks"
+    },
+    "description": {
+      "description": "What to build and why, in prose. A worker with no other context must be able to start from it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "deviations": {
+      "description": "Places where betterlite deliberately differs from LiteLLM.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Deviation"
+      }
+    },
+    "dod": {
+      "description": "Definition of done. Every item names the checks that prove it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Dod"
+      },
+      "minItems": 1
+    },
+    "id": {
+      "description": "Same id as the task's backlog entry.",
+      "type": "string",
+      "pattern": "^B[0-9]{3}$"
+    },
+    "oracle_cases": {
+      "description": "Oracle case files (paths from the repository root) whose LiteLLM and betterlite outputs must match. A non-empty list adds the oracle check.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "out_of_scope": {
+      "description": "Work that belongs to other tasks. The worker leaves it alone.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pitfalls": {
+      "description": "Known traps, each as one plain sentence.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "references": {
+      "description": "Pages to read before starting. LiteLLM links point at the pinned oracle commit.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Reference"
+      }
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope"
+    },
+    "title": {
+      "description": "One line, plain words.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "description",
+    "scope",
+    "references",
+    "dod",
+    "checks",
+    "oracle_cases",
+    "deviations",
+    "out_of_scope",
+    "pitfalls",
+    "budget"
+  ],
+  "$defs": {
+    "Budget": {
+      "type": "object",
+      "properties": {
+        "max_changed_lines": {
+          "description": "Added plus deleted lines against the base, without the paths in settings.budget_excludes.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1
+        },
+        "max_new_expects": {
+          "description": "New #[expect(...)] attributes the task may add.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "max_changed_lines",
+        "max_new_expects"
+      ]
+    },
+    "Command": {
+      "description": "A shell command run with bash -c from the repository root. Exit 0 passes, anything else fails.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1
+        },
+        "when_exists": {
+          "description": "Path from the repository root. When it does not exist the check is skipped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "description": "What a failure means, in one sentence.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "why",
+        "run"
+      ]
+    },
+    "Deviation": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "what": {
+          "description": "What betterlite does differently.",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "Why the difference is deliberate.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "what",
+        "why"
+      ]
+    },
+    "Dod": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "description": "Ids of checks this task runs (base, optional or its own) that fail when the outcome is missing.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "minItems": 1
+        },
+        "text": {
+          "description": "One observable outcome.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "proof"
+      ]
+    },
+    "Reference": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "What the worker takes from this page.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "why"
+      ]
+    },
+    "Scope": {
+      "description": "Files the task may change.",
+      "type": "object",
+      "properties": {
+        "lint_tables": {
+          "description": "True only for a task allowed to change [workspace.lints] in the root Cargo.toml.",
+          "type": "boolean"
+        },
+        "paths": {
+          "description": "Glob patterns from the repository root. `*` stays inside one directory, `**` crosses directories.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "paths",
+        "lint_tables"
+      ]
+    },
+    "TaskChecks": {
+      "description": "Checks on top of the base set in checks.yaml. Every one of them must pass.",
+      "type": "object",
+      "properties": {
+        "commands": {
+          "description": "Commands only this task runs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Command"
+          }
+        },
+        "optional": {
+          "description": "Ids from the optional list in checks.yaml.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "optional",
+        "commands"
+      ]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+id: B008
+title: Load balancing across deployments of one model
+description: >-
+  Replace B004's uniform choice with LiteLLM's default routing strategy, simple-shuffle.
+  For the deployments under one model_name, simple-shuffle picks by litellm_params.weight when any deployment has a positive weight; otherwise by rpm; otherwise by tpm; otherwise uniformly. Within a chosen metric, a deployment's chance is its value divided by the sum, so a deployment with 0 is never picked while another has a positive value.
+  routing_strategy simple-shuffle and an absent routing_strategy both mean this. Any other strategy stays a config error naming the key, as B002 made it.
+  The random source still comes in through the constructor, so tests run with a fixed seed and get the same picks every time.
+scope:
+  paths:
+    - crates/betterlite-server/**
+    - crates/betterlite-router/**
+    - crates/betterlite-config/**
+    - Cargo.toml
+    - deny.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
+    why: The exact order of weight, rpm and tpm, and how weights are normalized.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L147-L172
+    why: routing_strategy and the other router_settings keys.
+  - url: https://docs.rs/rand/latest/rand/distr/weighted/struct.WeightedIndex.html
+    why: Weighted choice from a library instead of a hand-written cumulative sum.
+dod:
+  - text: Weight beats rpm, rpm beats tpm, and with none of them set the choice is uniform. Each rule has a test.
+    proof: [router-tests]
+  - text: With a fixed seed and weights 1 and 3, 10000 picks land within 2 percent of 2500 and 7500, and the same seed gives the same picks.
+    proof: [router-tests]
+  - text: A deployment with weight 0 is never picked while another deployment has a positive weight.
+    proof: [router-tests]
+  - text: Routing lives in its own crate, and only the server depends on it.
+    proof: [deny, layering]
+  - text: Every mutant in the routing code is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: router-tests
+      why: the router tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail
+    - id: layering
+      why: deny.toml does not keep betterlite-router behind betterlite-server
+      run: grep -qE 'crate = "betterlite-router", wrappers = \["betterlite-server"\]' deny.toml
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Per-request weights (LiteLLM's _router_weights request argument).
+  - Other routing strategies such as least-busy, usage-based-routing, latency-based-routing and cost-based-routing.
+  - Health-based filtering, retries, cooldowns and fallbacks (B009, B010).
+pitfalls:
+  - The oracle cannot compare random picks across Python and Rust random generators, so this task proves behavior with seeded tests instead of oracle cases.
+  - A statistical test with a fixed seed is deterministic. Pick the seed once and keep it; never retry with a new seed until it passes.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

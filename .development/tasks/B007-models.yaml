@@ -1,0 +1,42 @@
+id: B007
+title: Model list
+description: >-
+  Serve GET /models, /v1/models, /models/{model_id} and /v1/models/{model_id} behind the master key.
+  The list holds one entry per model_name in the config, in the order and shape LiteLLM returns, and a model name with several deployments appears once.
+  An unknown model_id gets the status and body LiteLLM gives. Write the cases under tools/oracle/cases/models/ and match LiteLLM on all of them.
+scope:
+  paths:
+    - crates/betterlite-server/**
+    - crates/betterlite-openai/**
+    - tools/oracle/cases/models/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11545-L11800
+    why: The model list routes, the single-model routes and what they return.
+  - url: https://platform.openai.com/docs/api-reference/models/list
+    why: The OpenAI shape that clients expect.
+dod:
+  - text: Every listed models case matches LiteLLM.
+    proof: [oracle]
+  - text: A model name with several deployments is listed once.
+    proof: [oracle, models-tests]
+checks:
+  optional: []
+  commands:
+    - id: models-tests
+      why: the model list tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_list|models/)'
+oracle_cases:
+  - tools/oracle/cases/models/list.yaml
+  - tools/oracle/cases/models/list-shared-name.yaml
+  - tools/oracle/cases/models/one.yaml
+  - tools/oracle/cases/models/unknown.yaml
+deviations: []
+out_of_scope:
+  - /model/info, /v2/model/info and /model_group/info.
+  - Filtering the list by virtual key permissions; virtual keys come in B018.
+pitfalls:
+  - LiteLLM fills created with a fixed or generated timestamp. If it changes per request, ignore its pointer in the case with a why.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

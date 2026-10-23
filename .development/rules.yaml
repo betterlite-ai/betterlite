@@ -1,0 +1,369 @@
+rules:
+  - id: deny-by-default
+    title: Every lint is an error unless the lint table names it
+    statement: >-
+      All clippy groups and the strict rustc lints are denied. An exception is one line in the root lint table with its reason, added only by a task whose scope lists the lint table. Code never silences a lint with #[allow]; a lint that truly misfires gets #[expect(lint, reason = "...")] inside the task's expect budget.
+    why: A rule that is a warning gets ignored, and a lint silenced in place hides the next real hit.
+    enforced_by: [clippy, lint-table, expect-budget]
+    reviewed: false
+    example:
+      instead_of: |
+        #[allow(clippy::cast_possible_truncation)]
+        let port = value as u16;
+      write: |
+        let port = u16::try_from(value).map_err(|source| ConfigError::Port { value, source })?;
+
+  - id: no-panics
+    title: Code never panics
+    statement: >-
+      Every fallible step returns a Result or handles the None. No unwrap, expect, panic, unreachable, todo, indexing or slicing that can go out of bounds, and no unchecked arithmetic. Tests may unwrap.
+    why: A panic in a gateway drops every request on that task and hides the cause from the caller.
+    enforced_by: [clippy]
+    reviewed: false
+    example:
+      instead_of: |
+        let first = choices[0].message.content.clone().unwrap();
+        let total = prompt_tokens + completion_tokens;
+      write: |
+        let first = choices.first().ok_or(ResponseError::NoChoices)?;
+        let total = prompt_tokens.checked_add(completion_tokens).ok_or(UsageError::Overflow)?;
+
+  - id: no-casts
+    title: No casts
+    statement: >-
+      Never write `as`. Numbers convert through TryFrom or From and the error is handled; enums map to numbers through an explicit match or a derive.
+    why: An as cast truncates, wraps or changes sign without a word, and the bug shows up far from the cast.
+    enforced_by: [clippy]
+    reviewed: false
+    example:
+      instead_of: |
+        let timeout_ms = seconds as u64 * 1000;
+        let index = position as usize;
+      write: |
+        let timeout = Duration::try_from_secs_f64(seconds).map_err(|source| ConfigError::Timeout { seconds, source })?;
+        let index = usize::try_from(position).map_err(|source| RouterError::Position { position, source })?;
+
+  - id: no-unsafe
+    title: No unsafe code
+    statement: unsafe is forbidden in every crate. A need for it is a blocker to report, not code to write.
+    why: Memory safety is the reason to write this gateway in Rust.
+    enforced_by: [clippy]
+    reviewed: false
+    example:
+      instead_of: |
+        let text = unsafe { std::str::from_utf8_unchecked(&bytes) };
+      write: |
+        let text = std::str::from_utf8(&bytes).map_err(|source| StreamError::Utf8 { source })?;
+
+  - id: explicit-not-verbose
+    title: Explicit, never implicit, and still short
+    statement: >-
+      Write what happens where it happens: no glob imports, no Deref on types that are not pointers, no ..Default::default() that hides fields, no numeric fallback, no impl Trait arguments, clone an Arc with Arc::clone. Explicit does not mean wordy: no return on the last line, no redundant type annotations, no clones the borrow checker does not need, no wrappers that only forward.
+    why: Implicit conversions and hidden defaults are where a reader and the compiler stop agreeing on what runs.
+    enforced_by: [clippy, hooks]
+    reviewed: true
+    example:
+      instead_of: |
+        use crate::wire::*;
+        let settings = RouterSettings { num_retries: 2, ..Default::default() };
+        let pool = shared.clone();
+      write: |
+        use crate::wire::{ChatRequest, ChatResponse};
+        let settings = RouterSettings { num_retries: 2, timeout: Duration::from_secs(600), fallbacks: Vec::new() };
+        let pool = Arc::clone(&shared);
+
+  - id: one-responsibility-per-file
+    title: One file, one responsibility
+    statement: >-
+      Each file owns one responsibility and is named after it: a wire format, a route, an auth check, a retry policy. A file that mixes two gets split along the seam. Source files stay under the file-size limit, functions under 40 lines, cognitive complexity 15, 5 arguments, nesting depth 4 and one boolean parameter.
+    why: A file that does three things gets changed for three reasons, and every change risks the other two.
+    enforced_by: [file-size, clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        crates/betterlite-server/src/server.rs: routes, master key check, error JSON, config reload
+      write: |
+        crates/betterlite-server/src/routes.rs
+        crates/betterlite-server/src/auth.rs
+        crates/betterlite-server/src/error_body.rs
+        config loading stays in betterlite-config
+
+  - id: no-one-line-functions
+    title: No one-line functions
+    statement: >-
+      A function whose body is a single statement or expression is only a name for it, so the code goes where the function would be called. Trait implementations, main, tests, and a body that is one match, if or loop are exempt.
+    why: A one-line wrapper makes the reader jump to learn nothing and invites a second name for the same thing.
+    enforced_by: [hooks]
+    reviewed: false
+    example:
+      instead_of: |
+        fn is_streaming(request: &ChatRequest) -> bool {
+            request.stream == Some(true)
+        }
+        if is_streaming(&request) {
+      write: |
+        if request.stream == Some(true) {
+
+  - id: comments-say-why
+    title: Comments say why, on one line
+    statement: >-
+      No comment at the top of a file, no doc comments, no block comments, no comment that spans two lines. A comment is one // line inside the code and explains a constraint the code cannot show. Names and types explain what and how.
+    why: Comments that restate the code go stale and teach the next reader to skip comments, including the one that matters.
+    enforced_by: [hooks]
+    reviewed: true
+    example:
+      instead_of: |
+        /// Picks a deployment.
+        // loop over the deployments
+        // and pick one at random
+        for deployment in deployments {
+      write: |
+        // LiteLLM ranks weight before rpm, so a mixed config splits traffic the same way
+        let weights = deployments.iter().map(|deployment| deployment.weight.or(deployment.rpm));
+
+  - id: reuse-before-building
+    title: Look for the existing answer before writing one
+    statement: >-
+      When a problem looks like one others have solved (parsing a format, retries and backoff, rate limits, SSE, auth, caching, pooling, signing requests), search first: web search, crate docs, crates.io, LiteLLM's code at the pinned commit, MCP tools. List the options that meet every requirement of the task, pick the best and reuse it. The report records the comparison, and every new dependency must appear in it as the chosen option.
+    why: Hand-written versions of solved problems are where the subtle bugs live, and nobody else maintains them.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        for line in chunk.split('\n') {
+            if let Some(data) = line.strip_prefix("data: ") {
+      write: |
+        prior_art: need "parse SSE events split across reads"; eventsource-stream chosen because it buffers partial events, a hand-written split rejected because it breaks on split reads
+        let events = response.bytes_stream().eventsource();
+
+  - id: non-nullable-by-default
+    title: A value that can always exist is never optional
+    statement: >-
+      Use Option only where absence is a real state the code handles differently. Defaults are resolved once, at the boundary where a value enters (config load, request parsing), so everything past it takes plain values. A function never returns Option or Result when it cannot fail.
+    why: Every Option pushes a decision to each reader, and a None that travels far from where it appeared is the hardest error to trace.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        fn call(deployment: &Deployment, timeout: Option<Duration>) {
+            let timeout = timeout.unwrap_or(Duration::from_secs(6000));
+      write: |
+        timeout resolved when the config loads: deployment.timeout, else litellm_settings.request_timeout, else 6000 seconds
+        fn call(deployment: &Deployment, timeout: Duration) {
+
+  - id: clear-names
+    title: Names are clear, neither cryptic nor long-winded
+    statement: >-
+      A name says what the value is in the words of the domain. No single letters, no abbreviations a newcomer has to decode, no names past 30 characters, and no name that repeats its type or its module.
+    why: A cryptic name makes the reader decode it every time, and an overlong one hides the word that matters.
+    enforced_by: [clippy, hooks]
+    reviewed: true
+    example:
+      instead_of: |
+        let d = r.pk(&m);
+        let selected_deployment_for_current_chat_request = router.pick(&model);
+      write: |
+        let deployment = router.pick(&model);
+
+  - id: typed-wire
+    title: Wire formats are typed
+    statement: >-
+      Requests, responses and configs are serde derives on structs and enums. Untyped JSON lives only in a passthrough field for parameters betterlite does not model, with an #[expect] that says why, inside the task's budget.
+    why: Untyped JSON moves every mistake from compile time to a customer's request.
+    enforced_by: [clippy, expect-budget]
+    reviewed: true
+    example:
+      instead_of: |
+        let model = body["model"].as_str().unwrap_or_default();
+      write: |
+        let request: ChatRequest = serde_json::from_slice(&body).map_err(|source| RequestError::Body { source })?;
+        let model = &request.model;
+
+  - id: typed-errors
+    title: Errors are typed and keep their cause
+    statement: >-
+      Each crate has one thiserror enum. A wrapped error is a #[source] field, never a string. No anyhow, no Box<dyn Error>, no map_err to a String.
+    why: A caller can only handle a failure it can name, and a lost source hides the root cause.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+      write: |
+        let text = fs::read_to_string(&path).map_err(|source| ConfigError::Read { path: path.clone(), source })?;
+
+  - id: no-silent-drops
+    title: Nothing is dropped silently
+    statement: >-
+      A config key, request field, header or deployment betterlite does not handle yet is an error that names it. Duplicates stay duplicates; nothing overwrites an earlier entry without saying so.
+    why: LiteLLM and its Rust port both ignore input quietly, and users find out from wrong behavior in production.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        let deployments: HashMap<String, Deployment> = list.into_iter().map(|model| (model.name.clone(), model)).collect();
+      write: |
+        let mut deployments: BTreeMap<String, Vec<Deployment>> = BTreeMap::new();
+        for model in list {
+            deployments.entry(model.name.clone()).or_default().push(model);
+        }
+
+  - id: inject-dependencies
+    title: Dependencies come in through constructors
+    statement: >-
+      HTTP clients, clocks, random sources, the environment and every other outside dependency are fields passed in when a value is built. No globals, no lazy statics, no reading the environment outside the config crate.
+    why: Hidden dependencies make tests lie and make two requests share state nobody meant them to share.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+      write: |
+        let provider = OpenAiProvider { client: pool.client(&deployment.tls), base: deployment.api_base.clone() };
+
+  - id: async-hygiene
+    title: Async code never blocks, leaks or grows without bound
+    statement: >-
+      No blocking calls inside async code, no lock held across an .await, no detached tasks (spawn into a JoinSet or TaskTracker the server owns and drains on shutdown), and only bounded channels.
+    why: One blocking call stalls every request on that thread, and a detached task outlives shutdown and loses its errors.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        tokio::spawn(async move { spend_log.write(entry).await });
+        let (sender, receiver) = mpsc::unbounded_channel();
+      write: |
+        tasks.spawn(async move { spend_log.write(entry).await });
+        let (sender, receiver) = mpsc::channel(limits.spend_queue);
+
+  - id: bounded-inputs
+    title: Every input has a limit and every wait a timeout
+    statement: >-
+      Every inbound body and header has a size limit, every inbound and outbound call a timeout, every queue a capacity. Nothing allocates in proportion to untrusted input without a cap, and outbound URLs come only from config, never from a request.
+    why: A gateway sits on the public internet; an unbounded read is a free denial of service, and a URL from the request is server-side request forgery.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        let body = axum::body::to_bytes(request.into_body(), usize::MAX).await?;
+      write: |
+        let body = axum::body::to_bytes(request.into_body(), limits.max_request_bytes).await?;
+
+  - id: secrets-stay-secret
+    title: Secrets never leave their type
+    statement: >-
+      API keys, master keys and tokens are secrecy::SecretString from the moment they are read. They never reach logs, error messages or Debug output, and keys are compared in constant time.
+    why: A key in a log line is a leaked key, and a plain == comparison leaks a key through timing.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        if presented == config.master_key {
+            tracing::info!(key = %presented, "authenticated");
+      write: |
+        if bool::from(presented.expose_secret().as_bytes().ct_eq(master.expose_secret().as_bytes())) {
+            tracing::info!(principal = "master", "authenticated");
+
+  - id: tests-beside-code
+    title: Tests live beside the code and always run
+    statement: >-
+      Unit tests live in a tests.rs next to their module, opening with #![cfg(test)]; implementation files hold no test code. End-to-end tests drive the real HTTP server against a mock provider. No test is ever #[ignore]d or deleted to make a check pass.
+    why: Tests in their own file keep implementation files small, and a skipped test is a broken test nobody sees.
+    enforced_by: [hooks]
+    reviewed: false
+    example:
+      instead_of: |
+        #[cfg(test)]
+        mod tests {
+            #[test]
+            #[ignore]
+            fn streams_against_openai() {
+      write: |
+        mod tests;
+
+        tests.rs:
+        #![cfg(test)]
+        #[tokio::test]
+        async fn streams_chunks_as_the_mock_sends_them() {
+
+  - id: red-before-green
+    title: A test fails before the code makes it pass
+    statement: >-
+      Write the test first and watch it fail for the reason it should, then write the code. A test that never failed proves nothing, and a check that only moves a number is not a fix.
+    why: Tests written after the code tend to assert what the code does instead of what it should do.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        assert!(response.is_ok());
+      write: |
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+        assert_eq!(body.error.code, "408");
+
+  - id: no-subprocess
+    title: Gateway code never spawns processes
+    statement: Only tests and crates under tools/ start other processes.
+    why: A gateway that shells out has a command-injection surface it does not need.
+    enforced_by: [hooks]
+    reviewed: false
+    example:
+      instead_of: |
+        let output = std::process::Command::new("aws").args(["sts", "get-caller-identity"]).output()?;
+      write: |
+        let credentials = provider.provide_credentials().await.map_err(|source| AuthError::Aws { source })?;
+
+  - id: fresh-dependencies
+    title: Dependencies are few, licensed and settled
+    statement: >-
+      A new dependency is the newest version released at least 7 days ago, from crates.io, under a license deny.toml allows, and only after checking that the standard library or an existing dependency does not already do the job.
+    why: Every dependency is code you ship without reading, and a release younger than a week has not met its bug reports yet.
+    enforced_by: [deny, shear]
+    reviewed: true
+    example:
+      instead_of: |
+        reqwest = { git = "https://github.com/someone/reqwest-fork" }
+      write: |
+        reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "json", "stream"] }
+
+  - id: litellm-boundaries
+    title: Learn from LiteLLM, never take its name or its enterprise code
+    statement: >-
+      LiteLLM's behavior at the pinned commit is the spec and its MIT code is reading material. Nothing comes from its enterprise directory or the litellm_enterprise package, no crate or binary carries the LiteLLM name, and Berri AI's MIT notice stays in THIRD_PARTY_NOTICES.md. Names on the wire stay as LiteLLM spells them (x-litellm-* headers, litellm_params keys, LITELLM_* environment variables), since compatibility is the point.
+    why: The MIT license allows the rewrite; the enterprise license and the trademark do not.
+    enforced_by: [no-enterprise, notice, crates]
+    reviewed: false
+    example:
+      instead_of: |
+        [package]
+        name = "litellm-rs-router"
+      write: |
+        [package]
+        name = "betterlite-router"
+
+  - id: stay-in-scope
+    title: Change only what the task allows
+    statement: >-
+      A task branch changes only its scope.paths, never .development/, .claude/, .codex/ or .cargo/config.toml, and fits its line and expect budgets. Needing more is a blocker to report.
+    why: Parallel workers only stay out of each other's way when every one of them stays in its lane.
+    enforced_by: [scope, specs-untouched, lint-table, diff-budget]
+    reviewed: false
+    example:
+      instead_of: |
+        git add -A
+        git commit -m "fix deny.toml too"
+      write: |
+        git add crates/betterlite-router/src/shuffle.rs crates/betterlite-router/src/shuffle/tests.rs
+        report: status blocked, blocker "the layering entry for betterlite-router belongs in deny.toml, outside this task's scope"
+
+  - id: clean-commits
+    title: Commits are plain and complete
+    statement: >-
+      Everything is committed before the run ends, staged by explicit path, with a plain conventional message and no co-author or generator lines.
+    why: The branch is exactly what gets merged, and history credits the people responsible for it.
+    enforced_by: [committed, no-attribution]
+    reviewed: false
+    example:
+      instead_of: |
+        git commit -am "wip" -m "Co-authored-by: an agent"
+      write: |
+        git commit -m "feat(router): pick deployments by weight, then rpm, then tpm"

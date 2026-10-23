@@ -1,0 +1,7 @@
+id: no-ignored-tests
+language: rust
+severity: error
+message: tests always run; a test that needs a live provider talks to a mock upstream instead
+rule:
+  kind: attribute_item
+  regex: '^#\[ignore\b'

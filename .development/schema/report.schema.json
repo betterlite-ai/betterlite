@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite worker report",
+  "description": "A worker's final answer. Every field is required; use an empty string or list when there is nothing to say.",
+  "type": "object",
+  "properties": {
+    "blocker": {
+      "description": "Empty when done. When blocked: what is needed, where, and the evidence.",
+      "type": "string"
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReportDeviation"
+      }
+    },
+    "notes": {
+      "description": "Facts the architect needs and nothing else.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prior_art": {
+      "description": "One entry per problem solved by choosing an existing solution or deliberately writing one.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PriorArt"
+      }
+    },
+    "status": {
+      "$ref": "#/$defs/ReportStatus"
+    },
+    "summary": {
+      "description": "What changed, in two to four plain sentences.",
+      "type": "string"
+    },
+    "task": {
+      "description": "The task id, for example B004.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "status",
+    "summary",
+    "blocker",
+    "prior_art",
+    "deviations",
+    "notes"
+  ],
+  "$defs": {
+    "OptionVerdict": {
+      "type": "string",
+      "enum": [
+        "chosen",
+        "rejected"
+      ]
+    },
+    "PriorArt": {
+      "type": "object",
+      "properties": {
+        "need": {
+          "description": "The problem, for example: parse server-sent events split across network reads.",
+          "type": "string"
+        },
+        "options": {
+          "description": "At least two options that were compared, exactly one of them chosen.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PriorOption"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "need",
+        "options"
+      ]
+    },
+    "PriorOption": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "description": "https link to the crate, docs or code that was read.",
+          "type": "string"
+        },
+        "name": {
+          "description": "A crate name exactly as in Cargo.toml, a std API, or hand-written.",
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/OptionVerdict"
+        },
+        "why": {
+          "description": "Which requirement it meets or misses.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "link",
+        "verdict",
+        "why"
+      ]
+    },
+    "ReportDeviation": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "description": "https link to LiteLLM's behavior, or an empty string.",
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "what",
+        "why",
+        "link"
+      ]
+    },
+    "ReportStatus": {
+      "type": "string",
+      "enum": [
+        "done",
+        "blocked"
+      ]
+    }
+  }
+}

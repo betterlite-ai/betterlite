@@ -1,0 +1,23 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+too-many-lines-threshold = 40
+cognitive-complexity-threshold = 15
+too-many-arguments-threshold = 5
+excessive-nesting-threshold = 4
+max-fn-params-bools = 1
+max-struct-bools = 2
+allowed-idents-below-min-chars = []
+
+disallowed-types = [
+  { path = "std::any::Any", reason = "type erasure defeats typed models" },
+]
+
+disallowed-methods = [
+  { path = "std::ffi::OsStr::to_string_lossy", reason = "a mangled name is worse than a refused one; handle the None from to_str" },
+  { path = "std::path::Path::to_string_lossy", reason = "a mangled path is worse than a refused one; handle the None from to_str" },
+  { path = "std::string::String::from_utf8_lossy", reason = "refuse non-UTF-8 output instead of mangling it" },
+]

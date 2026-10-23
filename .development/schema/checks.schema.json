@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite checks",
+  "description": "The tools every check needs, shared settings, the base checks every task runs, and the optional checks a task can add.",
+  "type": "object",
+  "properties": {
+    "base": {
+      "$ref": "#/$defs/BaseChecks"
+    },
+    "optional": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Command"
+      }
+    },
+    "settings": {
+      "$ref": "#/$defs/Settings"
+    },
+    "tools": {
+      "description": "CLI tools at exact versions. The tools builtin fails when one differs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Tool"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "tools",
+    "settings",
+    "base",
+    "optional"
+  ],
+  "$defs": {
+    "BaseChecks": {
+      "type": "object",
+      "properties": {
+        "builtin": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Builtin"
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "builtin",
+        "commands"
+      ]
+    },
+    "Builtin": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/BuiltinId"
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "why"
+      ]
+    },
+    "BuiltinId": {
+      "type": "string",
+      "enum": [
+        "task-file",
+        "tools",
+        "scope",
+        "lint-table",
+        "diff-budget",
+        "expect-budget",
+        "file-size",
+        "crates"
+      ]
+    },
+    "Command": {
+      "description": "A shell command run with bash -c from the repository root. Exit 0 passes, anything else fails.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1
+        },
+        "when_exists": {
+          "description": "Path from the repository root. When it does not exist the check is skipped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "description": "What a failure means, in one sentence.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "why",
+        "run"
+      ]
+    },
+    "FileSize": {
+      "type": "object",
+      "properties": {
+        "roots": {
+          "description": "Directories whose .rs files are measured.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "src_max_lines": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "test_max_lines": {
+          "description": "Limit for tests.rs files and files under a tests/ directory.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "roots",
+        "src_max_lines",
+        "test_max_lines"
+      ]
+    },
+    "Settings": {
+      "type": "object",
+      "properties": {
+        "always_in_scope": {
+          "description": "Globs every task may change, on top of its own scope.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "budget_excludes": {
+          "description": "Globs left out of the changed-line budget.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "file_size": {
+          "$ref": "#/$defs/FileSize"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "always_in_scope",
+        "budget_excludes",
+        "file_size"
+      ]
+    },
+    "Tool": {
+      "type": "object",
+      "properties": {
+        "expect": {
+          "description": "Text the first line of the version output must contain.",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version_command": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version_command",
+        "expect"
+      ]
+    }
+  }
+}

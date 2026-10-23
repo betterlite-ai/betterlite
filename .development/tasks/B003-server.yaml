@@ -1,0 +1,83 @@
+id: B003
+title: HTTP server, health routes and master key auth
+description: >-
+  Add crates/betterlite-server, an axum app, and wire it into the betterlite binary so betterlite --config <file> serves HTTP.
+  The CLI matches LiteLLM's: --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4000, env PORT).
+  GET /health/liveliness and GET /health/liveness answer without auth, exactly as LiteLLM does.
+  Every other path requires general_settings.master_key. LiteLLM reads the key from six headers (Authorization as a Bearer token, API-Key, x-api-key, x-goog-api-key, Ocp-Apim-Subscription-Key and x-litellm-api-key), so betterlite reads the same six.
+  Auth runs before routing. A request with no key or a wrong key gets the same status and error body LiteLLM gives, and a request with the right key on a path betterlite does not serve yet gets the same 404 LiteLLM gives.
+  Errors use LiteLLM's JSON shape {"error": {"message", "type", "param", "code"}}. Logs are JSON lines on stderr through tracing, and SIGTERM or Ctrl-C drains in-flight requests and exits 0.
+  Add oracle cases for every auth path under tools/oracle/cases/auth/ and run them together with the liveliness case from B001.
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite/**
+    - crates/betterlite-server/**
+    - tools/oracle/cases/auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L707-L782
+    why: The --host, --port and --config flags and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4946-L4951
+    why: The six header names LiteLLM reads an API key from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L174-L204
+    why: How those headers are declared.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1960-L1980
+    why: The liveliness and liveness routes and their body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4345
+    why: ProxyException, the error object LiteLLM returns.
+  - url: https://docs.rs/axum/latest/axum/serve/struct.Serve.html#method.with_graceful_shutdown
+    why: Draining in-flight requests on shutdown.
+dod:
+  - text: The six key headers, a missing key, a wrong key and an unknown path with the right key all match LiteLLM on status and body.
+    proof: [oracle]
+  - text: /health/liveliness and /health/liveness answer without a key, as LiteLLM does.
+    proof: [oracle]
+  - text: --config is required, --host defaults to 0.0.0.0 and reads HOST, --port defaults to 4000 and reads PORT.
+    proof: [cli-flags]
+  - text: SIGTERM finishes in-flight requests and exits with code 0.
+    proof: [server-tests]
+  - text: Every stderr line is a JSON object with at least timestamp, level and message.
+    proof: [server-tests]
+  - text: Only the betterlite binary crate depends on betterlite-server, and deny.toml enforces it.
+    proof: [deny, layering]
+checks:
+  optional: []
+  commands:
+    - id: server-tests
+      why: the server or binary tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server -p betterlite --no-tests=fail
+    - id: cli-flags
+      why: the CLI flags, defaults or environment variables differ from LiteLLM's
+      run: |-
+        help="$(cargo run --locked --quiet -p betterlite -- --help)" && grep -q -- '--config' <<<"$help" && grep -qE -- '--host.*\[env: HOST=' <<<"$help" && grep -q 'default: 0.0.0.0' <<<"$help" && grep -qE -- '--port.*\[env: PORT=' <<<"$help" && grep -q 'default: 4000' <<<"$help"
+    - id: layering
+      why: deny.toml does not stop other crates from depending on betterlite-server
+      run: grep -qE 'crate = "betterlite-server", wrappers = \["betterlite"\]' deny.toml
+oracle_cases:
+  - tools/oracle/cases/health/liveliness.yaml
+  - tools/oracle/cases/auth/missing-key.yaml
+  - tools/oracle/cases/auth/wrong-key.yaml
+  - tools/oracle/cases/auth/unknown-route.yaml
+  - tools/oracle/cases/auth/header-authorization.yaml
+  - tools/oracle/cases/auth/header-api-key.yaml
+  - tools/oracle/cases/auth/header-x-api-key.yaml
+  - tools/oracle/cases/auth/header-x-goog-api-key.yaml
+  - tools/oracle/cases/auth/header-ocp-apim-subscription-key.yaml
+  - tools/oracle/cases/auth/header-x-litellm-api-key.yaml
+deviations:
+  - what: GET /health/readiness reports betterlite's own state instead of LiteLLM's database, cache and version fields.
+    why: betterlite has no database or cache yet, and copying LiteLLM's fields would report things that do not exist.
+out_of_scope:
+  - Any LLM route. With the right key, /v1/chat/completions is a 404 until B004.
+  - Virtual keys, teams and budgets.
+  - The x-litellm-* response headers. They arrive with the routes that send them, starting in B004.
+pitfalls:
+  - The header-* cases need a route both gateways serve with the right key. Use the unknown-route 404, since auth runs before routing in both.
+  - LiteLLM's error message text may name LiteLLM. If it does, ignore /error/message in that case with a why, and still compare type, param and code.
+  - clap's env feature reads HOST and PORT itself, so the code never calls std::env.
+  - Sending SIGTERM in a test means running kill -TERM <pid>; tests may spawn processes, gateway code may not.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite review",
+  "description": "A reviewer's final answer about one task branch. Every finding cites a rule from .development/rules.yaml.",
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "task": {
+      "description": "The task id, for example B004.",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/ReviewVerdict"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "verdict",
+    "findings"
+  ],
+  "$defs": {
+    "Finding": {
+      "type": "object",
+      "properties": {
+        "fix": {
+          "description": "The change that fixes it.",
+          "type": "string"
+        },
+        "location": {
+          "description": "path:line of the code the finding is about, path relative to the repository root.",
+          "type": "string"
+        },
+        "problem": {
+          "description": "What breaks the rule, in one or two sentences.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "A rule id from .development/rules.yaml whose reviewed flag is true.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "rule",
+        "location",
+        "problem",
+        "fix"
+      ]
+    },
+    "ReviewVerdict": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "changes"
+      ]
+    }
+  }
+}
