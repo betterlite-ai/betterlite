@@ -1,0 +1,109 @@
+name: gate
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+permissions: {}
+
+concurrency:
+  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
+    container:
+      image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Install system packages
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find the base and the task
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BRANCH: ${{ github.head_ref }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [[ $EVENT == merge_group ]]; then
+            base=$QUEUE_BASE
+            number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
+            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+          else
+            base=$(git rev-parse HEAD^1)
+            branch=$PR_BRANCH
+          fi
+          task=""
+          if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
+            task=${BASH_REMATCH[1]}
+          fi
+          echo "branch $branch, base $base, task ${task:-none}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "task=$task" >> "$GITHUB_OUTPUT"
+
+      - name: Add Rust components
+        run: rustup component add clippy rustfmt llvm-tools-preview
+
+      - name: Restore the cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            .development/gate -> target
+            . -> target
+
+      - name: Validate the specs
+        run: cargo gate validate
+
+      - name: Test and lint the gate
+        run: |
+          cargo fmt --check --manifest-path .development/gate/Cargo.toml
+          cargo clippy --locked --all-targets --manifest-path .development/gate/Cargo.toml -- -D warnings
+          cargo test --locked --manifest-path .development/gate/Cargo.toml
+
+      - name: Install the pinned tools
+        if: steps.find.outputs.task != ''
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
+
+      - name: Install the tools without prebuilt binaries
+        if: steps.find.outputs.task != ''
+        run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
+
+      - name: Run the task's checks
+        if: steps.find.outputs.task != '' && github.event_name == 'pull_request'
+        env:
+          GATE_BASE: ${{ steps.find.outputs.base }}
+          TASK: ${{ steps.find.outputs.task }}
+        run: cargo gate run "$TASK"
+
+      - name: Run the checks that hold for the merged result
+        if: steps.find.outputs.task != '' && github.event_name == 'merge_group'
+        env:
+          GATE_BASE: ${{ steps.find.outputs.base }}
+          TASK: ${{ steps.find.outputs.task }}
+        run: cargo gate run "$TASK" --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks
