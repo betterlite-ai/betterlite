@@ -1,6 +1,6 @@
 # .development
 
-This folder drives the agents that build betterlite, a Rust rewrite of LiteLLM's proxy under the MIT license. The work runs as a pyramid. The architect (the main session, with Max) owns the backlog and merges. A planner turns backlog entries into task files. Workers on cheaper models build one task each in their own worktree, and a reviewer from the other vendor reads every change the gate let through. The gate, a Rust CLI in gate/, decides what's done: every check is a command that exits 0 or doesn't, and every agent's final answer is JSON that must match its schema. LiteLLM 1.105.1 is the behavioral spec, and from B001 on an oracle harness runs it next to betterlite on the same requests.
+This folder drives the agents that build betterlite, a Rust rewrite of LiteLLM's proxy and Python SDK under the MIT license. The work runs as a pyramid. The architect (the main session, with Max) owns the backlog and merges. A planner turns backlog entries into task files. Workers on cheaper models build one task each in their own worktree, and a reviewer from the other vendor reads every change the gate let through. The gate, a Rust CLI in gate/, decides what's done: every check is a command that exits 0 or doesn't, and every agent's final answer is JSON that must match its schema. LiteLLM 1.105.1 is the behavioral spec, and from B001 on an oracle harness runs it next to betterlite on the same requests.
 
 ## The pyramid
 
@@ -50,6 +50,10 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: keys, spend and budgets (M4) reuse LiteLLM's Postgres schema, [schema.prisma](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma) at the pinned commit, so an existing LiteLLM database works with betterlite.
 - 2026-10-24: the LICENSE names Max Azatian as copyright holder.
 - 2026-10-24: the backlog covers every LiteLLM path outside the enterprise directory, and task ids run past B999 (B1000, B1001 and on) as the work needs.
+- 2026-10-24: LiteLLM's Enterprise license check is left out. betterlite has no paid tier, so every feature is on and nothing caps users or teams.
+- 2026-10-24: the admin UI is LiteLLM's MIT dashboard, kept, rebranded and served by betterlite (B144 to B150), not rewritten.
+- 2026-10-24: LiteLLM's Terraform provider and VS Code extension are not rewritten. B155 and B156 make them work against betterlite.
+- 2026-10-24: betterlite ships a Python package over the Rust core with LiteLLM's public API, used as `import betterlite as litellm`, and the proxy runs the Python callbacks and hooks config.yaml names (M12). The module is named betterlite because LiteLLM's name stays out of what betterlite ships.
 
 ## Writing a task
 
@@ -96,7 +100,7 @@ The oracle pins litellm[proxy] 1.105.1, released 2026-10-14 from [d665dc1a](http
 | Model price entries | 4460 | [model_prices_and_context_window.json](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json) |
 | Lines in proxy_server.py and router.py | 20,379 and 14,759 | [proxy_server.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py), [router.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py) |
 | Python lines in litellm/, without rust_bridge and the built UI | 884,838 | [litellm/](https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm) |
-| Paths the backlog accounts for | 6,464 | litellm-inventory.txt |
+| Paths the backlog accounts for | 6,684 | litellm-inventory.txt |
 
 The counts come from parsing those files at the pinned commit (json and ast for the Python, `wc -l` for line counts). The last row is why the file-size check exists.
 

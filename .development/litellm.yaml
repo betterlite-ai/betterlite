@@ -3,7 +3,7 @@ version: 1.105.1
 commit: d665dc1a6315847fcad6cc2c1264ceb47c06abce
 roots:
   - litellm/
-  - ui/litellm-dashboard/src/
+  - ui/
   - litellm-proxy-extras/litellm_proxy_extras/
   - schema.prisma
   - provider_endpoints_support.json
@@ -26,6 +26,10 @@ roots:
   - packaging/
   - terraform/
   - vscode-extension/
+  - pyproject.toml
+  - proxy_server_config.yaml
+  - prometheus.yml
+  - .env.example
 excluded:
   - glob: litellm/proxy/enterprise
     why: a symlink into LiteLLM's enterprise directory, which is not under the MIT license
@@ -34,7 +38,7 @@ excluded:
   - glob: litellm/proxy/_experimental/out/**
     why: the admin UI as built files, generated from ui/litellm-dashboard/src, which the backlog covers
   - glob: litellm/_lazy_imports.py
-    why: Python start-up plumbing that defers imports; a compiled binary has nothing to defer
+    why: Python start-up plumbing that defers LiteLLM's slow imports; betterlite's Python package is a thin native module with nothing slow to defer
   - glob: litellm/_lazy_imports_registry.py
     why: the table behind the Python lazy imports above
   - glob: litellm/proxy/_lazy_features.py
@@ -45,5 +49,5 @@ excluded:
     why: checks a LiteLLM Enterprise license key and the user and team limits it sets; betterlite has no paid tier, so every feature is on and nothing is counted
   - glob: litellm/proxy/auth/public_key.pem
     why: the key that verifies LiteLLM Enterprise licenses, used only by litellm_license.py
-  - glob: litellm/py.typed
-    why: marks the Python package as typed for Python type checkers
+  - glob: ui/litellm-dashboard/tsconfig.tsbuildinfo
+    why: TypeScript's incremental build cache, rewritten by every build
