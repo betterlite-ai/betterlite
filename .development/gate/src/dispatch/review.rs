@@ -32,7 +32,7 @@ fn step(attempt: &Attempt<'_>, answer: &Review) -> Step {
     match answer.verdict {
         ReviewVerdict::Approve => {
             let brief = attempt.brief;
-            let place = attempt.worktree.display();
+            let place = attempt.places.worktree.display();
             Step::Ready(vec![format!(
                 "{} is ready to merge: branch {} in {place}",
                 brief.task.id, brief.branch

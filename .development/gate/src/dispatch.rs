@@ -5,11 +5,13 @@ mod runner;
 mod seat;
 mod worktree;
 
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
 
 use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::resolve_base;
+use crate::git::common_dir;
 use crate::journal::journal_dir;
 use crate::spec::agents::{Agents, Rung, Runner};
 use crate::spec::backlog::Status;
@@ -31,11 +33,17 @@ struct Progress {
     review_rounds: u32,
 }
 
+pub(crate) struct Places<'run> {
+    pub(crate) worktree: &'run Path,
+    pub(crate) journal: &'run Path,
+    pub(crate) git_common_dir: &'run Path,
+    pub(crate) home: &'run Path,
+}
+
 pub(crate) struct Attempt<'run> {
     pub(crate) agents: &'run Agents,
     pub(crate) brief: &'run Brief<'run>,
-    pub(crate) worktree: &'run Path,
-    pub(crate) journal: &'run Path,
+    pub(crate) places: &'run Places<'run>,
     pub(crate) number: u32,
 }
 
@@ -91,19 +99,17 @@ fn ready_file<'backlog>(
 fn climb_rung(
     agents: &Agents,
     brief: &Brief<'_>,
-    places: (&Path, &Path),
+    places: &Places<'_>,
     rung: &Rung,
     progress: &mut Progress,
 ) -> Result<Option<Vec<String>>, GateError> {
     let runner = find_runner(agents, &rung.runner)?;
-    let (worktree, journal) = places;
     for _ in 0..rung.attempts {
         progress.number = progress.number.saturating_add(1);
         let current = Attempt {
             agents,
             brief,
-            worktree,
-            journal,
+            places,
             number: progress.number,
         };
         match attempt::attempt_once(&current, runner, rung, &progress.feedback)? {
@@ -132,8 +138,7 @@ fn climb_rung(
 fn run_ladder(
     agents: &Agents,
     brief: &Brief<'_>,
-    worktree: &Path,
-    journal: &Path,
+    places: &Places<'_>,
 ) -> Result<Vec<String>, GateError> {
     let mut progress = Progress {
         feedback: Vec::new(),
@@ -141,7 +146,7 @@ fn run_ladder(
         review_rounds: 0,
     };
     for rung in &agents.roles.worker.ladder {
-        if let Some(lines) = climb_rung(agents, brief, (worktree, journal), rung, &mut progress)? {
+        if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {
             return Ok(lines);
         }
     }
@@ -168,5 +173,18 @@ pub(crate) fn dispatch(development: &Development, task_id: &str) -> Result<Vec<S
         branch: &branch,
         base: &base,
     };
-    run_ladder(&agents, &brief, &worktree, &journal)
+    let git_common_dir = common_dir(&development.root)?;
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| GateError::Dispatch {
+            task: task_id.to_owned(),
+            reason: "HOME is not set, so the worker's cache folders are unknown".to_owned(),
+        })?;
+    let places = Places {
+        worktree: &worktree,
+        journal: &journal,
+        git_common_dir: &git_common_dir,
+        home: &home,
+    };
+    run_ladder(&agents, &brief, &places)
 }

@@ -1,14 +1,16 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub(crate) const PLACEHOLDERS: [&str; 7] = [
+pub(crate) const PLACEHOLDERS: [&str; 9] = [
     "model",
     "effort",
+    "schema_text",
     "worktree",
     "schema",
-    "schema_text",
     "output",
     "instructions",
+    "git_common_dir",
+    "home",
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -31,7 +33,7 @@ pub(crate) struct Agents {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
-    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output} and {instructions}."
+    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir} and {home}."
 )]
 pub(crate) struct Runner {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
