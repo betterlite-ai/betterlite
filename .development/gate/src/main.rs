@@ -1,6 +1,7 @@
 mod answer;
 mod builtins;
 mod checks;
+mod coverage;
 mod dependencies;
 mod development;
 mod dispatch;
@@ -9,6 +10,7 @@ mod facts;
 mod git;
 mod hook;
 mod ids;
+mod inventory;
 mod journal;
 mod process;
 mod report_check;
@@ -20,12 +22,15 @@ mod yaml;
 
 use std::env;
 use std::io::{self, Read as _, Write as _};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
 use crate::development::Development;
 use crate::error::GateError;
+use crate::spec::litellm::Litellm;
+use crate::yaml::read_yaml;
 
 #[derive(Parser)]
 #[command(
@@ -64,6 +69,14 @@ enum Command {
         about = "Run a task through the worker ladder and the reviewer until it is ready to merge or needs the architect"
     )]
     Dispatch { task: String },
+    #[command(
+        about = "Write .development/litellm-inventory.txt from a LiteLLM clone that has the pinned commit"
+    )]
+    Inventory { checkout: PathBuf },
+    #[command(
+        about = "Print how many LiteLLM paths each backlog entry covers, then every path nothing covers"
+    )]
+    Coverage,
 }
 
 fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, GateError> {
@@ -78,6 +91,27 @@ fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, Gate
         .into_iter()
         .map(|check| format!("{:16} {}", check.id, check.run));
     Ok(builtin.chain(commands).collect())
+}
+
+fn coverage_report(development: &Development) -> Result<(Vec<String>, bool), GateError> {
+    let folder = development.root.join(".development");
+    let litellm: Litellm = read_yaml(&folder.join("litellm.yaml"))?;
+    let measured = coverage::measure(&folder, &litellm, &development.backlog)?;
+    let mut lines: Vec<String> = measured
+        .entries
+        .iter()
+        .map(|(id, count)| format!("{id} {count}"))
+        .collect();
+    lines.extend(coverage::problems(&measured));
+    lines.extend(
+        measured
+            .uncovered
+            .iter()
+            .map(|path| format!("uncovered {path}")),
+    );
+    let passed =
+        measured.uncovered.is_empty() && measured.dead_globs.is_empty() && measured.stale.is_none();
+    Ok((lines, passed))
 }
 
 fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> {
@@ -95,7 +129,13 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
             })?;
         return Ok((hook::hook(&input)?, true));
     }
-    let development = Development::open(&directory)?;
+    run_command(command, &Development::open(&directory)?)
+}
+
+fn run_command(
+    command: Command,
+    development: &Development,
+) -> Result<(Vec<String>, bool), GateError> {
     match command {
         Command::Validate => {
             let problems = validate::validate(&development.root)?;
@@ -109,13 +149,17 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
                 passed,
             ))
         }
-        Command::List { task } => Ok((listing(&development, &task)?, true)),
+        Command::List { task } => Ok((listing(development, &task)?, true)),
         Command::Run { task, only } => {
-            let verdict = checks::run(&development, &development.task(&task)?, &only)?;
+            let verdict = checks::run(development, &development.task(&task)?, &only)?;
             Ok((verdict.lines, verdict.passed))
         }
         Command::Schema => Ok((schema::write(&development.root)?, true)),
-        Command::Dispatch { task } => Ok((dispatch::dispatch(&development, &task)?, true)),
+        Command::Dispatch { task } => Ok((dispatch::dispatch(development, &task)?, true)),
+        Command::Inventory { checkout } => {
+            Ok((inventory::write(&development.root, &checkout)?, true))
+        }
+        Command::Coverage => coverage_report(development),
         Command::Hook => Ok((Vec::new(), true)),
     }
 }

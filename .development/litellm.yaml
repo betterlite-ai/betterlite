@@ -1,0 +1,49 @@
+repository: https://github.com/BerriAI/litellm
+version: 1.105.1
+commit: d665dc1a6315847fcad6cc2c1264ceb47c06abce
+roots:
+  - litellm/
+  - ui/litellm-dashboard/src/
+  - litellm-proxy-extras/litellm_proxy_extras/
+  - schema.prisma
+  - provider_endpoints_support.json
+  - model_prices_and_context_window.json
+  - model_prices_and_context_window.schema.json
+  - policy_templates.json
+  - router_plugins.json
+  - mcp_servers.json
+  - whitelisted_bedrock_models.txt
+  - helm/
+  - docker/
+  - Dockerfile
+  - docker-compose.yml
+  - docker-compose.hardened.yml
+  - gateway/
+  - backend/
+  - migrations/
+  - db_scripts/
+  - deploy/
+  - packaging/
+  - terraform/
+  - vscode-extension/
+excluded:
+  - glob: litellm/proxy/enterprise
+    why: a symlink into LiteLLM's enterprise directory, which is not under the MIT license
+  - glob: litellm/rust_bridge/**
+    why: LiteLLM's bridge from Python into its own Rust port; betterlite is Rust from the start
+  - glob: litellm/proxy/_experimental/out/**
+    why: the admin UI as built files, generated from ui/litellm-dashboard/src, which the backlog covers
+  - glob: litellm/_lazy_imports.py
+    why: Python start-up plumbing that defers imports; a compiled binary has nothing to defer
+  - glob: litellm/_lazy_imports_registry.py
+    why: the table behind the Python lazy imports above
+  - glob: litellm/proxy/_lazy_features.py
+    why: the proxy's lazy-import table, Python start-up plumbing
+  - glob: litellm/proxy/_lazy_openapi_snapshot.py
+    why: a cached OpenAPI document that keeps Python start-up fast; betterlite generates its OpenAPI at build time
+  - glob: litellm/proxy/auth/litellm_license.py
+    why: checks a LiteLLM Enterprise license key and the user and team limits it sets; betterlite has no paid tier, so every feature is on and nothing is counted
+  - glob: litellm/proxy/auth/public_key.pem
+    why: the key that verifies LiteLLM Enterprise licenses, used only by litellm_license.py
+  - glob: litellm/py.typed
+    why: marks the Python package as typed for Python type checkers

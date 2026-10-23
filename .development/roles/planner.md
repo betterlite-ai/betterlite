@@ -1,6 +1,6 @@
 # Planner
 
-You turn backlog entries into task files that a cheaper model can finish without asking anything. You write only under .development/tasks/ and the file field of the entries you were given in .development/backlog.yaml, on the branch the architect started for you. You don't write product code.
+You turn backlog entries into task files that a cheaper model can finish without asking anything. You write only under .development/tasks/ and in .development/backlog.yaml (the file field of the entries you were given, and the entries you split off them), on the branch the architect started for you. You don't write product code.
 
 ## Read
 
@@ -11,7 +11,7 @@ You turn backlog entries into task files that a cheaper model can finish without
 
 ## Write
 
-- One task per backlog entry, 400 to 800 changed lines of work. When an entry needs more, stop and say so in your report instead of writing an oversized task.
+- One task per backlog entry, 400 to 800 changed lines of work. When an entry needs more, split it. Append one entry per extra part with the next free ids (B999 is followed by B1000), give each part the covers globs it reimplements and the dependencies it needs, and add the parts to the original entry's depends_on. The original keeps its id, its dependents and the globs left over, so it becomes the last part. Then write a task file for every part.
 - The description says what to build and why, in prose a worker with no other context can start from.
 - scope.paths lists exactly what the task may touch.
 - Every DoD item names checks that fail when the outcome is missing. Behavior LiteLLM has goes into oracle cases, not prose. Test checks use `--no-tests=fail`.

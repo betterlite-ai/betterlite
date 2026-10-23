@@ -73,9 +73,9 @@ deviations:
     why: Those headers describe LiteLLM's Python client, not the user's request.
     link: https://github.com/openai/openai-python
 out_of_scope:
-  - Streaming (B005), retries (B009), fallbacks and cooldowns (B010).
+  - Streaming (B005), retries (B017), fallbacks and cooldowns (B018).
   - Weighted deployment choice (B008).
-  - The x-litellm-response-cost and x-litellm-key-* headers, cost tracking and spend logs; they need spend tracking (B019) and virtual keys (B018).
+  - The x-litellm-response-cost and x-litellm-key-* headers, cost tracking and spend logs; they need spend tracking (B069) and virtual keys (B052).
   - Providers other than openai/.
 pitfalls:
   - Never seed the random source from a global. Tests pass a seeded one and the binary passes one seeded from the OS.

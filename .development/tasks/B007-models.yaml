@@ -34,7 +34,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - /model/info, /v2/model/info and /model_group/info.
-  - Filtering the list by virtual key permissions; virtual keys come in B018.
+  - Filtering the list by virtual key permissions; virtual keys come in B052.
 pitfalls:
   - LiteLLM fills created with a fixed or generated timestamp. If it changes per request, ignore its pointer in the case with a why.
 budget:

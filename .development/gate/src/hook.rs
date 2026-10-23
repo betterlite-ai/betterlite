@@ -35,8 +35,8 @@ struct Block<'reason> {
 
 pub(crate) fn task_from_branch(branch: &str) -> Option<&str> {
     let rest = branch.strip_prefix("task/")?;
-    let (id, tail) = rest.split_at_checked(4)?;
-    (task_id_problem(id).is_none() && (tail.is_empty() || tail.starts_with('-'))).then_some(id)
+    let id = rest.split_once('-').map_or(rest, |(id, _)| id);
+    task_id_problem(id).is_none().then_some(id)
 }
 
 fn block(reason: &str) -> Result<Vec<String>, GateError> {

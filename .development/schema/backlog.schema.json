@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "betterlite backlog",
-  "description": "Every task, its status and its dependencies. Only the architect edits it, on main.",
+  "description": "Every task, its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it.",
   "type": "object",
   "properties": {
     "tasks": {
@@ -19,11 +19,18 @@
     "BacklogEntry": {
       "type": "object",
       "properties": {
+        "covers": {
+          "description": "Globs over the LiteLLM paths in litellm-inventory.txt whose behavior this entry reimplements. Empty for work betterlite needs that LiteLLM has no file for.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "depends_on": {
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^B[0-9]{3}$"
+            "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
           }
         },
         "file": {
@@ -35,7 +42,7 @@
         },
         "id": {
           "type": "string",
-          "pattern": "^B[0-9]{3}$"
+          "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
         },
         "milestone": {
           "type": "string",
@@ -55,7 +62,8 @@
         "milestone",
         "title",
         "status",
-        "depends_on"
+        "depends_on",
+        "covers"
       ]
     },
     "Status": {
