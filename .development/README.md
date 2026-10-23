@@ -37,6 +37,8 @@ Every path in the inventory has to be accounted for: a backlog entry's covers gl
 
 The code lives at https://github.com/betterlite-ai/betterlite, a public repository in an org whose only member is Max. Every change reaches main through a pull request and the merge queue, with rebase merges only, auto-merge on, and branches deleted after merge. Commits use the no-reply address 66359507+HardMax71@users.noreply.github.com, set in this clone's git config.
 
+Every pull request runs the gate check from .github/workflows/gate.yml in a Debian 13 container with Rust 1.98.0, the same versions checks.yaml pins. It validates the specs and tests the gate, and on a task branch it also runs `cargo gate run <ID>` against the merge base. The merge queue runs it again on the merged result, with only the checks that don't depend on a base (fmt, clippy, tests, doctests, deny, shear, hooks), since a queued group also holds the PRs ahead of it.
+
 On a fresh clone: open the folder in Claude Code and accept the workspace trust dialog, so the worker agents' Stop hook runs, then run `cargo gate validate`. The dispatcher passes Codex `--dangerously-bypass-hook-trust`, since the only hook it runs is .codex/hooks.json from this repository.
 
 ## Decisions
