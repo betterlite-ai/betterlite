@@ -33,7 +33,7 @@
     "id": {
       "description": "Same id as the task's backlog entry.",
       "type": "string",
-      "pattern": "^B[0-9]{3}$"
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
     },
     "oracle_cases": {
       "description": "Oracle case files (paths from the repository root) whose LiteLLM and betterlite outputs must match. A non-empty list adds the oracle check.",

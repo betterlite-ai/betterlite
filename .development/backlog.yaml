@@ -5,141 +5,1689 @@ tasks:
     status: todo
     depends_on: []
     file: tasks/B000-workspace.yaml
+    covers: []
   - id: B001
     milestone: M0 foundation
     title: Oracle harness against the pinned LiteLLM
     status: todo
     depends_on: [B000]
     file: tasks/B001-oracle.yaml
+    covers: []
   - id: B002
     milestone: M0 foundation
     title: Load LiteLLM config.yaml into typed config
     status: todo
     depends_on: [B000]
     file: tasks/B002-config.yaml
+    covers:
+      - "litellm/proxy/example_config_yaml/**"
   - id: B003
     milestone: M0 foundation
     title: HTTP server, health routes and master key auth
     status: todo
     depends_on: [B001, B002]
     file: tasks/B003-server.yaml
+    covers:
+      - "litellm/proxy/shutdown/**"
+      - "litellm/proxy/common_utils/{openai_error_payload,validation_error_body}.py"
   - id: B004
     milestone: M1 openai data plane
     title: OpenAI chat completions without streaming
     status: todo
     depends_on: [B003]
     file: tasks/B004-openai-chat.yaml
+    covers:
+      - "litellm/chat_completions/**"
+      - "litellm/proxy/{route_llm_request,common_request_processing}.py"
+      - "litellm/llms/openai/{openai,common_utils}.py"
+      - "litellm/llms/openai/chat/**"
+      - "litellm/litellm_core_utils/llm_response_utils/**"
+      - "litellm/litellm_core_utils/{response_header_helpers,model_response_utils}.py"
+      - "litellm/types/llms/openai.py"
   - id: B005
     milestone: M1 openai data plane
     title: Streaming chat completions
     status: todo
     depends_on: [B004]
     file: tasks/B005-chat-streaming.yaml
+    covers:
+      - "litellm/litellm_core_utils/{streaming_handler,streaming_chunk_builder_utils,json_fragment_accumulator}.py"
+      - "litellm/proxy/common_utils/sse_keepalive.py"
+      - "litellm/types/litellm_core_utils/**"
   - id: B006
     milestone: M1 openai data plane
     title: OpenAI embeddings
     status: todo
     depends_on: [B004]
     file: tasks/B006-embeddings.yaml
+    covers:
+      - "litellm/embeddings/**"
+      - "litellm/llms/openai/embeddings/**"
+      - "litellm/llms/base_llm/embedding/**"
+      - "litellm/types/embedding.py"
   - id: B007
     milestone: M1 openai data plane
     title: Model list
     status: todo
     depends_on: [B003]
     file: tasks/B007-models.yaml
+    covers:
+      - "litellm/proxy/list_api/**"
+      - "litellm/proxy/common_utils/model_listing_utils.py"
+      - "litellm/types/proxy/model_listing.py"
   - id: B008
     milestone: M2 routing
     title: Load balancing across deployments of one model
     status: todo
     depends_on: [B004]
     file: tasks/B008-load-balancing.yaml
+    covers:
+      - "litellm/router_strategy/simple_shuffle.py"
+      - "litellm/types/router_weights.py"
   - id: B009
-    milestone: M2 routing
-    title: Retries and timeouts
-    status: todo
-    depends_on: [B008]
-    file: null
-  - id: B010
-    milestone: M2 routing
-    title: Fallbacks and cooldowns
-    status: todo
-    depends_on: [B009]
-    file: null
-  - id: B011
-    milestone: M3 providers
-    title: Anthropic through chat completions
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B012
-    milestone: M3 providers
-    title: Anthropic Messages API
-    status: todo
-    depends_on: [B011]
-    file: null
-  - id: B013
-    milestone: M3 providers
-    title: Azure OpenAI
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B014
-    milestone: M3 providers
-    title: Bedrock Converse
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B015
-    milestone: M3 providers
-    title: Vertex AI and Gemini
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B016
-    milestone: M3 providers
-    title: OpenAI-compatible hosts
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B017
-    milestone: M3 providers
-    title: Responses API
-    status: todo
-    depends_on: [B005]
-    file: null
-  - id: B018
-    milestone: M4 proxy features
-    title: Virtual keys
-    status: todo
-    depends_on: [B003]
-    file: null
-  - id: B019
-    milestone: M4 proxy features
-    title: Spend tracking and cost
-    status: todo
-    depends_on: [B018]
-    file: null
-  - id: B020
-    milestone: M4 proxy features
-    title: Budgets and rate limits
-    status: todo
-    depends_on: [B019]
-    file: null
-  - id: B021
-    milestone: M4 proxy features
-    title: Response caching
-    status: todo
-    depends_on: [B008]
-    file: null
-  - id: B022
-    milestone: M4 proxy features
-    title: OpenTelemetry logging
+    milestone: M1 openai data plane
+    title: Outbound HTTP clients, proxies, TLS and connection reuse for every provider
     status: todo
     depends_on: [B004]
     file: null
-  - id: B023
-    milestone: M4 proxy features
-    title: Admin API for keys
+    covers:
+      - "litellm/llms/custom_httpx/**"
+      - "litellm/llms/aiohttp_openai/**"
+      - "litellm/types/llms/custom_http.py"
+      - "litellm/litellm_core_utils/url_utils.py"
+  - id: B010
+    milestone: M1 openai data plane
+    title: Provider framework, provider resolution and parameter mapping
     status: todo
-    depends_on: [B018]
+    depends_on: [B005, B009]
     file: null
+    covers:
+      - "litellm/llms/{__init__,base,README}.*"
+      - "litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py"
+      - "litellm/llms/base_llm/{chat,bridges}/**"
+      - "litellm/litellm_core_utils/{get_llm_provider_logic,get_supported_openai_params,get_provider_specific_headers,model_param_helper,get_litellm_params,llm_request_utils,provider_affinity,reasoning_effort_utils,service_tier_utils,dot_notation_indexing}.py"
+      - "litellm/litellm_core_utils/prompt_templates/**"
+      - "litellm/types/llms/base.py"
+  - id: B011
+    milestone: M1 openai data plane
+    title: Exception types and provider error mapping
+    status: todo
+    depends_on: [B004]
+    file: null
+    covers:
+      - "litellm/exceptions.py"
+      - "litellm/litellm_core_utils/{exception_mapping_utils,error_normalization}.py"
+      - "litellm/proxy/common_utils/error_body_call_id.py"
+  - id: B012
+    milestone: M1 openai data plane
+    title: Logging pipeline, callback registry and redaction
+    status: todo
+    depends_on: [B004]
+    file: null
+    covers:
+      - "litellm/_logging.py"
+      - "litellm/_service_logger.py"
+      - "litellm/types/services.py"
+      - "litellm/litellm_core_utils/{litellm_logging,logging_utils,logging_worker,logging_callback_manager,custom_logger_registry,initialize_dynamic_callback_params,redact_messages,secret_redaction,sensitive_data_masker,sentry_scrubbing,safe_json_dumps,safe_json_loads,private_json,classifier_logging,internal_call_metadata,served_output_texts}.py"
+      - "litellm/litellm_core_utils/README.md"
+      - "litellm/integrations/{__init__,custom_logger,custom_batch_logger,additional_logging_utils,batch_utils,mock_client_factory,test_httpx}.py"
+      - "litellm/integrations/*_mock_client.py"
+      - "litellm/integrations/{Readme.md,callback_configs.json}"
+      - "litellm/integrations/_types/**"
+      - "litellm/types/integrations/{custom_logger,base_health_check}.py"
+      - "litellm/proxy/common_utils/{callback_utils,callback_config_validation}.py"
+  - id: B013
+    milestone: M1 openai data plane
+    title: Model cost map, provider capability data and token counting
+    status: todo
+    depends_on: [B004]
+    file: null
+    covers:
+      - "model_prices_and_context_window.json"
+      - "model_prices_and_context_window.schema.json"
+      - "provider_endpoints_support.json"
+      - "litellm/{model_prices_and_context_window_backup,provider_endpoints_support_backup}.json"
+      - "litellm/litellm_core_utils/{get_model_cost_map,token_counter,tokenizer,default_encoding}.py"
+      - "litellm/litellm_core_utils/tokenizers/**"
+  - id: B014
+    milestone: M1 openai data plane
+    title: Call dispatch across providers and call types, shared settings and helpers
+    status: todo
+    depends_on: [B010, B011, B012]
+    file: null
+    covers:
+      - "litellm/{__init__,main,utils,constants,_uuid,_version,_internal_context}.py"
+      - "litellm/batch_completion/**"
+      - "litellm/types/{utils,completion,adapter}.py"
+      - "litellm/litellm_core_utils/{api_route_to_call_types,asyncify,cached_imports,coroutine_checker,core_helpers,duration_parser,env_utils,mock_functions,rules,json_validation_rule,thread_pool_executor,aws_partition}.py"
+  - id: B015
+    milestone: M1 openai data plane
+    title: Text completions and moderations
+    status: todo
+    depends_on: [B010]
+    file: null
+    covers:
+      - "litellm/llms/openai/completion/**"
+      - "litellm/llms/base_llm/completion/**"
+  - id: B016
+    milestone: M2 routing
+    title: Router core, deployment clients and router callbacks
+    status: todo
+    depends_on: [B008, B010]
+    file: null
+    covers:
+      - "litellm/router.py"
+      - "litellm/types/router.py"
+      - "litellm/router_strategy/base_routing_strategy.py"
+      - "litellm/router_utils/{common_utils,client_initalization_utils,clientside_credential_handler,handle_error,pattern_match_deployments,response_headers,add_retry_fallback_headers,routing_read_batch}.py"
+      - "litellm/router_utils/router_callbacks/**"
+  - id: B017
+    milestone: M2 routing
+    title: Retries, retry policies and timeouts
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/timeout.py"
+      - "litellm/router_utils/get_retry_from_policy.py"
+      - "litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py"
+  - id: B018
+    milestone: M2 routing
+    title: Fallbacks, cooldowns and deployment health state
+    status: todo
+    depends_on: [B017]
+    file: null
+    covers:
+      - "litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py"
+      - "litellm/litellm_core_utils/{fallback_utils,fallback_generalizations}.py"
+      - "litellm/proxy/management_endpoints/fallback_management_endpoints.py"
+  - id: B019
+    milestone: M2 routing
+    title: Latency, cost, usage and least-busy routing strategies
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py"
+      - "litellm/router_utils/pre_call_checks/{model_rate_limit_check,io_token_rate_limit_check}.py"
+  - id: B020
+    milestone: M2 routing
+    title: Tag, budget, access window and affinity routing
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/router_strategy/{tag_based_routing,budget_limiter}.py"
+      - "litellm/router_utils/{access_windows,routing_groups,prompt_caching_cache,reasoning_effort_capability}.py"
+      - "litellm/router_utils/pre_call_checks/{deployment_affinity_check,prompt_caching_deployment_check}.py"
+      - "litellm/caching/affinity_cache.py"
+  - id: B021
+    milestone: M2 routing
+    title: Auto, complexity, adaptive and quality routers
+    status: todo
+    depends_on: [B019]
+    file: null
+    covers:
+      - "router_plugins.json"
+      - "litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**"
+      - "litellm/router_strategy/{lar1_routing,savings_baseline}.py"
+      - "litellm/types/lar1.py"
+      - "litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py"
+      - "litellm/proxy/hooks/autorouter_baseline_cache.py"
+      - "litellm/proxy/auth/auto_router_checks.py"
+      - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
+      - "litellm/types/management_endpoints/auto_router_endpoints.py"
+      - "litellm/proxy/management_helpers/auto_router_*.py"
+      - "litellm/proxy/db/autorouter_session_rollup.py"
+      - "litellm/models/autorouter_session.py"
+      - "litellm/repositories/autorouter_session_repository.py"
+      - "litellm/proxy/public_endpoints/autorouter_presets.json"
+      - "docker/install_auto_router.sh"
+  - id: B022
+    milestone: M2 routing
+    title: Request scheduler, priorities and admission control
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/scheduler.py"
+      - "litellm/types/scheduler.py"
+      - "litellm/proxy/route_priority.py"
+      - "litellm/integrations/adaptive_concurrency.py"
+      - "litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py"
+  - id: B023
+    milestone: M2 routing
+    title: Router settings and weights API
+    status: todo
+    depends_on: [B016, B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{router_settings_endpoints,router_weights}.py"
+      - "litellm/types/management_endpoints/router_settings_endpoints.py"
+  - id: B024
+    milestone: M3 providers
+    title: OpenAI provider, every remaining endpoint
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/openai/**"
+  - id: B025
+    milestone: M3 providers
+    title: Azure OpenAI
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/azure/**"
+      - "litellm/types/llms/azure.py"
+      - "litellm/secret_managers/get_azure_ad_token_provider.py"
+      - "litellm/types/secret_managers/get_azure_ad_token_provider.py"
+  - id: B026
+    milestone: M3 providers
+    title: Azure AI Foundry
+    status: todo
+    depends_on: [B025]
+    file: null
+    covers:
+      - "litellm/llms/azure_ai/**"
+      - "litellm/types/llms/azure_ai.py"
+  - id: B027
+    milestone: M3 providers
+    title: Anthropic provider
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/anthropic/*.py"
+      - "litellm/llms/anthropic/{batches,chat,completion,count_tokens,files}/**"
+      - "litellm/types/llms/{anthropic,anthropic_tool_search}.py"
+  - id: B028
+    milestone: M3 providers
+    title: Bedrock chat through Converse and Invoke, and Bedrock Messages
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "whitelisted_bedrock_models.txt"
+      - "litellm/llms/bedrock/*.py"
+      - "litellm/llms/bedrock/{chat,messages}/**"
+      - "litellm/llms/{bedrock_mantle,amazon_nova}/**"
+      - "litellm/types/llms/bedrock.py"
+  - id: B029
+    milestone: M3 providers
+    title: Bedrock embeddings, images, rerank, token counting and transcription
+    status: todo
+    depends_on: [B028]
+    file: null
+    covers:
+      - "litellm/llms/bedrock/{embed,image_generation,image_edit,rerank,count_tokens,audio_transcription}/**"
+  - id: B030
+    milestone: M3 providers
+    title: Bedrock batches, files, realtime, responses, agents, passthrough, search and vector stores
+    status: todo
+    depends_on: [B028]
+    file: null
+    covers:
+      - "litellm/llms/bedrock/{batches,files,realtime,responses,claude_platform,passthrough,search,vector_stores}/**"
+      - "litellm/types/llms/{bedrock_agentcore,bedrock_invoke_agents}.py"
+  - id: B031
+    milestone: M3 providers
+    title: Vertex AI Gemini, context caching and token counting
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/vertex_ai/*.py"
+      - "litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B032
+    milestone: M3 providers
+    title: Vertex AI partner models, Gemma and Model Garden
+    status: todo
+    depends_on: [B031]
+    file: null
+    covers:
+      - "litellm/llms/vertex_ai/{vertex_ai_partner_models,vertex_gemma_models,vertex_model_garden}/**"
+      - "litellm/types/llms/vertex_ai_gemma.py"
+  - id: B033
+    milestone: M3 providers
+    title: Vertex AI embeddings, images, speech, transcription, video, realtime and rerank
+    status: todo
+    depends_on: [B031]
+    file: null
+    covers:
+      - "litellm/llms/vertex_ai/{gemini_embeddings,multimodal_embeddings,vertex_embeddings,image_generation,image_edit,text_to_speech,audio_transcription,videos,realtime,rerank}/**"
+      - "litellm/types/llms/{vertex_ai_speech_to_text,vertex_ai_text_to_speech,vertex_ai_gemini_transcription}.py"
+  - id: B034
+    milestone: M3 providers
+    title: Vertex AI batches, files, fine-tuning, RAG engine, agent engine, vector stores and GenAI
+    status: todo
+    depends_on: [B031]
+    file: null
+    covers:
+      - "litellm/llms/vertex_ai/{batches,files,fine_tuning,rag_engine,agent_engine,vector_stores,google_genai,interactions}/**"
+  - id: B035
+    milestone: M3 providers
+    title: Gemini through Google AI Studio
+    status: todo
+    depends_on: [B031]
+    file: null
+    covers:
+      - "litellm/llms/gemini/**"
+      - "litellm/types/llms/{gemini,gemini_audio_transcription}.py"
+  - id: B036
+    milestone: M3 providers
+    title: xAI, Mistral and Codestral
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/{xai,mistral,codestral}/**"
+      - "litellm/types/llms/{xai,mistral}.py"
+  - id: B037
+    milestone: M3 providers
+    title: Cohere, Voyage, Jina and Infinity
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
+      - "litellm/types/llms/{cohere,rerank}.py"
+  - id: B038
+    milestone: M3 providers
+    title: JSON-configured OpenAI-compatible providers, A to L
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/openai_like/**"
+      - "litellm/llms/{aiml,baseten,bytez,cerebras,clarifai,cometapi,compactifai,datarobot,deepinfra,deepseek,empower,featherless_ai,friendliai,galadriel,gdc,github,gradient_ai,heroku,hyperbolic,inception,lambda_ai}/**"
+      - "litellm/types/llms/aiml.py"
+  - id: B039
+    milestone: M3 providers
+    title: JSON-configured OpenAI-compatible providers, M to Z
+    status: todo
+    depends_on: [B038]
+    file: null
+    covers:
+      - "litellm/llms/maritalk.py"
+      - "litellm/llms/{meta,meta_llama,moonshot,morph,nadir,nebius,novita,nscale,ovhcloud,sail,sambanova,scaleway,v0,wandb,zai}/**"
+      - "litellm/types/llms/meta.py"
+  - id: B040
+    milestone: M3 providers
+    title: Self-hosted inference servers
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
+      - "litellm/types/llms/{ollama,triton}.py"
+  - id: B041
+    milestone: M3 providers
+    title: Aggregators and hosted inference platforms
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
+      - "litellm/types/llms/openrouter.py"
+  - id: B042
+    milestone: M3 providers
+    title: Cloud ML platforms
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
+      - "litellm/types/llms/{databricks,watsonx,oci}.py"
+  - id: B043
+    milestone: M3 providers
+    title: Regional hosts and other native APIs
+    status: todo
+    depends_on: [B010, B011]
+    file: null
+    covers:
+      - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"
+  - id: B044
+    milestone: M3 providers
+    title: litellm_proxy provider, custom providers and deprecated providers
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/custom_llm.py"
+      - "litellm/llms/{litellm_proxy,deprecated_providers}/**"
+      - "litellm/types/llms/custom_llm.py"
+  - id: B045
+    milestone: M3 providers
+    title: Subscription-backed providers, ChatGPT and GitHub Copilot
+    status: todo
+    depends_on: [B024]
+    file: null
+    covers:
+      - "litellm/llms/{chatgpt,github_copilot}/**"
+  - id: B046
+    milestone: M3 providers
+    title: Image and video generation providers
+    status: todo
+    depends_on: [B082, B093]
+    file: null
+    covers:
+      - "litellm/llms/{black_forest_labs,fal_ai,recraft,stability,runwayml,topaz}/**"
+      - "litellm/types/llms/{recraft,stability}.py"
+  - id: B047
+    milestone: M3 providers
+    title: Speech and transcription providers
+    status: todo
+    depends_on: [B083]
+    file: null
+    covers:
+      - "litellm/llms/{elevenlabs,deepgram,aws_polly,nvidia_riva,soniox}/**"
+  - id: B048
+    milestone: M3 providers
+    title: Web search and crawl providers
+    status: todo
+    depends_on: [B091]
+    file: null
+    covers:
+      - "litellm/llms/{apiserpent,brave,dataforseo,duckduckgo,exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"
+  - id: B049
+    milestone: M3 providers
+    title: Vector store, RAG and OCR providers
+    status: todo
+    depends_on: [B090, B092]
+    file: null
+    covers:
+      - "litellm/llms/{milvus,mongodb,pg_vector,s3_vectors,valkey,ragflow,reducto}/**"
+  - id: B050
+    milestone: M3 providers
+    title: Agent platform providers
+    status: todo
+    depends_on: [B142]
+    file: null
+    covers:
+      - "litellm/llms/{a2a,langflow,langgraph,manus}/**"
+      - "litellm/types/llms/langgraph.py"
+  - id: B051
+    milestone: M4 keys, spend and management
+    title: Postgres schema, migrations and data access
+    status: todo
+    depends_on: [B003]
+    file: null
+    covers:
+      - "schema.prisma"
+      - "litellm/proxy/schema.prisma"
+      - "litellm-proxy-extras/**"
+      - "migrations/**"
+      - "db_scripts/**"
+      - "litellm/proxy/prisma_migration.py"
+      - "litellm/proxy/db/{base_client,prisma_client,check_migration,create_views,db_url_settings,pgbouncer,query_engine_reaper,routing_prisma_wrapper,log_db_metrics,exception_handler,db_lookup_gate,master_key_migration,proxy_worker_heartbeat,dynamo_db,token_auth}.py"
+      - "litellm/proxy/auth/rds_iam_token.py"
+      - "litellm/models/**"
+      - "litellm/repositories/**"
+      - "litellm/types/repositories/**"
+  - id: B052
+    milestone: M4 keys, spend and management
+    title: Virtual key auth, roles, route and model access checks
+    status: todo
+    depends_on: [B051]
+    file: null
+    covers:
+      - "litellm/proxy/auth/{user_api_key_auth,auth_checks,auth_checks_organization,auth_utils,auth_method,auth_object_prefetch,auth_exception_handler,model_checks,route_checks,roles,network,ip_address_utils,trusted_proxy_utils,model_access_denied,fallback_model_access,team_grants,master_key_boot_check}.py"
+      - "litellm/proxy/auth/resolvers/**"
+      - "litellm/types/proxy/auth/**"
+      - "litellm/proxy/common_utils/{user_api_key_cache,auth_cache_invalidation_pubsub}.py"
+  - id: B053
+    milestone: M4 keys, spend and management
+    title: JWT, OIDC and OAuth2 auth
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/auth/{handle_jwt,oauth2_check,oauth2_proxy_hook}.py"
+      - "litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py"
+      - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"
+  - id: B054
+    milestone: M4 keys, spend and management
+    title: Custom auth and validation hooks
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/{custom_auth_auto,custom_validate}.py"
+  - id: B055
+    milestone: M4 keys, spend and management
+    title: Key management API and key rotation
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+      - "litellm/proxy/common_utils/key_rotation_manager.py"
+      - "litellm/proxy/hooks/key_management_event_hooks.py"
+      - "litellm/proxy/management_helpers/key_settings_audit.py"
+      - "litellm/types/proxy/management_endpoints/key_management_endpoints.py"
+  - id: B056
+    milestone: M4 keys, spend and management
+    title: Users, invitations, login, sessions and passwords
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{internal_user_endpoints,password_endpoints,session_endpoints}.py"
+      - "litellm/proxy/auth/{login_utils,login_throttle,password_policy}.py"
+      - "litellm/proxy/management_helpers/{bulk_user_creation,bulk_user_deletion,user_invitation}.py"
+      - "litellm/proxy/hooks/user_management_event_hooks.py"
+      - "litellm/proxy/management/users/**"
+      - "litellm/proxy/common_utils/html_forms/{ui_login,default_credentials_hint}.py"
+      - "litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py"
+      - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
+  - id: B057
+    milestone: M4 keys, spend and management
+    title: Teams, team members and team callbacks
+    status: todo
+    depends_on: [B056]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{team_endpoints,team_callback_endpoints,team_admin_field_permissions}.py"
+      - "litellm/proxy/management/__init__.py"
+      - "litellm/proxy/management/teams/**"
+      - "litellm/proxy/management_helpers/{team_member_permission_checks,team_metadata_validation,bulk_team_member_budgets}.py"
+      - "litellm/types/proxy/management_endpoints/team_endpoints.py"
+  - id: B058
+    milestone: M4 keys, spend and management
+    title: Organizations, projects, access groups and object permissions
+    status: todo
+    depends_on: [B057]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{organization_endpoints,access_group_endpoints,model_access_group_management_endpoints}.py"
+      - "litellm/proxy/management_helpers/{access_group_key_sync,access_group_model_sync,access_group_team_sync,object_permission_utils}.py"
+      - "litellm/types/{access_group,object_permission}.py"
+      - "litellm/types/proxy/model_access_group_budget.py"
+  - id: B059
+    milestone: M4 keys, spend and management
+    title: Customers and budget management API
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{customer_endpoints,budget_management_endpoints}.py"
+      - "litellm/types/proxy/management_endpoints/customer_endpoints.py"
+  - id: B060
+    milestone: M4 keys, spend and management
+    title: Model management API, model info and deprecations
+    status: todo
+    depends_on: [B052, B016]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/model_management_endpoints.py"
+      - "litellm/proxy/management_helpers/model_allowlist_rename_sync.py"
+      - "litellm/proxy/common_utils/{model_deprecation,discoverable_model_filter,healthy_model_filter}.py"
+      - "litellm/types/proxy/model_deprecation.py"
+      - "litellm/types/proxy/management_endpoints/model_management_endpoints.py"
+  - id: B061
+    milestone: M4 keys, spend and management
+    title: Stored credentials and their encryption
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/credential_endpoints/**"
+      - "litellm/proxy/management_endpoints/credential_migration.py"
+      - "litellm/litellm_core_utils/{app_crypto,credential_accessor}.py"
+      - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
+  - id: B062
+    milestone: M4 keys, spend and management
+    title: Tags and tools management API
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{tag_management_endpoints,tool_management_endpoints}.py"
+      - "litellm/types/{tag_management,tool_management}.py"
+  - id: B063
+    milestone: M4 keys, spend and management
+    title: SSO through OAuth providers, Microsoft and SAML
+    status: todo
+    depends_on: [B056]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{ui_sso,sso_helper_utils}.py"
+      - "litellm/proxy/management_endpoints/sso/**"
+      - "litellm/proxy/custom_sso.py"
+      - "litellm/proxy/custom_hooks/**"
+      - "litellm/integrations/custom_sso_handler.py"
+      - "litellm/types/proxy/management_endpoints/ui_sso.py"
+      - "litellm/types/proxy/ui_sso.py"
+      - "litellm/proxy/common_utils/html_forms/{cli_sso_success,native_client_consent}.py"
+  - id: B064
+    milestone: M4 keys, spend and management
+    title: SCIM v2 provisioning
+    status: todo
+    depends_on: [B057]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/scim/**"
+      - "litellm/types/proxy/management_endpoints/scim_v2.py"
+  - id: B065
+    milestone: M4 keys, spend and management
+    title: Audit logs
+    status: todo
+    depends_on: [B055]
+    file: null
+    covers:
+      - "litellm/proxy/management_helpers/{audit_logs,utils,resource_display_names}.py"
+  - id: B066
+    milestone: M4 keys, spend and management
+    title: Settings, config overrides, callbacks and compliance API
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{config_override_endpoints,callback_management_endpoints,cost_tracking_settings,compliance_endpoints,coordination_redis_endpoints,common_utils,types}.py"
+      - "litellm/types/management_endpoints/{__init__,coordination_redis_endpoints}.py"
+      - "litellm/proxy/compliance_checks.py"
+      - "litellm/proxy/ui_crud_endpoints/**"
+      - "litellm/types/proxy/compliance_endpoints.py"
+      - "litellm/types/proxy/management_endpoints/config_overrides.py"
+  - id: B067
+    milestone: M4 keys, spend and management
+    title: Management API v1
+    status: todo
+    depends_on: [B057, B059]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/management_v1/**"
+      - "litellm/types/proxy/management_endpoints/management_v1.py"
+  - id: B068
+    milestone: M4 keys, spend and management
+    title: Cost calculation for every call type
+    status: todo
+    depends_on: [B013, B014]
+    file: null
+    covers:
+      - "litellm/cost_calculator.py"
+      - "litellm/cost.json"
+      - "litellm/litellm_core_utils/llm_cost_calc/**"
+      - "litellm/litellm_core_utils/ptu_pricing.py"
+      - "litellm/proxy/spend_tracking/{ptu_feature_flag,ptu_flat_cost_rollup,savings,compression_savings,baseline_accounting,input_tokens}.py"
+      - "litellm/proxy/db/baseline_accounting.py"
+  - id: B069
+    milestone: M4 keys, spend and management
+    title: Spend tracking and spend logs
+    status: todo
+    depends_on: [B068, B052]
+    file: null
+    covers:
+      - "litellm/proxy/spend_tracking/{spend_tracking_utils,spend_management_endpoints,spend_event,spend_event_producer,spend_log_error_logger,spend_capture_rate,key_metadata_recovery,cold_storage_handler}.py"
+      - "litellm/proxy/hooks/proxy_track_cost_callback.py"
+      - "litellm/proxy/logging_endpoints/**"
+      - "litellm/proxy/collector.py"
+      - "litellm/types/proxy/{spend_capture_rate,callback_logs_endpoints}.py"
+  - id: B070
+    milestone: M4 keys, spend and management
+    title: Spend write queues, daily rollups and spend log partitions
+    status: todo
+    depends_on: [B069]
+    file: null
+    covers:
+      - "litellm/proxy/db/db_transaction_queue/**"
+      - "litellm/proxy/db/{db_spend_update_writer,daily_spend_bulk_upsert,spend_log_batching,spend_log_tool_index,spend_counter_reseed,model_usage_rollup,tool_registry_writer,budget_window_spend_writer}.py"
+      - "litellm/proxy/spend_tracking/spend_counter_batch.py"
+  - id: B071
+    milestone: M4 keys, spend and management
+    title: Budgets, budget resets and reservations
+    status: todo
+    depends_on: [B069]
+    file: null
+    covers:
+      - "litellm/budget_manager.py"
+      - "litellm/proxy/common_utils/reset_budget_job.py"
+      - "litellm/proxy/spend_tracking/{budget_reservation,carried_budget_state}.py"
+      - "litellm/proxy/middleware/budget_reservation_release_middleware.py"
+      - "litellm/proxy/hooks/{max_budget_per_session_limiter,model_max_budget_limiter}.py"
+      - "litellm/proxy/auth/{budget_throttle,fallback_budget}.py"
+      - "litellm/types/proxy/carried_budget_state.py"
+  - id: B072
+    milestone: M4 keys, spend and management
+    title: Rate limits, parallel request limits and dynamic limits
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/hooks/{parallel_request_limiter,parallel_request_limiter_v3,dynamic_rate_limiter,dynamic_rate_limiter_v3,rate_limiter_utils,max_iterations_limiter}.py"
+      - "litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md"
+      - "litellm/proxy/common_utils/proxy_rate_limit_error.py"
+  - id: B073
+    milestone: M4 keys, spend and management
+    title: Billing and FinOps exports
+    status: todo
+    depends_on: [B069, B012]
+    file: null
+    covers:
+      - "litellm/integrations/{focus,mavvrik_focus,cloudzero,vantage,pointfive}/**"
+      - "litellm/integrations/{lago,openmeter}.py"
+      - "litellm/proxy/spend_tracking/{cloudzero_endpoints,vantage_endpoints}.py"
+      - "litellm/types/proxy/{cloudzero_endpoints,vantage_endpoints}.py"
+      - "litellm/types/integrations/{cloudzero,pointfive}.py"
+      - "litellm/proxy/enterprise_billing/**"
+  - id: B074
+    milestone: M4 keys, spend and management
+    title: Usage, daily activity and analytics API
+    status: todo
+    depends_on: [B070]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/usage_endpoints/**"
+      - "litellm/proxy/management_endpoints/{daily_activity_routes,daily_activity_scopes,common_daily_activity,user_agent_analytics_endpoints,gateway_request_endpoints}.py"
+      - "litellm/proxy/analytics_endpoints/**"
+      - "litellm/proxy/db/gateway_request_tracking.py"
+      - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
+      - "litellm/types/proxy/gateway_requests.py"
+  - id: B075
+    milestone: M4 keys, spend and management
+    title: Model insights and prompt caching insights
+    status: todo
+    depends_on: [B070]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{model_insights_endpoints,prompt_cache_prediction,prompt_caching_requests}.py"
+      - "litellm/types/management_endpoints/{prompt_cache_prediction,prompt_caching_requests}.py"
+      - "litellm/proxy/hooks/prompt_cache_prediction.py"
+      - "litellm/proxy/common_utils/{prompt_cache_prediction,prompt_cache_pricing,cache_aware_routing}.py"
+      - "litellm/llms/anthropic/{prompt_cache_prediction,cache_aware_routing}.py"
+      - "litellm/proxy/model_insights_tasks.json"
+      - "litellm/proxy/db/model_insights_tasks.py"
+      - "litellm/types/model_insights.py"
+  - id: B076
+    milestone: M4 keys, spend and management
+    title: Workflows and the ROI calculator
+    status: todo
+    depends_on: [B074]
+    file: null
+    covers:
+      - "litellm/proxy/management_endpoints/{workflow_management_endpoints,roi_calculator_endpoints}.py"
+      - "litellm/proxy/{workflows,roi_calculator}/**"
+      - "litellm/types/roi_calculator.py"
+  - id: B077
+    milestone: M4 keys, spend and management
+    title: Public endpoints and the model hub
+    status: todo
+    depends_on: [B060]
+    file: null
+    covers:
+      - "litellm/proxy/public_endpoints/**"
+      - "litellm/types/proxy/public_endpoints/**"
+  - id: B078
+    milestone: M4 keys, spend and management
+    title: Discovery endpoints for the UI and agent skills
+    status: todo
+    depends_on: [B060]
+    file: null
+    covers:
+      - "litellm/proxy/discovery_endpoints/**"
+      - "litellm/types/proxy/discovery_endpoints/**"
+  - id: B079
+    milestone: M6 guardrails
+    title: Policy engine, policy templates and policy API
+    status: todo
+    depends_on: [B104]
+    file: null
+    covers:
+      - "policy_templates.json"
+      - "litellm/policy_templates_backup.json"
+      - "litellm/proxy/policy_engine/**"
+      - "litellm/proxy/management_endpoints/policy_endpoints/**"
+      - "litellm/types/policy_engine.py"
+      - "litellm/types/proxy/policy_engine/**"
+  - id: B080
+    milestone: M5 api families
+    title: Responses API
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/responses/**"
+      - "litellm/completion_extras/**"
+      - "litellm/llms/base_llm/responses/**"
+      - "litellm/proxy/{response_api_endpoints,response_polling}/**"
+      - "litellm/types/responses/**"
+      - "litellm/proxy/hooks/responses_id_security.py"
+      - "litellm/proxy/common_utils/responses_stream_errors.py"
+      - "litellm/router_utils/pre_call_checks/{responses_api_deployment_check,encrypted_content_affinity_check}.py"
+  - id: B081
+    milestone: M5 api families
+    title: Anthropic Messages API, token counting and Claude Code endpoints
+    status: todo
+    depends_on: [B010, B014, B027]
+    file: null
+    covers:
+      - "litellm/messages/**"
+      - "litellm/anthropic_interface/**"
+      - "litellm/llms/anthropic/pass_through/**"
+      - "litellm/llms/base_llm/anthropic_messages/**"
+      - "litellm/proxy/anthropic_endpoints/**"
+      - "litellm/types/llms/anthropic_messages/**"
+      - "litellm/types/proxy/claude_code_endpoints.py"
+      - "litellm/anthropic_beta_headers_config.json"
+      - "litellm/anthropic_beta_headers_manager.py"
+  - id: B082
+    milestone: M5 api families
+    title: Image generation, edits and variations
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/images/**"
+      - "litellm/llms/base_llm/{image_generation,image_edit,image_variations}/**"
+      - "litellm/proxy/image_endpoints/**"
+      - "litellm/types/images/**"
+  - id: B083
+    milestone: M5 api families
+    title: Speech and transcription
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/endpoints/**"
+      - "litellm/llms/base_llm/{audio_transcription,text_to_speech}/**"
+      - "litellm/litellm_core_utils/audio_utils/**"
+  - id: B084
+    milestone: M5 api families
+    title: Realtime API over WebSocket
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/realtime_api/**"
+      - "litellm/llms/base_llm/realtime/**"
+      - "litellm/proxy/realtime_endpoints/**"
+      - "litellm/litellm_core_utils/{realtime_streaming,realtime_errors}.py"
+      - "litellm/proxy/common_utils/realtime_utils.py"
+      - "litellm/types/realtime.py"
+  - id: B085
+    milestone: M5 api families
+    title: Rerank
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/rerank_api/**"
+      - "litellm/llms/base_llm/rerank/**"
+      - "litellm/proxy/rerank_endpoints/**"
+      - "litellm/types/rerank.py"
+  - id: B086
+    milestone: M5 api families
+    title: Batches API and batch rate limits
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/batches/**"
+      - "litellm/llms/base_llm/batches/**"
+      - "litellm/proxy/batches_endpoints/**"
+      - "litellm/router_utils/batch_utils.py"
+      - "litellm/proxy/hooks/{batch_rate_limiter,batch_enqueued_tokens,batch_redis_get}.py"
+  - id: B087
+    milestone: M5 api families
+    title: Files API and managed files
+    status: todo
+    depends_on: [B010, B051]
+    file: null
+    covers:
+      - "litellm/files/**"
+      - "litellm/llms/base_llm/{files,managed_resources}/**"
+      - "litellm/proxy/openai_files_endpoints/**"
+      - "litellm/types/files.py"
+  - id: B088
+    milestone: M5 api families
+    title: Fine-tuning API
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/fine_tuning/**"
+      - "litellm/proxy/fine_tuning_endpoints/**"
+      - "litellm/types/fine_tuning.py"
+  - id: B089
+    milestone: M5 api families
+    title: Assistants API
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/assistants/**"
+  - id: B090
+    milestone: M5 api families
+    title: Vector stores and vector store files
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/{vector_stores,vector_store_files}/**"
+      - "litellm/llms/base_llm/{vector_store,vector_store_files}/**"
+      - "litellm/proxy/{vector_store_endpoints,vector_store_files_endpoints}/**"
+      - "litellm/types/{vector_stores,vector_store_files}.py"
+      - "litellm/integrations/vector_store_integrations/**"
+      - "litellm/types/integrations/rag/**"
+  - id: B091
+    milestone: M5 api families
+    title: Search API
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/search/**"
+      - "litellm/llms/base_llm/search/**"
+      - "litellm/proxy/search_endpoints/**"
+      - "litellm/types/search.py"
+      - "litellm/router_utils/search_api_router.py"
+  - id: B092
+    milestone: M5 api families
+    title: OCR API
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/ocr/**"
+      - "litellm/llms/base_llm/ocr/**"
+      - "litellm/proxy/ocr_endpoints/**"
+  - id: B093
+    milestone: M5 api families
+    title: Videos API
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/videos/**"
+      - "litellm/llms/base_llm/videos/**"
+      - "litellm/proxy/video_endpoints/**"
+      - "litellm/types/videos/**"
+  - id: B094
+    milestone: M5 api families
+    title: Containers API
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/containers/**"
+      - "litellm/llms/base_llm/containers/**"
+      - "litellm/proxy/container_endpoints/**"
+      - "litellm/types/containers/**"
+  - id: B095
+    milestone: M5 api families
+    title: Skills API
+    status: todo
+    depends_on: [B087, B081]
+    file: null
+    covers:
+      - "litellm/skills/**"
+      - "litellm/llms/base_llm/skills/**"
+      - "litellm/llms/anthropic/skills/**"
+      - "litellm/types/llms/anthropic_skills.py"
+      - "litellm/proxy/hooks/litellm_skills/**"
+  - id: B096
+    milestone: M5 api families
+    title: Evals API
+    status: todo
+    depends_on: [B087]
+    file: null
+    covers:
+      - "litellm/evals/**"
+      - "litellm/llms/base_llm/evals/**"
+      - "litellm/proxy/openai_evals_endpoints/**"
+      - "litellm/types/llms/openai_evals.py"
+  - id: B097
+    milestone: M5 api families
+    title: RAG ingestion and query
+    status: todo
+    depends_on: [B090]
+    file: null
+    covers:
+      - "litellm/rag/**"
+      - "litellm/proxy/rag_endpoints/**"
+      - "litellm/types/rag.py"
+  - id: B098
+    milestone: M5 api families
+    title: Google GenAI and Interactions APIs
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/{google_genai,interactions}/**"
+      - "litellm/llms/base_llm/{google_genai,interactions}/**"
+      - "litellm/proxy/google_endpoints/**"
+      - "litellm/types/{google_genai,interactions}/**"
+  - id: B099
+    milestone: M5 api families
+    title: Decisions, sandboxes and SystemOne
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/{decisions,sandbox,systemone}/**"
+      - "litellm/llms/base_llm/{decisions,sandbox}/**"
+      - "litellm/llms/{e2b,opensandbox,strands_decider,typesafe}/**"
+      - "litellm/proxy/decisions_endpoints/**"
+      - "litellm/types/decisions.py"
+  - id: B100
+    milestone: M5 api families
+    title: Prompt compression and native compaction
+    status: todo
+    depends_on: [B080, B081]
+    file: null
+    covers:
+      - "litellm/compression/**"
+      - "litellm/types/compression.py"
+      - "litellm/integrations/compression_interception/**"
+      - "litellm/types/integrations/compression_interception.py"
+      - "litellm/llms/compaction.py"
+      - "litellm/llms/anthropic/compaction.py"
+      - "litellm/proxy/native_compaction.py"
+      - "litellm/proxy/guardrails/auto_router_compression.py"
+  - id: B101
+    milestone: M5 api families
+    title: Provider passthrough calls in the SDK layer
+    status: todo
+    depends_on: [B010, B014]
+    file: null
+    covers:
+      - "litellm/passthrough/**"
+      - "litellm/llms/base_llm/passthrough/**"
+      - "litellm/llms/pass_through/**"
+  - id: B102
+    milestone: M5 api families
+    title: Pass-through endpoint framework and its config API
+    status: todo
+    depends_on: [B052, B009]
+    file: null
+    covers:
+      - "litellm/proxy/pass_through_endpoints/*.*"
+      - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"
+      - "litellm/proxy/config_management_endpoints/**"
+      - "litellm/types/passthrough_endpoints/{pass_through_endpoints,managed_id_rewriter}.py"
+  - id: B103
+    milestone: M5 api families
+    title: Provider pass-through routes and their logging
+    status: todo
+    depends_on: [B102, B101]
+    file: null
+    covers:
+      - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/**"
+      - "litellm/proxy/vertex_ai_endpoints/**"
+      - "litellm/types/passthrough_endpoints/{assembly_ai,tinyfish,vertex_ai}.py"
+  - id: B104
+    milestone: M6 guardrails
+    title: Guardrail framework, registry and guardrail API
+    status: todo
+    depends_on: [B012, B052]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/*.py"
+      - "litellm/proxy/guardrails/guardrail_hooks/{custom_guardrail,content_text}.py"
+      - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/**"
+      - "litellm/integrations/custom_guardrail.py"
+      - "litellm/llms/base_llm/guardrail_translation/**"
+      - "litellm/types/{guardrails,guardrail_base_init}.py"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
+  - id: B105
+    milestone: M6 guardrails
+    title: Built-in content filter, secret detection and prompt injection checks
+    status: todo
+    depends_on: [B104]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/content_filter_data/**"
+      - "litellm/proxy/guardrails/guardrail_hooks/{litellm_content_filter,block_code_execution}/**"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{litellm_content_filter,block_code_execution,hide_secrets}.py"
+      - "litellm/proxy/hooks/{prompt_injection_detection,sensitive_data_routing,cache_control_check}.py"
+      - "litellm/proxy/llamaguard_prompt.txt"
+  - id: B106
+    milestone: M6 guardrails
+    title: Cloud provider guardrails
+    status: todo
+    depends_on: [B104]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
+      - "litellm/proxy/guardrails/guardrail_hooks/{azure,model_armor,openai,ibm_guardrails,microsoft_purview,agent_365}/**"
+      - "litellm/proxy/hooks/azure_content_safety.py"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{bedrock_guardrails,model_armor,agent_365}.py"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{azure,openai,ibm}/**"
+  - id: B107
+    milestone: M6 guardrails
+    title: Third-party guardrails, A to L
+    status: todo
+    depends_on: [B104]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/guardrail_hooks/{aim,akto,alice,aporia_ai,cato_networks,cisco_ai_defense,compresr,conduct,crowdstrike_aidr,deepkeep,dynamoai,enkryptai,generic_guardrail_api,grayswan,guardrails_ai,headroom,hiddenlayer,javelin,lasso}/**"
+      - "litellm/proxy/guardrails/guardrail_hooks/{lakera_ai,lakera_ai_v2}.py"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{aim,akto,alice,aporia_ai,cato_networks,cisco_ai_defense,compresr,conduct,crowdstrike_aidr,deepkeep,dynamoai,enkryptai,generic_guardrail_api,grayswan,guardrails_ai,headroom,hiddenlayer,javelin,lakera_ai_v2,lasso}.py"
+  - id: B108
+    milestone: M6 guardrails
+    title: Third-party guardrails, M to Z, custom code and model judges
+    status: todo
+    depends_on: [B104]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/guardrail_hooks/{noma,onyx,ovalix,pangea,panw_prisma_airs,pillar,promptguard,prompt_security,qohash,qualifire,repelloai,rubrik,semantic_guard,singulr,straiker,typesafe,vigil_guard,xecguard,zscaler_ai_guard,custom_code,llm_as_a_judge,decision_model}/**"
+      - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
+      - "litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{noma,onyx,ovalix,pangea,panw_prisma_airs,pillar,presidio,promptguard,prompt_security,qohash,qualifire,repelloai,singulr,straiker,typesafe,vigil_guard,xecguard,zscaler_ai_guard,decision_model}.py"
+  - id: B109
+    milestone: M6 guardrails
+    title: Tool permission and MCP guardrails
+    status: todo
+    depends_on: [B104, B136]
+    file: null
+    covers:
+      - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
+      - "litellm/proxy/guardrails/guardrail_hooks/{tool_policy,mcp_end_user_permission,mcp_jwt_signer,mcp_security}/**"
+      - "litellm/types/proxy/guardrails/guardrail_hooks/{tool_permission,mcp_end_user_permission}.py"
+      - "litellm/proxy/_experimental/mcp_server/guardrail_translation/**"
+  - id: B110
+    milestone: M7 observability
+    title: OpenTelemetry tracing and OTel-based destinations
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/{opentelemetry,traceloop,langtrace,logfire_logger}.py"
+      - "litellm/integrations/{opentelemetry_utils,otel,arize,agentops,levo,weave}/**"
+      - "litellm/types/integrations/{arize,arize_phoenix,langfuse_otel,weave_otel}.py"
+      - "litellm/tracing/**"
+      - "litellm/proxy/{tracing_endpoints,tracing_runtime}.py"
+      - "docker/{docker-compose.tracing.yml,tracing-config.yaml}"
+  - id: B111
+    milestone: M7 observability
+    title: Prometheus metrics
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/{prometheus,prometheus_services,prometheus_metrics_endpoint}.py"
+      - "litellm/integrations/prometheus_helpers/**"
+      - "litellm/types/integrations/prometheus.py"
+      - "litellm/proxy/{prometheus_cleanup,prometheus_metrics_server}.py"
+      - "litellm/proxy/middleware/{prometheus_auth_middleware,billable_request_metrics_middleware}.py"
+  - id: B112
+    milestone: M7 observability
+    title: Langfuse and LangSmith
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/langfuse/**"
+      - "litellm/integrations/langsmith.py"
+      - "litellm/types/integrations/{langfuse,langsmith}.py"
+  - id: B113
+    milestone: M7 observability
+    title: Datadog and New Relic
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/{datadog,newrelic}/**"
+      - "litellm/types/integrations/{datadog,datadog_cost_management,datadog_llm_obs,datadog_metrics,newrelic}.py"
+      - "litellm/proxy/dd_span_tagger.py"
+      - "litellm/litellm_core_utils/dd_tracing.py"
+  - id: B114
+    milestone: M7 observability
+    title: Evaluation and product analytics loggers
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/{argilla,athina,braintrust_logging,galileo,greenscale,helicone,humanloop,lunary,literal_ai,mlflow,posthog,prompt_layer,weights_biases,supabase,rubrik}.py"
+      - "litellm/integrations/{deepeval,opik,generic_api}/**"
+      - "litellm/types/integrations/{argilla,posthog}.py"
+  - id: B115
+    milestone: M7 observability
+    title: Storage, queue and SIEM loggers
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/{s3,s3_v2,dynamodb,sqs}.py"
+      - "litellm/integrations/{gcs_bucket,gcs_pubsub,azure_storage,clickhouse,azure_sentinel,zerobus}/**"
+      - "litellm/types/integrations/{s3_v2,gcs_bucket,azure_sentinel,zerobus}.py"
+      - "litellm/litellm_core_utils/cloud_storage_security.py"
+  - id: B116
+    milestone: M7 observability
+    title: Slack, email, PagerDuty and Teams alerting
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/SlackAlerting/**"
+      - "litellm/integrations/email_alerting.py"
+      - "litellm/integrations/email_templates/**"
+      - "litellm/types/integrations/{slack_alerting,pagerduty}.py"
+  - id: B117
+    milestone: M7 observability
+    title: Prompt management and prompt registries
+    status: todo
+    depends_on: [B012, B052]
+    file: null
+    covers:
+      - "litellm/integrations/{custom_prompt_management,prompt_management_base}.py"
+      - "litellm/integrations/{dotprompt,generic_prompt_management,gitlab,bitbucket}/**"
+      - "litellm/proxy/custom_prompt_management.py"
+      - "litellm/proxy/{prompts,test_prompts}/**"
+      - "litellm/types/prompts/**"
+      - "litellm/types/proxy/prompt_endpoints.py"
+  - id: B118
+    milestone: M7 observability
+    title: Shadow evals, LLM judges and the agent logger
+    status: todo
+    depends_on: [B012]
+    file: null
+    covers:
+      - "litellm/integrations/shadow_eval_logger.py"
+      - "litellm/integrations/litellm_agent/**"
+      - "litellm/proxy/db/shadow_eval_funnel.py"
+      - "litellm/litellm_core_utils/llm_judge.py"
+  - id: B119
+    milestone: M7 observability
+    title: Web search and code interpreter interception, agentic loops
+    status: todo
+    depends_on: [B080, B081]
+    file: null
+    covers:
+      - "litellm/integrations/{websearch_interception,code_interpreter_interception}/**"
+      - "litellm/integrations/anthropic_cache_control_hook.py"
+      - "litellm/types/integrations/{websearch_interception,code_interpreter_interception,anthropic_cache_control_hook}.py"
+      - "litellm/litellm_core_utils/{chat_completion_agentic_loop,agentic_followup_kwargs,agentic_loop_settings}.py"
+  - id: B120
+    milestone: M8 platform
+    title: Every config key, config includes and config reloads
+    status: todo
+    depends_on: [B002]
+    file: null
+    covers:
+      - "litellm/proxy/config_resolvers/**"
+      - "litellm/proxy/read_model_list.py"
+      - "litellm/proxy/*.yaml"
+      - "litellm/proxy/common_utils/{load_config_utils,config_includes,config_sync_pubsub,periodic_reload_schedule}.py"
+      - "litellm/types/litellm_params.py"
+  - id: B121
+    milestone: M8 platform
+    title: Proxy CLI flags, startup, workers and bug reports
+    status: todo
+    depends_on: [B003]
+    file: null
+    covers:
+      - "litellm/proxy/{proxy_cli,bug_report_config}.py"
+      - "litellm/proxy/start.sh"
+      - "litellm/proxy/common_utils/{banner,proxy_state,scheduled_job_stagger,debug_utils}.py"
+      - "litellm/litellm_core_utils/bug_report.py"
+  - id: B122
+    milestone: M8 platform
+    title: Request middleware, root path, size limits and security headers
+    status: todo
+    depends_on: [B003]
+    file: null
+    covers:
+      - "litellm/proxy/middleware/{gzip_middleware,per_request_root_path_middleware,request_size_limit_middleware,security_headers_middleware}.py"
+  - id: B123
+    milestone: M8 platform
+    title: OpenAPI schema and Swagger UI
+    status: todo
+    depends_on: [B124]
+    file: null
+    covers:
+      - "litellm/proxy/{openapi,openapi_registry,_lazy_openapi_snapshot}.json"
+      - "litellm/proxy/common_utils/{custom_openapi_spec,openapi_schema_compat,swagger_utils}.py"
+      - "litellm/proxy/swagger/**"
+  - id: B124
+    milestone: M8 platform
+    title: Remaining proxy server routes, shared proxy types and request preparation
+    status: todo
+    depends_on: [B052, B016]
+    file: null
+    covers:
+      - "litellm/proxy/{__init__,proxy_server,_types,utils,plugin_routes,lambda,post_call_rules,litellm_pre_call_utils}.py"
+      - "litellm/proxy/{README.md,.gitignore}"
+      - "litellm/proxy/_experimental/post_call_rules.py"
+      - "litellm/proxy/hooks/__init__.py"
+      - "litellm/proxy/types_utils/**"
+      - "litellm/types/proxy/{README.md,litellm_pre_call_utils.py}"
+      - "litellm/proxy/common_utils/{get_routes,http_parsing_utils,path_utils,openai_endpoint_utils,json_merge_patch,timezone_utils,resource_ownership,rbac_utils,registry_read_through,semantic_text_index,static_asset_utils,admin_ui_utils}.py"
+      - "litellm/blog_posts.json"
+      - "litellm/litellm_core_utils/get_blog_posts.py"
+  - id: B125
+    milestone: M8 platform
+    title: Response caching core, in-memory and disk caches, cache API
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/caching/{__init__,base_cache,caching,caching_handler,llm_caching_handler,in_memory_cache,dual_cache,disk_cache,_internal_lru_cache,evicted_client_closer,_embedding_router}.py"
+      - "litellm/caching/Readme.md"
+      - "litellm/_v2/**"
+      - "litellm/litellm_core_utils/specialty_caches/**"
+      - "litellm/types/caching.py"
+      - "litellm/proxy/caching_routes.py"
+      - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
+      - "litellm/types/management_endpoints/cache_settings_endpoints.py"
+      - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"
+  - id: B126
+    milestone: M8 platform
+    title: Redis, Redis Cluster and Valkey
+    status: todo
+    depends_on: [B125]
+    file: null
+    covers:
+      - "litellm/{_redis,_redis_credential_provider}.py"
+      - "litellm/caching/{redis_cache,redis_cluster_cache,redis_cluster_node_isolation,redis_batch}.py"
+      - "litellm/proxy/middleware/redis_request_batch_middleware.py"
+  - id: B127
+    milestone: M8 platform
+    title: Object storage caches
+    status: todo
+    depends_on: [B125]
+    file: null
+    covers:
+      - "litellm/caching/{s3_cache,gcs_cache,azure_blob_cache}.py"
+  - id: B128
+    milestone: M8 platform
+    title: Semantic caches
+    status: todo
+    depends_on: [B126]
+    file: null
+    covers:
+      - "litellm/caching/{qdrant_semantic_cache,redis_semantic_cache,valkey_semantic_cache}.py"
+  - id: B129
+    milestone: M8 platform
+    title: Secret managers
+    status: todo
+    depends_on: [B002]
+    file: null
+    covers:
+      - "litellm/secret_managers/**"
+      - "litellm/types/secret_managers/main.py"
+      - "litellm/integrations/custom_secret_manager.py"
+  - id: B130
+    milestone: M8 platform
+    title: Model health checks and health routes
+    status: todo
+    depends_on: [B016]
+    file: null
+    covers:
+      - "litellm/proxy/health_check.py"
+      - "litellm/proxy/{health_check_utils,health_endpoints}/**"
+      - "litellm/litellm_core_utils/{health_check_helpers,health_check_utils}.py"
+      - "litellm/proxy/db/health_check_latest.py"
+  - id: B131
+    milestone: M8 platform
+    title: Gateway and control plane split deployment
+    status: todo
+    depends_on: [B124]
+    file: null
+    covers:
+      - "gateway/**"
+      - "backend/**"
+      - "litellm/types/proxy/control_plane_endpoints.py"
+      - "docker/component_entrypoint.sh"
+  - id: B132
+    milestone: M8 platform
+    title: Lens trace analysis service
+    status: todo
+    depends_on: [B069]
+    file: null
+    covers:
+      - "litellm/proxy/lens/**"
+      - "deploy/lens/**"
+  - id: B133
+    milestone: M8 platform
+    title: Memory API
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/memory/**"
+      - "litellm/types/memory_management.py"
+  - id: B134
+    milestone: M8 platform
+    title: Proxy client SDK and the lite CLI
+    status: todo
+    depends_on: [B055, B057, B060]
+    file: null
+    covers:
+      - "litellm/proxy/client/**"
+  - id: B135
+    milestone: M8 platform
+    title: Setup wizard and CLI login
+    status: todo
+    depends_on: [B134]
+    file: null
+    covers:
+      - "litellm/setup_wizard.py"
+      - "litellm/proxy_auth/**"
+      - "litellm/litellm_core_utils/{cli_keyring,cli_token_utils}.py"
+  - id: B136
+    milestone: M9 agents and mcp
+    title: MCP gateway server, transports and server registry
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/_experimental/mcp_server/{AGENTS.md,server.py,sse_transport.py,stdio_gate.py,mcp_server_manager.py,server_resolution.py,capabilities.py,contracts.py,operations.py,mcp_context.py,mcp_debug.py,exceptions.py,utils.py,result_conversion.py,elicitation_handler.py,sampling_handler.py,legacy_callbacks.py,tool_outcome.py,cost_calculator.py,discoverable_endpoints.py,client_allowlist.py}"
+      - "litellm/proxy/_experimental/mcp_server/faults/**"
+      - "litellm/proxy/{mcp_tools.py,mcp_registry.json}"
+      - "mcp_servers.json"
+      - "litellm/types/mcp.py"
+      - "litellm/types/mcp_server/mcp_server_manager.py"
+  - id: B137
+    milestone: M9 agents and mcp
+    title: MCP auth, OAuth flows, BYOK and outbound credentials
+    status: todo
+    depends_on: [B136]
+    file: null
+    covers:
+      - "litellm/proxy/_experimental/mcp_server/{auth,outbound_credentials}/**"
+      - "litellm/proxy/_experimental/mcp_server/{bridge_token_flow,byok_credential_cache,byok_oauth_endpoints,gateway_dcr_flow,idp_token_exchange,oauth2_flow_backfill,oauth2_token_cache,oauth_identity_binding,oauth_issuer_stamp_backfill,oauth_utils,proxy_api_credentials,ui_session_utils}.py"
+  - id: B138
+    milestone: M9 agents and mcp
+    title: MCP tool registry, tool search and OpenAPI to MCP
+    status: todo
+    depends_on: [B136]
+    file: null
+    covers:
+      - "litellm/proxy/_experimental/mcp_server/{tool_registry,tool_search,semantic_tool_filter,tool_catalog_guard,openapi_to_mcp_generator,toolset_db}.py"
+      - "litellm/proxy/hooks/mcp_semantic_filter/**"
+      - "litellm/types/mcp_server/{tool_registry,mcp_toolset}.py"
+  - id: B139
+    milestone: M9 agents and mcp
+    title: MCP server management API and storage
+    status: todo
+    depends_on: [B136, B051]
+    file: null
+    covers:
+      - "litellm/proxy/_experimental/mcp_server/{db,rest_endpoints}.py"
+      - "litellm/proxy/management_endpoints/{mcp_management_endpoints,mcp_connector_import}.py"
+  - id: B140
+    milestone: M9 agents and mcp
+    title: MCP client and MCP tools in chat and Responses calls
+    status: todo
+    depends_on: [B136, B080]
+    file: null
+    covers:
+      - "litellm/experimental_mcp_client/**"
+      - "litellm/responses/mcp/**"
+  - id: B141
+    milestone: M9 agents and mcp
+    title: Agents API, agent registry and agent identity
+    status: todo
+    depends_on: [B052]
+    file: null
+    covers:
+      - "litellm/proxy/agent_endpoints/**"
+      - "litellm/types/agents.py"
+      - "litellm/types/proxy/agent_identity.py"
+      - "litellm/llms/base_llm/agents/**"
+  - id: B142
+    milestone: M9 agents and mcp
+    title: A2A protocol client, server and agent providers
+    status: todo
+    depends_on: [B141]
+    file: null
+    covers:
+      - "litellm/a2a_protocol/**"
+      - "litellm/proxy/a2a/**"
+  - id: B143
+    milestone: M9 agents and mcp
+    title: Agent harnesses and coding agent providers
+    status: todo
+    depends_on: [B141]
+    file: null
+    covers:
+      - "litellm/harness/**"
+      - "litellm/llms/base_llm/harness/**"
+      - "litellm/llms/{deepagents,opencode,claude_code,codex}/**"
+  - id: B144
+    milestone: M10 admin ui
+    title: Admin UI shell, login, onboarding and shared components
+    status: todo
+    depends_on: [B056]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/types.ts"
+      - "ui/litellm-dashboard/src/app/{favicon.ico,globals.css,layout.tsx}"
+      - "ui/litellm-dashboard/src/app/{login,connect,onboarding}/**"
+      - "ui/litellm-dashboard/src/app/(dashboard)/*.*"
+      - "ui/litellm-dashboard/src/app/(dashboard)/{components,hooks,admin-panel,api-reference,change-password}/**"
+      - "ui/litellm-dashboard/src/components/{ui,shared,common_components,molecules,organisms,templates,Navbar,SidebarAccountMenu,ThemeToggle,liteadmin}/**"
+      - "ui/litellm-dashboard/src/components/{BetaBadge,CodeBlock,constants,DashboardHeader,DebugWarningBanner,DeprecationBanner,DocsMenu,EnvCredentialLoginWarningBanner,LicenseExpiryBanner,NoRedisWarningBanner,UpgradeBanner,UserBanner,leftnav,navbar,onboarding_link,page_metadata,page_utils,networking,SidebarUsageCard}.*"
+      - "ui/litellm-dashboard/src/components/{BetaBadge,DashboardHeader,DebugWarningBanner,DeprecationBanner,DocsMenu,EnvCredentialLoginWarningBanner,LicenseExpiryBanner,NoRedisWarningBanner,UpgradeBanner,UserBanner,leftnav,navbar,onboarding_link,page_utils,networking,networking.dailyActivity,SidebarUsageCard}.test.*"
+      - "ui/litellm-dashboard/src/{contexts,lib,utils}/**"
+      - "ui/litellm-dashboard/src/hooks/{use-safe-layout-effect,useSyntaxTheme,useSyntaxTheme.test,useUrlTab,useUrlTab.test,useVisitedTabs,useWorker}.*"
+      - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"
+  - id: B145
+    milestone: M10 admin ui
+    title: Admin UI for keys, teams, users, organizations, projects and access groups
+    status: todo
+    depends_on: [B144, B055, B057, B058]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/(dashboard)/{access-groups,api-keys,organizations,projects,teams,users}/**"
+      - "ui/litellm-dashboard/src/components/{VirtualKeysPage,DeletedKeysPage,DeletedTeamsPage,TeamsPage,team,organization,key_team_helpers,permissions}/**"
+      - "ui/litellm-dashboard/src/components/{key_info_utils,key_scope,key_value_input,object_permissions_view,object_permission_types,Teams,CreateUserButton,bulk_create_users_button}.*"
+      - "ui/litellm-dashboard/src/components/{key_info_utils,key_scope,key_value_input,Teams,CreateUserButton,bulk_create_users_button}.test.*"
+  - id: B146
+    milestone: M10 admin ui
+    title: Admin UI for models, routing, playground, chat and the model hub
+    status: todo
+    depends_on: [B144, B060, B023]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/{chat,model_hub,model_hub_table}/**"
+      - "ui/litellm-dashboard/src/app/(dashboard)/{models-and-endpoints,model-hub-table,model-insights,playground,router-settings,transform-request}/**"
+      - "ui/litellm-dashboard/src/components/{add_model,model_add,model_dashboard,ModelSelect,view_model,edit_auto_router,routing_groups,router_settings,chat,chat_ui,AIHub,publicModelHub,claude_code_plugins}/**"
+      - "ui/litellm-dashboard/src/components/{model_filters,model_group_alias_settings,ModelInfoEditForm,model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub,PublicModelHubTableColumns}.*"
+      - "ui/litellm-dashboard/src/components/{model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub}.test.*"
+  - id: B147
+    milestone: M10 admin ui
+    title: Admin UI for logs, usage, cost, Lens and ROI
+    status: todo
+    depends_on: [B144, B074, B132]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/(dashboard)/{logs,usage,old-usage,cost-tracking,cost-optimization,lens,roi-calculator}/**"
+      - "ui/litellm-dashboard/src/components/{view_logs,UsagePage,EntityUsageExport,CloudZeroCostTracking,llm_calls}/**"
+      - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity,view_user_spend,cloudzero_export_modal}.*"
+      - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity}.test.*"
+      - "ui/litellm-dashboard/src/components/cloudzero_export_modal.integration.test.*"
+  - id: B148
+    milestone: M10 admin ui
+    title: Admin UI for guardrails, policies and tool policies
+    status: todo
+    depends_on: [B144, B104, B079]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/(dashboard)/{guardrails,guardrails-monitor,policies,tool-policies}/**"
+      - "ui/litellm-dashboard/src/components/{guardrails,GuardrailsMonitor,policies,ToolPolicies}/**"
+      - "ui/litellm-dashboard/src/components/{GuardrailSettingsView,ToolPoliciesView}.*"
+      - "ui/litellm-dashboard/src/components/{GuardrailSettingsView,ToolPoliciesView}.test.*"
+      - "ui/litellm-dashboard/src/data/**"
+      - "ui/litellm-dashboard/src/hooks/policies/**"
+  - id: B149
+    milestone: M10 admin ui
+    title: Admin UI for MCP servers, agents, skills, search tools, vector stores, memory, workflows and prompts
+    status: todo
+    depends_on: [B144, B139, B141]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/mcp/**"
+      - "ui/litellm-dashboard/src/app/(dashboard)/{mcp-servers,agents,skills,search-tools,vector-stores,memory,workflows,prompts}/**"
+      - "ui/litellm-dashboard/src/components/{mcp_server_management,mcp_tools,agent_management,agents,search_tools,skills,vector_store_management}/**"
+      - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.*"
+      - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.test.*"
+      - "ui/litellm-dashboard/src/hooks/{mcpOAuthUtils,useMcpOAuthFlow,useMcpOAuthFlow.test,useTestMCPConnection,useToolsOAuthFlow,useToolsOAuthFlow.test,useUserMcpOAuthFlow}.*"
+  - id: B150
+    milestone: M10 admin ui
+    title: Admin UI for settings, SSO, caching, logging, alerting, budgets, tags, pass-through and theme
+    status: todo
+    depends_on: [B144, B066]
+    file: null
+    covers:
+      - "ui/litellm-dashboard/src/app/(dashboard)/{caching,logging-and-alerts,ui-theme,tag-management,budgets}/**"
+      - "ui/litellm-dashboard/src/components/{Settings,alerting,email_events,tag_management,PassThroughSettings}/**"
+      - "ui/litellm-dashboard/src/components/{SCIM,SSOModals,settings,email_settings,MSTeamsSettings,logging_settings_view,callback_info_helpers,add_pass_through,pass_through_info,query_param_input,UIAccessControlForm,TeamSSOSettings}.*"
+      - "ui/litellm-dashboard/src/components/{SCIM,SSOModals,settings,email_settings,logging_settings_view,query_param_input,TeamSSOSettings}.test.*"
+      - "ui/litellm-dashboard/src/components/{add_pass_through,pass_through_info,UIAccessControlForm}.integration.test.*"
+      - "ui/litellm-dashboard/src/components/UIAccessControlForm.unit.test.*"
+  - id: B151
+    milestone: M11 distribution
+    title: Container images and Compose files
+    status: todo
+    depends_on: [B124]
+    file: null
+    covers:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "docker-compose.hardened.yml"
+      - "docker/**"
+  - id: B152
+    milestone: M11 distribution
+    title: Helm charts
+    status: todo
+    depends_on: [B151]
+    file: null
+    covers:
+      - "helm/**"
+  - id: B153
+    milestone: M11 distribution
+    title: Homebrew formula
+    status: todo
+    depends_on: [B121]
+    file: null
+    covers:
+      - "packaging/**"
+  - id: B154
+    milestone: M11 distribution
+    title: Terraform deployment modules for AWS and GCP
+    status: todo
+    depends_on: [B151]
+    file: null
+    covers:
+      - "terraform/litellm/**"
+  - id: B155
+    milestone: M11 distribution
+    title: LiteLLM's Terraform provider working against betterlite
+    status: todo
+    depends_on: [B055, B057, B058, B060]
+    file: null
+    covers:
+      - "terraform/provider/**"
+  - id: B156
+    milestone: M11 distribution
+    title: LiteLLM's VS Code extension working against betterlite
+    status: todo
+    depends_on: [B081, B007]
+    file: null
+    covers:
+      - "vscode-extension/**"

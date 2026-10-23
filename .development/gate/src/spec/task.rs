@@ -11,7 +11,7 @@ use crate::spec::command::Command;
 )]
 pub(crate) struct Task {
     #[schemars(
-        regex(pattern = "^B[0-9]{3}$"),
+        regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"),
         description = "Same id as the task's backlog entry."
     )]
     pub(crate) id: String,

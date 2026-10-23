@@ -10,11 +10,13 @@ use std::path::Path;
 
 use serde::de::DeserializeOwned;
 
+use crate::coverage;
 use crate::error::GateError;
 use crate::schema;
 use crate::spec::agents::Agents;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
+use crate::spec::litellm::Litellm;
 use crate::spec::rules::Rules;
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
@@ -32,27 +34,71 @@ where
     }
 }
 
+struct Specs {
+    catalog: Catalog,
+    backlog: Backlog,
+    rules: Rules,
+    agents: Agents,
+    litellm: Litellm,
+}
+
+fn load_specs(folder: &Path, problems: &mut Vec<String>) -> Option<Specs> {
+    let catalog = load(&folder.join("checks.yaml"), problems);
+    let backlog = load(&folder.join("backlog.yaml"), problems);
+    let rules = load(&folder.join("rules.yaml"), problems);
+    let agents = load(&folder.join("agents.yaml"), problems);
+    let litellm = load(&folder.join("litellm.yaml"), problems);
+    Some(Specs {
+        catalog: catalog?,
+        backlog: backlog?,
+        rules: rules?,
+        agents: agents?,
+        litellm: litellm?,
+    })
+}
+
+fn pin_problems(litellm: &Litellm) -> Vec<String> {
+    let mut problems = Vec::new();
+    if !litellm.repository.starts_with("https://")
+        || litellm.version.trim().is_empty()
+        || litellm.roots.is_empty()
+    {
+        problems.push(
+            "litellm.yaml needs an https repository, a version and at least one root".to_owned(),
+        );
+    }
+    let unexplained = litellm
+        .excluded
+        .iter()
+        .filter(|exclusion| exclusion.why.trim().is_empty());
+    problems.extend(
+        unexplained
+            .map(|exclusion| format!("litellm.yaml: exclusion {} needs a why", exclusion.glob)),
+    );
+    problems
+}
+
 pub(crate) fn validate(root: &Path) -> Result<Vec<String>, GateError> {
     let folder = root.join(".development");
     let mut problems = Vec::new();
-    let loaded: (
-        Option<Catalog>,
-        Option<Backlog>,
-        Option<Rules>,
-        Option<Agents>,
-    ) = (
-        load(&folder.join("checks.yaml"), &mut problems),
-        load(&folder.join("backlog.yaml"), &mut problems),
-        load(&folder.join("rules.yaml"), &mut problems),
-        load(&folder.join("agents.yaml"), &mut problems),
-    );
-    let (Some(catalog), Some(backlog), Some(rules), Some(agents)) = loaded else {
+    let Some(Specs {
+        catalog,
+        backlog,
+        rules,
+        agents,
+        litellm,
+    }) = load_specs(&folder, &mut problems)
+    else {
         return Ok(problems);
     };
+    problems.extend(pin_problems(&litellm));
     problems.extend(catalog::problems(&catalog));
     problems.extend(backlog::problems(root, &backlog)?);
     problems.extend(rules::problems(&rules, &catalog));
     problems.extend(agents::problems(&folder, &agents));
+    problems.extend(coverage::problems(&coverage::measure(
+        &folder, &litellm, &backlog,
+    )?));
     for entry in &backlog.tasks {
         if let Some(file) = &entry.file {
             let parsed: Option<Task> = load(&folder.join(file), &mut problems);

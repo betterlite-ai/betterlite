@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite LiteLLM pin",
+  "description": "The LiteLLM release betterlite reimplements, which of its paths count as product, and which of those are left out on purpose.",
+  "type": "object",
+  "properties": {
+    "commit": {
+      "description": "The commit the oracle and every LiteLLM link pin.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "excluded": {
+      "description": "Paths under the roots that betterlite deliberately does not reimplement.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Exclusion"
+      }
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "roots": {
+      "description": "Paths in the LiteLLM repository that make up the product. A directory ends with a slash.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "repository",
+    "version",
+    "commit",
+    "roots",
+    "excluded"
+  ],
+  "$defs": {
+    "Exclusion": {
+      "type": "object",
+      "properties": {
+        "glob": {
+          "description": "Glob over LiteLLM paths. `*` stays inside one directory, `**` crosses directories.",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "glob",
+        "why"
+      ]
+    }
+  }
+}

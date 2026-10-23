@@ -19,15 +19,19 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 
 ## Files
 
-- backlog.yaml lists every task with its milestone, status and dependencies. Only the architect edits it, on main.
+- backlog.yaml lists every task with its milestone, status, dependencies and the LiteLLM paths it covers. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
 - tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls and budget.
 - rules.yaml is the code standard: 25 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
 - checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
 - agents.yaml maps roles to runners, models and limits.
+- litellm.yaml pins the LiteLLM release betterlite follows: repository, version, commit, the folders and files that make up LiteLLM outside its enterprise directory, and the paths left out, each with its reason.
+- litellm-inventory.txt lists every LiteLLM path under those folders at the pinned commit. `cargo gate inventory <checkout>` writes it from a LiteLLM clone; nobody edits it by hand.
 - roles/ holds the rules for the architect, planner, worker and reviewer.
 - schema/ holds the JSON Schemas for every format above plus the report and review answers. `cargo gate schema` generates them from the gate's Rust types, and `cargo gate validate` fails when a file breaks its schema or a schema is out of date.
 - templates/ holds the files B000 copies to the root byte for byte: workspace manifest with the deny-everything lint table, clippy.toml, deny.toml, typos and ast-grep config, prek hooks, LICENSE and THIRD_PARTY_NOTICES.md.
 - gate/ is the gate's source. `cargo gate` runs it from the repository root through the alias in .cargo/config.toml.
+
+Every path in the inventory has to be accounted for: a backlog entry's covers globs claim it, or litellm.yaml excludes it with a reason. `cargo gate validate` fails while any path is unclaimed or any glob claims nothing, so nothing LiteLLM does outside its enterprise directory can fall out of the backlog. Moving to a newer LiteLLM release means updating litellm.yaml, regenerating the inventory and claiming the new paths.
 
 ## Repository
 
@@ -43,10 +47,11 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: config keys betterlite does not support yet stop startup with a list of them (B002).
 - 2026-10-24: keys, spend and budgets (M4) reuse LiteLLM's Postgres schema, [schema.prisma](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma) at the pinned commit, so an existing LiteLLM database works with betterlite.
 - 2026-10-24: the LICENSE names Max Azatian as copyright holder.
+- 2026-10-24: the backlog covers every LiteLLM path outside the enterprise directory, and task ids run past B999 (B1000, B1001 and on) as the work needs.
 
 ## Writing a task
 
-The gate reads every format into Rust types that reject unknown fields, missing fields, duplicate keys, comments and anchors; only when_exists and link may be left out. Comments are rejected because an unquoted ` #` silently cuts the rest of a YAML value. On top of the types, validate checks what types can't: ids look like B004, every DoD item names checks the task actually runs, every rule names real checks or is reviewed, runner arguments use only known placeholders, globs parse, links use https, dependencies exist and don't form a cycle, and every task file is in the backlog.
+The gate reads every format into Rust types that reject unknown fields, missing fields, duplicate keys, comments and anchors; only when_exists and link may be left out. Comments are rejected because an unquoted ` #` silently cuts the rest of a YAML value. On top of the types, validate checks what types can't: ids look like B004 or B1234, every DoD item names checks the task actually runs, every rule names real checks or is reviewed, runner arguments use only known placeholders, globs parse, links use https, dependencies exist and don't form a cycle, and every task file is in the backlog.
 
 - Every DoD item names the checks that fail when the outcome is missing. A check is a shell command run from the repository root; exit 0 passes.
 - A test check uses `cargo nextest run ... --no-tests=fail`, so a filter that matches nothing fails instead of passing.
@@ -66,6 +71,8 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 | `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer |
 | `cargo gate schema` | Regenerates schema/ after a change to the gate's types |
 | `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
+| `cargo gate coverage` | Prints how many LiteLLM paths each backlog entry claims, then every unclaimed path and every glob that claims nothing |
+| `cargo gate inventory <checkout>` | Rewrites litellm-inventory.txt from a LiteLLM clone at the commit litellm.yaml pins |
 
 The base is `GATE_BASE` when it is set, otherwise the merge base with origin/main, otherwise with main. Every command check gets `GATE_TASK`, `GATE_BASE`, `GATE_LOG_DIR` and `GATE_ORACLE_CASES` in its environment, and none of the variables cargo sets for the gate itself, so each check uses the toolchain its own worktree pins.
 
@@ -86,6 +93,8 @@ The oracle pins litellm[proxy] 1.105.1, released 2026-10-14 from [d665dc1a](http
 | Database tables | 90 | [schema.prisma](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma) |
 | Model price entries | 4460 | [model_prices_and_context_window.json](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json) |
 | Lines in proxy_server.py and router.py | 20,379 and 14,759 | [proxy_server.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py), [router.py](https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py) |
+| Python lines in litellm/, without rust_bridge and the built UI | 884,838 | [litellm/](https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm) |
+| Paths the backlog accounts for | 6,464 | litellm-inventory.txt |
 
 The counts come from parsing those files at the pinned commit (json and ast for the Python, `wc -l` for line counts). The last row is why the file-size check exists.
 

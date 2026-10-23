@@ -13,9 +13,11 @@ fn the_committed_development_folder_is_valid() {
 }
 
 #[test]
-fn task_ids_are_b_and_three_digits() {
-    assert!(task_id_problem("B004").is_none());
-    for bad in ["B04", "C004", "B0045", "B00x"] {
+fn task_ids_have_one_spelling_per_number() {
+    for good in ["B004", "B999", "B1000", "B123456"] {
+        assert!(task_id_problem(good).is_none(), "{good}");
+    }
+    for bad in ["B04", "C004", "B0045", "B00x", "B1234567", "B"] {
         assert!(task_id_problem(bad).is_some(), "{bad}");
     }
 }
