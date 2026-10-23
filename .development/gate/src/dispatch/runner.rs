@@ -1,3 +1,5 @@
+mod tests;
+
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::Path;
@@ -12,6 +14,8 @@ use crate::spec::agents::{OutputMode, PLACEHOLDERS, Rung, Runner};
 
 pub(crate) struct Invocation<'paths> {
     pub(crate) worktree: &'paths Path,
+    pub(crate) git_common_dir: &'paths Path,
+    pub(crate) home: &'paths Path,
     pub(crate) schema: &'paths Path,
     pub(crate) output: &'paths Path,
     pub(crate) instructions: &'paths Path,
@@ -30,31 +34,22 @@ fn expand(
     invocation: &Invocation<'_>,
     schema_text: &str,
 ) -> Result<String, GateError> {
-    let texts = (
-        invocation.worktree.to_str(),
-        invocation.schema.to_str(),
-        invocation.output.to_str(),
-        invocation.instructions.to_str(),
-    );
-    let (Some(worktree), Some(schema), Some(output), Some(instructions)) = texts else {
-        let reason = format!(
-            "a path under {} is not UTF-8",
-            invocation.worktree.display()
-        );
-        return Err(GateError::Dispatch {
-            task: String::new(),
-            reason,
-        });
-    };
-    let values = [
-        rung.model.as_str(),
-        rung.effort.as_str(),
-        worktree,
-        schema,
-        schema_text,
-        output,
-        instructions,
+    let mut values = vec![rung.model.as_str(), rung.effort.as_str(), schema_text];
+    let paths = [
+        invocation.worktree,
+        invocation.schema,
+        invocation.output,
+        invocation.instructions,
+        invocation.git_common_dir,
+        invocation.home,
     ];
+    for path in paths {
+        let text = path.to_str().ok_or_else(|| GateError::Dispatch {
+            task: String::new(),
+            reason: format!("the path {} is not UTF-8", path.display()),
+        })?;
+        values.push(text);
+    }
     let mut expanded = argument.to_owned();
     for (name, value) in PLACEHOLDERS.iter().zip(values) {
         expanded = expanded.replace(&format!("{{{name}}}"), value);

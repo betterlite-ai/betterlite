@@ -144,7 +144,7 @@
       ]
     },
     "Runner": {
-      "description": "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output} and {instructions}.",
+      "description": "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir} and {home}.",
       "type": "object",
       "properties": {
         "args": {

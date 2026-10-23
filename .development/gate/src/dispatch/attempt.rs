@@ -18,7 +18,7 @@ fn worker_report(
     rung: &Rung,
     feedback: &[String],
 ) -> Result<Result<Report, Step>, GateError> {
-    let blocks = attempt.journal.join("hook-blocks");
+    let blocks = attempt.places.journal.join("hook-blocks");
     if blocks.exists() {
         fs::remove_file(&blocks).map_err(|source| GateError::Write {
             path: blocks.clone(),
@@ -77,7 +77,7 @@ pub(crate) fn attempt_once(
         Ok(report) => report,
         Err(step) => return Ok(step),
     };
-    let worktree = Development::open(attempt.worktree)?;
+    let worktree = Development::open(attempt.places.worktree)?;
     let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
     if !failing.is_empty() {
         return Ok(Step::Retry(failing));

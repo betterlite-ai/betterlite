@@ -39,7 +39,7 @@ The code lives at https://github.com/betterlite-ai/betterlite, a public reposito
 
 Every pull request runs the gate check from .github/workflows/gate.yml in a Debian 13 container with Rust 1.98.0, the same versions checks.yaml pins. It validates the specs and tests the gate, and on a task branch it also runs `cargo gate run <ID>` against the merge base. The merge queue runs it again on the merged result, with only the checks that don't depend on a base (fmt, clippy, tests, doctests, deny, shear, hooks), since a queued group also holds the PRs ahead of it.
 
-On a fresh clone: open the folder in Claude Code and accept the workspace trust dialog, so the worker agents' Stop hook runs, then run `cargo gate validate`. The dispatcher passes Codex `--dangerously-bypass-hook-trust`, since the only hook it runs is .codex/hooks.json from this repository.
+On a fresh clone: open the folder in Claude Code and accept the workspace trust dialog, so the worker agents' Stop hook runs, then run `cargo gate validate`. The dispatcher passes Codex `--dangerously-bypass-hook-trust`, since the only hook it runs is .codex/hooks.json from this repository. The Codex worker's sandbox can write its worktree, the repository's .git folder (a worktree keeps its index, objects and refs there, and the gate keeps its journal there) and the cargo, prek and uv caches under the home folder. Everything else, ~/.cargo/bin included, stays read-only.
 
 ## Decisions
 

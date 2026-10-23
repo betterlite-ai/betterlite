@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use crate::error::GateError;
@@ -31,4 +31,12 @@ pub(crate) fn git(directory: &Path, args: &[&str]) -> Result<String, GateError> 
         what: format!("git {}", args.join(" ")),
         source,
     })
+}
+
+pub(crate) fn common_dir(directory: &Path) -> Result<PathBuf, GateError> {
+    let common = git(
+        directory,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    Ok(PathBuf::from(common.trim()))
 }

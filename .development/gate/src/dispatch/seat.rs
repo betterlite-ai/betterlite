@@ -28,13 +28,17 @@ pub(crate) fn invoke(
     };
     let role: &str = seat.into();
     let stem = attempt
+        .places
         .journal
         .join(format!("attempt-{}-{role}", attempt.number));
     let output: PathBuf = stem.with_extension("json");
     let log: PathBuf = stem.with_extension("log");
-    let folder = attempt.worktree.join(".development");
+    let places = attempt.places;
+    let folder = places.worktree.join(".development");
     let invocation = Invocation {
-        worktree: attempt.worktree,
+        worktree: places.worktree,
+        git_common_dir: places.git_common_dir,
+        home: places.home,
         schema: &folder.join("schema").join(schema),
         output: &output,
         instructions: &folder.join(instructions),

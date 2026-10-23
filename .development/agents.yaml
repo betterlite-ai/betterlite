@@ -3,7 +3,7 @@ runners:
   - id: codex-worker
     vendor: openai
     program: codex
-    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
+    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", --add-dir, "{git_common_dir}", --add-dir, "{home}/.cargo/registry", --add-dir, "{home}/.cargo/git", --add-dir, "{home}/.cargo/advisory-dbs", --add-dir, "{home}/.cache/prek", --add-dir, "{home}/.cache/uv", --cd, "{worktree}", "-"]
     output: file
   - id: codex-reviewer
     vendor: openai
