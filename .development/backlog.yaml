@@ -550,9 +550,9 @@ tasks:
       - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"
   - id: B054
     milestone: M4 keys, spend and management
-    title: Custom auth and validation hooks
+    title: Custom auth and validation hooks written in Python
     status: todo
-    depends_on: [B052]
+    depends_on: [B052, B165]
     file: null
     covers:
       - "litellm/proxy/{custom_auth_auto,custom_validate}.py"
@@ -1313,6 +1313,7 @@ tasks:
       - "litellm/proxy/*.yaml"
       - "litellm/proxy/common_utils/{load_config_utils,config_includes,config_sync_pubsub,periodic_reload_schedule}.py"
       - "litellm/types/litellm_params.py"
+      - ".env.example"
   - id: B121
     milestone: M8 platform
     title: Proxy CLI flags, startup, workers and bug reports
@@ -1452,12 +1453,12 @@ tasks:
       - "litellm/types/memory_management.py"
   - id: B134
     milestone: M8 platform
-    title: Proxy client SDK and the lite CLI
+    title: The litellm-proxy CLI for the management API
     status: todo
     depends_on: [B055, B057, B060]
     file: null
     covers:
-      - "litellm/proxy/client/**"
+      - "litellm/proxy/client/cli/**"
   - id: B135
     milestone: M8 platform
     title: Setup wizard and CLI login
@@ -1550,11 +1551,14 @@ tasks:
       - "litellm/llms/{deepagents,opencode,claude_code,codex}/**"
   - id: B144
     milestone: M10 admin ui
-    title: Admin UI shell, login, onboarding and shared components
+    title: Keep LiteLLM's admin dashboard, rebrand it, build it and serve it from betterlite
     status: todo
     depends_on: [B056]
     file: null
     covers:
+      - "ui/*"
+      - "ui/litellm-dashboard/*"
+      - "ui/litellm-dashboard/{public,scripts,tests}/**"
       - "ui/litellm-dashboard/src/types.ts"
       - "ui/litellm-dashboard/src/app/{favicon.ico,globals.css,layout.tsx}"
       - "ui/litellm-dashboard/src/app/{login,connect,onboarding}/**"
@@ -1568,7 +1572,7 @@ tasks:
       - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"
   - id: B145
     milestone: M10 admin ui
-    title: Admin UI for keys, teams, users, organizations, projects and access groups
+    title: Admin UI pages for keys, teams, users, organizations, projects and access groups working against betterlite
     status: todo
     depends_on: [B144, B055, B057, B058]
     file: null
@@ -1579,7 +1583,7 @@ tasks:
       - "ui/litellm-dashboard/src/components/{key_info_utils,key_scope,key_value_input,Teams,CreateUserButton,bulk_create_users_button}.test.*"
   - id: B146
     milestone: M10 admin ui
-    title: Admin UI for models, routing, playground, chat and the model hub
+    title: Admin UI pages for models, routing, playground, chat and the model hub working against betterlite
     status: todo
     depends_on: [B144, B060, B023]
     file: null
@@ -1591,7 +1595,7 @@ tasks:
       - "ui/litellm-dashboard/src/components/{model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview,public_model_hub}.test.*"
   - id: B147
     milestone: M10 admin ui
-    title: Admin UI for logs, usage, cost, Lens and ROI
+    title: Admin UI pages for logs, usage, cost, Lens and ROI working against betterlite
     status: todo
     depends_on: [B144, B074, B132]
     file: null
@@ -1603,7 +1607,7 @@ tasks:
       - "ui/litellm-dashboard/src/components/cloudzero_export_modal.integration.test.*"
   - id: B148
     milestone: M10 admin ui
-    title: Admin UI for guardrails, policies and tool policies
+    title: Admin UI pages for guardrails, policies and tool policies working against betterlite
     status: todo
     depends_on: [B144, B104, B079]
     file: null
@@ -1616,7 +1620,7 @@ tasks:
       - "ui/litellm-dashboard/src/hooks/policies/**"
   - id: B149
     milestone: M10 admin ui
-    title: Admin UI for MCP servers, agents, skills, search tools, vector stores, memory, workflows and prompts
+    title: Admin UI pages for MCP servers, agents, skills, search tools, vector stores, memory, workflows and prompts working against betterlite
     status: todo
     depends_on: [B144, B139, B141]
     file: null
@@ -1629,7 +1633,7 @@ tasks:
       - "ui/litellm-dashboard/src/hooks/{mcpOAuthUtils,useMcpOAuthFlow,useMcpOAuthFlow.test,useTestMCPConnection,useToolsOAuthFlow,useToolsOAuthFlow.test,useUserMcpOAuthFlow}.*"
   - id: B150
     milestone: M10 admin ui
-    title: Admin UI for settings, SSO, caching, logging, alerting, budgets, tags, pass-through and theme
+    title: Admin UI pages for settings, SSO, caching, logging, alerting, budgets, tags, pass-through and theme working against betterlite
     status: todo
     depends_on: [B144, B066]
     file: null
@@ -1650,6 +1654,8 @@ tasks:
       - "Dockerfile"
       - "docker-compose.yml"
       - "docker-compose.hardened.yml"
+      - "proxy_server_config.yaml"
+      - "prometheus.yml"
       - "docker/**"
   - id: B152
     milestone: M11 distribution
@@ -1691,3 +1697,134 @@ tasks:
     file: null
     covers:
       - "vscode-extension/**"
+  - id: B157
+    milestone: M12 python
+    title: The betterlite Python package over the Rust core, with LiteLLM's module-level settings
+    status: todo
+    depends_on: [B014]
+    file: null
+    covers:
+      - "pyproject.toml"
+      - "litellm/{__init__,_version}.py"
+      - "litellm/py.typed"
+  - id: B158
+    milestone: M12 python
+    title: Python completion and acompletion, streaming iterators and response objects
+    status: todo
+    depends_on: [B157, B005]
+    file: null
+    covers:
+      - "litellm/main.py"
+      - "litellm/chat_completions/**"
+      - "litellm/types/{utils,completion}.py"
+      - "litellm/litellm_core_utils/streaming_handler.py"
+  - id: B159
+    milestone: M12 python
+    title: Python embeddings, images, speech, transcription, rerank, moderation and text completion
+    status: todo
+    depends_on: [B158]
+    file: null
+    covers:
+      - "litellm/{embeddings,images,rerank_api,endpoints}/**"
+      - "litellm/types/{embedding,rerank}.py"
+      - "litellm/types/images/**"
+  - id: B160
+    milestone: M12 python
+    title: Python Responses, Anthropic Messages, Google GenAI and Interactions functions
+    status: todo
+    depends_on: [B158]
+    file: null
+    covers:
+      - "litellm/responses/main.py"
+      - "litellm/{anthropic_interface,messages}/**"
+      - "litellm/{google_genai,interactions}/main.py"
+      - "litellm/types/responses/**"
+  - id: B161
+    milestone: M12 python
+    title: Python files, batches, fine-tuning, vector stores, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime and passthrough functions
+    status: todo
+    depends_on: [B158]
+    file: null
+    covers:
+      - "litellm/{files,batches,fine_tuning,vector_stores,vector_store_files,assistants,containers,videos,skills,evals,search,ocr,rag,realtime_api,passthrough,decisions,sandbox,systemone}/**"
+  - id: B162
+    milestone: M12 python
+    title: Python Router class
+    status: todo
+    depends_on: [B158, B016]
+    file: null
+    covers:
+      - "litellm/router.py"
+      - "litellm/types/router.py"
+  - id: B163
+    milestone: M12 python
+    title: Python exception classes raised with LiteLLM's names and fields
+    status: todo
+    depends_on: [B157, B011]
+    file: null
+    covers:
+      - "litellm/exceptions.py"
+      - "litellm/anthropic_interface/exceptions/**"
+  - id: B164
+    milestone: M12 python
+    title: Python extension classes, CustomLogger, CustomGuardrail, CustomPromptManagement, CustomSecretManager and CustomLLM
+    status: todo
+    depends_on: [B158, B012]
+    file: null
+    covers:
+      - "litellm/integrations/{custom_logger,custom_batch_logger,custom_guardrail,custom_prompt_management,custom_secret_manager,custom_sso_handler}.py"
+      - "litellm/llms/custom_llm.py"
+      - "litellm/types/llms/custom_llm.py"
+  - id: B165
+    milestone: M12 python
+    title: Embedded Python in the proxy for callbacks, hooks and providers that config.yaml names
+    status: todo
+    depends_on: [B164, B124]
+    file: null
+    covers:
+      - "litellm/proxy/types_utils/**"
+      - "litellm/proxy/{custom_auth_auto,custom_validate,custom_sso,custom_prompt_management}.py"
+      - "litellm/proxy/custom_hooks/**"
+      - "litellm/proxy/guardrails/guardrail_hooks/custom_code/**"
+  - id: B166
+    milestone: M12 python
+    title: Python helpers for token counting, cost, model info, provider lookup, caching and budgets
+    status: todo
+    depends_on: [B158, B013, B068, B125]
+    file: null
+    covers:
+      - "litellm/{utils,cost_calculator,budget_manager}.py"
+      - "litellm/caching/{__init__,caching}.py"
+      - "litellm/litellm_core_utils/{token_counter,get_llm_provider_logic,get_model_cost_map}.py"
+  - id: B167
+    milestone: M12 python
+    title: Python types under litellm.types
+    status: todo
+    depends_on: [B157]
+    file: null
+    covers:
+      - "litellm/types/**"
+  - id: B168
+    milestone: M12 python
+    title: Python MCP and A2A clients
+    status: todo
+    depends_on: [B158, B140, B142]
+    file: null
+    covers:
+      - "litellm/experimental_mcp_client/**"
+      - "litellm/a2a_protocol/{client,main,card_resolver}.py"
+  - id: B169
+    milestone: M12 python
+    title: Python client for the proxy's management API
+    status: todo
+    depends_on: [B157, B134]
+    file: null
+    covers:
+      - "litellm/proxy/client/*.*"
+  - id: B170
+    milestone: M12 python
+    title: Python wheels for Linux, macOS and Windows and the PyPI release
+    status: todo
+    depends_on: [B157]
+    file: null
+    covers: []
