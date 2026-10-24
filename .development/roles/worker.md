@@ -18,6 +18,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 - Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. The first line of the gate output names the folder holding each check's full log.
+- Oracle helpers share one registry, and every helper task adds to it, so keep it in name order: the mod lines and HelperCall variants in tools/oracle/src/helpers/mod.rs, the arms of invoke, and the imports and RUNNERS entries in tools/oracle/helpers/dispatch.py. Entries added in different places merge without conflicts. A test that needs its own variant takes it with let-else instead of matching every variant, so the next helper does not have to edit it.
 
 ## LiteLLM
 
