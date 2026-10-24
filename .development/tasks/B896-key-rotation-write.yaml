@@ -98,7 +98,10 @@ scope:
     - crates/betterlite-server/src/key_rotation_write/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/key_rotation_write.rs
     - crates/betterlite-config/src/key_rotation_write/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-write-*

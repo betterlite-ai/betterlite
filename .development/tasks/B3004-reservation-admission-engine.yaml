@@ -1,0 +1,77 @@
+id: B3004
+title: Reserve counters and apply over-budget admission policy
+description: Build the admission engine in betterlite-auth::reservation_admission to initialize counters, handle grouped reservations with partial rollback, and enforce over-budget policy. Preserve the distinction between throttled key caps (which release the key's own max_budget counter to the rate limiter) and hard-block window/tenant/entity caps. Preserve partial headroom resizing when remaining budget is positive but insufficient, and fail_closed_budget_enforcement rejecting estimates that do not fit within the present counter state. Initialize counters by loading their current spend and writing to Redis through the pipeline; charge counter groups such that one counter failing does not touch later groups, and settle the over-budget policy per group before moving to the next. Implement the owned native service in crates/betterlite-auth/src/reservation_admission.rs.
+scope:
+  paths:
+  - crates/betterlite-auth/src/reservation_admission.rs
+  - crates/betterlite-auth/src/reservation_admission/**
+  - crates/betterlite-auth/src/lib.rs
+  - crates/betterlite-auth/src/error.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L73-L97
+  why: "Counter unavailable exception, used to signal failed initialization under fail_closed enforcement."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L151-L162
+  why: "Throttle exemption predicate to release key's own max_budget counter."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L165-L201
+  why: "Over-budget policy: release/resize/reject."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L204-L222
+  why: "BudgetExceededError construction with entity type/id and cost detail."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L910-L916
+  why: "Counter initialization loads all counters in order, skipping those that fail (unless fail_closed)."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L919-L934
+  why: "Loaded and reservation_counter_loaded async generators test and yield counters."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L937-L980
+  why: "Counter initialization path: source cache key vs window counter, error handling and logging."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L983-L1027
+  why: "Reserve reservable counters in groups, apply over-budget policy per group."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1030-L1045
+  why: "Reservation groups: all together if all fit, one-by-one otherwise for fine-grained rejection."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1048-L1086
+  why: "Reserve pipeline and fallback invalidation per counter on failure."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1089-L1095
+  why: "Read current counter value through the get_current_spend facade."
+dod:
+- text: A behavior test reservation_admission_engine_behaviors asserts counter initialization success, fail_closed enforcement, over-budget release/resize/block policy per entity scope, and throttle bypass for opted-in keys.
+  proof:
+  - reservation-admission-engine-behaviors
+- text: A boundary test reservation_admission_engine_boundaries asserts initialization failures when counters are unavailable, grouped reservation order, partial rollback on policy rejection, and resizing to exact remaining headroom.
+  proof:
+  - reservation-admission-engine-boundaries
+- text: Every oracle case exercises the admission engine in the full reservation flow, asserting counter writes, rejection on over-budget, 503 response on fail_closed enforcement and throttle release path through the rate limiter.
+  proof:
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: reservation-admission-engine-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::reservation_admission_engine_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: reservation-admission-engine-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::reservation_admission_engine_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+- tools/oracle/cases/admission/counter-initialization-success.yaml
+- tools/oracle/cases/admission/counter-initialization-unavailable-fail-open.yaml
+- tools/oracle/cases/admission/counter-initialization-unavailable-fail-closed.yaml
+- tools/oracle/cases/admission/grouped-reservation-all-fit.yaml
+- tools/oracle/cases/admission/grouped-reservation-one-by-one.yaml
+- tools/oracle/cases/admission/over-budget-key-throttle-release.yaml
+- tools/oracle/cases/admission/over-budget-entity-resize.yaml
+- tools/oracle/cases/admission/over-budget-entity-block.yaml
+- tools/oracle/cases/admission/over-budget-block-fail-closed.yaml
+deviations: []
+out_of_scope:
+- "Reservation lease renewal (B071) and unbound-request cleanup."
+- "Settlement and release of reservations (B3003)."
+- "Reading current spend from cache and database (B3014, B3015)."
+pitfalls:
+- "fail_closed_budget_enforcement on a counter that fails to initialize raises 503, while one that fails to reserve during the pipeline call depends on partial-group success."
+- "Throttle release exemption applies only to the key's own max_budget counter, not team/window/entity caps; window caps always hard-block."
+- "Grouped reservation order is critical: batch read of all counters, then charge in groups so early rejections do not modify later counters."
+- "Partial headroom resizing requires checking remaining budget before and after the reservation in the same counter, not after other counters are charged."
+- "A counter that is read but fails to initialize is skipped (not charged), but if fail_closed enforcement is on, the request is rejected with 503 instead."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

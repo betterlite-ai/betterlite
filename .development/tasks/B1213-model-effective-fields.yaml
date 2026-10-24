@@ -84,7 +84,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-effective-fields-*
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/model_effective_fields.rs
     - crates/betterlite-config/src/model_effective_fields/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-effective-fields-*

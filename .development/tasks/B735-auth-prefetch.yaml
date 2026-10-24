@@ -131,7 +131,10 @@ scope:
     - crates/betterlite-auth/src/auth_prefetch/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/auth_prefetch.rs
     - crates/betterlite-config/src/auth_prefetch/**
   lint_tables: false

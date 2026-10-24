@@ -46,7 +46,10 @@ scope:
   - tools/oracle/litellm/probes/tier_definitions.py
   - tools/oracle/cases/routing/tier-definitions/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/tier_definitions.rs
   - crates/betterlite-config/src/tier_definitions/**

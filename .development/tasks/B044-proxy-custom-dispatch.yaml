@@ -59,7 +59,10 @@ scope:
     - crates/betterlite-config/src/providers.rs
     - crates/betterlite-config/src/providers/legacy_provider.rs
     - crates/betterlite-config/src/providers/legacy_provider/**
-    - crates/betterlite-config/src/settings.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*
     - tools/oracle/src/helpers/mod.rs
     - tools/oracle/src/helpers/custom_method.rs

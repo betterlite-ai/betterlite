@@ -8,11 +8,20 @@ pub mod case;
 mod cli;
 mod compare;
 mod gateway;
+#[expect(
+    clippy::mod_module_files,
+    clippy::disallowed_methods,
+    clippy::absolute_paths,
+    clippy::map_err_ignore,
+    reason = "The bounded helper process runner owns these CLI and pipe operations."
+)]
+mod helpers;
 pub mod http;
 pub mod mock;
 mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
+pub mod routing_probe_ipc;
 pub mod runner;
 
 mod tests;
@@ -21,7 +30,7 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus};
 use std::str::Utf8Error;
-use std::time::SystemTimeError;
+use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
 use thiserror::Error;
@@ -115,6 +124,47 @@ pub enum OracleError {
     Json(#[source] serde_json::Error),
     #[error("system clock error: {0}")]
     Clock(#[source] SystemTimeError),
+    #[error("probe message exceeds the 1 MiB limit")]
+    ProbeTooLarge,
+    #[error("probe message is malformed: {0}")]
+    ProbeMalformed(#[source] serde_json::Error),
+    #[error("random sample {0} is not below 2^53")]
+    ProbeSample(u64),
+    #[error("cannot start probe: {0}")]
+    ProbeSpawn(#[source] io::Error),
+    #[error("probe was started without piped standard streams")]
+    ProbePipe,
+    #[error("probe I/O failed: {0}")]
+    ProbeIo(#[source] io::Error),
+    #[error("probe did not finish within {0:?}")]
+    ProbeTimeout(Duration),
+    #[error("probe exited with {status}")]
+    ProbeExited { status: ExitStatus, stderr: Vec<u8> },
+    #[error("helper input is invalid: {message}")]
+    HelperInput { message: String },
+    #[error("cannot start helper: {0}")]
+    HelperSpawn(#[source] io::Error),
+    #[error("cannot write helper input: {0}")]
+    HelperIo(#[source] io::Error),
+    #[error("helper stdin is unavailable")]
+    HelperStdin,
+    #[error("helper stdout is unavailable")]
+    HelperStdout,
+    #[error("helper stderr is unavailable")]
+    HelperStderr,
+    #[error("helper reader thread panicked")]
+    HelperJoin,
+    #[error("helper timed out and was reaped")]
+    HelperTimeout,
+    #[error("helper output exceeded 1 MiB")]
+    HelperOutputTooLarge,
+    #[error("helper exited with {status}: {diagnostic}")]
+    HelperExited {
+        status: ExitStatus,
+        diagnostic: String,
+    },
+    #[error("helper output is not valid JSON: {0}")]
+    HelperJson(#[source] serde_json::Error),
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

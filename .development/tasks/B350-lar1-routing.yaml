@@ -45,7 +45,10 @@ scope:
   - tools/oracle/litellm/probes/lar1_routing.py
   - tools/oracle/cases/routing/lar1-routing/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/lar1_routing.rs
   - crates/betterlite-config/src/lar1_routing/**

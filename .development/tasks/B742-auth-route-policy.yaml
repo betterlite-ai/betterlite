@@ -120,7 +120,10 @@ scope:
     - tools/oracle/cases/auth/auth-route-policy/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/auth_route_policy.rs
     - crates/betterlite-config/src/auth_route_policy/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-route-policy-*

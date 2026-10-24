@@ -23,10 +23,11 @@ use serde_json::Value;
 
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::{Case, Compare, UpstreamAnswer, load_cases};
+use crate::case::{Case, Compare, LoadedCase, UpstreamAnswer, load_cases, parse_helper_case};
 use crate::cli::Options;
 use crate::compare;
 use crate::gateway::{self, GatewayInput};
+use crate::helpers::HelperOutput;
 use crate::http::{MAX_BODY, Response, client, ready, send};
 use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
@@ -170,7 +171,7 @@ fn oracle_error_preserves_typed_sources() {
 
 #[test]
 fn oracle_modules_return_the_crate_error() {
-    let _: fn(&[PathBuf]) -> Result<Vec<Case>, OracleError> = load_cases;
+    let _: fn(&[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> = load_cases;
     let _: fn() -> Result<Client, OracleError> = client;
     let _: fn(&Path) -> Result<(), OracleError> = sync_litellm;
     let _: fn() -> Result<PathBuf, OracleError> = paths::artifact_root;
@@ -485,9 +486,31 @@ fn run_cases_propagates_a_gateway_start_failure() {
     };
     let mut case = test_case();
     case.config = "not: [valid".to_owned();
-    let result = runner::run_cases(&options, vec![case]);
+    let result = runner::run_cases(&options, vec![LoadedCase::Http(case)]);
     let _error = result.unwrap_err();
     fs::remove_dir_all("target/oracle").unwrap();
+}
+
+#[test]
+fn replays_the_helper_case_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let results = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let source = fs::read_to_string(path).unwrap();
+            parse_helper_case(&source)
+        })
+        .collect::<Result<Vec<_>, _>>();
+    results.unwrap();
+    assert!(parse_helper_case("kind: helper\nname: ''\ncall: {url_path: {function: segment, value: id}}\nenv: {}\ncompare: {ignore: []}\n").is_err());
+}
+
+#[test]
+fn helper_comparison_reports_differences() {
+    let left: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"left"}"#).unwrap();
+    let right: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"right"}"#).unwrap();
+    compare::compare_helper(&left, &right, &[]).unwrap();
 }
 
 #[test]

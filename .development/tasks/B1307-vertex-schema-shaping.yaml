@@ -31,7 +31,10 @@ scope:
     - crates/betterlite-vertex/src/error.rs
     - crates/betterlite-vertex/src/vertex_schema.rs
     - crates/betterlite-vertex/src/vertex_schema/**
-    - crates/betterlite-config/src/env.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/schema.rs
     - crates/betterlite-config/src/providers/vertex/schema/**

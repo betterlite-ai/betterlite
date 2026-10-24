@@ -1,0 +1,243 @@
+id: B3002
+title: Collect entity and window reservation counters
+description: >-
+  Build `betterlite-auth::reservation_counters` to construct an ordered list of budget counter
+  descriptors from an authenticated request and the cache services that supply entity rows.
+  Each counter holds a budget ceiling, a fallback spend floor and metadata identifying the
+  entity (key, team, user, end-user, tag, access group, team member, organization or project)
+  and optionally a window (for time-windowed budgets with a duration and reset time).
+
+  The counters are built in order: key, then team, then user (conditionally), then end-user,
+  tag, access group, team member, organization and project. A counter is included only when
+  its entity has a positive-capped budget; entities with zero or negative limits are skipped.
+
+  Window counters nest under entity counters, one for each of the entity's configured budget_limits,
+  with a window_start time calculated from the window's budget_duration and reset_at timestamp.
+  A window with an unparseable duration emits a warning and is skipped.
+
+  Preserve the key throttle exemption (a team key supplies a team throttle decision, not a key
+  throttle decision, even if the key has its own cap). The user budget applies unless the key
+  is a team key, except when apply_user_budget_to_team_keys explicitly overrides this.
+  End-user and team member budgets calculate effective budgets by adding active temporary
+  increases to base caps. Tag counters deduplicate names from the request body before batching.
+  Model access groups come from the auth token's matched_model_access_groups after common_checks
+  resolved authorization. Organization counters prefer the direct org_id, then fall back to the
+  team's organization_id. Project counters skip if budget is infinite (math.isfinite check).
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/reservation_counters.rs
+    - crates/betterlite-auth/src/reservation_counters/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L481-L608
+    why: _get_budget_counters orchestrates the counter collection in order, with conditional user/team logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L611-L639
+    why: _get_end_user_budget_counter resolves end_user_id, merges spend from object, falls back to budget_table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L642-L681
+    why: _get_tag_budget_counters deduplicates, batches and builds counters from tag objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L684-L707
+    why: _get_model_access_group_budget_counters uses matched groups from auth, not re-derived from request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L710-L721
+    why: _model_access_group_counter filters out groups with zero/negative caps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L724-L732
+    why: _dedupe_tags preserves order and skips seen names on first encounter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L735-L782
+    why: _get_team_member_budget_counter loads membership from cache, adds temp budget increases, defaults from team metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L785-L820
+    why: _get_org_budget_counter prefers direct org_id, falls back to team.organization_id, loads with_budget flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L823-L850
+    why: _get_project_budget_counter skips infinite budgets via math.isfinite after _to_float coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L853-L891
+    why: _get_budget_limit_counters iterates windows, coerces duration/budget, calculates window_start or skips with warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1-L70
+    why: Imports, _BudgetCounter dataclass, _COUNTER_ENTITY_TYPES mapping of internal names to enum variants.
+dod:
+  - text: >-
+      Key counters are collected when valid_token.token exists and max_budget > 0.
+      Window counters under the key follow from its budget_limits.
+    proof: [counter-key]
+  - text: >-
+      Team counters are collected when team_object exists and max_budget > 0.
+      Window counters under the team follow from its budget_limits.
+    proof: [counter-team]
+  - text: >-
+      User counters are collected when not a team key (or apply_user_budget_to_team_keys=true),
+      user_object exists and max_budget > 0.
+    proof: [counter-user-conditional, counter-user-team-key, counter-user-override]
+  - text: >-
+      End-user counters resolve from end_user_id parameter first, then fall back to valid_token.end_user_id,
+      merge max_budget from token or budget_table, merge spend from object, and skip if budget <= 0.
+    proof: [counter-enduser-token-id, counter-enduser-param-id, counter-enduser-fallback-table, counter-enduser-skip-zero]
+  - text: >-
+      Tag counters deduplicate names from get_tags_from_request_body (B1102) in first-seen order,
+      batch-fetch from get_tag_objects_batch (B740), skip tags with missing budgets or budget <= 0.
+    proof: [counter-tag-dedup, counter-tag-batch, counter-tag-skip-zero]
+  - text: >-
+      Model access group counters use valid_token.matched_model_access_groups (resolved by B732's
+      common_checks), batch-fetch via get_model_access_group_budgets_batch (B740), skip groups
+      with missing budgets or budget <= 0.
+    proof: [counter-accessgroup-matched, counter-accessgroup-batch, counter-accessgroup-skip-zero]
+  - text: >-
+      Team member counters collect from team membership cache under the membership_cache_key (B733),
+      merge effective_max_budget (from membership row or team metadata default), add active_temp_budget_increase,
+      and skip if team is None, team_key is None, user is None, valid_token.user_id is None, or final budget <= 0.
+    proof: [counter-member-cache, counter-member-effective, counter-member-temp-increase, counter-member-token-user-id, counter-member-skip-zero]
+  - text: >-
+      Organization counters prefer valid_token.org_id, fall back to team_object.organization_id,
+      load from cache key org_id:with_budget, extract budget from litellm_budget_table, skip if missing or <= 0.
+    proof: [counter-org-token-id, counter-org-team-id, counter-org-cache, counter-org-skip-zero]
+  - text: >-
+      Project counters load from cache via valid_token.project_id, extract budget from litellm_budget_table,
+      filter out infinite budgets via math.isfinite, skip if budget is None, <= 0, or not finite.
+    proof: [counter-project-id, counter-project-finite, counter-project-skip-zero]
+  - text: >-
+      Window counters are built for every entry in entity.budget_limits that has budget_duration and max_budget > 0.
+      window_start is calculated from budget_duration and reset_at, defaulting to (now - duration) if reset_at is None.
+      reset_at is coerced to UTC. Windows with unparseable durations emit verbose warnings and are skipped.
+    proof: [counter-window-parse, counter-window-start, counter-window-utc, counter-window-skip-invalid]
+  - text: "Counters preserve their order: key first, then team, user, end-user, tag, access-group, team-member, org, project."
+    proof: [counter-order]
+  - text: "Every counter holds the correct counter_key format, source_cache_key for non-window entities, and window metadata for window counters."
+    proof: [counter-keys, counter-cache-keys, counter-window-metadata]
+  - text: "Fallback spend values are merged from entity rows and coerced to float via _to_float (B3000), defaulting to 0.0."
+    proof: [counter-fallback-spend]
+  - text: "Entity type strings in counters map to the literal values in _COUNTER_ENTITY_TYPES."
+    proof: [counter-entity-types]
+checks:
+  optional: [mutants]
+  commands:
+    - id: counter-key
+      why: key counters not collected, budgets not positive-capped, or budget_limits windows missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && key)'
+    - id: counter-team
+      why: team counters not collected, budgets not positive-capped, or budget_limits windows missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && team && !member && !budget)'
+    - id: counter-user-conditional
+      why: user counter logic does not apply unless team key condition met
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_conditional)'
+    - id: counter-user-team-key
+      why: user budget skipped when key is team key and apply_user_budget_to_team_keys is false
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_team_key)'
+    - id: counter-user-override
+      why: user budget collected when apply_user_budget_to_team_keys=true even with team key
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && user_override)'
+    - id: counter-enduser-token-id
+      why: end-user counter resolves from valid_token.end_user_id
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_token)'
+    - id: counter-enduser-param-id
+      why: end-user counter resolves from end_user_id parameter over valid_token
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_param)'
+    - id: counter-enduser-fallback-table
+      why: end-user budget falls back to litellm_budget_table.max_budget when token has none
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_fallback)'
+    - id: counter-enduser-skip-zero
+      why: end-user counter skipped when budget <= 0
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && enduser_skip)'
+    - id: counter-tag-dedup
+      why: tag names deduplicated, order preserved, duplicates skipped on first seen
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_dedup)'
+    - id: counter-tag-batch
+      why: tags batch-fetched via get_tag_objects_batch, missing tags skipped
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_batch)'
+    - id: counter-tag-skip-zero
+      why: tag counter skipped when budget <= 0
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && tag_skip)'
+    - id: counter-accessgroup-matched
+      why: access group counters use valid_token.matched_model_access_groups only, not request-derived groups
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_matched)'
+    - id: counter-accessgroup-batch
+      why: access groups batch-fetched via get_model_access_group_budgets_batch
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_batch)'
+    - id: counter-accessgroup-skip-zero
+      why: access group counter skipped when budget <= 0
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && group_skip)'
+    - id: counter-member-cache
+      why: team member budget loaded from UserApiKeyCache using team_membership_reservation_cache_key
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_cache)'
+    - id: counter-member-effective
+      why: team member effective_max_budget called when membership row exists
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_effective)'
+    - id: counter-member-temp-increase
+      why: team member budget includes active_temp_budget_increase from membership row
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_temp)'
+    - id: counter-member-token-user-id
+      why: team member counter skipped when valid_token.user_id is None even if user_object is set
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_token_user)'
+    - id: counter-member-skip-zero
+      why: team member counter skipped when final budget <= 0
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && member_skip)'
+    - id: counter-org-token-id
+      why: organization counter prefers valid_token.org_id
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_token)'
+    - id: counter-org-team-id
+      why: organization counter falls back to team_object.organization_id when token.org_id missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_team)'
+    - id: counter-org-cache
+      why: organization row loaded from cache key org_id:with_budget
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_cache)'
+    - id: counter-org-skip-zero
+      why: organization counter skipped when budget <= 0 or budget_table missing
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && org_skip)'
+    - id: counter-project-id
+      why: project counter loads from cache via valid_token.project_id
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_id)'
+    - id: counter-project-finite
+      why: project budget checked with math.isfinite before inclusion
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_finite)'
+    - id: counter-project-skip-zero
+      why: project counter skipped when budget is None, <= 0, or not finite
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && project_skip)'
+    - id: counter-window-parse
+      why: windows parsed from entity.budget_limits, budget_duration extracted and duration_in_seconds called
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_parse)'
+    - id: counter-window-start
+      why: window_start calculated as reset_at - duration, or (now - duration) if reset_at is None
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_start)'
+    - id: counter-window-utc
+      why: reset_at coerced to UTC if tzinfo is None
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_utc)'
+    - id: counter-window-skip-invalid
+      why: windows with unparseable durations skipped with verbose warning, budget_duration empty
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_skip)'
+    - id: counter-order
+      why: counters ordered as key, team, user, enduser, tag, accessgroup, member, org, project
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && order)'
+    - id: counter-keys
+      why: counter_key has correct format for each entity type
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && keys)'
+    - id: counter-cache-keys
+      why: source_cache_key set for non-window counters, matches expected key constructors
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && cache_keys)'
+    - id: counter-window-metadata
+      why: window counters have spend_log_entity_id, window_duration, window_start set
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && window_metadata)'
+    - id: counter-fallback-spend
+      why: fallback spend values coerced via _to_float and default to 0.0 when None or invalid
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && fallback)'
+    - id: counter-entity-types
+      why: entity_type strings match _COUNTER_ENTITY_TYPES mapping
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_counters::/ && entity_types)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Behavior behind the counter descriptors. This task only builds them; B3004 applies them in the admission engine.
+  - Settlement and release logic for reserved counters. B3003 owns that.
+  - Cache initialization or lookup error handling. B733 (UserApiKeyCache) and B740 (get_tag_objects_batch, get_model_access_group_budgets_batch) own those.
+  - Window coercion, datetime parsing and duration_in_seconds parsing. B3000 owns _coerce_window, _coerce_datetime and get_budget_window_start; this task consumes them.
+pitfalls:
+  - "A team key supplies a team throttle decision, not a key throttle decision. The key counter is still collected, but B3000's throttle filter gates a key using team throttle logic, not key logic."
+  - "The team key conditional is (team_object is not None and team_object.team_id is not None). Apply that same test when deciding to skip user budget."
+  - "apply_user_budget_to_team_keys is a boolean flag that overrides the team key conditional. Read its value from the settings and pass it through."
+  - "active_temp_budget_increase is a method call that takes the current datetime, not a field access. Call it with datetime.now(timezone.utc)."
+  - "end_user_object may be None, a dict, or an ORM object. Use _get_value with attribute access fallback."
+  - "tag_object and similar objects may be dicts or ORM objects with a litellm_budget_table field/key. _get_value handles both."
+  - "math.isfinite returns false for NaN and infinity. Use it to skip project budgets after _to_float coercion."
+  - "Window counters have None source_cache_key and instead use spend_log_entity_id and window metadata."
+  - "The spend_log_entity_id on a window counter is the original entity_id (e.g. key token or user_id), not the keyed version with window duration appended. entity_id includes the window duration for tracking."
+  - "Order matters: key/budget_limits windows come before team, team/windows before user, etc. Do not reorder."
+  - "Membership cache keys are constructed with team_membership_reservation_cache_key(user_id, team_id), not a string key."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

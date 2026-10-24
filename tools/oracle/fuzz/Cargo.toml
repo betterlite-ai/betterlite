@@ -12,6 +12,20 @@ betterlite-oracle = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "helper_case"
+path = "fuzz_targets/helper_case.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "probe_ipc"
+path = "fuzz_targets/probe_ipc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mock_script"
 path = "fuzz_targets/mock_script.rs"
 test = false

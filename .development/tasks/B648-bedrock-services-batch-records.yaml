@@ -149,10 +149,10 @@ scope:
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records/**
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/settings.rs
-  - crates/betterlite-config/src/model.rs
-  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/providers.rs
   - crates/betterlite-config/src/providers/bedrock.rs
   - crates/betterlite-config/src/providers/bedrock/batch_records.rs
