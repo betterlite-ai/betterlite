@@ -1,0 +1,102 @@
+id: B194
+title: Model catalog loading and atomic refresh
+description: >-
+  Add an injected catalog source and atomic reload service to betterlite-models, using B009's configured HTTP transport
+  and B193's parser. Track source kind, raw-byte git-blob revision, ETag, load timestamp and failure provenance;
+  keep loaded base catalog separate from runtime registrations and reapply validated overrides after a replacement.
+  Resolve LITELLM_LOCAL_MODEL_COST_MAP through config and use the bundled catalog by default in the proxy; expose
+  an explicit constructor-supplied remote source for later management reloads and Python settings without accepting
+  URLs from requests. Implement bounded transient retry/Retry-After behavior with injected clock/randomness, integrity
+  checks and an owned reload task. Failed reload keeps the current snapshot; startup source failures fall back to
+  the packaged asset with visible diagnostics. Add catalog_refresh helper cases with local synthetic HTTP replies
+  and deterministic RNG; extend model_catalog and config corpora for all new input. Budget 330 refresh/provenance
+  lines, 100 config wiring and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/source.rs
+  - crates/betterlite-models/src/source/**
+  - crates/betterlite-models/src/reload.rs
+  - crates/betterlite-models/src/reload/**
+  - crates/betterlite-models/src/catalog.rs
+  - crates/betterlite-models/src/catalog/**
+  - crates/betterlite-models/fuzz/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/catalog-refresh/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L112-L198
+  why: Integrity and model-count shrink checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L232-L412
+  why: Retry classification, Retry-After and reload semantics.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L415-L478
+  why: Catalog provenance fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L556-L697
+  why: Override adoption and startup fallback.
+dod:
+- text: Source/revision/integrity and retry classification match helper cases with deterministic local inputs.
+  proof:
+  - oracle
+- text: Concurrent readers see an entire old or new catalog, failed refresh retains the old one, and validated overrides
+    survive successful replacement.
+  proof:
+  - catalog-refresh-tests
+- text: Local mode performs no network calls and refresh tasks honor byte/time/retry limits and shutdown cancellation.
+  proof:
+  - catalog-refresh-tests
+- text: Model/config parser corpora cover remote content and injected environment settings.
+  proof:
+  - model-catalog-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: catalog-refresh-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(/catalog_refresh/)'
+  - id: model-catalog-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-models/fuzz/fuzz_targets/model_catalog.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_catalog)"
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_model_catalog_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/catalog-refresh/local-source.yaml
+- tools/oracle/cases/helpers/catalog-refresh/raw-blob-revision.yaml
+- tools/oracle/cases/helpers/catalog-refresh/valid-remote.yaml
+- tools/oracle/cases/helpers/catalog-refresh/shrunken-map.yaml
+- tools/oracle/cases/helpers/catalog-refresh/invalid-json.yaml
+- tools/oracle/cases/helpers/catalog-refresh/retry-after.yaml
+- tools/oracle/cases/helpers/catalog-refresh/nonretryable.yaml
+- tools/oracle/cases/helpers/catalog-refresh/retry-exhaustion.yaml
+- tools/oracle/cases/helpers/catalog-refresh/failed-reload-keeps-current.yaml
+deviations: []
+out_of_scope:
+- The public model-price reload endpoint and its authorization are later management tasks.
+- Scheduled background fetch is not enabled implicitly; the lifecycle owner must explicitly start and drain any
+  reload work.
+pitfalls:
+- Revision hashes cover the original bytes, not a reformatted serialized map.
+- A reload failure must not replace a good runtime catalog with the packaged fallback.
+- The model resolver depends only on the catalog data, never on the HTTP reload service's mutable state.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

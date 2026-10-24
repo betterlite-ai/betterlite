@@ -2005,7 +2005,7 @@ tasks:
     title: Model catalog loading and atomic refresh
     status: todo
     depends_on: [B193, B009]
-    file: null
+    file: tasks/B194-catalog-refresh.yaml
     covers:
       - "litellm/litellm_core_utils/get_model_cost_map.py"
   - id: B195
