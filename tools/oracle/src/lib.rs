@@ -12,6 +12,7 @@ pub mod http;
 pub mod mock;
 mod paths;
 pub mod process;
+pub mod routing_mock_scripts;
 pub mod runner;
 
 mod tests;
@@ -22,6 +23,7 @@ use std::process::{ExitCode, ExitStatus};
 use std::str::Utf8Error;
 use std::time::SystemTimeError;
 
+use axum::http::status::InvalidStatusCode;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -56,6 +58,26 @@ pub enum OracleError {
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]
     MockJoin,
+    #[error("mock script is {bytes} bytes, past the 16 MiB limit")]
+    ScriptTooLarge { bytes: usize },
+    #[error("cannot parse mock script: {0}")]
+    ScriptParse(#[source] serde_json::Error),
+    #[error("mock script has {count} replies, past the limit of 256")]
+    ScriptReplies { count: usize },
+    #[error("mock script deadline_ms {millis} is outside 1 to 30000")]
+    ScriptDeadline { millis: u64 },
+    #[error("mock script reply {index} waits {millis} ms, past the script deadline")]
+    ScriptDelay { index: usize, millis: u64 },
+    #[error("mock script reply {index} must contain exactly one of body or events")]
+    ScriptAnswer { index: usize },
+    #[error("mock script reply {index} has an invalid status: {source}")]
+    ScriptStatus {
+        index: usize,
+        #[source]
+        source: InvalidStatusCode,
+    },
+    #[error("mock script barrier {name} is held by fewer than two replies")]
+    ScriptBarrier { name: String },
     #[error("cannot open gateway log {path}: {source}")]
     ProcessLog {
         path: PathBuf,
