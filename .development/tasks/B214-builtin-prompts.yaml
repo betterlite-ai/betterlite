@@ -87,7 +87,15 @@ oracle_cases:
 - tools/oracle/cases/helpers/builtin-prompts/claude-2-1.yaml
 - tools/oracle/cases/helpers/builtin-prompts/granite.yaml
 - tools/oracle/cases/helpers/builtin-prompts/titan.yaml
-deviations: []
+deviations:
+- what: >-
+    Open, waiting for Max: retain inline-only Ollama image conversion, or use the shared SSRF-checked public-URL
+    downloader from B009/B183.
+  why: >-
+    convert_to_ollama_image calls convert_url_to_base64 for HTTP inputs; do not extend acquisition before the shared
+    decision.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L176-L194
 out_of_scope:
 - >-
   The remaining functions in the shared covered paths belong to B177 and its explicitly named sibling parts; this
