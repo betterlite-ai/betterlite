@@ -56,6 +56,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: betterlite ships a Python package over the Rust core with LiteLLM's public API, used as `import betterlite as litellm`, and the proxy runs the Python callbacks and hooks config.yaml names (M12). The module is named betterlite because LiteLLM's name stays out of what betterlite ships.
 - 2026-10-24: the rule questions R1 to R21 are answered. The answers live in rules.yaml, the clippy.toml and Cargo.toml templates, the no-loops-in-tests ast-grep rule and the 300-line source limit in checks.yaml.
 - 2026-10-24: the pyramid questions are answered. Security tasks get an Opus review, Claude Opus gets one try after the Codex rungs, at most 3 dispatches run at once, every task gets a review, and `cargo gate plan` waits until 2 or 3 real dispatches show where the planner trips.
+- 2026-10-24: the architect may raise a single task's budget (lines, expects, timeouts) when the work is cohesive and passes, and says why in the PR. Agents never get more access. B001 is the first: 1,700 lines for the oracle harness.
 
 ## Writing a task
 
@@ -77,7 +78,7 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 | `cargo gate list <ID>` | Prints every check the task runs |
 | `cargo gate run <ID>` | Runs them all and prints PASS, FAIL or SKIP per check; logs go to .git/betterlite/<ID>/gate/ |
 | `cargo gate run <ID> --only <check>` | Runs one check (repeat --only for more) |
-| `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer |
+| `cargo gate dispatch <ID>` | Runs the task through the worker ladder and the reviewer; `--note "..."` (repeatable) hands the first attempt a finding the last run left open |
 | `cargo gate schema` | Regenerates schema/ after a change to the gate's types |
 | `cargo gate hook` | The Stop hook for Claude Code and Codex; reads the hook JSON on stdin |
 | `cargo gate coverage` | Prints how many LiteLLM paths each backlog entry claims, then every unclaimed path and every glob that claims nothing |

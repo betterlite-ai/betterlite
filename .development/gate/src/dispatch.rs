@@ -146,9 +146,10 @@ fn run_ladder(
     agents: &Agents,
     brief: &Brief<'_>,
     places: &Places<'_>,
+    notes: Vec<String>,
 ) -> Result<Vec<String>, GateError> {
     let mut progress = Progress {
-        feedback: Vec::new(),
+        feedback: notes,
         number: 0,
         review_rounds: 0,
     };
@@ -167,7 +168,11 @@ fn run_ladder(
     })
 }
 
-pub(crate) fn dispatch(development: &Development, task_id: &str) -> Result<Vec<String>, GateError> {
+pub(crate) fn dispatch(
+    development: &Development,
+    task_id: &str,
+    notes: Vec<String>,
+) -> Result<Vec<String>, GateError> {
     let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
     let file = ready_file(development, task_id)?;
     let task: Task = development.task(task_id)?;
@@ -193,5 +198,5 @@ pub(crate) fn dispatch(development: &Development, task_id: &str) -> Result<Vec<S
         git_common_dir: &git_common_dir,
         home: &home,
     };
-    run_ladder(&agents, &brief, &places)
+    run_ladder(&agents, &brief, &places, notes)
 }
