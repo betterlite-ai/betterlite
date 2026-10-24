@@ -10,11 +10,9 @@ mod compare;
 mod gateway;
 #[expect(
     clippy::mod_module_files,
-    clippy::too_many_lines,
     clippy::disallowed_methods,
     clippy::absolute_paths,
     clippy::map_err_ignore,
-    clippy::shadow_unrelated,
     reason = "B171's bounded helper process runner owns these CLI and pipe operations."
 )]
 mod helpers;

@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::io::{self, Read, Write as _};
 use std::num::NonZeroUsize;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::thread;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::OracleError;
@@ -46,31 +46,19 @@ pub(crate) enum HelperRun {
 
 pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
     let call_json = serde_json::to_value(&case.call).map_err(OracleError::Json)?;
-    let object = call_json
-        .as_object()
-        .ok_or_else(|| OracleError::HelperInput {
-            message: "helper call is not an object".to_owned(),
-        })?;
-    let (operation, input_value) =
-        object
-            .iter()
-            .next()
-            .ok_or_else(|| OracleError::HelperInput {
-                message: "helper call has no operation".to_owned(),
-            })?;
+    let Some((operation, input_value)) = call_json.as_object().and_then(|call| call.iter().next())
+    else {
+        return Err(OracleError::HelperInput {
+            message: "helper call is not a tagged object".to_owned(),
+        });
+    };
     let python_input = serde_json::json!({"operation": operation, "input": input_value});
-    let rust = invoke(&case.call);
-    let first = run_python(&python_input, &case.env)?;
-    let python_second = if self_check {
-        Some(run_python(&python_input, &case.env)?)
+    let left = if self_check {
+        run_python(&python_input, &case.env)?
     } else {
-        None
+        invoke(&case.call)
     };
-    let (left, right) = if let Some(second_output) = python_second {
-        (first, second_output)
-    } else {
-        (rust, first)
-    };
+    let right = run_python(&python_input, &case.env)?;
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
         writeln!(
             io::stderr().lock(),
@@ -107,70 +95,87 @@ fn run_python(
     case_env: &BTreeMap<String, String>,
 ) -> Result<HelperOutput, OracleError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let project = root.join("tools/oracle/litellm");
-    let dispatch = root.join("tools/oracle/helpers/dispatch.py");
     let mut command = Command::new("setpriv");
     command
-        .args([
-            "--pdeathsig",
-            "KILL",
-            "--",
-            "uv",
-            "run",
-            "--locked",
-            "--no-dev",
-            "--project",
-        ])
-        .arg(&project)
-        .args(["python"])
-        .arg(&dispatch)
-        .env_clear()
+        .args(["--pdeathsig", "KILL", "--", "uv", "run", "--locked"])
+        .args(["--no-dev", "--project"])
+        .arg(root.join("tools/oracle/litellm"))
+        // uv does not pass a SIGKILL on, so timeout bounds python when the runner kills uv.
+        .args(["timeout", "--signal=KILL", "10", "python"])
+        .arg(root.join("tools/oracle/helpers/dispatch.py"))
+        .env_clear();
+    configure_environment(&mut command, case_env);
+    let bytes = serde_json::to_vec(input).map_err(OracleError::Json)?;
+    let stdout_output = run_bounded(&mut command, bytes, Duration::from_secs(15))?;
+    serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
+}
+
+fn run_bounded(
+    command: &mut Command,
+    input: Vec<u8>,
+    timeout: Duration,
+) -> Result<Vec<u8>, OracleError> {
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_environment(&mut command, case_env);
-    let mut child = command.spawn().map_err(OracleError::HelperSpawn)?;
-    let bytes = serde_json::to_vec(input).map_err(OracleError::Json)?;
-    let mut stdin = child.stdin.take().ok_or(OracleError::HelperStdin)?;
-    stdin.write_all(&bytes).map_err(OracleError::HelperIo)?;
-    drop(stdin);
-    let stdout = child.stdout.take().ok_or(OracleError::HelperStdout)?;
-    let stderr = child.stderr.take().ok_or(OracleError::HelperStderr)?;
-    let output_reader = thread::spawn(move || read_limited(stdout));
-    let error_reader = thread::spawn(move || read_limited(stderr));
-    let deadline = Instant::now()
-        .checked_add(Duration::from_secs(10))
-        .ok_or(OracleError::HelperTimeout)?;
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(OracleError::HelperIo)? {
-            break status;
-        }
-        if Instant::now().checked_duration_since(deadline).is_some() {
-            let _killed = child.kill();
-            let _reaped = child.wait();
-            return Err(OracleError::HelperTimeout);
-        }
-        thread::park_timeout(Duration::from_millis(10));
-    };
-    let stdout = output_reader
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)?;
-    let stderr = error_reader
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)?;
-    if stdout.1 {
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(OracleError::HelperSpawn)?;
+    let pumped = pump_helper_pipes(&mut child, input);
+    let status = wait_for_helper_exit(&mut child, timeout)?;
+    let pipes = pumped?;
+    let (stdout_output, stdout_excess) = join_pipe(pipes.output)?;
+    let (stderr_output, _stderr_excess) = join_pipe(pipes.diagnostic)?;
+    if stdout_excess {
         return Err(OracleError::HelperOutputTooLarge);
     }
     if !status.success() {
-        let diagnostic = String::from_utf8_lossy(&stderr.0);
         return Err(OracleError::HelperExited {
             status,
-            diagnostic: diagnostic.into_owned(),
+            diagnostic: String::from_utf8_lossy(&stderr_output).into_owned(),
         });
     }
-    serde_json::from_slice(&stdout.0).map_err(OracleError::HelperJson)
+    join_pipe(pipes.input)?;
+    Ok(stdout_output)
+}
+
+struct HelperPipes {
+    input: JoinHandle<io::Result<()>>,
+    output: JoinHandle<io::Result<(Vec<u8>, bool)>>,
+    diagnostic: JoinHandle<io::Result<(Vec<u8>, bool)>>,
+}
+
+fn pump_helper_pipes(child: &mut Child, input: Vec<u8>) -> Result<HelperPipes, OracleError> {
+    let mut stdin_pipe = child.stdin.take().ok_or(OracleError::HelperStdin)?;
+    let stdout_pipe = child.stdout.take().ok_or(OracleError::HelperStdout)?;
+    let stderr_pipe = child.stderr.take().ok_or(OracleError::HelperStderr)?;
+    Ok(HelperPipes {
+        input: thread::spawn(move || stdin_pipe.write_all(&input)),
+        output: thread::spawn(move || read_limited(stdout_pipe)),
+        diagnostic: thread::spawn(move || read_limited(stderr_pipe)),
+    })
+}
+
+fn wait_for_helper_exit(child: &mut Child, timeout: Duration) -> Result<ExitStatus, OracleError> {
+    let started = Instant::now();
+    loop {
+        if let Some(exit_status) = child.try_wait().map_err(OracleError::HelperIo)? {
+            return Ok(exit_status);
+        }
+        if started.elapsed() >= timeout {
+            child.kill().map_err(OracleError::HelperIo)?;
+            child.wait().map_err(OracleError::HelperIo)?;
+            return Err(OracleError::HelperTimeout);
+        }
+        thread::park_timeout(Duration::from_millis(10));
+    }
+}
+
+fn join_pipe<T>(handle: JoinHandle<io::Result<T>>) -> Result<T, OracleError> {
+    handle
+        .join()
+        .map_err(|_| OracleError::HelperJoin)?
+        .map_err(OracleError::HelperIo)
 }
 
 fn configure_environment(command: &mut Command, case_env: &BTreeMap<String, String>) {

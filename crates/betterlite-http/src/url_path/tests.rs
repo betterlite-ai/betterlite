@@ -15,6 +15,10 @@ fn b171_helper_runner_tests_behavior() {
     );
     assert_eq!(encode_url_path_segment("x\u{e9}"), Ok("x%C3%A9".to_owned()));
     assert_eq!(
+        encode_url_path_segment("-._~ !*'()"),
+        Ok("-._~%20%21%2A%27%28%29".to_owned())
+    );
+    assert_eq!(
         encode_url_path_segments("\u{3b1}/\u{3b2}"),
         Ok("%CE%B1/%CE%B2".to_owned())
     );

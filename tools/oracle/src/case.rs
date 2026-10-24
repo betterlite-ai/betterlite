@@ -163,7 +163,7 @@ fn validate_helper(path: &Path, case: &HelperCase) -> Result<(), OracleError> {
     if case.name.is_empty() {
         return Err(invalid("name cannot be empty"));
     }
-    validate_ignores(&invalid, &case.compare.ignore)
+    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
@@ -181,13 +181,14 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
             ));
         }
     }
-    validate_ignores(&invalid, &case.compare.ignore)
+    validate_ignores(path, &case.compare.ignore)
 }
 
-fn validate_ignores(
-    invalid: &impl Fn(&str) -> OracleError,
-    ignores: &[Ignore],
-) -> Result<(), OracleError> {
+fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
     for ignored in ignores {
         if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
             return Err(invalid("compare.ignore pointers must be JSON pointers"));
