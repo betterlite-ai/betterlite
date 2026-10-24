@@ -1,0 +1,98 @@
+id: B243
+title: Sentry JSON and representation scrubbing
+description: >-
+  Implement sentry_scrubbing.py key/repr pattern construction, bounded JSON-string walker, event scrubber and build_sentry_init_options
+  as pure injected settings, without enabling an exporter. Use DEFAULT_DENYLIST and DEFAULT_PII_DENYLIST from the
+  sentry-sdk version locked in tools/oracle/litellm/uv.lock; materialize a pinned fixture. Handle nested repr brackets
+  and lookarounds with bounded parsing rather than unsupported Rust regex syntax. Return [Filtered] beyond the walker
+  bound. Sentry setup in litellm_logging.py is the sole runtime consumer; its integration remains with exporter
+  initialization. Budget 240 scrubber/settings, 110 adapters, 300 tests/fuzz and 60 wiring (710 total). Add the
+  sentry_scrubbing cargo-fuzz target, call the production parser, and commit/replay malformed and boundary seeds.
+  Write the behavior rstest functions b243_behavior_tests_behavior in adjacent tests.rs files, with a named case
+  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  sentry_scrubbing in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-redact/Cargo.toml
+  - crates/betterlite-redact/src/lib.rs
+  - crates/betterlite-redact/src/error.rs
+  - crates/betterlite-redact/src/sentry.rs
+  - crates/betterlite-redact/src/sentry/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/sentry-scrubbing/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-redact/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sentry_scrubbing.py#L9-L152
+  why: SDK deny lists, pattern helpers and event traversal.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - sentry_scrubbing-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(/::b243_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'sentry_scrubbing' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: sentry_scrubbing-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-redact/fuzz/corpus/sentry_scrubbing)"
+      && test -f crates/betterlite-redact/fuzz/fuzz_targets/sentry_scrubbing.rs && test -n "$(ls -A crates/betterlite-redact/fuzz/corpus/sentry_scrubbing)"
+      && cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(replays_the_sentry_scrubbing_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/sentry-scrubbing/json-string.yaml
+- tools/oracle/cases/helpers/sentry-scrubbing/nested-repr.yaml
+- tools/oracle/cases/helpers/sentry-scrubbing/denied-field.yaml
+- tools/oracle/cases/helpers/sentry-scrubbing/pii-setting.yaml
+- tools/oracle/cases/helpers/sentry-scrubbing/depth-filtered.yaml
+- tools/oracle/cases/helpers/sentry-scrubbing/benign-value.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B187 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

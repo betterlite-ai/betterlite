@@ -2049,10 +2049,14 @@ tasks:
     milestone: M1 openai data plane
     title: Secret and internal-detail redaction
     status: todo
-    depends_on: [B004, B171]
+    depends_on:
+    - B004
+    - B171
+    - B244
+    - B243
     file: tasks/B187-secret-redaction.yaml
     covers:
-      - "litellm/litellm_core_utils/{secret_redaction,sensitive_data_masker,sentry_scrubbing}.py"
+    - litellm/litellm_core_utils/secret_redaction.py
   - id: B188
     milestone: M1 openai data plane
     title: Message privacy and safe callback metadata
@@ -2605,3 +2609,23 @@ tasks:
     file: tasks/B242-native-errors-b.yaml
     covers:
     - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B244
+    milestone: M1 openai data plane
+    title: Structured credential masking
+    status: todo
+    depends_on:
+    - B004
+    - B171
+    file: tasks/B244-structured-redaction.yaml
+    covers:
+    - litellm/litellm_core_utils/sensitive_data_masker.py
+  - id: B243
+    milestone: M1 openai data plane
+    title: Sentry JSON and representation scrubbing
+    status: todo
+    depends_on:
+    - B244
+    - B171
+    file: tasks/B243-sentry-scrubbing.yaml
+    covers:
+    - litellm/litellm_core_utils/sentry_scrubbing.py
