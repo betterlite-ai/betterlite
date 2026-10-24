@@ -1,5 +1,4 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::types::Config;
 use betterlite_server::server::run;
 use clap::Parser;
 use std::collections::BTreeMap;
@@ -7,7 +6,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use thiserror::Error;
 use tokio::runtime::Builder;
 #[derive(Parser)]
 #[command(version)]
@@ -27,14 +25,20 @@ fn main() -> ExitCode {
         .with_writer(io::stderr)
         .init();
     let cli = Cli::parse();
-    let config = match load_config(&cli.config) {
-        Ok(config) => config,
-        Err(ConfigLoadError::Read { path, source }) => {
-            tracing::error!(path = %path.display(), error = ?source, "failed to read configuration");
+    let source = match fs::read_to_string(&cli.config) {
+        Ok(source) => source,
+        Err(error) => {
+            tracing::error!(path = %cli.config.display(), error = ?error, "failed to read configuration");
             return ExitCode::FAILURE;
         }
-        Err(ConfigLoadError::Config { source }) => {
-            log_config_error(&source, &cli.config);
+    };
+    let loader = ConfigLoader {
+        lookup: BTreeMap::new(),
+    };
+    let config = match loader.load(&source) {
+        Ok(config) => config,
+        Err(error) => {
+            log_config_error(&error, &cli.config);
             return ExitCode::FAILURE;
         }
     };
@@ -52,34 +56,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-#[derive(Debug, Error)]
-enum ConfigLoadError {
-    #[error("failed to read configuration at {path}: {source}")]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to load configuration")]
-    Config {
-        #[source]
-        source: ConfigError,
-    },
-}
-fn load_config(path: &Path) -> Result<Config, ConfigLoadError> {
-    let source = fs::read_to_string(path).map_err(|source| ConfigLoadError::Read {
-        path: path.to_owned(),
-        source,
-    })?;
-    let loader = ConfigLoader {
-        lookup: BTreeMap::new(),
-    };
-    loader
-        .load(&source)
-        .map_err(|config_error| ConfigLoadError::Config {
-            source: config_error,
-        })
 }
 const fn config_error_category(error: &ConfigError) -> &'static str {
     match error {
