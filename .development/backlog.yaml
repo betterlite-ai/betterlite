@@ -230,6 +230,7 @@ tasks:
     - B314
     - B315
     - B316
+    - B317
     file: null
     covers:
     - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
@@ -2053,3 +2054,15 @@ tasks:
     file: tasks/B316-cost-routing.yaml
     covers:
     - litellm/router_strategy/lowest_cost.py
+
+  - id: B317
+    milestone: M2 routing
+    title: Legacy usage-based routing windows
+    status: todo
+    depends_on:
+    - B016
+    - B013
+    - B304
+    file: tasks/B317-usage-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm.py
