@@ -1,0 +1,80 @@
+id: B201
+title: Bounded batch calls and race completion
+description: >-
+  Add bounded batch completion helpers under betterlite-core/batch. Accept a statically injected executor over typed
+  requests and B198 call contexts so B014 can supply the full single-call pipeline without duplicating it; test
+  executors may synthesize results without trait-object provider registries. Cover single-model message batches,
+  ordered multi-model responses and the deployments race path, preserving pinned result ordering and typed error
+  outcomes. Use bounded concurrency, total batch item/byte limits and a batch deadline; retain every JoinSet task
+  and cancel/join remaining work when the caller cancels or the race completes. Distinguish the models path's selection
+  semantics from the deployments path using direct batch helper probes with controlled completion gates. Duplicate
+  model/deployment entries must remain distinct and return a diagnostic rather than overwriting a keyed future.
+  Budget 300 scheduler/result lines, 80 integration seams and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/batch.rs
+  - crates/betterlite-core/src/batch/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/batch-calls/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L11-L122
+  why: Single-model batches preserve ordered results and exceptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
+  why: Different models and deployments selection branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L203-L256
+  why: All-response filtering and order.
+dod:
+- text: Non-duplicate batch results, failure ordering and model/deployment selection match helper cases with deterministic
+    completion gates.
+  proof:
+  - oracle
+- text: Batch size/concurrency/deadline bounds hold and cancellation/race completion joins all children with no
+    detached work.
+  proof:
+  - batch-call-tests
+- text: Duplicate entries remain distinct and the resulting diagnostic is observable.
+  proof:
+  - batch-call-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: batch-call-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/batch_call/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/batch-calls/ordered-messages.yaml
+- tools/oracle/cases/helpers/batch-calls/mixed-errors.yaml
+- tools/oracle/cases/helpers/batch-calls/models-input-order.yaml
+- tools/oracle/cases/helpers/batch-calls/deployments-first-success.yaml
+- tools/oracle/cases/helpers/batch-calls/deployments-all-fail.yaml
+- tools/oracle/cases/helpers/batch-calls/all-responses-filtered.yaml
+- tools/oracle/cases/helpers/batch-calls/empty-models.yaml
+deviations:
+- what: Duplicate model/deployment entries are preserved, and unneeded race work is cancelled and joined.
+  why: The no-silent-drops and async-hygiene rules forbid the source's keyed-future overwrites and unowned continuing
+    work.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
+out_of_scope:
+- Provider batch-job APIs are B086; this is in-process fan-out.
+- The synchronous Python API surface and executor adaptation are B158/B166.
+pitfalls:
+- The models branch waits in input order even though its docstring says first response.
+- Do not replace results with completion-order output in the ordinary batch path.
+- A race winner is not permission to detach the losing requests.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

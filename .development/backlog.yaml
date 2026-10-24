@@ -2062,7 +2062,7 @@ tasks:
     title: Bounded batch calls and race completion
     status: todo
     depends_on: [B198]
-    file: null
+    file: tasks/B201-batch-calls.yaml
     covers:
       - "litellm/batch_completion/**"
   - id: B202
