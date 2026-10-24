@@ -1,96 +1,152 @@
 id: B304
 title: Router counters, callback state and batched reads
-description: Add router callback counters, strategy delta/snapshot synchronization and request-scoped
-  batched reads on B360's typed store. Route B012 deployment success/failure observations through the
-  shared state owner. Background synchronization is server-owned, bounded and drained on shutdown; strategy
-  swaps retire the old owner. Preserve in-flight increments during synchronization and use B360 retry-batch
-  IDs for ambiguous Redis responses. This task owns merge logic and counter lifetimes, while B360 owns
-  Redis transport and codecs. Use the existing Rust crate boundaries from B004 and B008; integrate through
-  the server when the provider dispatcher or callbacks live in another core crate. This task's source
-  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
-  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
-  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
-  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
-  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
-  full path. Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle
-  cases are budget-excluded by checks.yaml.
+description: 'Implement RouterCounters and batched delta synchronization over B360, with B012 success/failure
+  callbacks and server-owned retirement/shutdown. Preserve LiteLLM merge arithmetic and failure recovery:
+  log a failed flush and discard its detached deltas, without replay after an ambiguous response. B382
+  owns read prefetch; this task owns counter lifetime and writes. Resolve default_sync_interval with Python
+  truthiness against DEFAULT_REDIS_SYNC_INTERVAL (environment variable, default 1 second). Drain at most
+  1024 queued deltas per owner; when full, flush synchronously within the caller deadline, and if unavailable
+  warn/drop the new observation without changing the provider result. Configuration boundary keys introduced
+  or consumed here: DEFAULT_REDIS_SYNC_INTERVAL. Implement the owned native service in crates/betterlite-router/src/routing_state.rs.
+  Add ProbeOperation::B304 in tools/oracle/src/router_probes/mod.rs and the corresponding B304 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/base_routing_strategy.py:
+  BaseRoutingStrategy.__init__ (L17-L29), BaseRoutingStrategy.setup_sync_task (L31-L41), BaseRoutingStrategy.cancel_sync_task
+  (L43-L45), BaseRoutingStrategy.retire (L47-L55), BaseRoutingStrategy.cleanup (L57-L64), BaseRoutingStrategy._increment_value_list_in_current_window
+  (L66-L76), BaseRoutingStrategy._increment_value_in_current_window (L78-L100), BaseRoutingStrategy.periodic_sync_in_memory_spend_with_redis
+  (L102-L119), BaseRoutingStrategy._push_in_memory_increments_to_redis (L121-L166), BaseRoutingStrategy.add_to_in_memory_keys_to_update
+  (L168-L169), BaseRoutingStrategy.get_key_pattern_to_sync (L171-L175), BaseRoutingStrategy.get_in_memory_keys_to_update
+  (L177-L178), BaseRoutingStrategy.get_and_reset_in_memory_keys_to_update (L180-L184), BaseRoutingStrategy.reset_in_memory_keys_to_update
+  (L186-L187), BaseRoutingStrategy._sync_in_memory_spend_with_redis (L189-L245). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports. Function coverage in litellm/router_utils/router_callbacks/track_deployment_metrics.py:
+  find_deployment_metadata (L27-L29), get_counted_usage_tokens (L32-L42), increment_deployment_successes_for_current_minute
+  (L45-L59), increment_deployment_failures_for_current_minute (L62-L75), get_deployment_successes_for_current_minute
+  (L78-L94), get_deployment_failures_for_current_minute (L97-L113). Implement these behaviors through
+  the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/routing-state/**
+  - crates/betterlite-router/src/routing_state.rs
+  - crates/betterlite-router/src/routing_state/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_state.rs
+  - crates/betterlite-server/src/routing/routing_state/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_state.rs
   - tools/oracle/src/router_probes/routing_state/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/routing_state.py
   - tools/oracle/litellm/probes/registry.py
-  - Cargo.toml
-  - deny.toml
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_state.py
+  - tools/oracle/cases/routing/routing-state/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/routing_state.rs
+  - crates/betterlite-config/src/routing_state/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b304-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L16-L245
-  why: Delta flushing, merging and strategy retirement.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L35-L235
-  why: Scoped batched reads and prefetch cancellation.
+  why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L28-L113
-  why: Minute counters and already-counted usage metadata.
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L91-L96
+  why: Counter and cooldown environment defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L27-L29
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b304_behaviors and b304_boundaries under routing_state::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b304-behaviors
+  - b304-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the routing_state prefix so the required filter
-    runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b304-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b304-invalid.yaml;
+    the valid seed contains DEFAULT_REDIS_SYNC_INTERVAL. The cargo-fuzz target config_yaml and normal
+    replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
+    relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - b304-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(routing_state)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b304-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b304_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b304-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b304_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_state.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_state.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b304-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b304-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b304-" && grep -Fq 'DEFAULT_REDIS_SYNC_INTERVAL' crates/betterlite-config/fuzz/corpus/config_yaml/b304-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-state/counter-expiry.yaml
 - tools/oracle/cases/routing/routing-state/success-counted-once.yaml
-- tools/oracle/cases/routing/routing-state/failed-flush-restores-deltas.yaml
+- tools/oracle/cases/routing/routing-state/failed-flush-warns-and-discards.yaml
 - tools/oracle/cases/routing/routing-state/retire-drains.yaml
-- tools/oracle/cases/routing/routing-state/batch-request-isolation.yaml
-- tools/oracle/cases/routing/routing-state/redis-read-failure.yaml
+- tools/oracle/cases/routing/routing-state/counter-queue-full.yaml
+- tools/oracle/cases/routing/routing-state/default-sync-env.yaml
 deviations:
-- what: Retain unacknowledged deltas for bounded idempotent retry instead of clearing the queue on storage
-    failure.
-  why: The repository forbids silent data loss; B360 supplies deduplication for ambiguous responses.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L124-L175
+- what: Counter queues are capped at 1024 pending deltas; overflow flushes within the caller deadline,
+    then warns and drops an observation if storage remains unavailable.
+  why: LiteLLM has an unbounded delta list; the bound is required by async-hygiene and does not add failure
+    retries.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L78-L119
 out_of_scope:
 - Response caching, cluster discovery and Valkey platform configuration (B125/B126).
 - Strategy-specific ranking and budget decisions.
 - Store implementation and state codecs (B360).
+- B382 owns request-scoped routing read batches; consume its tested public interface.
+- B397 owns router success and failure callback integration; consume its tested public interface.
 pitfalls:
-- A failed Redis batch must not erase local increments made while the batch was in flight.
 - No lock may be held across a Redis await.
 - Test Redis behind an injected store and include a real local Redis smoke test with a bounded test-owned
   subprocess.
-- Failure-recovery cases are explicit deviations; compare their reference trace and assert the intended
-  Rust difference rather than claiming equality.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800

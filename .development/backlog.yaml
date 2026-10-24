@@ -1924,13 +1924,16 @@ tasks:
     title: Router counters, callback state and batched reads
     status: todo
     depends_on:
-    - B302
-    - B012
     - B360
+    - B382
+    - B012
+    - B301
+    - B361
+    - B397
+    - B002
     file: tasks/B304-routing-state.yaml
     covers:
     - litellm/router_strategy/base_routing_strategy.py
-    - litellm/router_utils/routing_read_batch.py
     - litellm/router_utils/router_callbacks/**
   - id: B305
     milestone: M2 routing
@@ -2761,6 +2764,16 @@ tasks:
     file: tasks/B368-catalog-updates.yaml
     covers:
     - litellm/router.py
+  - id: B382
+    milestone: M2 routing
+    title: Request-scoped routing read batches
+    status: todo
+    depends_on:
+    - B360
+    - B301
+    file: tasks/B382-routing-read-batch.yaml
+    covers:
+    - litellm/router_utils/routing_read_batch.py
   - id: B391
     milestone: M2 routing
     title: Scripted routing mock replies and trace capture
@@ -2800,6 +2813,17 @@ tasks:
     - B011
     - B301
     file: tasks/B396-passthrough-selection.yaml
+    covers:
+    - litellm/router.py
+  - id: B397
+    milestone: M2 routing
+    title: Router success and failure callback integration
+    status: todo
+    depends_on:
+    - B012
+    - B014
+    - B301
+    file: tasks/B397-router-observations.yaml
     covers:
     - litellm/router.py
   - id: B401
