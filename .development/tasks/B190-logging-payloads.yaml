@@ -41,9 +41,6 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L230-L319
   why: Stream reconstruction and timing.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/classifier_logging.py#L16-L67
-  why: Classifier audit fields.
-- url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L95-L171
   why: Capture the text actually served to the client.
 - url: >-
@@ -109,7 +106,7 @@ out_of_scope:
 - >-
   ClassifierAudit helpers and _autorouter_savings_for_payload are B021; deployment pricing and cost helpers B068/B069;
   callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management B117,
-  MCP B094, other endpoint conversions B080-B099.
+  MCP B140, other endpoint conversions B080-B099.
 pitfalls:
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
