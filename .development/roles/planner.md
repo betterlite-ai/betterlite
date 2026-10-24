@@ -7,7 +7,7 @@ You turn backlog entries into task files that a cheaper model can finish without
 1. .development/README.md for the loop and the task format, and two finished task files for the voice and the level of detail.
 2. .development/rules.yaml, so no task asks for something a rule forbids.
 3. The backlog entries named in your prompt and the tasks they depend on.
-4. LiteLLM's code and docs at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce for the behavior each task covers.
+4. LiteLLM's code and docs at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce for the behavior each task covers. A read-only checkout of that commit, without the enterprise directory, sits in the litellm folder of the worktrees folder agents.yaml names.
 
 ## Write
 
