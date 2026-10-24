@@ -5,7 +5,7 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use super::{CatalogGeneralizations, MAX_RULES_BYTES, decode_model_generalization_rules};
+use super::{CatalogGeneralizations, MAX_RULES_BYTES, decode_generalization_rules};
 use crate::error::ModelsError;
 
 const INSTALL_RULES: &str = r#"[{"name":"base","pattern":"^zzz$","model_info":{"mode":"chat","max_tokens":1}},{"name":"base","pattern":"^yyy$","model_info":{"mode":"embedding","max_tokens":2}},{"name":"child","pattern":"^child","extends":"base","model_info":{"max_tokens":9}},{"name":"grand","pattern":"^grand","extends":"child","model_info":{"x":1}},{"pattern":"^orphan","extends":"missing","model_info":{"y":1}},{"pattern":"^numeric","extends":7,"model_info":{"z":1}},{"pattern":"^bad","extends":"base","model_info":"text"},"loose"]"#;
@@ -63,7 +63,7 @@ fn catalog_generalizations_cases(
     #[case] probes: &[Probe],
     #[case] expected: &[&str],
 ) {
-    let decoded = decode_model_generalization_rules(rules.as_bytes()).unwrap();
+    let decoded = decode_generalization_rules(rules.as_bytes()).unwrap();
     let (installed, warnings) = CatalogGeneralizations::install(decoded);
     let mut lines = Vec::new();
     for probe in probes {
@@ -71,7 +71,7 @@ fn catalog_generalizations_cases(
             Probe::Initial => format!("{:?}", CatalogGeneralizations::default()),
             Probe::NonList(text) => format!(
                 "{:?}",
-                decode_model_generalization_rules(text.as_bytes()).unwrap()
+                decode_generalization_rules(text.as_bytes()).unwrap()
             ),
             Probe::Rules => serde_json::to_string(&installed.rules).unwrap(),
             Probe::Compiled => {
@@ -118,7 +118,7 @@ fn catalog_generalizations_cases(
 fn rule_lists_are_bounded(#[case] size: usize, #[case] expected: &str) {
     let mut bytes = vec![b' '; size];
     bytes.splice(..2, *b"[]");
-    let described = match decode_model_generalization_rules(&bytes) {
+    let described = match decode_generalization_rules(&bytes) {
         Ok(rules) => format!("rules {}", rules.len()),
         Err(error) => error.to_string(),
     };
@@ -134,7 +134,7 @@ fn replays_the_model_generalization_rules_corpus() {
         .map(|entry| {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            let category = match decode_model_generalization_rules(&fs::read(&path).unwrap()) {
+            let category = match decode_generalization_rules(&fs::read(&path).unwrap()) {
                 Ok(rules) if rules.is_empty() => "empty",
                 Ok(rules) => {
                     let (installed, _warnings) = CatalogGeneralizations::install(rules);

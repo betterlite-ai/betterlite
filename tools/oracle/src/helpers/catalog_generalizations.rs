@@ -1,5 +1,5 @@
 use betterlite_models::catalog_generalizations::{
-    CatalogGeneralizations, decode_model_generalization_rules,
+    CatalogGeneralizations, decode_generalization_rules,
 };
 use betterlite_models::error::ModelsError;
 use serde_json::{Value, json};
@@ -23,7 +23,7 @@ pub(crate) struct FillMissingProbe {
 }
 
 pub(crate) fn invoke(input: &CatalogGeneralizationsInput) -> HelperOutput {
-    match decode_model_generalization_rules(input.rules.to_string().as_bytes()) {
+    match decode_generalization_rules(input.rules.to_string().as_bytes()) {
         Ok(rules) => HelperOutput {
             ok: true,
             value: Some(report(input, rules)),

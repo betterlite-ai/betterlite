@@ -34,7 +34,7 @@ pub struct CapabilityRule {
     pub fill_missing_for_providers: BTreeSet<String>,
 }
 
-pub fn decode_model_generalization_rules(bytes: &[u8]) -> Result<Vec<Box<RawValue>>, ModelsError> {
+pub fn decode_generalization_rules(bytes: &[u8]) -> Result<Vec<Box<RawValue>>, ModelsError> {
     let size = bytes.len();
     if size > MAX_RULES_BYTES {
         return Err(ModelsError::RulesTooLarge { size });
