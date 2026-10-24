@@ -286,17 +286,20 @@ tasks:
     - litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py
   - id: B023
     milestone: M2 routing
-    title: Router settings and weights API
+    title: Scoped router weights validation and application
     status: todo
     depends_on:
-    - B016
-    - B052
-    - B348
     - B008
+    - B302
+    - B051
+    - B052
     - B055
     - B057
     - B060
     - B066
+    - B301
+    - B361
+    - B002
     file: tasks/B023-router-weights.yaml
     covers:
     - litellm/proxy/management_endpoints/router_weights.py
