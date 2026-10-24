@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/io-token-limits/**
-  - tools/oracle/src/router_probes/io-token-limits/**
+  - tools/oracle/src/router_probes/io_token_limits/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/io_token_limits.py
   - tools/oracle/litellm/probes/registry.py
@@ -38,7 +38,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the io_token_limits prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
