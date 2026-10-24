@@ -165,6 +165,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-bedrock"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "rstest",
+ "secrecy",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
