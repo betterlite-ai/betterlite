@@ -11105,7 +11105,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Charge the Foundry model-router fee exactly once
     status: todo
-    depends_on: [B171, B204, B562, B1668, B1672, B1678]
+    depends_on: [B171, B204, B2230, B1668, B1672, B1678]
     file: tasks/B1677-foundry-router-cost.yaml
     covers:
       - "litellm/cost_calculator.py"
