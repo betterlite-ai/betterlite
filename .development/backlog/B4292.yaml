@@ -1,0 +1,9 @@
+id: B4292
+milestone: M8 platform
+title: Retire evicted clients and reuse logging clients safely
+status: todo
+depends_on: [B2226, B390, B4290]
+file: null
+covers:
+  - "litellm/caching/{llm_caching_handler,evicted_client_closer}.py"
+  - "litellm/litellm_core_utils/specialty_caches/**"

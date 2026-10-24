@@ -1,0 +1,8 @@
+id: B3506
+milestone: M5 api families
+title: Serve Google generation streaming and token-count routes
+status: todo
+depends_on: [B3484, B3489, B014, B052, B1100]
+file: null
+covers:
+  - "litellm/proxy/google_endpoints/endpoints.py"

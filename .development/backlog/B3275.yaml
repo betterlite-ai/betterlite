@@ -1,0 +1,8 @@
+id: B3275
+milestone: M5 api families
+title: Search tool management and connection routes
+status: todo
+depends_on: [B3270, B3271, B3272, B732, B737, B749]
+file: null
+covers:
+  - "litellm/proxy/search_endpoints/search_tool_management.py"

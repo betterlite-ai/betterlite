@@ -1,0 +1,8 @@
+id: B4416
+milestone: M8 platform
+title: Authenticate Vault requests and resolve secret targets
+status: todo
+depends_on: [B002, B173, B2226, B4410]
+file: null
+covers:
+  - "litellm/secret_managers/hashicorp_secret_manager.py"

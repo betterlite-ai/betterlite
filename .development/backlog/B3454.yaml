@@ -1,0 +1,8 @@
+id: B3454
+milestone: M5 api families
+title: Gemini RAG stores and resumable uploads
+status: todo
+depends_on: [B3451, B173, B1331, B009]
+file: null
+covers:
+  - "litellm/rag/ingestion/gemini_ingestion.py"

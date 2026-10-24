@@ -1,0 +1,9 @@
+id: B3330
+milestone: M5 api families
+title: Video records and proxy input helpers
+status: todo
+depends_on: [B525, B526, B672]
+file: null
+covers:
+  - "litellm/types/videos/**"
+  - "litellm/proxy/video_endpoints/utils.py"

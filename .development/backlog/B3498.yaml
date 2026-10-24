@@ -1,0 +1,8 @@
+id: B3498
+milestone: M5 api families
+title: Execute Responses compatibility and synthesize interaction events
+status: todo
+depends_on: [B3481, B3497]
+file: null
+covers:
+  - "litellm/interactions/litellm_responses_transformation/{handler,streaming_iterator}.py"

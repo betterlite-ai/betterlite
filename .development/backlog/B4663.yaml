@@ -1,0 +1,9 @@
+id: B4663
+milestone: M9 agents and mcp
+title: MCP SSO assertions and IdP subject-token admission
+status: todo
+depends_on: [B4674, B726, B760, B872, B1217, B1600]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py"
+  - "litellm/proxy/_experimental/mcp_server/idp_token_exchange.py"

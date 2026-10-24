@@ -1,0 +1,8 @@
+id: B3040
+milestone: M4 keys, spend and management
+title: Request quota scopes and deployment health policy
+status: todo
+depends_on: [B304, B732, B844, B3031, B3038, B3039]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"

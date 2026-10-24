@@ -1,0 +1,8 @@
+id: B3756
+milestone: M6 guardrails
+title: Cisco conversation extraction and Responses conversion
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py"

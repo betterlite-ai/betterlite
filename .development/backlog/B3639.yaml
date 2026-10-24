@@ -1,0 +1,8 @@
+id: B3639
+milestone: M5 api families
+title: Vertex passthrough prediction and embedding logging
+status: todo
+depends_on: [B3638, B068, B1304, B1306, B1340, B1342, B1343, B1349]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py"

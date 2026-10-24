@@ -1,0 +1,9 @@
+id: B4781
+milestone: M9 agents and mcp
+title: Admit managed agents and expose identity administration
+status: todo
+depends_on: [B4770, B4772, B4773, B4775, B4776, B4780, B002, B732, B869]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/auth/managed_authorization.py"
+  - "litellm/proxy/agent_endpoints/endpoints.py"

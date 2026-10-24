@@ -1,0 +1,8 @@
+id: B3194
+milestone: M4 keys, spend and management
+title: Public agent MCP and skill hub projections
+status: todo
+depends_on: [B001, B002, B003, B726, B860, B1140]
+file: null
+covers:
+  - "litellm/proxy/public_endpoints/public_endpoints.py"

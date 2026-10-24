@@ -1,0 +1,8 @@
+id: B3274
+milestone: M5 api families
+title: Search query pricing and provider usage
+status: todo
+depends_on: [B2225]
+file: null
+covers:
+  - "litellm/search/cost_calculator.py"

@@ -1,0 +1,8 @@
+id: B4321
+milestone: M8 platform
+title: Resolve Redis targets and coerce connection settings
+status: todo
+depends_on: [B002, B4320]
+file: null
+covers:
+  - "litellm/_redis.py"

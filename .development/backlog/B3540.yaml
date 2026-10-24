@@ -1,0 +1,10 @@
+id: B3540
+milestone: M5 api families
+title: Compression message normalization and protected history
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/compression/compress.py"
+  - "litellm/compression/content_detection.py"
+  - "litellm/compression/message_stubbing.py"

@@ -2,10 +2,10 @@ id: B131
 milestone: M8 platform
 title: Gateway and control plane split deployment
 status: todo
-depends_on: [B124]
+depends_on: [B4470, B4471, B002, B003, B710, B711, B712]
 file: null
 covers:
-  - "gateway/**"
-  - "backend/**"
-  - "litellm/types/proxy/control_plane_endpoints.py"
+  - "gateway/launch.py"
+  - "gateway/Dockerfile"
+  - "backend/Dockerfile"
   - "docker/component_entrypoint.sh"

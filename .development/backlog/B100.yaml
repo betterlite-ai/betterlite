@@ -2,15 +2,8 @@ id: B100
 milestone: M5 api families
 title: Prompt compression and native compaction
 status: todo
-depends_on: [B080, B081, B173]
+depends_on: [B3540, B3541, B3542, B3543, B3544, B3545, B3546, B173, B188]
 file: null
 covers:
-  - "litellm/compression/**"
-  - "litellm/types/compression.py"
-  - "litellm/integrations/compression_interception/**"
-  - "litellm/types/integrations/compression_interception.py"
-  - "litellm/llms/compaction.py"
-  - "litellm/llms/anthropic/compaction.py"
   - "litellm/proxy/native_compaction.py"
-  - "litellm/proxy/guardrails/auto_router_compression.py"
   - "litellm/llms/custom_httpx/asgi_handler.py"

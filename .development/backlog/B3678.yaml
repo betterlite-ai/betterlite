@@ -1,0 +1,9 @@
+id: B3678
+milestone: M6 guardrails
+title: Bedrock guardrail event streams and request tool names
+status: todo
+depends_on: [B3661, B3664, B207]
+file: null
+covers:
+  - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
+  - "litellm/proxy/guardrails/tool_name_extraction.py"

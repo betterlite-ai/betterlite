@@ -2,7 +2,7 @@ id: B153
 milestone: M11 distribution
 title: Homebrew formula
 status: todo
-depends_on: [B121]
+depends_on: []
 file: null
 covers:
   - "packaging/**"

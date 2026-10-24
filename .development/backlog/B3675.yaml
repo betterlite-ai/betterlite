@@ -1,0 +1,8 @@
+id: B3675
+milestone: M6 guardrails
+title: Anthropic guardrail input and completed-output scans
+status: todo
+depends_on: [B3661, B3663, B3664, B3665, B3670, B3674, B578]
+file: null
+covers:
+  - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"

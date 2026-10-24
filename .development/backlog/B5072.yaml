@@ -1,0 +1,12 @@
+id: B5072
+milestone: M11 distribution
+title: Local Compose stacks and their shared configuration
+status: todo
+depends_on: [B003, B5071]
+file: null
+covers:
+  - "docker-compose.yml"
+  - "docker/docker-compose.quickstart.yml"
+  - "proxy_server_config.yaml"
+  - "prometheus.yml"
+  - "docker/.env.example"

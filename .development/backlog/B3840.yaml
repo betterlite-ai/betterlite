@@ -1,0 +1,9 @@
+id: B3840
+milestone: M7 observability
+title: OTel semantic vocabulary and span roles
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/otel/model/{semconv,spans}.py"
+  - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"

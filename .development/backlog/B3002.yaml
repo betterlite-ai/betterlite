@@ -1,0 +1,8 @@
+id: B3002
+milestone: M4 keys, spend and management
+title: Collect entity and window reservation counters
+status: todo
+depends_on: [B3000, B720, B732, B733, B740, B1102]
+file: null
+covers:
+  - "litellm/proxy/spend_tracking/budget_reservation.py"

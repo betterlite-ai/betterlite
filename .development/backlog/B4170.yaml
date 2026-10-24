@@ -1,0 +1,8 @@
+id: B4170
+milestone: M8 platform
+title: Safe bug report records and issue links
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/litellm_core_utils/bug_report.py"

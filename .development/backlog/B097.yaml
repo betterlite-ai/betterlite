@@ -2,9 +2,10 @@ id: B097
 milestone: M5 api families
 title: RAG ingestion and query
 status: todo
-depends_on: [B090]
+depends_on: [B3450, B3451, B3452, B3453, B3454, B3455, B3456, B3457, B3458, B3459, B3460, B3461, B3462, B3463, B3464, B3465, B1067, B1100, B1103]
 file: null
 covers:
-  - "litellm/rag/**"
-  - "litellm/proxy/rag_endpoints/**"
-  - "litellm/types/rag.py"
+  - "litellm/proxy/rag_endpoints/endpoints.py"
+  - "litellm/proxy/rag_endpoints/__init__.py"
+  - "litellm/rag/__init__.py"
+  - "litellm/rag/utils.py"

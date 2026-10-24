@@ -1,0 +1,9 @@
+id: B3799
+milestone: M6 guardrails
+title: Vigil analysis retries and sanitized output
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/vigil_guard.py"

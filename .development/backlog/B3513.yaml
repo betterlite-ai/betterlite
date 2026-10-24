@@ -1,0 +1,9 @@
+id: B3513
+milestone: M5 api families
+title: Prepare decision calls and select their providers
+status: todo
+depends_on: [B3510, B3511, B3512, B174, B184, B206, B247]
+file: null
+covers:
+  - "litellm/decisions/call.py"
+  - "litellm/utils.py"

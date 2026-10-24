@@ -1,0 +1,8 @@
+id: B4024
+milestone: M7 observability
+title: Alert destination selection and digest admission
+status: todo
+depends_on: [B4020, B4021, B4022, B256]
+file: null
+covers:
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"

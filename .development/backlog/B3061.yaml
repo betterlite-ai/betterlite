@@ -1,0 +1,10 @@
+id: B3061
+milestone: M4 keys, spend and management
+title: Normalize and serialize FOCUS usage records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/focus/{schema,transformer}.py"
+  - "litellm/integrations/focus/serializers/**"
+  - "litellm/integrations/focus/destinations/base.py"

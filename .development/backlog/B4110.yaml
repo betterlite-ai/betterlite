@@ -1,0 +1,8 @@
+id: B4110
+milestone: M7 observability
+title: Agentic loop ceilings and follow-up keyword precedence
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"

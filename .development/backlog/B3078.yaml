@@ -1,0 +1,8 @@
+id: B3078
+milestone: M4 keys, spend and management
+title: Configure and flush the optional billing metrics recorder
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/proxy/enterprise_billing/**"

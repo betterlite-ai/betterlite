@@ -1,0 +1,8 @@
+id: B3427
+milestone: M5 api families
+title: Eval update delete and cancellation routes
+status: todo
+depends_on: [B3420, B3422, B3423]
+file: null
+covers:
+  - "litellm/proxy/openai_evals_endpoints/endpoints.py"

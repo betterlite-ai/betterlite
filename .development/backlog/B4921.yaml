@@ -1,0 +1,8 @@
+id: B4921
+milestone: M10 admin ui
+title: Playground attachment type, size and image count validation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation{,.test}.ts"

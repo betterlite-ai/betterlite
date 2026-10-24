@@ -1,0 +1,8 @@
+id: B4306
+milestone: M8 platform
+title: Bind saved cache credentials to their connection targets
+status: todo
+depends_on: [B244]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"

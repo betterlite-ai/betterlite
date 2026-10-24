@@ -1,0 +1,9 @@
+id: B4585
+milestone: M8 platform
+title: Login and agent command dispatch with shared command listings
+status: todo
+depends_on: [B4560, B4562, B4564, B4568, B4573, B4574, B4575, B4576]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/{auth,agents}.py"
+  - "litellm/proxy/client/cli/interface.py"

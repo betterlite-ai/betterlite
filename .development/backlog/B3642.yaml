@@ -1,0 +1,8 @@
+id: B3642
+milestone: M5 api families
+title: Vertex passthrough response dispatch
+status: todo
+depends_on: [B3638, B3639, B3641, B068, B1304, B1326, B1333, B1335, B504, B1362, B1389]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py"

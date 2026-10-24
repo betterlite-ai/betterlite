@@ -1,0 +1,8 @@
+id: B3782
+milestone: M6 guardrails
+title: Noma v2 unified scanning
+status: todo
+depends_on: [B3780, B002, B173, B189, B192]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/noma/{noma_v2,__init__}.py"

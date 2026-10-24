@@ -1,0 +1,10 @@
+id: B3857
+milestone: M7 observability
+title: OTel content events and legacy metric recording
+status: todo
+depends_on: [B198, B002, B188, B192, B2227, B3844, B3845, B3854]
+file: null
+covers:
+  - "litellm/integrations/opentelemetry.py"
+  - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"
+  - "litellm/integrations/otel/model/request_io.py"

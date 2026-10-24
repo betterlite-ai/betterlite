@@ -1,0 +1,8 @@
+id: B3805
+milestone: M6 guardrails
+title: Presidio entity actions and reversible tokens
+status: todo
+depends_on: [B3804, B002, B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"

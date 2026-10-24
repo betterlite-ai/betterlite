@@ -1,0 +1,9 @@
+id: B4567
+milestone: M8 platform
+title: Codex catalog projection and fallback instructions
+status: todo
+depends_on: [B4566]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/agents.py"
+  - "litellm/proxy/client/cli/commands/codex_base_instructions.md"

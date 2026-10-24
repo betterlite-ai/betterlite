@@ -1,0 +1,8 @@
+id: B3363
+milestone: M5 api families
+title: Generic container file HTTP execution
+status: todo
+depends_on: [B3360, B522, B547, B173, B171, B235, B249, B2202, B1087]
+file: null
+covers:
+  - "litellm/llms/custom_httpx/container_handler.py"

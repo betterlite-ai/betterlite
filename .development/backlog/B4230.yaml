@@ -1,0 +1,8 @@
+id: B4230
+milestone: M8 platform
+title: OpenAPI schema components and inline request bodies
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/custom_openapi_spec.py"

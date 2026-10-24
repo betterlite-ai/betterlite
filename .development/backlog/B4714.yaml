@@ -1,0 +1,8 @@
+id: B4714
+milestone: M9 agents and mcp
+title: MCP user environment storage and secret rotation
+status: todo
+depends_on: [B4710, B4711, B4713, B726, B1600, B192]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/db.py"

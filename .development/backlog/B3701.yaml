@@ -1,0 +1,8 @@
+id: B3701
+milestone: M6 guardrails
+title: Fenced code detection and execution intent
+status: todo
+depends_on: [B3690]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py"

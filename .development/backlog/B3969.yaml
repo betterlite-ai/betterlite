@@ -1,0 +1,8 @@
+id: B3969
+milestone: M7 observability
+title: Literal AI step projection and GraphQL batches
+status: todo
+depends_on: [B002, B173, B256]
+file: null
+covers:
+  - "litellm/integrations/literal_ai.py"

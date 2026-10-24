@@ -1,0 +1,8 @@
+id: B4566
+milestone: M8 platform
+title: Agent model listing and OpenCode provider projection
+status: todo
+depends_on: [B4564]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/agents.py"

@@ -1,0 +1,8 @@
+id: B3070
+milestone: M4 keys, spend and management
+title: Send CloudZero daily billing drops
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/integrations/cloudzero/cz_stream_api.py"

@@ -2,10 +2,9 @@ id: B096
 milestone: M5 api families
 title: Evals API
 status: todo
-depends_on: [B087]
+depends_on: [B3420, B3421, B3422, B3423, B3424, B3425, B3426, B3427, B3428]
 file: null
 covers:
-  - "litellm/evals/**"
-  - "litellm/llms/base_llm/evals/**"
-  - "litellm/proxy/openai_evals_endpoints/**"
-  - "litellm/types/llms/openai_evals.py"
+  - "litellm/evals/__init__.py"
+  - "litellm/proxy/openai_evals_endpoints/__init__.py"
+  - "litellm/proxy/openai_evals_endpoints/endpoints.py"

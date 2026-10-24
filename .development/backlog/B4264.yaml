@@ -1,0 +1,9 @@
+id: B4264
+milestone: M8 platform
+title: Blog feed cache and bundled fallback
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/blog_posts.json"
+  - "litellm/litellm_core_utils/get_blog_posts.py"

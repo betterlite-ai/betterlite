@@ -1,0 +1,8 @@
+id: B4742
+milestone: M9 agents and mcp
+title: MCP AWS credential acquisition and request signing
+status: todo
+depends_on: [B002, B173]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/client.py"

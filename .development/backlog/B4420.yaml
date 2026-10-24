@@ -1,0 +1,8 @@
+id: B4420
+milestone: M8 platform
+title: Fetch Google Secret Manager values with negative caching
+status: todo
+depends_on: [B002, B173, B2226, B4410]
+file: null
+covers:
+  - "litellm/secret_managers/google_secret_manager.py"

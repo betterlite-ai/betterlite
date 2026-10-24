@@ -1,0 +1,8 @@
+id: B4804
+milestone: M9 agents and mcp
+title: Signed AgentCore A2A requests and response streams
+status: todo
+depends_on: [B173, B184, B595, B653, B4802, B4803]
+file: null
+covers:
+  - "litellm/a2a_protocol/providers/bedrock_agentcore/**"

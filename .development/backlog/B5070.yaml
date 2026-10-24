@@ -1,0 +1,11 @@
+id: B5070
+milestone: M11 distribution
+title: Container command entrypoints and migration handoff
+status: todo
+depends_on: [B003, B1232]
+file: null
+covers:
+  - "docker/entrypoint.sh"
+  - "docker/prod_entrypoint.sh"
+  - "docker/component_entrypoint.sh"
+  - "docker/build_admin_ui.sh"

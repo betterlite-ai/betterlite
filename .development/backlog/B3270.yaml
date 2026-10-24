@@ -1,0 +1,9 @@
+id: B3270
+milestone: M5 api families
+title: Search records, provider hooks and credential destinations
+status: todo
+depends_on: [B2202]
+file: null
+covers:
+  - "litellm/llms/base_llm/search/**"
+  - "litellm/types/search.py"

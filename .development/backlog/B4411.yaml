@@ -1,0 +1,8 @@
+id: B4411
+milestone: M8 platform
+title: Bound OIDC token lifetime and credential file access
+status: todo
+depends_on: [B002, B173]
+file: null
+covers:
+  - "litellm/secret_managers/main.py"

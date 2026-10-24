@@ -1,0 +1,8 @@
+id: B4582
+milestone: M8 platform
+title: Claude session debug reports and slash-command installation
+status: todo
+depends_on: [B4560]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/debug.py"

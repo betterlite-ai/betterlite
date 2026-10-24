@@ -1,0 +1,8 @@
+id: B3791
+milestone: M6 guardrails
+title: Prompt Security file sanitization
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py"

@@ -1,0 +1,8 @@
+id: B4296
+milestone: M8 platform
+title: Derive exact and tenant-scoped semantic cache keys
+status: todo
+depends_on: [B002, B212, B2228, B4290]
+file: null
+covers:
+  - "litellm/caching/caching.py"

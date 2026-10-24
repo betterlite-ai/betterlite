@@ -1,0 +1,8 @@
+id: B3962
+milestone: M7 observability
+title: Braintrust project resolution and event logging
+status: todo
+depends_on: [B002, B173, B189]
+file: null
+covers:
+  - "litellm/integrations/braintrust_logging.py"

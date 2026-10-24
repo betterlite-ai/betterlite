@@ -1,0 +1,9 @@
+id: B4831
+milestone: M9 agents and mcp
+title: Normalize harness payloads and derive workspace changes
+status: todo
+depends_on: [B4830]
+file: null
+covers:
+  - "litellm/llms/base_llm/harness/utils.py"
+  - "litellm/harness/sandbox/snapshot.py"

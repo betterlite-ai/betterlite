@@ -1,0 +1,8 @@
+id: B4594
+milestone: M8 platform
+title: Setup wizard terminal input and provider selection
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/setup_wizard.py"

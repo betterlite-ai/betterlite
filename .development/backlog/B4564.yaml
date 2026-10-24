@@ -1,0 +1,9 @@
+id: B4564
+milestone: M8 platform
+title: Agent environment profiles and process handoff primitives
+status: todo
+depends_on: [B4560]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/agents.py"
+  - "litellm/proxy/client/cli/commands/pi.py"

@@ -1,0 +1,8 @@
+id: B4659
+milestone: M9 agents and mcp
+title: MCP upstream OAuth identity binding
+status: todo
+depends_on: [B4658, B173, B733]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py"

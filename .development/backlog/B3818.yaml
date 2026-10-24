@@ -1,0 +1,8 @@
+id: B3818
+milestone: M6 guardrails
+title: Translate and redact MCP discovery calls and tool results
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/guardrail_translation/**"

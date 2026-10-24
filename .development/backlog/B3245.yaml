@@ -1,0 +1,9 @@
+id: B3245
+milestone: M6 guardrails
+title: Policy validation and concrete attachment scopes
+status: todo
+depends_on: [B3240, B3241, B722, B724, B367, B882]
+file: null
+covers:
+  - "litellm/proxy/policy_engine/policy_validator.py"
+  - "litellm/types/proxy/policy_engine/validation_types.py"

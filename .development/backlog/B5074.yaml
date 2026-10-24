@@ -1,0 +1,8 @@
+id: B5074
+milestone: M11 distribution
+title: Container installation from a published Python package
+status: todo
+depends_on: [B5070]
+file: null
+covers:
+  - "docker/build_from_pip/**"

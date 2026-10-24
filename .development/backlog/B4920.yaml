@@ -1,0 +1,8 @@
+id: B4920
+milestone: M10 admin ui
+title: Model insights metric aggregation, time buckets and ranking
+status: todo
+depends_on: []
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/model-insights/_components/modelInsightsData{,.test}.ts"

@@ -1,0 +1,9 @@
+id: B3887
+milestone: M7 observability
+title: Prometheus dedicated listener and worker cleanup
+status: todo
+depends_on: [B3886, B173, B003, B002]
+file: null
+covers:
+  - "litellm/proxy/prometheus_cleanup.py"
+  - "litellm/proxy/prometheus_metrics_server.py"

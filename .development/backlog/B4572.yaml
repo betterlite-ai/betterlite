@@ -1,0 +1,8 @@
+id: B4572
+milestone: M8 platform
+title: Configure, reconfigure and disconnect agent commands
+status: todo
+depends_on: [B4560, B4562, B4563, B4569, B4570, B4571, B4574]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/configure.py"

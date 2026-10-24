@@ -1,0 +1,8 @@
+id: B4669
+milestone: M9 agents and mcp
+title: MCP key and team server and toolset grants
+status: todo
+depends_on: [B4668, B726, B736, B737]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py"

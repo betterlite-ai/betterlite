@@ -1,0 +1,9 @@
+id: B4122
+milestone: M7 observability
+title: Code interpreter interception hooks and rerun plans
+status: todo
+depends_on: [B4120, B4121, B174]
+file: null
+covers:
+  - "litellm/integrations/code_interpreter_interception/handler.py"
+  - "litellm/types/integrations/code_interpreter_interception.py"

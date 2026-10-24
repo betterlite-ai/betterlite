@@ -1,0 +1,8 @@
+id: B4115
+milestone: M7 observability
+title: Execute intercepted searches and standalone search turns
+status: todo
+depends_on: [B4111, B4113, B4114, B568, B219]
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/handler.py"

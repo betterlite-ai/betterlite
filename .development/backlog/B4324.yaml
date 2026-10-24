@@ -1,0 +1,8 @@
+id: B4324
+milestone: M8 platform
+title: Decode Redis values and supply cache and breaker primitives
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/caching/redis_cache.py"

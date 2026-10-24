@@ -1,0 +1,11 @@
+id: B3542
+milestone: M5 api families
+title: Token-budget compression and retrieval tool generation
+status: todo
+depends_on: [B3540, B3541, B196, B575]
+file: null
+covers:
+  - "litellm/compression/__init__.py"
+  - "litellm/compression/compress.py"
+  - "litellm/compression/retrieval_tool.py"
+  - "litellm/types/compression.py"

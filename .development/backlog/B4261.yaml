@@ -1,0 +1,8 @@
+id: B4261
+milestone: M8 platform
+title: Cached semantic text ranking
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/semantic_text_index.py"

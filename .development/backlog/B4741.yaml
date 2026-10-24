@@ -1,0 +1,8 @@
+id: B4741
+milestone: M9 agents and mcp
+title: MCP client credential headers and discovery fingerprints
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/client.py"

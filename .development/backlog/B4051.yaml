@@ -1,0 +1,9 @@
+id: B4051
+milestone: M7 observability
+title: Dotprompt loading and sandboxed template rendering
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/dotprompt/{prompt_manager,__init__}.py"
+  - "litellm/integrations/dotprompt/README.md"

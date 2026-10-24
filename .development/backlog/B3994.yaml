@@ -1,0 +1,8 @@
+id: B3994
+milestone: M7 observability
+title: Flush S3 log batches with bounded retries and NDJSON grouping
+status: todo
+depends_on: [B3990, B3993, B002, B192, B347]
+file: null
+covers:
+  - "litellm/integrations/s3_v2.py"

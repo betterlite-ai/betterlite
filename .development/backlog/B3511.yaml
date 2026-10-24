@@ -1,0 +1,9 @@
+id: B3511
+milestone: M5 api families
+title: SystemOne conversion and decision provider contract
+status: todo
+depends_on: [B3510, B002, B2202]
+file: null
+covers:
+  - "litellm/llms/base_llm/decisions/**"
+  - "litellm/llms/typesafe/**"

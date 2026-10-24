@@ -1,0 +1,9 @@
+id: B3736
+milestone: M6 guardrails
+title: IBM detector clients and detection decisions
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/ibm/**"

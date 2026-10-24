@@ -1,0 +1,8 @@
+id: B3685
+milestone: M6 guardrails
+title: Guardrail mutation and submission decisions
+status: todo
+depends_on: [B3662, B3682, B3683, B3684, B726, B732]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_endpoints.py"

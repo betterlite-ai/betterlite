@@ -1,0 +1,8 @@
+id: B3031
+milestone: M4 keys, spend and management
+title: Rate-limit records and request-owned state
+status: todo
+depends_on: [B002, B184, B198, B393, B732, B1042]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"

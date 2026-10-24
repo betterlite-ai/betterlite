@@ -1,0 +1,8 @@
+id: B4664
+milestone: M9 agents and mcp
+title: MCP SSO assertion renewal and ID-JAG exchange
+status: todo
+depends_on: [B4650, B4656, B4657, B4663, B173]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{sso_assertion_refresher,resolver}.py"

@@ -1,0 +1,9 @@
+id: B3943
+milestone: M7 observability
+title: New Relic team metric records and aggregation
+status: todo
+depends_on: [B254]
+file: null
+covers:
+  - "litellm/integrations/newrelic/newrelic_metrics.py"
+  - "litellm/types/integrations/newrelic.py"

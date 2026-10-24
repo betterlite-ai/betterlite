@@ -1,0 +1,8 @@
+id: B3043
+milestone: M4 keys, spend and management
+title: Admit project input-output token reservations
+status: todo
+depends_on: [B732, B3030, B3031, B3035, B3041, B3042]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"

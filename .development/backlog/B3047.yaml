@@ -1,0 +1,8 @@
+id: B3047
+milestone: M4 keys, spend and management
+title: Legacy minute-counter limits and errors
+status: todo
+depends_on: [B732, B3030]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter.py"

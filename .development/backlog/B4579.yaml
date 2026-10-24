@@ -1,0 +1,8 @@
+id: B4579
+milestone: M8 platform
+title: CLI key management, migration and encryption commands
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/{keys,encryption}.py"

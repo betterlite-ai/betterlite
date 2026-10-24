@@ -1,0 +1,10 @@
+id: B3660
+milestone: M6 guardrails
+title: Guardrail identity and PII configuration vocabulary
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/guardrails.py"
+  - "litellm/types/guardrail_base_init.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"

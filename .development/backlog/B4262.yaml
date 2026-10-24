@@ -1,0 +1,8 @@
+id: B4262
+milestone: M8 platform
+title: Proxy route inspection records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/get_routes.py"

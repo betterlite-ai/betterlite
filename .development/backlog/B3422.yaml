@@ -1,0 +1,8 @@
+id: B3422
+milestone: M5 api families
+title: Eval retrieval and update operations
+status: todo
+depends_on: [B3420, B523, B247, B185, B186]
+file: null
+covers:
+  - "litellm/evals/main.py"

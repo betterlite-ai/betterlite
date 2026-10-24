@@ -1,0 +1,8 @@
+id: B3502
+milestone: M5 api families
+title: Send managed-agent create list and get requests
+status: todo
+depends_on: [B3492, B1392, B173, B198, B249]
+file: null
+covers:
+  - "litellm/interactions/agents/http_handler.py"

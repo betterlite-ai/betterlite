@@ -1,0 +1,8 @@
+id: B4263
+milestone: M8 platform
+title: Admin UI setup and disabled responses
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/admin_ui_utils.py"

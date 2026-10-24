@@ -1,0 +1,8 @@
+id: B3371
+milestone: M5 api families
+title: Container file content and upload request processing
+status: todo
+depends_on: [B3362, B014, B2400, B1101, B732, B003]
+file: null
+covers:
+  - "litellm/proxy/container_endpoints/handler_factory.py"

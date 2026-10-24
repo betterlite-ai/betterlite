@@ -1,0 +1,8 @@
+id: B4415
+milestone: M8 platform
+title: Create, restore, replicate and rotate AWS secrets
+status: todo
+depends_on: [B173, B198, B4410, B4413, B4414]
+file: null
+covers:
+  - "litellm/secret_managers/aws_secret_manager_v2.py"

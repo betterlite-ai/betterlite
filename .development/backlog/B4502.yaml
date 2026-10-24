@@ -1,0 +1,8 @@
+id: B4502
+milestone: M8 platform
+title: Read Lens activity samples and verify stored evidence
+status: todo
+depends_on: [B4500]
+file: null
+covers:
+  - "litellm/proxy/lens/sources.py"

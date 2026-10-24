@@ -1,0 +1,8 @@
+id: B4577
+milestone: M8 platform
+title: Temporarily route Claude sessions through the gateway
+status: todo
+depends_on: [B4562, B4564, B4574, B4575, B4585]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/up.py"

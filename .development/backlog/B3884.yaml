@@ -1,0 +1,8 @@
+id: B3884
+milestone: M7 observability
+title: Prometheus paginated budget refresh
+status: todo
+depends_on: [B3882, B3883, B813, B897, B723, B724, B726, B700, B1690, B189, B002]
+file: null
+covers:
+  - "litellm/integrations/prometheus.py"

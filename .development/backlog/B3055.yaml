@@ -1,0 +1,8 @@
+id: B3055
+milestone: M4 keys, spend and management
+title: Construct the shared limiter and select batch admission
+status: todo
+depends_on: [B002, B1042, B1044, B3031, B3032, B3033, B3035, B3037, B3038, B3039]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"

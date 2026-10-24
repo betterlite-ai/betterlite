@@ -1,0 +1,8 @@
+id: B3210
+milestone: M4 keys, spend and management
+title: Build reproducible installable skill archives
+status: todo
+depends_on: [B171]
+file: null
+covers:
+  - "litellm/proxy/discovery_endpoints/agent_skills_archive.py"

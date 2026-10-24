@@ -1,0 +1,9 @@
+id: B3691
+milestone: M6 guardrails
+title: Built-in pattern catalog and content category discovery
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/content_filter_data/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.{py,json}"

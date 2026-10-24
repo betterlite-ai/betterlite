@@ -1,0 +1,9 @@
+id: B3800
+milestone: M6 guardrails
+title: XecGuard scan and grounding primitives
+status: todo
+depends_on: [B173, B244]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/xecguard.py"

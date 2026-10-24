@@ -1,0 +1,8 @@
+id: B4785
+milestone: M9 agents and mcp
+title: Create, replace, patch and delete registered agents
+status: todo
+depends_on: [B4770, B4772, B4775, B4776, B4777, B4781, B732, B864]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/endpoints.py"

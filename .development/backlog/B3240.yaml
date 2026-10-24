@@ -1,0 +1,13 @@
+id: B3240
+milestone: M6 guardrails
+title: Policy values, conditions and inheritance
+status: todo
+depends_on: [B882]
+file: null
+covers:
+  - "litellm/types/proxy/policy_engine/policy_types.py"
+  - "litellm/types/proxy/policy_engine/pipeline_types.py"
+  - "litellm/types/proxy/policy_engine/resolver_types.py"
+  - "litellm/proxy/policy_engine/condition_evaluator.py"
+  - "litellm/proxy/policy_engine/policy_matcher.py"
+  - "litellm/proxy/policy_engine/policy_resolver.py"

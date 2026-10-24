@@ -1,0 +1,9 @@
+id: B3666
+milestone: M6 guardrails
+title: Guardrail session deduplication and deployment hooks
+status: todo
+depends_on: [B3663, B3664, B3665, B3680, B198]
+file: null
+covers:
+  - "litellm/integrations/custom_guardrail.py"
+  - "litellm/proxy/guardrails/_content_utils.py"

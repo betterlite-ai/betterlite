@@ -1,0 +1,10 @@
+id: B3846
+milestone: M7 observability
+title: OTel vendor attribute mapping and tool roles
+status: todo
+depends_on: [B3840, B3843, B3844, B3845]
+file: null
+covers:
+  - "litellm/integrations/otel/mappers/{__init__,langfuse,langtrace,openinference,weave}.py"
+  - "litellm/integrations/langtrace.py"
+  - "litellm/integrations/arize/_utils.py"

@@ -1,0 +1,8 @@
+id: B3633
+milestone: M5 api families
+title: Anthropic passthrough batch logging
+status: todo
+depends_on: [B3630, B587, B844, B198]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py"

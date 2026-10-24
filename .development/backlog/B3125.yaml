@@ -1,0 +1,9 @@
+id: B3125
+milestone: M4 keys, spend and management
+title: Serve cache cost comparisons and paginated caching requests
+status: todo
+depends_on: [B3120, B3121, B3123, B003, B732, B746, B844, B886, B1100, B1106, B1693, B1694, B1726]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/{prompt_cache_prediction,prompt_caching_requests}.py"
+  - "litellm/types/management_endpoints/prompt_caching_requests.py"

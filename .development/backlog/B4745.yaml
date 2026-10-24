@@ -1,0 +1,8 @@
+id: B4745
+milestone: M9 agents and mcp
+title: MCP client tool listing and execution
+status: todo
+depends_on: [B4740, B4744]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/client.py"

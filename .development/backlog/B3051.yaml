@@ -1,0 +1,9 @@
+id: B3051
+milestone: M4 keys, spend and management
+title: Dynamic priority allocation and saturation policy
+status: todo
+depends_on: [B002, B732, B846, B3030, B3031]
+file: null
+covers:
+  - "litellm/proxy/hooks/dynamic_rate_limiter_v3.py"
+  - "litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md"

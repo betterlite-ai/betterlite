@@ -1,0 +1,10 @@
+id: B3192
+milestone: M4 keys, spend and management
+title: Public router presets and scorer defaults
+status: todo
+depends_on: [B001, B002, B003, B173, B328, B353]
+file: null
+covers:
+  - "litellm/proxy/public_endpoints/public_endpoints.py"
+  - "litellm/proxy/public_endpoints/autorouter_presets.json"
+  - "litellm/types/proxy/public_endpoints/public_endpoints.py"

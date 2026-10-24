@@ -1,0 +1,9 @@
+id: B3773
+milestone: M6 guardrails
+title: Headroom protected messages and transport settings
+status: todo
+depends_on: [B224]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/headroom.py"

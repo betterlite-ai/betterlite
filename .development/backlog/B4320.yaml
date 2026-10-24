@@ -1,0 +1,8 @@
+id: B4320
+milestone: M8 platform
+title: Refresh Redis cloud credentials and authenticate connections
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/{_redis,_redis_credential_provider}.py"

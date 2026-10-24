@@ -1,0 +1,8 @@
+id: B4413
+milestone: M8 platform
+title: Prepare and send AWS Secrets Manager actions
+status: todo
+depends_on: [B002, B173, B198, B4410]
+file: null
+covers:
+  - "litellm/secret_managers/aws_secret_manager_v2.py"

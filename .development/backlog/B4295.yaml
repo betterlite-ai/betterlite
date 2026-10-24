@@ -1,0 +1,8 @@
+id: B4295
+milestone: M8 platform
+title: Queue request-scoped cache writes and increments
+status: todo
+depends_on: [B2226, B390, B360, B393, B4290, B4293]
+file: null
+covers:
+  - "litellm/caching/dual_cache.py"

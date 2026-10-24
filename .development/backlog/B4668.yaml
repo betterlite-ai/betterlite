@@ -1,0 +1,8 @@
+id: B4668
+milestone: M9 agents and mcp
+title: MCP object permission hydration
+status: todo
+depends_on: [B726, B733, B735, B736, B737, B739, B879]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py"

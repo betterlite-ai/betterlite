@@ -1,0 +1,11 @@
+id: B4778
+milestone: M9 agents and mcp
+title: Resolve agent access ceilings and forwarded caller identities
+status: todo
+depends_on: [B4770, B4776, B732, B736, B737]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/auth/__init__.py"
+  - "litellm/proxy/agent_endpoints/auth/agent_access_groups.py"
+  - "litellm/proxy/agent_endpoints/auth/agent_caller.py"
+  - "litellm/proxy/agent_endpoints/auth/agent_permission_handler.py"

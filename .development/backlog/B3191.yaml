@@ -1,0 +1,10 @@
+id: B3191
+milestone: M4 keys, spend and management
+title: Public agent creation fields and credential inheritance
+status: todo
+depends_on: [B001, B003, B3190]
+file: null
+covers:
+  - "litellm/proxy/public_endpoints/public_endpoints.py"
+  - "litellm/proxy/public_endpoints/agent_create_fields.json"
+  - "litellm/types/proxy/public_endpoints/public_endpoints.py"

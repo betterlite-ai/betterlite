@@ -1,0 +1,9 @@
+id: B3265
+milestone: M6 guardrails
+title: Published global safety and local financial AI and MCP records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "policy_templates.json"
+  - "litellm/policy_templates_backup.json"

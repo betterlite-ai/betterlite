@@ -1,0 +1,8 @@
+id: B3016
+milestone: M4 keys, spend and management
+title: Share model-budget window increments and Redis flushing
+status: todo
+depends_on: [B199, B360, B390, B2226]
+file: null
+covers:
+  - "litellm/router_strategy/budget_limiter.py"

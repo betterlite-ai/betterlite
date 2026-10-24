@@ -1,0 +1,8 @@
+id: B4084
+milestone: M7 observability
+title: Execute shadow calls and blind pairwise judgments
+status: todo
+depends_on: [B4080, B4081, B188]
+file: null
+covers:
+  - "litellm/integrations/shadow_eval_logger.py"

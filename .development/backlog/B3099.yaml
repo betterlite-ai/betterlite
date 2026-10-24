@@ -1,0 +1,8 @@
+id: B3099
+milestone: M4 keys, spend and management
+title: Report cache activity, errors and available filters
+status: todo
+depends_on: [B052, B700, B868]
+file: null
+covers:
+  - "litellm/proxy/analytics_endpoints/**"

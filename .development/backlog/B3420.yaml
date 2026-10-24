@@ -1,0 +1,9 @@
+id: B3420
+milestone: M5 api families
+title: Eval wire contracts and inherited provider errors
+status: todo
+depends_on: [B2202]
+file: null
+covers:
+  - "litellm/types/llms/openai_evals.py"
+  - "litellm/llms/base_llm/evals/**"

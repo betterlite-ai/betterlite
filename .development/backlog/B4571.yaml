@@ -1,0 +1,8 @@
+id: B4571
+milestone: M8 platform
+title: Validate and apply agent gateway setup
+status: todo
+depends_on: [B4560, B4562, B4563, B4564, B4565, B4569, B4570]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/configure_setup.py"

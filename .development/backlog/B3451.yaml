@@ -1,0 +1,8 @@
+id: B3451
+milestone: M5 api families
+title: RAG ingestion state and document preparation
+status: todo
+depends_on: [B3450, B1601, B198, B009, B173]
+file: null
+covers:
+  - "litellm/rag/ingestion/base_ingestion.py"

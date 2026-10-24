@@ -1,0 +1,8 @@
+id: B3572
+milestone: M5 api families
+title: Passthrough stream relay and collector lifecycle
+status: todo
+depends_on: [B3570, B173, B252]
+file: null
+covers:
+  - "litellm/passthrough/main.py"

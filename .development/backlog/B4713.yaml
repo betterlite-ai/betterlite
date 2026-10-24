@@ -1,0 +1,8 @@
+id: B4713
+milestone: M9 agents and mcp
+title: MCP per-user credential persistence and expiry
+status: todo
+depends_on: [B4710, B4711, B726, B1600]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/db.py"

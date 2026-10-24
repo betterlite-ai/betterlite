@@ -1,0 +1,8 @@
+id: B4682
+milestone: M9 agents and mcp
+title: MCP catalog pinning and description guardrails
+status: todo
+depends_on: [B732]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py"

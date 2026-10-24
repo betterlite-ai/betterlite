@@ -1,0 +1,9 @@
+id: B3073
+milestone: M4 keys, spend and management
+title: Encode PointFive batches and upload presigned objects
+status: todo
+depends_on: [B002, B009, B173, B189, B192]
+file: null
+covers:
+  - "litellm/integrations/pointfive/{payload,upload_client}.py"
+  - "litellm/types/integrations/pointfive.py"

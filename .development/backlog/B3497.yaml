@@ -1,0 +1,8 @@
+id: B3497
+milestone: M5 api families
+title: Translate interaction requests and replies through Responses
+status: todo
+depends_on: [B3481, B1306]
+file: null
+covers:
+  - "litellm/interactions/litellm_responses_transformation/transformation.py"

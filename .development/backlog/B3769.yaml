@@ -1,0 +1,9 @@
+id: B3769
+milestone: M6 guardrails
+title: EnkryptAI detection and unified evaluation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/enkryptai/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/enkryptai.py"

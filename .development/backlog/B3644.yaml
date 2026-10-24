@@ -1,0 +1,8 @@
+id: B3644
+milestone: M5 api families
+title: Transcribe passthrough ownership and admission policy
+status: todo
+depends_on: [B002, B193, B1018]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py"

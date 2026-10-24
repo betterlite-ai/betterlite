@@ -1,0 +1,10 @@
+id: B4846
+milestone: M9 agents and mcp
+title: Own harness session startup, interruption and resumable state
+status: todo
+depends_on: [B4830, B4834, B4835, B4836, B4837, B4839, B4840, B4841, B4843, B4844]
+file: null
+covers:
+  - "litellm/harness/runtime.py"
+  - "litellm/harness/handlers/__init__.py"
+  - "litellm/utils.py"

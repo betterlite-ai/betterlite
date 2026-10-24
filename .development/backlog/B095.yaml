@@ -2,11 +2,9 @@ id: B095
 milestone: M5 api families
 title: Skills API
 status: todo
-depends_on: [B087, B081]
+depends_on: [B732, B858, B3390, B3391, B3392, B3393, B3394, B3395]
 file: null
 covers:
-  - "litellm/skills/**"
-  - "litellm/llms/base_llm/skills/**"
-  - "litellm/llms/anthropic/skills/**"
-  - "litellm/types/llms/anthropic_skills.py"
-  - "litellm/proxy/hooks/litellm_skills/**"
+  - "litellm/skills/__init__.py"
+  - "litellm/proxy/hooks/litellm_skills/__init__.py"
+  - "litellm/proxy/hooks/litellm_skills/main.py"

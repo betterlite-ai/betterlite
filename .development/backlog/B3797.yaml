@@ -1,0 +1,8 @@
+id: B3797
+milestone: M6 guardrails
+title: Straiker delivery and intervention decisions
+status: todo
+depends_on: [B3795, B3796, B173, B2226]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py"

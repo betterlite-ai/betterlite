@@ -1,0 +1,9 @@
+id: B4740
+milestone: M9 agents and mcp
+title: MCP tool schemas and paginated session helpers
+status: todo
+depends_on: [B002, B217]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/tools.py"
+  - "litellm/experimental_mcp_client/__init__.py"

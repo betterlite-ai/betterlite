@@ -1,0 +1,8 @@
+id: B3013
+milestone: M4 keys, spend and management
+title: Reset team budgets and keyset-paged budget windows
+status: todo
+depends_on: [B3000, B3009, B199, B360, B700, B722, B724, B726, B1690, B1735, B2226]
+file: null
+covers:
+  - "litellm/proxy/common_utils/reset_budget_job.py"

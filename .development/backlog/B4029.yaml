@@ -1,0 +1,9 @@
+id: B4029
+milestone: M7 observability
+title: Spend reports and per-user anomaly alerts
+status: todo
+depends_on: [B4020, B4024, B700, B1725, B199]
+file: null
+covers:
+  - "litellm/integrations/SlackAlerting/user_spend_alerts.py"
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"

@@ -1,0 +1,8 @@
+id: B4414
+milestone: M8 platform
+title: Read AWS secrets and primary secret maps
+status: todo
+depends_on: [B002, B173, B4413]
+file: null
+covers:
+  - "litellm/secret_managers/aws_secret_manager_v2.py"

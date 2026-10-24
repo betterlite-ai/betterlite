@@ -1,0 +1,9 @@
+id: B3792
+milestone: M6 guardrails
+title: Prompt Security conversation protection
+status: todo
+depends_on: [B3791, B002, B173, B189]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/prompt_security/{prompt_security,__init__}.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/prompt_security.py"

@@ -1,0 +1,8 @@
+id: B3740
+milestone: M6 guardrails
+title: Purview blocking streaming and audit hooks
+status: todo
+depends_on: [B3738, B3739, B2227, B732]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py"

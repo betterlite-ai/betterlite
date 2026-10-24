@@ -1,0 +1,9 @@
+id: B4672
+milestone: M9 agents and mcp
+title: MCP admitted tool grants and dashboard authorization contexts
+status: todo
+depends_on: [B4654, B4668, B4669, B4670, B4671, B736]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/auth/{user_api_key_auth_mcp,managed_agent_access}.py"
+  - "litellm/proxy/_experimental/mcp_server/ui_session_utils.py"

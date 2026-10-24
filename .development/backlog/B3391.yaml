@@ -1,0 +1,8 @@
+id: B3391
+milestone: M5 api families
+title: Skill lookup and deletion with shared caller context
+status: todo
+depends_on: [B185, B186, B198, B247, B567, B3390]
+file: null
+covers:
+  - "litellm/skills/main.py"

@@ -1,0 +1,9 @@
+id: B4113
+milestone: M7 observability
+title: Search result messages and native citation blocks
+status: todo
+depends_on: [B4111, B184]
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/transformation.py"
+  - "litellm/integrations/websearch_interception/handler.py"

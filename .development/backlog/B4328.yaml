@@ -1,0 +1,8 @@
+id: B4328
+milestone: M8 platform
+title: Read Redis counters and execute namespaced Lua operations
+status: todo
+depends_on: [B393, B4324, B4325]
+file: null
+covers:
+  - "litellm/caching/redis_cache.py"

@@ -1,0 +1,8 @@
+id: B4080
+milestone: M7 observability
+title: Parse judge verdicts and resolve team-scoped judge targets
+status: todo
+depends_on: [B174]
+file: null
+covers:
+  - "litellm/litellm_core_utils/llm_judge.py"

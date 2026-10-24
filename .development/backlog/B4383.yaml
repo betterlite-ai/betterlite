@@ -1,0 +1,8 @@
+id: B4383
+milestone: M8 platform
+title: Initialize Qdrant collections and search scoped semantic responses
+status: todo
+depends_on: [B002, B173, B198, B218, B4380, B4381]
+file: null
+covers:
+  - "litellm/caching/qdrant_semantic_cache.py"

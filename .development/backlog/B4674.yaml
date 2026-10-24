@@ -1,0 +1,8 @@
+id: B4674
+milestone: M9 agents and mcp
+title: MCP gateway DCR contracts, registration and replay guards
+status: todo
+depends_on: [B4654, B4655, B733, B1600, B2226]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py"

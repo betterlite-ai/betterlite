@@ -1,0 +1,8 @@
+id: B3702
+milestone: M6 guardrails
+title: Code execution guardrail lifecycle and registration
+status: todo
+depends_on: [B3690, B3701, B189, B002]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/block_code_execution/{__init__.py,block_code_execution.py}"

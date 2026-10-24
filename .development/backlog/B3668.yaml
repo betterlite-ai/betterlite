@@ -1,0 +1,8 @@
+id: B3668
+milestone: M6 guardrails
+title: Chat guardrail request and completed-response rewrites
+status: todo
+depends_on: [B3661, B3663, B3664, B3665, B3667, B2227]
+file: null
+covers:
+  - "litellm/llms/openai/chat/guardrail_translation/handler.py"

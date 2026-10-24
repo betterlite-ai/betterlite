@@ -1,0 +1,9 @@
+id: B3767
+milestone: M6 guardrails
+title: DeepKeep firewall evaluation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py"

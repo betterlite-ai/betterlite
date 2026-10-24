@@ -1,0 +1,8 @@
+id: B3067
+milestone: M4 keys, spend and management
+title: Configure and schedule Vantage exports
+status: todo
+depends_on: [B002, B189, B1690, B3066]
+file: null
+covers:
+  - "litellm/integrations/vantage/**"

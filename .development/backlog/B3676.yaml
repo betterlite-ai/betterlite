@@ -1,0 +1,8 @@
+id: B3676
+milestone: M6 guardrails
+title: Anthropic guardrail streaming and block continuation
+status: todo
+depends_on: [B3661, B3663, B3664, B3670, B3673, B3675]
+file: null
+covers:
+  - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"

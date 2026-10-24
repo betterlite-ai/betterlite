@@ -1,0 +1,8 @@
+id: B3817
+milestone: M6 guardrails
+title: Derive MCP identity scopes and access-token claims
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py"

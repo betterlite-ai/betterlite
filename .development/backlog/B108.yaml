@@ -2,10 +2,17 @@ id: B108
 milestone: M6 guardrails
 title: Third-party guardrails, M to Z, custom code and model judges
 status: todo
-depends_on: [B104]
+depends_on: [B3780, B3781, B3782, B3783, B3784, B3785, B3786, B3787, B3788, B3789, B3790, B3791, B3792, B3793, B3794, B3795, B3796, B3797, B3798, B3799, B3800, B3801, B3802, B3803, B3804, B3805, B3806, B3807, B3808, B3809, B002, B173, B189, B2226]
 file: null
 covers:
-  - "litellm/proxy/guardrails/guardrail_hooks/{noma,onyx,ovalix,pangea,panw_prisma_airs,pillar,promptguard,prompt_security,qohash,qualifire,repelloai,rubrik,semantic_guard,singulr,straiker,typesafe,vigil_guard,xecguard,zscaler_ai_guard,custom_code,llm_as_a_judge,decision_model}/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/{promptguard,qohash,qualifire,rubrik,singulr,zscaler_ai_guard,decision_model}/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/{panw_prisma_airs,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/pillar/{pillar,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/{semantic_guard,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/straiker/{straiker,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/typesafe/{typesafe,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/vigil_guard/{vigil_guard,__init__}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/xecguard/{xecguard,__init__}.py"
   - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
   - "litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json"
-  - "litellm/types/proxy/guardrails/guardrail_hooks/{noma,onyx,ovalix,pangea,panw_prisma_airs,pillar,presidio,promptguard,prompt_security,qohash,qualifire,repelloai,singulr,straiker,typesafe,vigil_guard,xecguard,zscaler_ai_guard,decision_model}.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/{promptguard,qohash,qualifire,singulr,zscaler_ai_guard,decision_model}.py"

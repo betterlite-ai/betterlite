@@ -1,0 +1,9 @@
+id: B4803
+milestone: M9 agents and mcp
+title: A2A completion messages, metadata and streaming events
+status: todo
+depends_on: [B004, B198]
+file: null
+covers:
+  - "litellm/a2a_protocol/litellm_completion_bridge/transformation.py"
+  - "litellm/a2a_protocol/providers/base.py"

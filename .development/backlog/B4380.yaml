@@ -1,0 +1,9 @@
+id: B4380
+milestone: M8 platform
+title: Extract semantic prompts and decode cached responses
+status: todo
+depends_on: [B218]
+file: null
+covers:
+  - "litellm/caching/redis_semantic_cache.py"
+  - "litellm/caching/qdrant_semantic_cache.py"

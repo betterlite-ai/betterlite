@@ -1,0 +1,8 @@
+id: B3007
+milestone: M4 keys, spend and management
+title: Enforce agent session budgets
+status: todo
+depends_on: [B002, B3017, B360, B390, B732, B2226]
+file: null
+covers:
+  - "litellm/proxy/hooks/max_budget_per_session_limiter.py"

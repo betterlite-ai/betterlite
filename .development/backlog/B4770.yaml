@@ -1,0 +1,9 @@
+id: B4770
+milestone: M9 agents and mcp
+title: Agent registry, identity and webhook wire records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/agents.py"
+  - "litellm/types/proxy/agent_identity.py"

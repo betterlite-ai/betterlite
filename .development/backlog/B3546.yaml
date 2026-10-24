@@ -1,0 +1,8 @@
+id: B3546
+milestone: M5 api families
+title: Auto-router compression policy and guardrail execution
+status: todo
+depends_on: [B302, B321, B206]
+file: null
+covers:
+  - "litellm/proxy/guardrails/auto_router_compression.py"

@@ -1,0 +1,8 @@
+id: B3936
+milestone: M7 observability
+title: Datadog LLM span privacy and metadata
+status: todo
+depends_on: [B3930, B3935, B188]
+file: null
+covers:
+  - "litellm/integrations/datadog/datadog_llm_obs.py"

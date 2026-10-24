@@ -1,0 +1,8 @@
+id: B3453
+milestone: M5 api families
+title: OpenAI RAG file upload and attachment
+status: todo
+depends_on: [B3451, B1064, B1072, B1028]
+file: null
+covers:
+  - "litellm/rag/ingestion/openai_ingestion.py"

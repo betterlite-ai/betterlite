@@ -1,0 +1,8 @@
+id: B3060
+milestone: M4 keys, spend and management
+title: Read daily usage rows for FinOps exports
+status: todo
+depends_on: [B700, B1710]
+file: null
+covers:
+  - "litellm/integrations/{focus,cloudzero}/database.py"

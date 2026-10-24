@@ -1,0 +1,8 @@
+id: B3618
+milestone: M5 api families
+title: Pass-through provider route composition helpers
+status: todo
+depends_on: [B3600, B3602, B3615, B002, B052, B174, B844, B882, B1100, B1101, B1106, B2220, B2400]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

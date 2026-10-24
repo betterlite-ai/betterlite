@@ -1,0 +1,8 @@
+id: B4297
+milestone: M8 platform
+title: Read and write response cache envelopes
+status: todo
+depends_on: [B393, B4290, B4296]
+file: null
+covers:
+  - "litellm/caching/caching.py"

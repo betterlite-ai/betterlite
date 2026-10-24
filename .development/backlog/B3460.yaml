@@ -1,0 +1,10 @@
+id: B3460
+milestone: M5 api families
+title: RAG ingestion orchestration and call entry points
+status: todo
+depends_on: [B3450, B3451, B3453, B3454, B3455, B3456, B3457, B3459, B185, B186]
+file: null
+covers:
+  - "litellm/rag/main.py"
+  - "litellm/rag/ingestion/base_ingestion.py"
+  - "litellm/rag/ingestion/__init__.py"

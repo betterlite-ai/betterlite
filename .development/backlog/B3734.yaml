@@ -1,0 +1,8 @@
+id: B3734
+milestone: M6 guardrails
+title: Model Armor request response and logging hooks
+status: todo
+depends_on: [B3732, B3733, B219, B206]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py"

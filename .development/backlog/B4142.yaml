@@ -1,0 +1,9 @@
+id: B4142
+milestone: M8 platform
+title: Resolve recursive config includes before typed loading
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/proxy/common_utils/config_includes.py"
+  - "litellm/proxy/{_new_new_secret_config,_new_secret_config,_super_secret_config,model_config,proxy_config,wildcard_config}.yaml"

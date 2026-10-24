@@ -1,0 +1,9 @@
+id: B3804
+milestone: M6 guardrails
+title: Presidio analysis chunking and entity filtering
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/presidio.py"

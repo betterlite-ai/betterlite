@@ -1,0 +1,8 @@
+id: B3636
+milestone: M5 api families
+title: OpenAI relayed stream assembly and prompt estimates
+status: todo
+depends_on: [B196, B258, B668, B2214, B2227]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py"

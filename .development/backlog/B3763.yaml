@@ -1,0 +1,8 @@
+id: B3763
+milestone: M6 guardrails
+title: Compresr query projection and compression transport
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py"

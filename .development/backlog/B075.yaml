@@ -2,16 +2,10 @@ id: B075
 milestone: M4 keys, spend and management
 title: Model insights and prompt caching insights
 status: todo
-depends_on: [B070]
+depends_on: [B3120, B3121, B3122, B3123, B3124, B3125, B003, B732, B726, B1734]
 file: null
 covers:
-  - "litellm/proxy/management_endpoints/{model_insights_endpoints,prompt_cache_prediction,prompt_caching_requests}.py"
-  - "litellm/types/management_endpoints/{prompt_cache_prediction,prompt_caching_requests}.py"
-  - "litellm/proxy/hooks/prompt_cache_prediction.py"
-  - "litellm/proxy/common_utils/{prompt_cache_prediction,prompt_cache_pricing,cache_aware_routing}.py"
-  - "litellm/llms/anthropic/{prompt_cache_prediction,cache_aware_routing}.py"
-  - "litellm/proxy/model_insights_tasks.json"
-  - "litellm/proxy/db/model_insights_tasks.py"
+  - "litellm/proxy/management_endpoints/model_insights_endpoints.py"
   - "litellm/types/model_insights.py"
-  - "litellm/llms/anthropic/cache_aware_routing.py"
-  - "litellm/llms/anthropic/prompt_cache_prediction.py"
+  - "litellm/proxy/db/model_insights_tasks.py"
+  - "litellm/proxy/model_insights_tasks.json"

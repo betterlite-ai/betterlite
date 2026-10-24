@@ -1,0 +1,9 @@
+id: B3729
+milestone: M6 guardrails
+title: Azure Prompt Shield and billing usage
+status: todo
+depends_on: [B3728, B1667]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_prompt_shield.py"

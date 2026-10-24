@@ -1,0 +1,8 @@
+id: B4231
+milestone: M8 platform
+title: Pinned OpenAPI registry catalog
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/openapi_registry.json"

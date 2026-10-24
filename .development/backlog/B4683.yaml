@@ -1,0 +1,8 @@
+id: B4683
+milestone: M9 agents and mcp
+title: OpenAPI MCP schemas and upstream tool execution
+status: todo
+depends_on: [B173, B009]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py"

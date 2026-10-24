@@ -1,0 +1,8 @@
+id: B3667
+milestone: M6 guardrails
+title: Chat guardrail extraction and block framing
+status: todo
+depends_on: [B3661, B3663]
+file: null
+covers:
+  - "litellm/llms/openai/chat/guardrail_translation/handler.py"

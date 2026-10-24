@@ -1,0 +1,8 @@
+id: B3620
+milestone: M5 api families
+title: Pass-through Bedrock model extraction and token counting
+status: todo
+depends_on: [B3600, B3618, B641, B844]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

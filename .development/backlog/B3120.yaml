@@ -1,0 +1,8 @@
+id: B3120
+milestone: M4 keys, spend and management
+title: Parse Anthropic cache plans and fingerprint reusable prefixes
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/llms/anthropic/prompt_cache_prediction.py"

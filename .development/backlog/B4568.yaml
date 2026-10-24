@@ -1,0 +1,8 @@
+id: B4568
+milestone: M8 platform
+title: Agent preparation, catalog validation and execution
+status: todo
+depends_on: [B4562, B4564, B4565, B4566, B4567]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/agents.py"

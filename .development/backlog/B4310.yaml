@@ -1,0 +1,8 @@
+id: B4310
+milestone: M8 platform
+title: Resolve semantic-cache embedding routing and input limits
+status: todo
+depends_on: [B002, B195]
+file: null
+covers:
+  - "litellm/caching/_embedding_router.py"

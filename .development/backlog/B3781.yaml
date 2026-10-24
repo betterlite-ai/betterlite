@@ -1,0 +1,8 @@
+id: B3781
+milestone: M6 guardrails
+title: Noma legacy lifecycle and buffered streaming
+status: todo
+depends_on: [B3780, B3782, B002, B173, B189, B2227]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/noma/{noma,__init__}.py"

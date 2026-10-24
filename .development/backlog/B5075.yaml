@@ -1,0 +1,9 @@
+id: B5075
+milestone: M11 distribution
+title: Local ClickHouse tracing Compose stack
+status: todo
+depends_on: [B5071]
+file: null
+covers:
+  - "docker/docker-compose.tracing.yml"
+  - "docker/tracing-config.yaml"

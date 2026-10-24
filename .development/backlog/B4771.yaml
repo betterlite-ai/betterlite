@@ -1,0 +1,9 @@
+id: B4771
+milestone: M9 agents and mcp
+title: Native agent provider contracts and A2A response records
+status: todo
+depends_on: [B2202]
+file: null
+covers:
+  - "litellm/types/agents.py"
+  - "litellm/llms/base_llm/agents/**"

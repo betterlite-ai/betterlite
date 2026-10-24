@@ -1,0 +1,10 @@
+id: B3683
+milestone: M6 guardrails
+title: Guardrail reconciliation, startup and auto-router policy
+status: todo
+depends_on: [B3660, B3662, B3664, B3665, B3682, B189, B206, B302]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_registry.py"
+  - "litellm/proxy/guardrails/init_guardrails.py"
+  - "litellm/proxy/guardrails/auto_router_compression.py"

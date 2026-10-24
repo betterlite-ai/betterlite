@@ -1,0 +1,8 @@
+id: B4350
+milestone: M8 platform
+title: Store response cache objects in S3
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/caching/s3_cache.py"

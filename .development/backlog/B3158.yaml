@@ -1,0 +1,8 @@
+id: B3158
+milestone: M4 keys, spend and management
+title: Persist ROI settings and expose admin configuration
+status: todo
+depends_on: [B003, B3150, B3154, B725, B732, B844, B1600]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/roi_calculator_endpoints.py"

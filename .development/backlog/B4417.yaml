@@ -1,0 +1,8 @@
+id: B4417
+milestone: M8 platform
+title: Read, write, delete and verify Vault secret rotations
+status: todo
+depends_on: [B173, B2226, B4416]
+file: null
+covers:
+  - "litellm/secret_managers/hashicorp_secret_manager.py"

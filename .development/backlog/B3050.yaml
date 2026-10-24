@@ -1,0 +1,8 @@
+id: B3050
+milestone: M4 keys, spend and management
+title: Legacy dynamic project quota sharing
+status: todo
+depends_on: [B002, B732, B845, B846, B847, B3030]
+file: null
+covers:
+  - "litellm/proxy/hooks/dynamic_rate_limiter.py"

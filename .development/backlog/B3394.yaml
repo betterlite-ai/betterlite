@@ -1,0 +1,8 @@
+id: B3394
+milestone: M5 api families
+title: Skill hook settings and execution result handling
+status: todo
+depends_on: [B189]
+file: null
+covers:
+  - "litellm/proxy/hooks/litellm_skills/main.py"

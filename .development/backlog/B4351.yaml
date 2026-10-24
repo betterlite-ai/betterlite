@@ -1,0 +1,8 @@
+id: B4351
+milestone: M8 platform
+title: Store response cache objects in Azure Blob Storage
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/caching/azure_blob_cache.py"

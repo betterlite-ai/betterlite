@@ -1,0 +1,8 @@
+id: B3967
+milestone: M7 observability
+title: Lunary events and Weights and Biases trace trees
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/{lunary,weights_biases}.py"

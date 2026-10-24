@@ -1,0 +1,8 @@
+id: B3508
+milestone: M5 api families
+title: Enforce managed-agent credentials and serve collection routes
+status: todo
+depends_on: [B3504, B014, B052, B1100]
+file: null
+covers:
+  - "litellm/proxy/google_endpoints/agents_endpoints.py"

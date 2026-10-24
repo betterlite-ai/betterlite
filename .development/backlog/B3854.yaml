@@ -1,0 +1,9 @@
+id: B3854
+milestone: M7 observability
+title: Legacy OTel capture policy and span annotations
+status: todo
+depends_on: [B002, B198, B3840, B3844, B3847]
+file: null
+covers:
+  - "litellm/integrations/opentelemetry.py"
+  - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"

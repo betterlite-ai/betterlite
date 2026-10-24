@@ -1,0 +1,9 @@
+id: B3868
+milestone: M7 observability
+title: OTel provider assembly and legacy initialization
+status: todo
+depends_on: [B002, B189, B3840, B3842, B3848, B3849, B3854, B3855, B3857]
+file: null
+covers:
+  - "litellm/integrations/opentelemetry.py"
+  - "litellm/integrations/otel/plumbing/providers.py"

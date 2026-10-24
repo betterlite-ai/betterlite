@@ -2,10 +2,9 @@ id: B093
 milestone: M5 api families
 title: Videos API
 status: todo
-depends_on: [B087]
+depends_on: [B3330, B3331, B3332, B3333, B3334, B3335, B3336, B3337, B3338, B3339, B3340, B3341, B3342, B3343, B3344, B3345, B672, B052, B014, B082, B1100, B2400, B844]
 file: null
 covers:
-  - "litellm/videos/**"
-  - "litellm/llms/base_llm/videos/**"
-  - "litellm/proxy/video_endpoints/**"
-  - "litellm/types/videos/**"
+  - "litellm/videos/__init__.py"
+  - "litellm/proxy/video_endpoints/__init__.py"
+  - "litellm/proxy/video_endpoints/endpoints.py"

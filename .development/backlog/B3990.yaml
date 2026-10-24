@@ -1,0 +1,9 @@
+id: B3990
+milestone: M7 observability
+title: Resolve S3 logging options and bounded object names
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/integrations/s3.py"
+  - "litellm/types/integrations/s3_v2.py"

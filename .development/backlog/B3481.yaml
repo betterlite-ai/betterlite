@@ -1,0 +1,10 @@
+id: B3481
+milestone: M5 api families
+title: Interaction records and billing eligibility
+status: todo
+depends_on: [B1370]
+file: null
+covers:
+  - "litellm/types/interactions/**"
+  - "litellm/interactions/background_cost_polling.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"

@@ -1,0 +1,8 @@
+id: B3774
+milestone: M6 guardrails
+title: Headroom compression and issued hash tracking
+status: todo
+depends_on: [B3773, B226]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py"

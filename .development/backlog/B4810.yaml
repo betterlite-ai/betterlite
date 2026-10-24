@@ -1,0 +1,9 @@
+id: B4810
+milestone: M9 agents and mcp
+title: A2A logging context and stream completion accounting
+status: todo
+depends_on: [B004, B198, B247, B250, B4801, B4802]
+file: null
+covers:
+  - "litellm/a2a_protocol/main.py"
+  - "litellm/a2a_protocol/streaming_iterator.py"

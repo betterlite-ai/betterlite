@@ -1,0 +1,10 @@
+id: B3861
+milestone: M7 observability
+title: Arize and Weave attributes and passthrough projection
+status: todo
+depends_on: [B188, B192, B3844, B3846, B3860]
+file: null
+covers:
+  - "litellm/integrations/arize/_utils.py"
+  - "litellm/integrations/weave/weave_otel.py"
+  - "litellm/types/integrations/weave_otel.py"

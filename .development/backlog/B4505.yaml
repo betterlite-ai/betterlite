@@ -1,0 +1,8 @@
+id: B4505
+milestone: M8 platform
+title: Lease Lens work and accept verified results
+status: todo
+depends_on: [B4500, B4501, B4502, B4503, B4504, B003]
+file: null
+covers:
+  - "litellm/proxy/lens/endpoints.py"

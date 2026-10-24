@@ -1,0 +1,8 @@
+id: B3672
+milestone: M6 guardrails
+title: Responses guardrail streaming and tool event repair
+status: todo
+depends_on: [B3661, B3663, B3664, B3670, B3671]
+file: null
+covers:
+  - "litellm/llms/openai/responses/guardrail_translation/handler.py"

@@ -1,0 +1,8 @@
+id: B4840
+milestone: M9 agents and mcp
+title: Run Deep Agents graphs with approvals, skills and resumable history
+status: todo
+depends_on: [B4830, B4837, B4838, B4839]
+file: null
+covers:
+  - "litellm/harness/handlers/deepagents_handler.py"

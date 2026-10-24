@@ -1,0 +1,8 @@
+id: B4440
+milestone: M8 platform
+title: Health probe payloads, mode handlers and tracking metadata
+status: todo
+depends_on: [B184, B247, B932, B998, B999, B1001, B1011, B1014, B1082, B1083, B1106, B1129]
+file: null
+covers:
+  - "litellm/litellm_core_utils/{health_check_helpers,health_check_utils}.py"

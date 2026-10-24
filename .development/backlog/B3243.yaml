@@ -1,0 +1,9 @@
+id: B3243
+milestone: M6 guardrails
+title: Policy and attachment persistence and refresh
+status: todo
+depends_on: [B3240, B3241, B3242, B726]
+file: null
+covers:
+  - "litellm/proxy/policy_engine/policy_registry.py"
+  - "litellm/proxy/policy_engine/attachment_registry.py"

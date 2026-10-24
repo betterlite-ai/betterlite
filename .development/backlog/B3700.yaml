@@ -1,0 +1,8 @@
+id: B3700
+milestone: M6 guardrails
+title: Content filter streaming holdback and buffer trimming
+status: todo
+depends_on: [B3690, B3693, B3695, B3698]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py"

@@ -1,0 +1,8 @@
+id: B3705
+milestone: M6 guardrails
+title: Authenticated cache control permissions
+status: todo
+depends_on: [B732]
+file: null
+covers:
+  - "litellm/proxy/hooks/cache_control_check.py"

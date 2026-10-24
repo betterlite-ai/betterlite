@@ -1,0 +1,8 @@
+id: B4144
+milestone: M8 platform
+title: Publish config changes and coordinate subscriber reloads
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/common_utils/config_sync_pubsub.py"

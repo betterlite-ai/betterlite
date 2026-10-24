@@ -1,0 +1,8 @@
+id: B3742
+milestone: M6 guardrails
+title: Agent 365 tool evaluation and enforcement
+status: todo
+depends_on: [B3741, B732]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py"

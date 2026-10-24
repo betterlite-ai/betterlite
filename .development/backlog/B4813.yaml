@@ -1,0 +1,8 @@
+id: B4813
+milestone: M9 agents and mcp
+title: A2A error classification and client reconstruction
+status: todo
+depends_on: [B173, B4800]
+file: null
+covers:
+  - "litellm/a2a_protocol/exception_mapping_utils.py"

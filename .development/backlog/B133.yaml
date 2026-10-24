@@ -2,8 +2,8 @@ id: B133
 milestone: M8 platform
 title: Memory API
 status: todo
-depends_on: [B052]
+depends_on: [B726, B732, B4530]
 file: null
 covers:
-  - "litellm/proxy/memory/**"
-  - "litellm/types/memory_management.py"
+  - "litellm/proxy/memory/memory_endpoints.py"
+  - "litellm/proxy/memory/__init__.py"

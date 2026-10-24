@@ -1,0 +1,8 @@
+id: B3811
+milestone: M6 guardrails
+title: Evaluate ordered tool permissions and nested argument patterns
+status: todo
+depends_on: [B3810]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"

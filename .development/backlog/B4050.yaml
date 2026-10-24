@@ -1,0 +1,10 @@
+id: B4050
+milestone: M7 observability
+title: Prompt contracts and compiled result projection
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/{custom_prompt_management,prompt_management_base}.py"
+  - "litellm/types/prompts/**"
+  - "litellm/types/proxy/prompt_endpoints.py"

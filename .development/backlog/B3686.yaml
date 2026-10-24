@@ -1,0 +1,8 @@
+id: B3686
+milestone: M6 guardrails
+title: Guardrail submissions and bounded custom-code testing
+status: todo
+depends_on: [B3662, B3684, B726, B732]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_endpoints.py"

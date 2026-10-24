@@ -1,0 +1,8 @@
+id: B4584
+milestone: M8 platform
+title: Local autoroute process lifecycle and recovery commands
+status: todo
+depends_on: [B4562, B4575, B4583]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/autoroute/{process,commands}.py"

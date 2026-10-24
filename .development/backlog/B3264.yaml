@@ -1,0 +1,9 @@
+id: B3264
+milestone: M6 guardrails
+title: Published passenger and local global safety catalog records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "policy_templates.json"
+  - "litellm/policy_templates_backup.json"

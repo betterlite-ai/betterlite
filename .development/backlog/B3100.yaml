@@ -1,0 +1,8 @@
+id: B3100
+milestone: M4 keys, spend and management
+title: Report distinct user agents and daily and weekly active users
+status: todo
+depends_on: [B052, B700, B722, B723, B726]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py"

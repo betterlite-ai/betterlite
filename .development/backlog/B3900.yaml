@@ -1,0 +1,11 @@
+id: B3900
+milestone: M7 observability
+title: Langfuse settings and credential resolution
+status: todo
+depends_on: [B002, B188]
+file: null
+covers:
+  - "litellm/integrations/langfuse/langfuse.py"
+  - "litellm/integrations/langfuse/langfuse_sdk.py"
+  - "litellm/integrations/langfuse/langfuse_mock_client.py"
+  - "litellm/types/integrations/langfuse.py"

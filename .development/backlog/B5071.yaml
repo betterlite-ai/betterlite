@@ -1,0 +1,9 @@
+id: B5071
+milestone: M11 distribution
+title: Native source and database container images
+status: todo
+depends_on: [B003, B1232, B5070]
+file: null
+covers:
+  - "Dockerfile"
+  - "docker/Dockerfile.database"

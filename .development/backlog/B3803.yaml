@@ -1,0 +1,8 @@
+id: B3803
+milestone: M6 guardrails
+title: Custom guardrail results and rejection detection
+status: todo
+depends_on: [B3802, B189]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/custom_code/{custom_code_guardrail,response_rejection_code,__init__}.py"

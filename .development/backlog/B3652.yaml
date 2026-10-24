@@ -1,0 +1,8 @@
+id: B3652
+milestone: M5 api families
+title: Azure Speech passthrough duration and cost
+status: todo
+depends_on: [B1001, B1676, B190]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py"

@@ -1,0 +1,10 @@
+id: B4802
+milestone: M9 agents and mcp
+title: A2A principal sessions, text usage and agent pricing
+status: todo
+depends_on: [B196, B247]
+file: null
+covers:
+  - "litellm/a2a_protocol/utils.py"
+  - "litellm/a2a_protocol/cost_calculator.py"
+  - "litellm/a2a_protocol/litellm_completion_bridge/handler.py"

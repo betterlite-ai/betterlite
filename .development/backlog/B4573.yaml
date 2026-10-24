@@ -1,0 +1,8 @@
+id: B4573
+milestone: M8 platform
+title: CLI PKCE discovery, loopback callback and token exchange
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/pkce_login.py"

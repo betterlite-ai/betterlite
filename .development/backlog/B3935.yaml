@@ -1,0 +1,9 @@
+id: B3935
+milestone: M7 observability
+title: Datadog LLM Observability messages and tool records
+status: todo
+depends_on: [B3931, B192, B218, B254]
+file: null
+covers:
+  - "litellm/integrations/datadog/datadog_llm_obs.py"
+  - "litellm/types/integrations/datadog_llm_obs.py"

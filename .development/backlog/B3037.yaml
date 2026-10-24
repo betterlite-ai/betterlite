@@ -1,0 +1,8 @@
+id: B3037
+milestone: M4 keys, spend and management
+title: Token counter adjustments and reservation deltas
+status: todo
+depends_on: [B393, B3031, B3032]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"

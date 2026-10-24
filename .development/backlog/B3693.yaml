@@ -1,0 +1,8 @@
+id: B3693
+milestone: M6 guardrails
+title: Content pattern compilation and contextual span matching
+status: todo
+depends_on: [B3690, B3691]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py"

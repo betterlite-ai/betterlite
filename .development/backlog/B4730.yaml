@@ -1,0 +1,8 @@
+id: B4730
+milestone: M9 agents and mcp
+title: MCP temporary client execution and connection diagnostics
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/rest_endpoints.py"

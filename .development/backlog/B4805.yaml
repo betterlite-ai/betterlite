@@ -1,0 +1,8 @@
+id: B4805
+milestone: M9 agents and mcp
+title: Pydantic AI task projection and simulated streams
+status: todo
+depends_on: [B198]
+file: null
+covers:
+  - "litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py"

@@ -1,0 +1,8 @@
+id: B4177
+milestone: M8 platform
+title: Alternate worker launch and metrics process preparation
+status: todo
+depends_on: [B003]
+file: null
+covers:
+  - "litellm/proxy/proxy_cli.py"

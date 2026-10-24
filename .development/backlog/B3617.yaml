@@ -1,0 +1,8 @@
+id: B3617
+milestone: M5 api families
+title: Pass-through config reads and team visibility
+status: todo
+depends_on: [B002, B052, B724]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"

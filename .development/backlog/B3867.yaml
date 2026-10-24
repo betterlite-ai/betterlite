@@ -1,0 +1,9 @@
+id: B3867
+milestone: M7 observability
+title: Authenticated trace ingestion and query routes
+status: todo
+depends_on: [B198, B002, B003, B732, B1100, B3865, B3866]
+file: null
+covers:
+  - "litellm/tracing/receiver.py"
+  - "litellm/proxy/{tracing_endpoints,tracing_runtime}.py"

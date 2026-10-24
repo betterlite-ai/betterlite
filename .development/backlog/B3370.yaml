@@ -1,0 +1,8 @@
+id: B3370
+milestone: M5 api families
+title: Container retrieve and delete operations
+status: todo
+depends_on: [B3360, B3361, B3365, B247, B185]
+file: null
+covers:
+  - "litellm/containers/main.py"

@@ -2,12 +2,9 @@ id: B151
 milestone: M11 distribution
 title: Container images and Compose files
 status: todo
-depends_on: [B124]
+depends_on: [B5070, B5071, B5072, B5073, B5074, B5075]
 file: null
 covers:
-  - "Dockerfile"
-  - "docker-compose.yml"
-  - "docker-compose.hardened.yml"
-  - "proxy_server_config.yaml"
-  - "prometheus.yml"
-  - "docker/**"
+  - "docker/README.md"
+  - "docker/install_auto_router.sh"
+  - "docker/tests/nonroot.yaml"

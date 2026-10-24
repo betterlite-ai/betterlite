@@ -1,0 +1,9 @@
+id: B3069
+milestone: M4 keys, spend and management
+title: Build CloudZero resource names and billing records
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/cloudzero/{cz_resource_names,transform}.py"
+  - "litellm/types/integrations/cloudzero.py"

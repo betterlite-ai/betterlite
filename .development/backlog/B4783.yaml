@@ -1,0 +1,9 @@
+id: B4783
+milestone: M9 agents and mcp
+title: Rank agent search results and probe agent health
+status: todo
+depends_on: [B4770, B002, B173, B732]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/agent_search.py"
+  - "litellm/proxy/agent_endpoints/endpoints.py"

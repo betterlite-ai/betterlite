@@ -1,0 +1,9 @@
+id: B3519
+milestone: M5 api families
+title: Sandbox tool registry and public lifecycle dispatch
+status: todo
+depends_on: [B3516, B3518, B002, B014, B247]
+file: null
+covers:
+  - "litellm/sandbox/**"
+  - "litellm/utils.py"

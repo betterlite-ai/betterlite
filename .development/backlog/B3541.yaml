@@ -1,0 +1,9 @@
+id: B3541
+milestone: M5 api families
+title: BM25 and embedding relevance scoring for compression
+status: todo
+depends_on: [B014]
+file: null
+covers:
+  - "litellm/compression/scoring/**"
+  - "litellm/compression/compress.py"

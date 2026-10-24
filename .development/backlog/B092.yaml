@@ -2,9 +2,8 @@ id: B092
 milestone: M5 api families
 title: OCR API
 status: todo
-depends_on: [B010, B014]
+depends_on: [B3300]
 file: null
 covers:
   - "litellm/ocr/**"
-  - "litellm/llms/base_llm/ocr/**"
   - "litellm/proxy/ocr_endpoints/**"

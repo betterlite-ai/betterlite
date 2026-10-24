@@ -1,0 +1,9 @@
+id: B3605
+milestone: M5 api families
+title: Pass-through logging state and upstream usage
+status: todo
+depends_on: [B3600, B250]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/success_handler.py"
+  - "litellm/proxy/pass_through_endpoints/upstream_usage_headers.py"

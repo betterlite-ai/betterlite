@@ -1,0 +1,9 @@
+id: B4565
+milestone: M8 platform
+title: Proxy model discovery and pi settings synchronization
+status: todo
+depends_on: [B4564]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/pi.py"
+  - "litellm/proxy/client/cli/commands/agents.py"

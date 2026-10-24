@@ -1,0 +1,9 @@
+id: B3765
+milestone: M6 guardrails
+title: Compresr settings and compressed message writeback
+status: todo
+depends_on: [B3763, B3764]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/compresr/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/compresr.py"

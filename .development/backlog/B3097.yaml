@@ -1,0 +1,8 @@
+id: B3097
+milestone: M4 keys, spend and management
+title: Serve aggregate daily activity and scoped key searches
+status: todo
+depends_on: [B052, B729, B865, B3090, B3093, B3094, B3096]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/daily_activity_routes.py"

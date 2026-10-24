@@ -1,0 +1,8 @@
+id: B3495
+milestone: M5 api families
+title: Retrieve interactions through the public call pipeline
+status: todo
+depends_on: [B3490, B3492, B185, B186, B198, B247]
+file: null
+covers:
+  - "litellm/interactions/main.py"

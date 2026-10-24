@@ -1,0 +1,8 @@
+id: B4442
+milestone: M8 platform
+title: Strategy router health from reachable deployment evidence
+status: todo
+depends_on: [B377, B844, B4441]
+file: null
+covers:
+  - "litellm/proxy/health_check.py"

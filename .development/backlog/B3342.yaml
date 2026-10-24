@@ -1,0 +1,8 @@
+id: B3342
+milestone: M5 api families
+title: Video edit and extension calls
+status: todo
+depends_on: [B3330, B3332, B3336, B672, B198, B247, B185, B186]
+file: null
+covers:
+  - "litellm/videos/main.py"

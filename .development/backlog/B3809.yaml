@@ -1,0 +1,8 @@
+id: B3809
+milestone: M6 guardrails
+title: LLM guardrail judge criteria and decisions
+status: todo
+depends_on: [B189, B219]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/**"

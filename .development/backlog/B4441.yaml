@@ -1,0 +1,8 @@
+id: B4441
+milestone: M8 platform
+title: Health probe settings, deployment targeting and display fields
+status: todo
+depends_on: [B002, B184, B2203, B2221, B2225]
+file: null
+covers:
+  - "litellm/proxy/health_check.py"
