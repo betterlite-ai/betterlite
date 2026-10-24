@@ -1,0 +1,82 @@
+id: B321
+title: Tag policy across aliases and fallback chains
+description: Wire B320 matching into B016 with typed policy resolution for router, group and server-supplied
+  request controls. Carry inherited constraints and consumed routing tags through aliases, pre-routing
+  decisions and B310 fallback hops. Use authenticated B052 context for trusted policy overrides and preserve
+  diagnostic metadata without exposing unrelated caller metadata. Use the existing Rust crate boundaries
+  from B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
+  unsupported keys still fail by full path. Keep the implementation, adapters and tests within 800 changed
+  lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/tag-routing/**
+  - tools/oracle/src/router_probes/tag-routing/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/tag_routing.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L280-L695
+  why: Trusted constraints, fail-open cases, group policy and metadata sources.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(tag_routing)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/tag-routing/request-true-enables.yaml
+- tools/oracle/cases/routing/tag-routing/request-false-cannot-disable.yaml
+- tools/oracle/cases/routing/tag-routing/group-override.yaml
+- tools/oracle/cases/routing/tag-routing/unknown-foreign-tag.yaml
+- tools/oracle/cases/routing/tag-routing/known-tag-no-healthy-target.yaml
+- tools/oracle/cases/routing/tag-routing/required-inherited-fail-closed.yaml
+- tools/oracle/cases/routing/tag-routing/prefix-confirmed-directive.yaml
+- tools/oracle/cases/routing/tag-routing/consumed-alias-tags.yaml
+- tools/oracle/cases/routing/tag-routing/fallback-retains-constraints.yaml
+deviations: []
+out_of_scope:
+- Tag management API (B062).
+pitfalls:
+- Fail-open is conditional on the source and recognition of the tag, not a blanket fallback to all deployments.
+- A request cannot forge inherited constraints or disable an operator's routing policy.
+- Apply filtering to the healthy pool without reviving cooled or blocked candidates.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

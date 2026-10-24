@@ -246,6 +246,7 @@ tasks:
     depends_on:
     - B016
     - B320
+    - B321
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2104,5 +2105,17 @@ tasks:
     - B016
     - B301
     file: tasks/B320-tag-matchers.yaml
+    covers:
+    - litellm/router_strategy/tag_based_routing.py
+
+  - id: B321
+    milestone: M2 routing
+    title: Tag policy across aliases and fallback chains
+    status: todo
+    depends_on:
+    - B320
+    - B310
+    - B052
+    file: tasks/B321-tag-routing.yaml
     covers:
     - litellm/router_strategy/tag_based_routing.py
