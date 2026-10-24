@@ -22,7 +22,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/automatic-router-pipeline/**
-  - tools/oracle/src/router_probes/automatic-router-pipeline/**
+  - tools/oracle/src/router_probes/automatic_router_pipeline/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/automatic_router_pipeline.py
   - tools/oracle/litellm/probes/registry.py
@@ -40,7 +40,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the automatic_router_pipeline prefix so the
+    required filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
