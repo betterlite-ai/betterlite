@@ -116,7 +116,7 @@ deviations:
   link: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L139
 out_of_scope:
-- SDK PathLike and file-handle adapters are B159-B161; storage-backed managed IDs are B085.
+- SDK PathLike and file-handle adapters are B159-B161; storage-backed managed IDs are B087.
 - Provider-native attachment upload is implemented by provider/endpoint tasks.
 - All common_utils file-ID functions including get_file_ids_from_messages are B234; file metadata/MIME B235.
 - >-
