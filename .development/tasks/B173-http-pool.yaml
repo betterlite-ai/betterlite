@@ -13,7 +13,9 @@ description: >-
   OpenAI adapter and server shutdown to the pool, and test connection reuse, cancellation, malformed length/encoding,
   TLS policy isolation, drain and no retry. Add transport helper probes using the injected Python HTTP handler and
   local mock; the helper runner owns all subprocesses. Budget 300 transport lines, 150 integration lines and 300
-  tests.
+  tests. Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
+  parser. Preserve repeated query entries and order, including collisions between the configured URL and explicit
+  parameters; assert this deliberate deviation in local transport tests.
 scope:
   paths:
   - Cargo.toml
@@ -25,6 +27,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/http-transport/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
@@ -62,6 +65,12 @@ dod:
   proof:
   - clippy
   - deny
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+- text: Repeated query keys survive transport without silent overwrites, including collisions with URL query entries.
+  proof:
+  - http-pool-tests
 checks:
   optional:
   - mutants
@@ -77,9 +86,14 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/http-transport/json-bytes.yaml
-- tools/oracle/cases/helpers/http-transport/query-duplicates.yaml
+- tools/oracle/cases/helpers/http-transport/query-unique.yaml
 - tools/oracle/cases/helpers/http-transport/cookie-isolation.yaml
 - tools/oracle/cases/helpers/http-transport/borrowed-client.yaml
 - tools/oracle/cases/helpers/http-transport/response-close.yaml
@@ -91,6 +105,9 @@ deviations:
     until an equivalent supported policy exists.
   why: Python backend identity is not a Rust runtime feature, and a silently ignored option is forbidden.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
+- what: Repeated query parameters remain ordered entries instead of collapsing to a dictionary.
+  why: The no-silent-drops rule forbids the source helper's last-value overwrite.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1459-L1469
 out_of_scope:
 - Endpoint request/response schemas in the large HTTP handler belong to B024-B050 and B080-B099; this part owns
   only their shared transport.
