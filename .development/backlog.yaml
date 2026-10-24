@@ -1978,12 +1978,14 @@ tasks:
     title: Cooldown error policy and callback events
     status: todo
     depends_on:
+    - B369
     - B307
+    - B304
     - B012
+    - B301
     file: tasks/B308-cooldown-policy.yaml
     covers:
     - litellm/router_utils/{cooldown_callbacks,cooldown_handlers}.py
-
   - id: B309
     milestone: M2 routing
     title: Resolve fallback chains and attempt identities
@@ -2768,6 +2770,17 @@ tasks:
     file: tasks/B368-catalog-updates.yaml
     covers:
     - litellm/router.py
+  - id: B369
+    milestone: M2 routing
+    title: Cooldown decision policy
+    status: todo
+    depends_on:
+    - B011
+    - B301
+    - B002
+    file: tasks/B369-cooldown-decisions.yaml
+    covers:
+    - litellm/router_utils/cooldown_handlers.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
