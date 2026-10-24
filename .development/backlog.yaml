@@ -2508,6 +2508,24 @@ tasks:
     - litellm/proxy/management_endpoints/router_settings_endpoints.py
     - litellm/types/management_endpoints/router_settings_endpoints.py
 
+  - id: B349
+    milestone: M2 routing
+    title: Validate and preview automatic-router configurations
+    status: todo
+    depends_on:
+    - B343
+    - B352
+    - B353
+    - B354
+    - B358
+    - B070
+    - B071
+    file: tasks/B349-auto-router-preview.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_availability.py
+
   - id: B350
     milestone: M2 routing
     title: LAR-1 confidence routing
@@ -2519,6 +2537,20 @@ tasks:
     covers:
     - litellm/router_strategy/lar1_routing.py
     - litellm/types/lar1.py
+
+  - id: B351
+    milestone: M2 routing
+    title: Pinned complexity evaluation corpus and bundled presets
+    status: todo
+    depends_on:
+    - B328
+    - B329
+    - B353
+    - B358
+    file: tasks/B351-complexity-evaluation.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/evals/**
+    - litellm/proxy/public_endpoints/autorouter_presets.json
 
   - id: B352
     milestone: M2 routing
@@ -2634,38 +2666,6 @@ tasks:
     file: tasks/B360-routing-state-store.yaml
     covers:
     - litellm/router_strategy/base_routing_strategy.py
-
-  - id: B349
-    milestone: M2 routing
-    title: Validate and preview automatic-router configurations
-    status: todo
-    depends_on:
-    - B343
-    - B352
-    - B353
-    - B354
-    - B358
-    - B070
-    - B071
-    file: tasks/B349-auto-router-preview.yaml
-    covers:
-    - litellm/proxy/management_endpoints/auto_router_endpoints.py
-    - litellm/types/management_endpoints/auto_router_endpoints.py
-    - litellm/proxy/management_helpers/auto_router_availability.py
-
-  - id: B351
-    milestone: M2 routing
-    title: Pinned complexity evaluation corpus and bundled presets
-    status: todo
-    depends_on:
-    - B328
-    - B329
-    - B353
-    - B358
-    file: tasks/B351-complexity-evaluation.yaml
-    covers:
-    - litellm/router_strategy/complexity_router/evals/**
-    - litellm/proxy/public_endpoints/autorouter_presets.json
 
   - id: B361
     milestone: M2 routing
