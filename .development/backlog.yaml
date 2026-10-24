@@ -1943,10 +1943,15 @@ tasks:
     milestone: M1 openai data plane
     title: Shared message normalization and system placement
     status: todo
-    depends_on: [B178]
+    depends_on:
+    - B177
+    - B218
+    - B219
+    - B220
+    - B221
     file: tasks/B179-message-normalization.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/{common_utils,mid_conversation_system}.py"
+    - litellm/litellm_core_utils/prompt_templates/{common_utils,mid_conversation_system}.py
   - id: B180
     milestone: M1 openai data plane
     title: Anthropic prompt and tool conversion helpers
@@ -2281,3 +2286,43 @@ tasks:
     file: tasks/B217-schema-definitions.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B218
+    milestone: M1 openai data plane
+    title: Content and role projections
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B218-message-content.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B219
+    milestone: M1 openai data plane
+    title: Internal message fields, system insertion and media placement
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B219-message-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B220
+    milestone: M1 openai data plane
+    title: Reasoning text and encrypted signatures
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B220-reasoning-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B221
+    milestone: M1 openai data plane
+    title: Mid-conversation system placement
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B221-system-placement.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py
