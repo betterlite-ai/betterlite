@@ -1,0 +1,159 @@
+id: B321
+title: Tag policy across aliases and fallback chains
+description: 'Wire B320 matching into B016 with typed policy resolution for router, group and server-supplied
+  request controls. Carry inherited constraints and consumed routing tags through aliases, pre-routing
+  decisions and B310 fallback hops. Use authenticated B052 context for trusted policy overrides and preserve
+  diagnostic metadata without exposing unrelated caller metadata. Configuration boundary keys introduced
+  or consumed here: enable_tag_filtering, tag_filtering_match_any, tag_routing_prefix. Pinned declaration
+  defaults: enable_tag_filtering=None; tag_routing_prefix=None. Resolve env values once in betterlite-config,
+  never in router code. Implement the owned native service in crates/betterlite-router/src/tag_routing.rs.
+  Add ProbeOperation::B321 in tools/oracle/src/router_probes/mod.rs and the corresponding B321 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/tag_based_routing.py: _chain_allows_fail_open
+  (L280-L288), _trusted_only_pool (L291-L320), _resolve_or_fail_open (L323-L349), _resolve_constraint_only_pool
+  (L352-L377), _all_deployments_or_fallback (L380-L388), _chain_tag_filtering_override (L391-L410), _inherited_constraint_sets
+  (L413-L432), _tag_known_to_group (L435-L450), _request_tags_after_router_consumption (L453-L474), get_deployments_for_tag
+  (L477-L647), _tags_in_metadata (L650-L665), _get_tags_from_request_kwargs (L668-L695). Implement these
+  behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
+  the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/tag_routing.rs
+  - crates/betterlite-router/src/tag_routing/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/tag_routing.rs
+  - crates/betterlite-server/src/routing/tag_routing/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/tag_routing.rs
+  - tools/oracle/src/router_probes/tag_routing/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/tag_routing.py
+  - tools/oracle/cases/routing/tag-routing/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/tag_routing.rs
+  - crates/betterlite-config/src/tag_routing/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b321-*
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/chat.rs
+  - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
+  - crates/betterlite-openai/fuzz/corpus/chat_request/b321-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L280-L695
+  why: Trusted constraints, fail-open cases, group policy and metadata sources.
+dod:
+- text: Write tests named b321_behaviors and b321_boundaries under tag_routing::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b321-behaviors
+  - b321-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b321-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b321-invalid.yaml;
+    the valid seed contains enable_tag_filtering. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b321-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b321-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b321-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - chat-corpus
+  - b321-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b321-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b321_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b321-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b321_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/tag_routing.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/tag_routing.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b321-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b321-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b321-" && grep -Fq 'enable_tag_filtering' crates/betterlite-config/fuzz/corpus/config_yaml/b321-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: chat-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b321-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b321-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
+      | grep -Fq "/b321-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/tag-routing/request-true-enables.yaml
+- tools/oracle/cases/routing/tag-routing/request-false-cannot-disable.yaml
+- tools/oracle/cases/routing/tag-routing/group-override.yaml
+- tools/oracle/cases/routing/tag-routing/unknown-foreign-tag.yaml
+- tools/oracle/cases/routing/tag-routing/known-tag-no-healthy-target.yaml
+- tools/oracle/cases/routing/tag-routing/required-inherited-fail-closed.yaml
+- tools/oracle/cases/routing/tag-routing/prefix-confirmed-directive.yaml
+- tools/oracle/cases/routing/tag-routing/consumed-alias-tags.yaml
+- tools/oracle/cases/routing/tag-routing/fallback-retains-constraints.yaml
+deviations: []
+out_of_scope:
+- Tag management API (B062).
+- 'litellm/router_strategy/tag_based_routing.py: B320 owns: _TagLitellmParamsLike.get (L30-L30), _TagLitellmParamsLike.get
+  (L32-L32), _TagLitellmParamsLike.get (L34-L34), _ModelInfoLike.get (L39-L39), _ModelInfoLike.get (L41-L41),
+  _DeploymentLike.get (L46-L46), _DeploymentLike.get (L48-L48), _DeploymentLike.get (L50-L50), _MetadataLike.get
+  (L55-L55), _MetadataLike.get (L57-L57), _MetadataLike.get (L59-L59), _MetadataLike.get (L61-L61), _MetadataLike.__contains__
+  (L62-L62), _MetadataLike.__setitem__ (L63-L63), _NestedLitellmParamsLike.get (L67-L69), _RequestKwargsLike.get
+  (L74-L74), _RequestKwargsLike.get (L76-L76), _RequestKwargsLike.__contains__ (L77-L77), _RequestKwargsLike.__getitem__
+  (L79-L79), _RequestKwargsLike.__getitem__ (L81-L81), _is_valid_deployment_tag_regex (L87-L107), is_valid_deployment_tag
+  (L110-L135), _match_deployment (L138-L180), _bare_tag_value (L183-L191), _strip_routing_prefix (L194-L215),
+  _split_tags (L218-L222), _exclude_deployments (L225-L231), _require_all_tags (L234-L240), _default_tagged_pool
+  (L243-L247), _known_tag_values (L250-L253), _unknown_required_tag_hides_an_answer (L256-L277).'
+pitfalls:
+- Fail-open is conditional on the source and recognition of the tag, not a blanket fallback to all deployments.
+- A request cannot forge inherited constraints or disable an operator's routing policy.
+- Apply filtering to the healthy pool without reviving cooled or blocked candidates.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

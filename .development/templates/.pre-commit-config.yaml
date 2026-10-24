@@ -49,6 +49,7 @@ repos:
         entry: typos
         language: system
         types: [text]
+        exclude: ^\.development/
       - id: fmt
         name: cargo fmt
         entry: cargo fmt --

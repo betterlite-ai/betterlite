@@ -1,0 +1,119 @@
+id: B344
+title: Atomic auto-router session rollups
+description: 'Use B051/B070 repository and write-queue infrastructure to persist B342 evidence and B012
+  routing decisions in the existing LiteLLM_AutoRouterSession and LiteLLM_AutoRouterUserSession tables.
+  Implement bounded session identity, turn classification and ordered per-session drains with atomic row
+  updates. Store costs as Decimal at the Rust boundary and reuse B051''s approved conversion for the unchanged
+  database schema. Add real Postgres integration cases for concurrent and out-of-order turns; typed repository
+  probes also compare the pinned transaction builder. Implement the owned native service in crates/betterlite-server/src/auto_router_rollups.rs.
+  Add ProbeOperation::B344 in tools/oracle/src/router_probes/mod.rs and the corresponding B344 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/models/autorouter_session.py: LiteLLM_AutoRouterSession.baseline_model
+  (L36-L45). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/proxy/db/autorouter_session_rollup.py:
+  turn_cache_facts (L154-L165), _turn_time_utc (L168-L175), _write_ttl_seconds (L178-L197), bounded_session_id
+  (L203-L209), build_autorouter_turn_transaction (L212-L283), _p (L289-L292), _session_upsert_sql (L323-L391),
+  _as_sql_param (L405-L410), _upsert_params (L413-L414), write_autorouter_turn (L417-L422), _upsert_turn_with_retry
+  (L425-L439), _session_partition (L442-L444), _drain_session_partition (L447-L466), _flush_session_partition
+  (L469-L491), flush_autorouter_turn_transactions (L494-L520). Implement these behaviors through the typed
+  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
+  separate ports. Function coverage in litellm/repositories/autorouter_session_repository.py: AutoRouterSessionRepository.table
+  (L17-L18), AutoRouterSessionRepository.model_class (L21-L22), AutoRouterSessionRepository.find_latest_for_key
+  (L24-L34). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-server/src/auto_router_rollups.rs
+  - crates/betterlite-server/src/auto_router_rollups/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/auto_router_rollups.rs
+  - crates/betterlite-server/src/routing/auto_router_rollups/**
+  - tools/oracle/src/router_probes/auto_router_rollups.rs
+  - tools/oracle/src/router_probes/auto_router_rollups/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/auto_router_rollups.py
+  - tools/oracle/cases/routing/auto-router-rollups/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L117-L283
+  why: Turn facts, bounded IDs and transaction builder.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L323-L520
+  why: Atomic upserts and partitioned flush.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/autorouter_session.py#L16-L45
+  why: Row shape.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L15-L34
+  why: Latest session lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L289-L292
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b344_behaviors and b344_boundaries under auto_router_rollups::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b344-behaviors
+  - b344-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b344-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b344_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b344-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b344_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/auto_router_rollups.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/auto_router_rollups.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/auto-router-rollups/same-first-return-turn.yaml
+- tools/oracle/cases/routing/auto-router-rollups/ttl-five-minute-one-hour.yaml
+- tools/oracle/cases/routing/auto-router-rollups/out-of-order-turn.yaml
+- tools/oracle/cases/routing/auto-router-rollups/two-writers-same-session.yaml
+- tools/oracle/cases/routing/auto-router-rollups/key-and-user-scope.yaml
+- tools/oracle/cases/routing/auto-router-rollups/internal-call-excluded.yaml
+- tools/oracle/cases/routing/auto-router-rollups/classifier-cost-coverage.yaml
+- tools/oracle/cases/routing/auto-router-rollups/bounded-session-id.yaml
+deviations: []
+out_of_scope:
+- Benchmark and session HTTP response aggregation (B355).
+- Changing the established Prisma schema.
+pitfalls:
+- Do not cast monetary sums through a Rust float to match the source SQL float8 casts.
+- A read-then-write update loses concurrent turns.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

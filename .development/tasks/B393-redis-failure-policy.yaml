@@ -1,0 +1,166 @@
+id: B393
+title: Routing Redis circuit and failure policy
+description: 'Implement RedisFailurePolicy with closed/open/half-open generations, separate timeout streaks,
+  explicit-cause classification and throttled warnings. Preserve the pinned env defaults through B002
+  config injection; no globals or logging secrets. B360 uses this service around client operations, while
+  general response-cache integration stays B126. Config reads REDIS_CIRCUIT_BREAKER_ENABLED=true, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5,
+  REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT=60, REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION=5.0 and REDIS_TIMEOUT_LOG_INTERVAL=5.0.
+  Enabled compares lowercased text to true; preserve timeout streak duration and half-open behavior. Configuration
+  boundary keys introduced or consumed here: REDIS_CIRCUIT_BREAKER_ENABLED, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+  REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT, REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION, REDIS_TIMEOUT_LOG_INTERVAL.
+  Implement the owned native service in crates/betterlite-router/src/redis_failure_policy.rs. Add ProbeOperation::B393
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B393 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/caching/redis_cache.py:
+  RedisCircuitBreaker.__init__ (L188-L206), RedisCircuitBreaker.generation (L209-L211), RedisCircuitBreaker.is_open
+  (L213-L227), RedisCircuitBreaker._should_open (L229-L236), RedisCircuitBreaker.record_failure (L238-L262),
+  RedisCircuitBreaker.record_success (L264-L273), RedisCircuitBreaker._set_state (L275-L281), _redis_health_error_types
+  (L318-L333), _is_redis_health_failure (L336-L341), _redis_timeout_error_types (L345-L356), _explicit_causes
+  (L362-L368), is_redis_timeout_failure (L371-L378), _record_swallowed_redis_failure (L434-L446), _RedisTimeoutLogThrottle.__init__
+  (L456-L461), _RedisTimeoutLogThrottle.admit (L463-L473), log_redis_failure (L479-L504), _enter_circuit_breaker
+  (L513-L517), _exit_circuit_breaker (L520-L533), _run_under_circuit_breaker (L536-L554), _run_under_circuit_breaker_sync
+  (L557-L571), _redis_circuit_breaker_guard (L574-L593), _redis_circuit_breaker_guard.wrapper (L588-L591),
+  _redis_circuit_breaker_guard_sync (L596-L601). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/redis_failure_policy.rs
+  - crates/betterlite-router/src/redis_failure_policy/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/redis_failure_policy.rs
+  - crates/betterlite-server/src/routing/redis_failure_policy/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/redis_failure_policy.rs
+  - tools/oracle/src/router_probes/redis_failure_policy/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/redis_failure_policy.py
+  - tools/oracle/cases/routing/redis-failure-policy/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/redis_failure_policy.rs
+  - crates/betterlite-config/src/redis_failure_policy/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b393-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L188-L281
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L378
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L434-L601
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L508-L517
+  why: Redis policy env names and defaults.
+dod:
+- text: Write tests named b393_behaviors and b393_boundaries under redis_failure_policy::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b393-behaviors
+  - b393-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b393-invalid.yaml;
+    the valid seed contains REDIS_CIRCUIT_BREAKER_ENABLED. The cargo-fuzz target config_yaml and normal
+    replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
+    relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b393-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b393-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b393_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b393-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b393_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/redis_failure_policy.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/redis_failure_policy.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b393-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b393-" && grep -Fq 'REDIS_CIRCUIT_BREAKER_ENABLED' crates/betterlite-config/fuzz/corpus/config_yaml/b393-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/redis-failure-policy/redis-circuit-timeout-streak.yaml
+- tools/oracle/cases/routing/redis-failure-policy/redis-circuit-half-open.yaml
+deviations: []
+out_of_scope:
+- B360 owns final integration and the remaining functions listed in its implementation boundary.
+- 'litellm/caching/redis_cache.py: B126 owns: _AsyncRedisCommands.ping (L78-L78), _AsyncRedisCommands.delete
+  (L80-L80), _AsyncRedisCommands.ttl (L82-L82), _AsyncRedisCommands.expire (L84-L84), _AsyncRedisCommands.rpush
+  (L86-L86), _AsyncRedisCommands.lpop (L88-L88), _AsyncRedisCommands.pipeline (L90-L90), _AsyncRedisCommands.eval
+  (L92-L92), _decoded_counts (L110-L113), _get_call_stack_info (L116-L155), _opaque_kwarg_key (L290-L291),
+  _cluster_node_pubsub_client (L297-L314), _BreakerMetrics.__init__ (L388-L411), _BreakerMetrics.record_state_change
+  (L413-L418), _BreakerMetrics.record_transition (L420-L422), _BreakerMetrics.record_failure (L424-L426),
+  _breaker_metrics (L430-L431), RedisCache._setup_health_pings (L676-L698), RedisCache._handle_async_ping_error
+  (L700-L715), RedisCache._handle_sync_ping_error (L717-L732), RedisCache._get_async_client_cache_key
+  (L734-L743), RedisCache.init_async_client (L745-L763), RedisCache.init_pubsub_client (L765-L785), RedisCache._async_commands
+  (L787-L788), RedisCache.check_and_fix_namespace (L790-L799), RedisCache._parse_redis_major_version (L801-L828),
+  RedisCache.set_cache (L830-L849), RedisCache.increment_cache (L851-L906), RedisCache.increment_with_floor
+  (L909-L926), RedisCache.batch_get_counts (L929-L937), RedisCache.async_batch_get_counts (L940-L943),
+  RedisCache.async_scan_iter (L946-L993), RedisCache.async_register_script (L995-L1046), RedisCache.async_register_script.run_script
+  (L1030-L1044), RedisCache.async_register_script.run_script.execute (L1035-L1042), RedisCache._register_script_for_current_loop
+  (L1048-L1082), RedisCache.async_set_cache (L1085-L1167), RedisCache._pipeline_helper (L1169-L1195),
+  RedisCache.async_set_cache_pipeline (L1198-L1256), RedisCache.async_set_cache_pipeline_with_ttls (L1259-L1301),
+  RedisCache._set_cache_sadd_helper (L1303-L1318), RedisCache.async_set_cache_sadd (L1321-L1388), RedisCache.batch_cache_write
+  (L1391-L1398), RedisCache._incrbyfloat_with_ttl (L1401-L1416), RedisCache.async_set_max (L1479-L1513),
+  RedisCache.async_increment_with_floor (L1516-L1521), RedisCache.flush_cache_buffer (L1523-L1526), RedisCache._get_cache_logic
+  (L1528-L1538), RedisCache.get_cache (L1541-L1564), RedisCache._run_redis_mget_operation (L1566-L1572),
+  RedisCache._async_run_redis_mget_operation (L1574-L1581), RedisCache.batch_get_cache (L1583-L1645),
+  RedisCache.sync_ping (L1770-L1804), RedisCache.ping (L1806-L1839), RedisCache.delete_cache_keys (L1842-L1846),
+  RedisCache.client_list (L1848-L1850), RedisCache.info (L1852-L1854), RedisCache.flush_cache (L1856-L1857),
+  RedisCache.flushall (L1859-L1860), RedisCache.disconnect (L1862-L1881), RedisCache.test_connection (L1883-L1918),
+  RedisCache.async_delete_cache (L1921-L1925), RedisCache.delete_cache (L1927-L1929), RedisCache._pipeline_increment_helper
+  (L1931-L1951), RedisCache.async_rpush (L2053-L2103), RedisCache.async_rpush_and_trim (L2106-L2150),
+  RedisCache._pipeline_rpush_helper (L2152-L2166), RedisCache.async_rpush_pipeline (L2169-L2225), RedisCache.handle_lpop_count_for_older_redis_versions
+  (L2227-L2238), RedisCache.async_lpop (L2241-L2302), RedisCache._pipeline_lpop_helper (L2304-L2361),
+  RedisCache.async_lpop_pipeline (L2364-L2420).'
+- 'litellm/caching/redis_cache.py: B360 owns: RedisCache.__init__ (L607-L674), RedisCache.async_increment
+  (L1419-L1476), RedisCache.async_get_cache (L1648-L1693), RedisCache.async_batch_get_cache (L1696-L1768),
+  RedisCache.async_increment_pipeline (L1954-L2017), RedisCache.async_get_ttl (L2020-L2042), RedisCache.async_refresh_ttl
+  (L2045-L2050).'
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

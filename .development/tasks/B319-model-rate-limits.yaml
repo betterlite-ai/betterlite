@@ -1,0 +1,143 @@
+id: B319
+title: Strategy-independent model RPM and TPM checks
+description: 'Add the enforce_model_rate_limits optional pre-call check to the B016 pipeline, using B304
+  state and B011 rate-limit metadata. Keep its counters and callback accounting compatible with other
+  strategy consumers, and expose a reservation hook that B019''s ITPM/OTPM part can compose before these
+  checks. Reuse the existing token accounting rather than add a second estimator. Configuration boundary
+  keys introduced or consumed here: optional_pre_call_checks. Pinned declaration defaults: optional_pre_call_checks=None.
+  Resolve env values once in betterlite-config, never in router code. Implement the owned native service
+  in crates/betterlite-router/src/model_rate_limits.rs. Add ProbeOperation::B319 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B319 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/model_rate_limit_check.py:
+  ModelRateLimitingCheck.__init__ (L61-L65), ModelRateLimitingCheck._warn_io_token_and_tpm_rpm_coexist_once
+  (L67-L81), ModelRateLimitingCheck._refund_io_token_reservation_if_any (L83-L86), ModelRateLimitingCheck._async_refund_io_token_reservation_if_any
+  (L88-L98), ModelRateLimitingCheck._get_deployment_limits (L100-L128), ModelRateLimitingCheck._get_cache_keys
+  (L130-L138), ModelRateLimitingCheck._get_current_tpm (L140-L148), ModelRateLimitingCheck._async_get_current_tpm
+  (L150-L158), ModelRateLimitingCheck.pre_call_check (L160-L237), ModelRateLimitingCheck.async_pre_call_check
+  (L239-L324), ModelRateLimitingCheck.async_log_success_event (L326-L382), ModelRateLimitingCheck.async_log_failure_event
+  (L384-L395), ModelRateLimitingCheck.log_success_event (L397-L440), ModelRateLimitingCheck.log_failure_event
+  (L442-L447). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/model_rate_limits.rs
+  - crates/betterlite-router/src/model_rate_limits/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/model_rate_limits.rs
+  - crates/betterlite-server/src/routing/model_rate_limits/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/model_rate_limits.rs
+  - tools/oracle/src/router_probes/model_rate_limits/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/model_rate_limits.py
+  - tools/oracle/cases/routing/model-rate-limits/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/model_rate_limits.rs
+  - crates/betterlite-config/src/model_rate_limits/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b319-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L100-L324
+  why: Limits, atomic RPM reservation and error handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L326-L447
+  why: Success/failure accounting and I/O reservation refund seam.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L61-L65
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L67-L81
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L83-L86
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L88-L98
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b319_behaviors and b319_boundaries under model_rate_limits::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b319-behaviors
+  - b319-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b319-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b319-invalid.yaml;
+    the valid seed contains optional_pre_call_checks. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b319-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b319-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b319_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b319-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b319_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/model_rate_limits.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/model_rate_limits.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b319-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b319-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b319-" && grep -Fq 'optional_pre_call_checks' crates/betterlite-config/fuzz/corpus/config_yaml/b319-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/model-rate-limits/limits-disabled.yaml
+- tools/oracle/cases/routing/model-rate-limits/tpm-at-limit.yaml
+- tools/oracle/cases/routing/model-rate-limits/rpm-increment-crosses-limit.yaml
+- tools/oracle/cases/routing/model-rate-limits/error-retry-after.yaml
+- tools/oracle/cases/routing/model-rate-limits/concurrent-counter.yaml
+- tools/oracle/cases/routing/model-rate-limits/success-usage-update.yaml
+- tools/oracle/cases/routing/model-rate-limits/store-failure.yaml
+- tools/oracle/cases/routing/model-rate-limits/composition-no-double-rpm.yaml
+deviations: []
+out_of_scope:
+- Virtual-key and team rate-limit middleware (B072).
+- Input/output token reservations (B019).
+pitfalls:
+- A rate-limit rejection and a Redis failure have different behavior.
+- The check must run before the provider call under every configured strategy.
+- RPM counts rejected increment-first attempts according to the pinned code.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

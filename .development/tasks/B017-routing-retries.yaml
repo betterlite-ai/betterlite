@@ -1,0 +1,122 @@
+id: B017
+title: Execute retries within the routing deadline
+description: 'Use B305 and B306 to add the attempt state machine around B016 dispatch. Each attempt obtains
+  a fresh eligible deployment and owns its callbacks, capacity guard and transport cancellation. Keep
+  router retries separate from provider SDK/client retry settings from B009/B010 so attempts are never
+  multiplied implicitly. Preserve the logical model group and original request across parameter merging.
+  Return the final mapped error with attempt metadata and install retry response headers on ordinary and
+  streaming successes. Restrict stream retries to an uncommitted response boundary; B311/B312 handle fallback
+  after stream acquisition. Implement the owned native service in crates/betterlite-router/src/routing_retries.rs.
+  Add ProbeOperation::B017 in tools/oracle/src/router_probes/mod.rs and the corresponding B017 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms.'
+scope:
+  paths:
+  - crates/betterlite-router/src/routing_retries.rs
+  - crates/betterlite-router/src/routing_retries/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_retries.rs
+  - crates/betterlite-server/src/routing/routing_retries/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_retries.rs
+  - tools/oracle/src/router_probes/routing_retries/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_retries.py
+  - tools/oracle/cases/routing/routing-retries/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7887
+  why: Attempt lifecycle, request precedence and last-error propagation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L284-L298
+  why: Attempted/max retry headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L479-L480
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3861-L3878
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3880-L3897
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3899-L3907
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3910-L3914
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7875-L7887
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8389-L8420
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14635-L14641
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b017_behaviors and b017_boundaries under routing_retries::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b017-behaviors
+  - b017-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b017-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b017_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b017-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b017_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_retries.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_retries.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-retries/429-then-success.yaml
+- tools/oracle/cases/routing/routing-retries/500-retries-exhausted.yaml
+- tools/oracle/cases/routing/routing-retries/request-zero-disables-policy.yaml
+- tools/oracle/cases/routing/routing-retries/deployment-retry-override.yaml
+- tools/oracle/cases/routing/routing-retries/second-error-nonretryable.yaml
+- tools/oracle/cases/routing/routing-retries/deadline-in-backoff.yaml
+- tools/oracle/cases/routing/routing-retries/stream-before-first-chunk.yaml
+- tools/oracle/cases/routing/routing-retries/disconnect-during-retry.yaml
+deviations: []
+out_of_scope:
+- Cross-model fallbacks and cooldown policy (B018).
+- Python synchronous callable wrappers (B162).
+pitfalls:
+- An exhausted retry sequence raises the latest error, not the first.
+- Always release or refund the previous attempt before reserving the next.
+- A yielded token or tool fragment must never be replayed.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

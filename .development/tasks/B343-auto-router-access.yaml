@@ -1,0 +1,111 @@
+id: B343
+title: Auto-router identity, member permissions and inference checks
+description: 'Revalidate B377 automatic-router dependencies at inference using B378 MemberRouterAccess
+  and B052/B060 public services. Reject revoked members, blocked teams and unavailable ownership data
+  before any classifier or selected-model call. Reuse configuration-write policy; no duplicate quota or
+  authorization engine is introduced. Implement the owned native service in crates/betterlite-server/src/auto_router_access.rs.
+  Add ProbeOperation::B343 in tools/oracle/src/router_probes/mod.rs and the corresponding B343 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/proxy/auth/auto_router_checks.py: _mapping
+  (L16-L20), authorize_member_auto_router_inference (L23-L136). Implement these behaviors through the
+  typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
+  of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-server/src/auto_router_access.rs
+  - crates/betterlite-server/src/auto_router_access/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/auto_router_access.rs
+  - crates/betterlite-server/src/routing/auto_router_access/**
+  - tools/oracle/src/router_probes/auto_router_access.rs
+  - tools/oracle/src/router_probes/auto_router_access/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/auto_router_access.py
+  - tools/oracle/cases/routing/auto-router-access/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auto_router_checks.py#L26-L136
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auto_router_checks.py#L16-L20
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auto_router_checks.py#L23-L136
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b343_behaviors and b343_boundaries under auto_router_access::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b343-behaviors
+  - b343-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b343-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b343_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b343-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b343_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/auto_router_access.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/auto_router_access.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/auto-router-access/member-revoked-after-create.yaml
+- tools/oracle/cases/routing/auto-router-access/blocked-team.yaml
+- tools/oracle/cases/routing/auto-router-access/database-unavailable.yaml
+deviations:
+- what: Auto-router capability counts and tuning quotas do not restrict configuration.
+  why: The accepted product decision enables all MIT features without a paid tier.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L147-L174
+out_of_scope:
+- Python plugin installation or execution.
+- Management route handlers, planned separately.
+- B377 owns automatic router identity and dependency validation; consume its tested public interface.
+- B378 owns member-owned automatic router writes; consume its tested public interface.
+- 'litellm/router_utils/auto_router_tuning_baseline.py: Licensing-only behavior is omitted under the accepted
+  no-paid-tier decision; B343 records the deviation: _mapping (L39-L40), tuning_fingerprint (L43-L66),
+  uses_heuristic_v1 (L72-L74), router_identity (L77-L93), heuristic_v1_router_fingerprint (L96-L111),
+  snapshot_tuning_baselines (L114-L123), is_mutable_tuned_candidate (L126-L131), mutable_tuned_identities
+  (L134-L144), tuning_limit_violation (L147-L154), tuning_quota_violation (L157-L174).'
+pitfalls:
+- Removing licensing gates does not remove team opt-in, ownership or model access checks.
+- Inference must recheck access rather than trusting a previously valid saved router.
+- The source's tuning baseline exists to enforce a license limit and needs no parallel quota database
+  in betterlite.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

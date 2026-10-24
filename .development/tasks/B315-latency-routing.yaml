@@ -1,0 +1,135 @@
+id: B315
+title: Latency and first-token latency selection
+description: 'Implement latency-based-routing selection over B389 samples, B013 capacity facts and B016
+  candidate sets. Apply latency buffer, streaming TTFT/percentile rules and random ties with injected
+  choices. Expose only the implemented routing_strategy_args; no callback accounting is duplicated. Configuration
+  boundary keys introduced or consumed here: routing_strategy. Pinned declaration defaults: routing_strategy=''simple-shuffle''.
+  Resolve env values once in betterlite-config, never in router code. Statistical arithmetic may use finite
+  f64 only in latency_rank_math with one module-level #[expect(clippy::float_arithmetic, reason = "pinned
+  statistical routing arithmetic")], counted in max_new_expects. Keep every price/spend/budget Decimal
+  and compare selected model/tier exactly; diagnostic score tolerances cannot hide a selection difference.
+  Implement the owned native service in crates/betterlite-router/src/latency_routing.rs. Add ProbeOperation::B315
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B315 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/lowest_latency.py:
+  LowestLatencyLoggingHandler._get_available_deployments (L370-L498), LowestLatencyLoggingHandler.async_get_available_deployments
+  (L500-L523), LowestLatencyLoggingHandler.get_available_deployments (L525-L549). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports. If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001
+  only on its explicitly named score/probability pointer. Selection, tie order, counts, statuses, money
+  and provider requests remain exact. Six-decimal wire signals are compared after the source rounding,
+  without widening tolerance.'
+scope:
+  paths:
+  - crates/betterlite-router/src/latency_routing.rs
+  - crates/betterlite-router/src/latency_routing/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/latency_routing.rs
+  - crates/betterlite-server/src/routing/latency_routing/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/latency_routing.rs
+  - tools/oracle/src/router_probes/latency_routing/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/latency_routing.py
+  - tools/oracle/cases/routing/latency-routing/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/latency_routing.rs
+  - crates/betterlite-config/src/latency_routing/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b315-*
+  - crates/betterlite-router/src/latency_rank_math.rs
+  - crates/betterlite-router/src/latency_rank_math/**
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_latency.py#L370-L549
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b315_behaviors and b315_boundaries under latency_routing::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b315-behaviors
+  - b315-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b315-invalid.yaml;
+    the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b315-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b315-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b315_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b315-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b315_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/latency_routing.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/latency_routing.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b315-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b315-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b315-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/latency-routing/unseen-deployment.yaml
+- tools/oracle/cases/routing/latency-routing/nonstream-mean.yaml
+- tools/oracle/cases/routing/latency-routing/latency-buffer-inclusion.yaml
+- tools/oracle/cases/routing/latency-routing/rate-limited-fastest.yaml
+deviations: []
+out_of_scope:
+- Cost selection or adaptive quality scoring.
+- B389 owns latency and first-token observations; consume its tested public interface.
+- 'litellm/router_strategy/lowest_latency.py: B389 owns: _average_latency (L34-L37), _percentile_latency
+  (L40-L43), _ttft_seconds (L46-L49), LowestLatencyLoggingHandler.__init__ (L57-L59), LowestLatencyLoggingHandler.log_success_event
+  (L61-L182), LowestLatencyLoggingHandler.async_log_failure_event (L184-L241), LowestLatencyLoggingHandler.async_log_success_event
+  (L243-L368).'
+pitfalls:
+- Streaming selection uses TTFT only when usable TTFT samples exist.
+- Compare the eligible tie set rather than Python and Rust random sequences.
+- A missing observation is not the same as a failed request.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
