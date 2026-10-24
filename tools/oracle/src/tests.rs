@@ -27,7 +27,7 @@ use crate::gateway::{self, GatewayInput};
 use crate::http::{HttpError, MAX_BODY, Response, client, ready, send};
 use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
-use crate::process::{Gateway, GatewaySpec, ProcessError};
+use crate::process::{Gateway, GatewaySpec, ProcessError, sync_litellm};
 use crate::runner::{self, artifacts};
 use crate::{OracleError, case::CaseError, runner::HarnessError};
 
@@ -337,13 +337,12 @@ fn gateway_fixture(name: &str, script: &str, port: u16) -> Gateway {
 }
 
 #[rstest::rstest]
-#[case::litellm(false, true, "uv run --locked litellm", "litellm.log")]
-#[case::betterlite(false, false, "betterlite", "betterlite.log")]
-#[case::self_check(true, false, "uv run --locked litellm", "betterlite.log")]
+#[case::litellm(false, true, "litellm.log")]
+#[case::betterlite(false, false, "betterlite.log")]
+#[case::self_check(true, false, "betterlite.log")]
 fn gateway_spec_picks_command_arguments_and_log(
     #[case] self_check: bool,
     #[case] first: bool,
-    #[case] launcher: &str,
     #[case] log: &str,
 ) {
     let options = Options {
@@ -358,12 +357,15 @@ fn gateway_spec_picks_command_arguments_and_log(
         case_env: &case_env,
     };
     let spec = gateway::spec(&input, first, 7).unwrap();
-    let command = spec.command.file_name().unwrap().to_str().unwrap();
     let flags = "--config /group/config.yaml --host 127.0.0.1 --port 7";
-    assert_eq!(
-        format!("{command} {}", spec.args.join(" ")),
-        format!("{launcher} {flags}")
-    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let expected = if self_check || first {
+        root.join("tools/oracle/litellm/.venv/bin/litellm")
+    } else {
+        root.join("target/debug/betterlite")
+    };
+    assert_eq!(spec.command, expected);
+    assert_eq!(spec.args.join(" "), flags);
     assert_eq!(spec.log_path, Path::new("/group").join(log));
     let cost_map = ("LITELLM_LOCAL_MODEL_COST_MAP".to_owned(), "True".to_owned());
     assert_eq!(spec.env.first(), Some(&cost_map));
@@ -436,9 +438,17 @@ fn process_starts_waits_and_stops_gateways() {
     fs::remove_file(&exited.log_path).unwrap();
     let dropped = gateway_fixture("dropped", "exec sleep 10", 1);
     let pid = dropped.child.id();
+    fs::metadata(format!("/proc/{pid}")).unwrap();
     drop(dropped);
     fs::metadata(format!("/proc/{pid}")).unwrap_err();
     fs::remove_file(temporary_case_path("dropped")).unwrap();
+}
+
+#[test]
+fn litellm_sync_reports_a_missing_project() {
+    let error =
+        sync_litellm(Path::new("/definitely-missing-betterlite-oracle-project")).unwrap_err();
+    assert!(matches!(error, ProcessError::Sync(_)));
 }
 
 #[test]

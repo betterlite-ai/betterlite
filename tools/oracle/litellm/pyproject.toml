@@ -5,3 +5,6 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
   "litellm[proxy]==1.105.1",
 ]
+
+[tool.uv]
+override-dependencies = ["litellm-enterprise; sys_platform == 'never'"]

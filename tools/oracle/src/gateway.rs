@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::io::Error;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cli::Options;
 use crate::http;
-use crate::process::{Gateway, GatewaySpec};
+use crate::process::{Gateway, GatewaySpec, sync_litellm};
 use crate::runner::{HarnessError, free_port};
 
 pub(crate) struct GatewayInput<'input> {
@@ -15,6 +15,13 @@ pub(crate) struct GatewayInput<'input> {
 }
 
 pub(crate) fn start(input: &GatewayInput<'_>, first: bool) -> Result<Gateway, HarnessError> {
+    match (first, input.options.self_check) {
+        (true, _) | (false, true) => {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            sync_litellm(&root)?;
+        }
+        (false, false) => {}
+    }
     let mut gateway = Gateway::start(spec(input, first, free_port()?)?)?;
     gateway.wait_ready(&http::client()?)?;
     Ok(gateway)
@@ -40,8 +47,10 @@ pub(crate) fn spec(
     env.extend(input.case_env.clone());
     let mut args = Vec::new();
     let (command, cwd) = if input.options.self_check || first {
-        args.extend(["run", "--locked", "litellm"].map(String::from));
-        (PathBuf::from("uv"), root.join("tools/oracle/litellm"))
+        (
+            root.join("tools/oracle/litellm/.venv/bin/litellm"),
+            root.join("tools/oracle/litellm"),
+        )
     } else {
         (root.join("target/debug/betterlite"), root)
     };

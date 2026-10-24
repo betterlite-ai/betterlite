@@ -7,6 +7,9 @@ resolution-markers = [
     "python_full_version < '3.12'",
 ]
 
+[manifest]
+overrides = [{ name = "litellm-enterprise", marker = "sys_platform == 'never'" }]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -1150,7 +1153,7 @@ proxy = [
     { name = "hiredis" },
     { name = "httpx2" },
     { name = "inquirerpy" },
-    { name = "litellm-enterprise" },
+    { name = "litellm-enterprise", marker = "sys_platform == 'never'" },
     { name = "litellm-proxy-extras" },
     { name = "mcp" },
     { name = "orjson" },

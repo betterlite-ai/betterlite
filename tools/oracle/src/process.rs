@@ -1,7 +1,7 @@
 use reqwest::blocking::Client;
 use std::fs::File;
 use std::io::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -31,6 +31,10 @@ pub enum ProcessError {
     Log { path: PathBuf, source: Error },
     #[error("cannot start gateway: {0}")]
     Spawn(#[source] Error),
+    #[error("cannot synchronize LiteLLM environment: {0}")]
+    Sync(#[source] Error),
+    #[error("LiteLLM environment synchronization exited with {0}")]
+    SyncExited(ExitStatus),
     #[error("gateway exited before readiness: {0}")]
     Exited(ExitStatus),
     #[error("gateway did not become ready within 120 seconds")]
@@ -49,7 +53,16 @@ impl Gateway {
                 path: spec.log_path.clone(),
                 source,
             })?;
-        let mut process = Command::new(spec.command);
+        #[cfg(unix)]
+        let mut process = {
+            let mut process = Command::new("setpriv");
+            process
+                .args(["--pdeathsig", "KILL", "--"])
+                .arg(&spec.command);
+            process
+        };
+        #[cfg(not(unix))]
+        let mut process = Command::new(&spec.command);
         process
             .args(spec.args)
             .current_dir(spec.cwd)
@@ -89,6 +102,20 @@ impl Gateway {
         }
         self.child.wait().map_err(ProcessError::Stop)?;
         Ok(())
+    }
+}
+
+pub(crate) fn sync_litellm(root: &Path) -> Result<(), ProcessError> {
+    let project = root.join("tools/oracle/litellm");
+    let status = Command::new("uv")
+        .args(["sync", "--locked"])
+        .current_dir(project)
+        .status()
+        .map_err(ProcessError::Sync)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(ProcessError::SyncExited(status))
     }
 }
 
