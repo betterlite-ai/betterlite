@@ -2030,7 +2030,7 @@ tasks:
     title: Image and document token accounting
     status: todo
     depends_on: [B196, B183]
-    file: null
+    file: tasks/B197-media-tokens.yaml
     covers:
       - "litellm/litellm_core_utils/token_counter.py"
   - id: B198
