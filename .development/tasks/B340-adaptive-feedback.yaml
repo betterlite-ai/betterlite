@@ -10,7 +10,7 @@ description: 'Wire B376 feedback signals to B339 learning cells using B012 final
   any opt-in tolerance is for diagnostic scores only, never a different selection. Keep OWNER_CACHE_TTL_SECONDS=86400
   and sweep threshold 1024. Add a hard cap of 1024 live session records; evict the least recently used
   record after sweeping expired entries, warn and continue without altering the served model. Implement
-  the owned native service in crates/betterlite-router/src/adaptive_feedback.rs. Add ProbeOperation::B340
+  the owned native service in crates/betterlite-router/src/adaptive_feedback.rs. Add ProbeOperation::AdaptiveFeedback
   in tools/oracle/src/router_probes/mod.rs and the corresponding B340 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -60,13 +60,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L322-L515
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b340_behaviors and b340_boundaries under adaptive_feedback::tests. The first
+- text: Write tests named adaptive_feedback_behaviors and adaptive_feedback_boundaries under adaptive_feedback::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b340-behaviors
-  - b340-boundaries
+  - adaptive-feedback-behaviors
+  - adaptive-feedback-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -84,13 +84,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b340-behaviors
+  - id: adaptive-feedback-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b340_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_feedback_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b340-boundaries
+  - id: adaptive-feedback-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b340_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_feedback_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

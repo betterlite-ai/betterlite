@@ -5,7 +5,7 @@ description: 'Compose the implemented complexity classifier outcomes, tier place
   Introduce ComplexityDecision as the single returned result. Every stage calls the owning task service,
   keeps the original authorized identity and restamps the actual final choice. This is orchestration only;
   no scoring, parser or provider transport is added. Implement the owned native service in crates/betterlite-router/src/complexity_pipeline.rs.
-  Add ProbeOperation::B366 in tools/oracle/src/router_probes/mod.rs and the corresponding B366 entry in
+  Add ProbeOperation::ComplexityPipeline in tools/oracle/src/router_probes/mod.rs and the corresponding B366 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -52,13 +52,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1892-L1929
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b366_behaviors and b366_boundaries under complexity_pipeline::tests. The first
+- text: Write tests named complexity_pipeline_behaviors and complexity_pipeline_boundaries under complexity_pipeline::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b366-behaviors
-  - b366-boundaries
+  - complexity-pipeline-behaviors
+  - complexity-pipeline-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -76,13 +76,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b366-behaviors
+  - id: complexity-pipeline-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b366_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_pipeline_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b366-boundaries
+  - id: complexity-pipeline-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b366_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_pipeline_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

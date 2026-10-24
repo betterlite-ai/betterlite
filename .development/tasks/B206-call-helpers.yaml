@@ -15,7 +15,7 @@ description: >-
   normalize_drop_params/drop_params_flag/drop_params_env_flag with config-resolved LITELLM_DROP_PARAMS (unset/blank
   false; malformed nonblank warns and true, unlike malformed request flags which warn and false), plus Decimal safe_divide/safe_divide_seconds
   preserving their zero/nonpositive-denominator defaults. No process environment read belongs here. Write the behavior
-  rstest functions b206_call_helper_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  rstest functions call_helpers_call_helper_tests_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names. Register helper operations call_helpers in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
   Budget 310 pure helpers, 110 adapters, 260 tests and 90 config/replay wiring (770 total).
@@ -73,7 +73,7 @@ checks:
   commands:
   - id: call-helper-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b206_call_helper_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::call_helpers_call_helper_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

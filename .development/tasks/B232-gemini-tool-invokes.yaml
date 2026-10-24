@@ -5,7 +5,7 @@ description: >-
   _get_dummy_thought_signature and convert_to_gemini_tool_call_invoke. Reuse B178 tool arguments, B179 message types
   and B183 media descriptors; preserve input ownership and bound embedded data. Budget 250 transforms/types, 100
   adapters, 300 tests/fuzz and 60 wiring (710 total). Add the gemini_tool_invokes cargo-fuzz target, call the production
-  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions b232_behavior_tests_behavior
+  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions gemini_tool_invokes_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations gemini_tool_invokes in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -53,7 +53,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b232_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::gemini_tool_invokes_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

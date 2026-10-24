@@ -4,7 +4,7 @@ description: >-
   Implement make_valid_bedrock_tool_name, add_cache_point_tool_block, _is_bedrock_tool_block and _bedrock_tools_pt,
   with a per-call reverse-name map and explicit cache-TTL model capability. Budget 280 transforms/types, 100 adapters,
   300 tests/fuzz and 70 wiring (750 total). Add the bedrock_native_tool cargo-fuzz target, call the production parser,
-  and commit/replay malformed and boundary seeds. Write the behavior rstest functions b231_behavior_tests_behavior
+  and commit/replay malformed and boundary seeds. Write the behavior rstest functions bedrock_tools_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations bedrock_tools in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -52,7 +52,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b231_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::bedrock_tools_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

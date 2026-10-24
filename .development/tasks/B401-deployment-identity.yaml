@@ -4,7 +4,7 @@ description: 'Build DeploymentSpec and stable IDs from B002 config and B010 prov
   explicit IDs, secret-sensitive identity and ordered parameter normalization. Own deployment construction
   and pass-through model substitution; do not publish catalog snapshots or create clients. Use typed fields
   instead of Python dictionary façade methods. Implement the owned native service in crates/betterlite-router/src/deployment_identity.rs.
-  Add ProbeOperation::B401 in tools/oracle/src/router_probes/mod.rs and the corresponding B401 entry in
+  Add ProbeOperation::DeploymentIdentity in tools/oracle/src/router_probes/mod.rs and the corresponding B401 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -45,7 +45,7 @@ scope:
   - crates/betterlite-config/src/deployment_identity.rs
   - crates/betterlite-config/src/deployment_identity/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b401-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -60,13 +60,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L647-L699
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b401_behaviors and b401_boundaries under deployment_identity::tests. The first
+- text: Write tests named deployment_identity_behaviors and deployment_identity_boundaries under deployment_identity::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b401-behaviors
-  - b401-boundaries
+  - deployment-identity-behaviors
+  - deployment-identity-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -77,12 +77,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b401-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b401-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-invalid.yaml;
     the valid seed contains ignore_invalid_deployments. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b401-boundaries
+  - deployment-identity-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -90,13 +90,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b401-behaviors
+  - id: deployment-identity-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b401_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::deployment_identity_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b401-boundaries
+  - id: deployment-identity-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b401_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::deployment_identity_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -106,9 +106,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b401-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b401-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b401-" && grep -Fq 'ignore_invalid_deployments' crates/betterlite-config/fuzz/corpus/config_yaml/b401-valid.yaml
+      | grep -Fq "/deployment-identity-" && grep -Fq 'ignore_invalid_deployments' crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

@@ -10,7 +10,7 @@ description: >-
   the default transport. Preserve aiohttp treatment of unsupported proxy schemes and ALL_PROXY, including warnings.
   Disable reqwest environment discovery; only the resolved policy selects a proxy. Proxy URL passwords are SecretString
   and local forwarding/CONNECT tests prove authentication and bypass behavior. Add proxy_policy fuzz parsing with
-  bounded proxy URL and NO_PROXY seeds; extend config_yaml.  Write the behavior rstest functions b208_proxy_policy_tests_behavior
+  bounded proxy URL and NO_PROXY seeds; extend config_yaml.  Write the behavior rstest functions http_proxies_proxy_policy_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations proxy_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 230 proxy policy, 110 adapters,
@@ -76,7 +76,7 @@ checks:
   - id: proxy-policy-tests
     why: the required new behavior or its evidence is missing
     run: >-
-      cargo nextest run --locked -p betterlite-http -p betterlite-config --no-tests=fail -E 'test(/::b208_proxy_policy_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-http -p betterlite-config --no-tests=fail -E 'test(/::http_proxies_proxy_policy_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: proxy-policy-corpus
     why: the required new behavior or its evidence is missing

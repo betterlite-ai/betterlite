@@ -3,7 +3,7 @@ title: Cooldown error policy and callback events
 description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 deployment counters. Emit
   B012 typed cooldown events exactly once, keep notification failures from masking provider errors, and
   implement disabled-cooldown and debug snapshots. Prometheus export remains B111. Implement the owned
-  native service in crates/betterlite-router/src/cooldown_policy.rs. Add ProbeOperation::B308 in tools/oracle/src/router_probes/mod.rs
+  native service in crates/betterlite-router/src/cooldown_policy.rs. Add ProbeOperation::CooldownPolicy in tools/oracle/src/router_probes/mod.rs
   and the corresponding B308 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -48,13 +48,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14643-L14695
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b308_behaviors and b308_boundaries under cooldown_policy::tests. The first asserts
+- text: Write tests named cooldown_policy_behaviors and cooldown_policy_boundaries under cooldown_policy::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b308-behaviors
-  - b308-boundaries
+  - cooldown-policy-behaviors
+  - cooldown-policy-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -72,13 +72,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b308-behaviors
+  - id: cooldown-policy-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b308_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cooldown_policy_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b308-boundaries
+  - id: cooldown-policy-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b308_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cooldown_policy_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

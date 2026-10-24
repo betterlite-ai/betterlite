@@ -13,7 +13,7 @@ description: >-
   uses TextCompletionStreamWrapper semantics. Native providers added later reuse this same direction. Match completion-to-chat
   dispatch for ft:babbage-002, ft:davinci-002 and openai_text_completion_compatible_providers. Add the text-stream
   variants to B014 and text-stream privacy/logging to B188/B252 seams. Budget 290 stream/bridges, 120 integration,
-  330 tests/fuzz (740 total). Write the behavior rstest functions b203_text_stream_tests_behavior in adjacent tests.rs
+  330 tests/fuzz (740 total). Write the behavior rstest functions text_streaming_text_stream_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names.
 
 
@@ -66,7 +66,7 @@ checks:
   commands:
   - id: text-stream-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b203_text_stream_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::text_streaming_text_stream_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: text-stream-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

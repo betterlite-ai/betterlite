@@ -11,7 +11,7 @@ description: >-
   test constructing the whole layer without network or ambient environment.  Seed B171's shared helper_case corpus
   with every added operation and replay it through the common typed parser. catalog-not-executable is a Rust composition
   test, since it is a betterlite implementation distinction rather than a LiteLLM helper. Write the behavior rstest
-  functions b013_model_capability_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  functions model_capabilities_model_capability_tests_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names. Register helper operations model_capabilities
   in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
   adapter file and corpus seed. Budget 290 capability projections, 110 adapters, 250 tests and 60 wiring (710 total).
@@ -77,7 +77,7 @@ checks:
   - id: model-capability-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-models -p betterlite-tokenizer --no-tests=fail -E 'test(/::b013_model_capability_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-models -p betterlite-tokenizer --no-tests=fail -E 'test(/::model_capabilities_model_capability_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: provider-capabilities-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

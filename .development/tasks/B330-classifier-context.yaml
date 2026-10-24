@@ -10,7 +10,7 @@ description: 'Build ClassifierContext from B384 extracted messages, opening/curr
   values once in betterlite-config, never in router code. Classifier context defaults are 3 prior turns
   and 8000 characters; per-turn cap is absent and assistant turns are excluded. Vision defaults to disabled
   and one image; keep source byte/character units distinct. Implement the owned native service in crates/betterlite-router/src/classifier_context.rs.
-  Add ProbeOperation::B330 in tools/oracle/src/router_probes/mod.rs and the corresponding B330 entry in
+  Add ProbeOperation::ClassifierContext in tools/oracle/src/router_probes/mod.rs and the corresponding B330 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -49,7 +49,7 @@ scope:
   - crates/betterlite-config/src/classifier_context.rs
   - crates/betterlite-config/src/classifier_context/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b330-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -62,13 +62,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2702-L2789
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b330_behaviors and b330_boundaries under classifier_context::tests. The first
+- text: Write tests named classifier_context_behaviors and classifier_context_boundaries under classifier_context::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b330-behaviors
-  - b330-boundaries
+  - classifier-context-behaviors
+  - classifier-context-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -79,13 +79,13 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b330-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b330-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-invalid.yaml;
     the valid seed contains classifier_context_window_size. The cargo-fuzz target config_yaml and normal
     replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
     relative to GATE_BASE.
   proof:
   - config-corpus
-  - b330-boundaries
+  - classifier-context-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -93,13 +93,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b330-behaviors
+  - id: classifier-context-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b330_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::classifier_context_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b330-boundaries
+  - id: classifier-context-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b330_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::classifier_context_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -109,9 +109,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b330-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b330-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b330-" && grep -Fq 'classifier_context_window_size' crates/betterlite-config/fuzz/corpus/config_yaml/b330-valid.yaml
+      | grep -Fq "/classifier-context-" && grep -Fq 'classifier_context_window_size' crates/betterlite-config/fuzz/corpus/config_yaml/classifier-context-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

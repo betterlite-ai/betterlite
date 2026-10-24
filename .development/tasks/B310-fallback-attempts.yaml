@@ -7,7 +7,7 @@ description: 'Compose B309 plans with the B017 retry executor and B052/B071 acce
   B014''s direct completion fallbacks without duplicating traversal; retain the direct-call terminal error
   contract through B011. Use B398 for fallback observations and response metadata; do not reproduce its
   callback or header code. Implement the owned native service in crates/betterlite-router/src/fallback_attempts.rs.
-  Add ProbeOperation::B310 in tools/oracle/src/router_probes/mod.rs and the corresponding B310 entry in
+  Add ProbeOperation::FallbackAttempts in tools/oracle/src/router_probes/mod.rs and the corresponding B310 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -57,13 +57,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7542-L7610
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b310_behaviors and b310_boundaries under fallback_attempts::tests. The first
+- text: Write tests named fallback_attempts_behaviors and fallback_attempts_boundaries under fallback_attempts::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b310-behaviors
-  - b310-boundaries
+  - fallback-attempts-behaviors
+  - fallback-attempts-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -81,13 +81,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b310-behaviors
+  - id: fallback-attempts-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b310_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::fallback_attempts_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b310-boundaries
+  - id: fallback-attempts-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b310_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::fallback_attempts_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

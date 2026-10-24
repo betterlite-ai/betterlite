@@ -9,7 +9,7 @@ description: 'Add the JEV classifier adapter through B099 Decisions dispatch or 
   jev-latest, timeout_ms=3000, circuit_breaker_enabled=true and circuit_breaker_cooldown_seconds=30.0.
   Direct API configuration falls back to TYPESAFE_API_KEY and TYPESAFE_API_BASE (then https://api.typesafe.ai);
   an explicit new base requires an explicit key. Implement the owned native service in crates/betterlite-router/src/jev_classifier.rs.
-  Add ProbeOperation::B333 in tools/oracle/src/router_probes/mod.rs and the corresponding B333 entry in
+  Add ProbeOperation::JevClassifier in tools/oracle/src/router_probes/mod.rs and the corresponding B333 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -49,11 +49,11 @@ scope:
   - crates/betterlite-config/src/jev_classifier.rs
   - crates/betterlite-config/src/jev_classifier/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b333-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs
-  - crates/betterlite-router/fuzz/corpus/jev_verdict/b333-*
+  - crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L109-L304
@@ -75,13 +75,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1649-L1657
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b333_behaviors and b333_boundaries under jev_classifier::tests. The first asserts
+- text: Write tests named jev_classifier_behaviors and jev_classifier_boundaries under jev_classifier::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b333-behaviors
-  - b333-boundaries
+  - jev-classifier-behaviors
+  - jev-classifier-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -92,18 +92,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b333-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-invalid.yaml;
     the valid seed contains jev_classifier_config. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b333-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/jev_verdict/b333-valid.json and crates/betterlite-router/fuzz/corpus/jev_verdict/b333-invalid.json;
+  - jev-classifier-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-valid.json and crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target jev_verdict and normal replays_the_jev_verdict_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b333-boundaries
+  - jev-classifier-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -111,13 +111,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b333-behaviors
+  - id: jev-classifier-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b333_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::jev_classifier_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b333-boundaries
+  - id: jev-classifier-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b333_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::jev_classifier_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -127,16 +127,16 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b333-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b333-" && grep -Fq 'jev_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml
+      | grep -Fq "/jev-classifier-" && grep -Fq 'jev_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/jev_verdict/b333-valid.json && test -f crates/betterlite-router/fuzz/corpus/jev_verdict/b333-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-valid.json && test -f crates/betterlite-router/fuzz/corpus/jev_verdict/jev-classifier-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/jev_verdict
-      | grep -Fq "/b333-" && test -f crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs && cargo
+      | grep -Fq "/jev-classifier-" && test -f crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_jev_verdict_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/jev-classifier/jev-direct-versus-deployment.yaml

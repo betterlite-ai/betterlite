@@ -7,7 +7,7 @@ description: >-
   At the depth or byte-work bound replace the container with REDACTED rather than returning a raw object or failing
   with its content. Preserve ordinary shape and values and never mutate inputs. Budget 270 walkers/types, 100 adapters,
   310 tests/fuzz and 70 crate wiring (750 total). Add the structured_redaction cargo-fuzz target, call the production
-  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions b244_behavior_tests_behavior
+  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions structured_redaction_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations structured_redaction in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -55,7 +55,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(/::b244_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(/::structured_redaction_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

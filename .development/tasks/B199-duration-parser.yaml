@@ -16,7 +16,7 @@ description: >-
   unchanged (zero months still raises). For aware datetimes sharing a tzinfo, compare/subtract civil wall times
   as Python does; Nmo duration subtracts naive local datetimes, so DST shifts do not add/subtract an hour. Convert
   to an instant only when returning a reset, not during those civil comparisons. Write the behavior rstest functions
-  b199_duration_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
+  duration_parser_duration_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
   DoD; corpus replay tests have separate names. Register helper operations duration in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
   Budget 270 duration/calendar logic, 110 adapters, 290 tests and 90 fuzz/replay wiring (760 total).
@@ -74,7 +74,7 @@ checks:
   - id: duration-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b199_duration_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::duration_parser_duration_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: duration-spec-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

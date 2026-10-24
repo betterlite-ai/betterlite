@@ -6,7 +6,7 @@ description: 'Build TierPlacement over B374 tier pools, B323 routing groups, B37
   session replay. Configuration boundary keys introduced or consumed here: return_raw_model_name, max_tokens_from_tier_model.
   Pinned declaration defaults: return_raw_model_name=False; max_tokens_from_tier_model=True. Resolve env
   values once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/complexity_placement.rs.
-  Add ProbeOperation::B334 in tools/oracle/src/router_probes/mod.rs and the corresponding B334 entry in
+  Add ProbeOperation::ComplexityPlacement in tools/oracle/src/router_probes/mod.rs and the corresponding B334 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -43,7 +43,7 @@ scope:
   - crates/betterlite-config/src/complexity_placement.rs
   - crates/betterlite-config/src/complexity_placement/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b334-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -52,13 +52,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13163-L13280
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b334_behaviors and b334_boundaries under complexity_placement::tests. The first
+- text: Write tests named complexity_placement_behaviors and complexity_placement_boundaries under complexity_placement::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b334-behaviors
-  - b334-boundaries
+  - complexity-placement-behaviors
+  - complexity-placement-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -69,12 +69,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b334-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b334-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-invalid.yaml;
     the valid seed contains return_raw_model_name. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b334-boundaries
+  - complexity-placement-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -82,13 +82,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b334-behaviors
+  - id: complexity-placement-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b334_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_placement_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b334-boundaries
+  - id: complexity-placement-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b334_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_placement_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -98,9 +98,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b334-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b334-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b334-" && grep -Fq 'return_raw_model_name' crates/betterlite-config/fuzz/corpus/config_yaml/b334-valid.yaml
+      | grep -Fq "/complexity-placement-" && grep -Fq 'return_raw_model_name' crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

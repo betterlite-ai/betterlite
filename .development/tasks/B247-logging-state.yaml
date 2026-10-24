@@ -6,7 +6,7 @@ description: >-
   correlation-context restore methods. Use request-owned state and explicit context guards. no-log suppresses ordinary
   callbacks while retaining internal proxy bookkeeping; enterprise callback controls are excluded, not read or copied.
   Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
-  functions b247_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  functions logging_state_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. Register helper operations logging_state in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
   Also own _update_completion_start_time and correlation restoration 2718-2752.
@@ -83,7 +83,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b247_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_state_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

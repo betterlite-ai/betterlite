@@ -19,7 +19,7 @@ description: >-
   a body; configure the HTTP/2 header-list cap too. HTTP/1 parser allocation uses the bounded upstream library parser
   ceiling, not an invented reqwest 64 KiB setting; document and test that ceiling independently. Keep multipart
   to transport body serialization only. Budget 280 transport, 140 integration and 350 tests (770 total); there are
-  no helper adapters in this task. Write the behavior rstest functions b173_http_pool_tests_behavior, b173_chat_regression_behavior
+  no helper adapters in this task. Write the behavior rstest functions http_pool_tests_behavior, http_pool_chat_regression_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names.
 
@@ -81,11 +81,11 @@ checks:
   commands:
   - id: http-pool-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/::b173_http_pool_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/::http_pool_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-regression
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b173_chat_regression_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::http_pool_chat_regression_behavior($|::)/)
       - test(/replays_the_/)'
   - id: layering
     why: the required new behavior or its evidence is missing

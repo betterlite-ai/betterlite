@@ -5,7 +5,7 @@ description: 'Serve GET /router/settings and GET /router/fields using typed resp
   priority-group support from the implemented router. Keep field definitions in a reviewed static catalog
   and reproduce source metadata through snapshots/oracle cases. Reuse B052 authentication. This source
   file defines read endpoints only; settings mutations remain B066''s configuration API. Implement the
-  owned native service in crates/betterlite-server/src/router_settings.rs. Add ProbeOperation::B348 in
+  owned native service in crates/betterlite-server/src/router_settings.rs. Add ProbeOperation::RouterSettings in
   tools/oracle/src/router_probes/mod.rs and the corresponding B348 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -41,13 +41,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L173-L213
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b348_behaviors and b348_boundaries under router_settings::tests. The first asserts
+- text: Write tests named router_settings_behaviors and router_settings_boundaries under router_settings::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b348-behaviors
-  - b348-boundaries
+  - router-settings-behaviors
+  - router-settings-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -65,13 +65,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b348-behaviors
+  - id: router-settings-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b348_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::router_settings_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b348-boundaries
+  - id: router-settings-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b348_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::router_settings_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

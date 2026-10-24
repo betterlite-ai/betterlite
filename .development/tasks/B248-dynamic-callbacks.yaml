@@ -6,7 +6,7 @@ description: >-
   and the callback-name/internal-callback helpers (4037-4106). Resolve only installed B189 enum variants, preserve
   dynamic/global selection and B188 privacy/provenance, and reject unavailable callbacks explicitly. No Python import
   machinery. Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior
-  rstest functions b248_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  rstest functions dynamic_callbacks_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names. Register helper operations dynamic_callbacks
   in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
   adapter file and corpus seed.
@@ -71,7 +71,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b248_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::dynamic_callbacks_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

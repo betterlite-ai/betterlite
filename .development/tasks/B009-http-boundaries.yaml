@@ -20,7 +20,7 @@ description: >-
   Policy::custom cannot mutate headers. Cover 301/302/303 method rewrite, 307/308 replayability, relative Location,
   hop bound, and streaming non-replayable bodies. Budget 300 policy/integration, 100 oracle adapters and 350 tests/fuzz
   (750 total). Do not add behavior depending on the open remote-download decision. Write the behavior rstest functions
-  b009_url_boundary_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
+  http_boundaries_url_boundary_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
   the DoD; corpus replay tests have separate names. Register helper operations url_origin, url_destination in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
@@ -82,7 +82,7 @@ checks:
     why: the required tests fail or the filter selects no tests
     run: >-
       cargo nextest run --locked -p betterlite-http -p betterlite-config -p betterlite-openai --no-tests=fail -E
-      'test(/::b009_url_boundary_tests_behavior($|::)/) - test(/replays_the_/)'
+      'test(/::http_boundaries_url_boundary_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: url-policy-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-

@@ -11,7 +11,7 @@ description: >-
   parsing tests, and model_catalog fuzz target.  Seed B171's shared helper_case corpus with every added operation
   and replay it through the common typed parser. Bundled-map tests reject unknown fields; runtime remote maps accept
   unknown fields with warnings listing their full paths, per B205. Duplicate keys remain explicit errors. Write
-  the behavior rstest functions b193_model_catalog_tests_behavior in adjacent tests.rs files, with a named case
+  the behavior rstest functions model_catalog_tests_behavior in adjacent tests.rs files, with a named case
   for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   model_catalog in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
   own Rust and Python adapter file and corpus seed. Budget 280 catalog, 100 adapters, 260 tests and 100 fuzz/replay
@@ -78,7 +78,7 @@ checks:
   commands:
   - id: model-catalog-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b193_model_catalog_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_catalog_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: model-catalog-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

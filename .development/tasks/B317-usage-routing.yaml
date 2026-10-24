@@ -6,7 +6,7 @@ description: 'Implement usage-based-routing with B304''s per-group minute maps a
   rate boundaries. Configuration boundary keys introduced or consumed here: routing_strategy. Pinned declaration
   defaults: routing_strategy=''simple-shuffle''. Resolve env values once in betterlite-config, never in
   router code. Implement the owned native service in crates/betterlite-router/src/usage_routing.rs. Add
-  ProbeOperation::B317 in tools/oracle/src/router_probes/mod.rs and the corresponding B317 entry in tools/oracle/litellm/probes/registry.py;
+  ProbeOperation::UsageRouting in tools/oracle/src/router_probes/mod.rs and the corresponding B317 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
@@ -42,7 +42,7 @@ scope:
   - crates/betterlite-config/src/usage_routing.rs
   - crates/betterlite-config/src/usage_routing/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b317-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -51,13 +51,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm.py#L148-L236
   why: Legacy tie order and limit boundaries.
 dod:
-- text: Write tests named b317_behaviors and b317_boundaries under usage_routing::tests. The first asserts
+- text: Write tests named usage_routing_behaviors and usage_routing_boundaries under usage_routing::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b317-behaviors
-  - b317-boundaries
+  - usage-routing-behaviors
+  - usage-routing-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -68,12 +68,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b317-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b317-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-invalid.yaml;
     the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b317-boundaries
+  - usage-routing-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -81,13 +81,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b317-behaviors
+  - id: usage-routing-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b317_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::usage_routing_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b317-boundaries
+  - id: usage-routing-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b317_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::usage_routing_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -97,9 +97,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b317-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b317-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b317-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b317-valid.yaml
+      | grep -Fq "/usage-routing-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

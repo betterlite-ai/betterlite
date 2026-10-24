@@ -6,7 +6,7 @@ description: >-
   and tool_with_sanitized_parameters. Compose B217 definitions and B216 argument/tool helpers without implementing
   a general schema validator. Preserve bounded schema passthrough and output-work limits; tool_schema fuzzing calls
   this production normalizer. Budget 250 normalization, 100 adapters, 320 tests/fuzz and 50 wiring (720 total).
-  Write the behavior rstest functions b178_tool_schema_tests_behavior in adjacent tests.rs files, with a named case
+  Write the behavior rstest functions tool_schemas_tool_schema_tests_behavior in adjacent tests.rs files, with a named case
   for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   tool_schema in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own
   Rust and Python adapter file and corpus seed.
@@ -61,7 +61,7 @@ checks:
   - id: tool-schema-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b178_tool_schema_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::tool_schemas_tool_schema_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: tool-schema-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

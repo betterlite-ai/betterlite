@@ -9,7 +9,7 @@ description: >-
   Generate one operation invocation per YAML case rather than packing multiple providers into one input. JSON registry
   identities use pinned MIT registry data; executable adapters are separate. Exclude github_copilot/chatgpt OAuth
   providers from executable oracle cases. Budget 280 table/resolution, 140 adapters, 300 tests and 40 wiring (760
-  total). Write the behavior rstest functions b211_behavior_tests_behavior in adjacent tests.rs files, with a named
+  total). Write the behavior rstest functions provider_defaults_b_behavior_tests_behavior in adjacent tests.rs files, with a named
   case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   provider_defaults_b in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has
   its own Rust and Python adapter file and corpus seed. The listed provider-specific files each invoke this operation
@@ -55,7 +55,7 @@ checks:
   commands:
   - id: behavior-tests
     why: new behavior tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b211_behavior_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::provider_defaults_b_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail
