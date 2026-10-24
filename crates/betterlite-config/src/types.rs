@@ -70,6 +70,7 @@ pub struct LiteLlmSettings {
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
     pub drop_params: Option<bool>,
+    pub bedrock_metadata_fields: Vec<String>,
     pub modify_params: bool,
     pub default_max_tokens: i64,
 }

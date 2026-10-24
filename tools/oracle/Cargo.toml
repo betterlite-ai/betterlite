@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-http = { path = "../../crates/betterlite-http" }
