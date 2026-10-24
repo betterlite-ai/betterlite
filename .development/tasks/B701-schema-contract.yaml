@@ -1,0 +1,89 @@
+id: B701
+title: Pinned LiteLLM Postgres schema contract
+description: >-
+  Define SchemaContract as pg_catalog introspection of an independently created database from all compiled
+  pinned migration cohorts B702-B709. Record exact relation, column, type, nullable/default, unique key,
+  foreign-key action and index facts for the ninety Prisma models. Copy the three byte-identical schema.prisma
+  files as hash-checked reference fixtures (SHA256 a17e69687d14d78dc7cee49770f1c1e8b2726cd8823d37c6dff48ae151533342);
+  do not parse Prisma in a Python oracle adapter. Expected facts come from applying the pinned SQL to
+  an isolated reference schema and introspecting it, while the tested catalog is separately applied to
+  the candidate schema. Preserve quoted names and existing data.
+
+
+  Build the production schema_contract module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: allow 280 native pg_catalog query/contract code, 200 independent reference/candidate database
+  tests and 60 catalog/wiring lines, 540 changed lines estimated within a 600-line gate. This native replacement
+  is larger than the pinned Prisma CLI call sites; SQL and generated production facts count, with only
+  repository fixture/corpus/lock exclusions.
+scope:
+  paths:
+    - crates/betterlite-db/src/schema_contract.rs
+    - crates/betterlite-db/src/schema_contract/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_contract/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1-L1917
+    why: Pinned implementation and exact ownership boundary for schema_contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L1-L1917
+    why: Pinned implementation and exact ownership boundary for schema_contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/schema.prisma#L1-L1917
+    why: Pinned implementation and exact ownership boundary for schema_contract.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: ninety_table_contract,
+      schema_fixture_hashes, null_defaults_and_foreign_keys, existing_database_no_rewrite, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_contract::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - LiteLLM uses prisma migrate diff; a handwritten Python schema comparator would be a second expected
+    algorithm.
+  - The expected ninety-table contract is built after the final migration cohort, not before baseline
+    SQL.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

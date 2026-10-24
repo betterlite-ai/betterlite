@@ -1,0 +1,145 @@
+id: B818
+title: Prevent resource grant escalation by keys
+description: >-
+  Implement ResourceDelegation over team permissions and canonical MCP IDs, including all-proxy-MCP administrator
+  grants, grandfathered existing key grants, access groups/toolsets and vector/search tool scopes. Run
+  before key or team permission writes; caller-requested grant sets cannot override parent restrictions.
+
+
+  Build the production resource_delegation module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
+  enforce_all_proxy_mcp_servers_grant_is_admin_only (L498-L528; 29 source lines), _get_grandfathered_key_mcp_server_ids
+  (L531-L558; 28 source lines), _get_team_allowed_mcp_servers (L561-L599; 34 source lines), _extract_requested_mcp_server_ids
+  (L602-L625; 20 source lines), _extract_requested_mcp_access_groups (L628-L638; 10 source lines), _extract_requested_mcp_toolsets
+  (L641-L651; 10 source lines), validate_key_mcp_servers_against_team (L654-L794; 120 source lines), _validate_requested_toolsets
+  (L797-L839; 42 source lines), _extract_requested_vector_stores (L842-L851; 10 source lines), validate_key_vector_stores_against_team
+  (L854-L879; 26 source lines), _extract_requested_search_tools (L882-L891; 10 source lines), validate_key_search_tools_against_team
+  (L894-L941; 43 source lines).
+
+
+  Add the resource_delegation operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a resource-delegation-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 382 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  382 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 628 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/resource_delegation.rs
+    - crates/betterlite-server/src/resource_delegation/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/resource_delegation.rs
+    - tools/oracle/src/helpers/resource_delegation/**
+    - tools/oracle/helpers/resource_delegation.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/resource-delegation/**
+    - tools/oracle/fuzz/corpus/helper_case/resource-delegation-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L498-L941
+    why: Pinned implementation and exact ownership boundary for resource_delegation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L498-L528
+    why: Own enforce_all_proxy_mcp_servers_grant_is_admin_only; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L531-L558
+    why: Own _get_grandfathered_key_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L561-L599
+    why: Own _get_team_allowed_mcp_servers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L602-L625
+    why: Own _extract_requested_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L628-L638
+    why: Own _extract_requested_mcp_access_groups; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L641-L651
+    why: Own _extract_requested_mcp_toolsets; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L654-L794
+    why: Own validate_key_mcp_servers_against_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L797-L839
+    why: Own _validate_requested_toolsets; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L842-L851
+    why: Own _extract_requested_vector_stores; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L854-L879
+    why: Own validate_key_vector_stores_against_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L882-L891
+    why: Own _extract_requested_search_tools; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L894-L941
+    why: Own validate_key_search_tools_against_team; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: all_proxy_admin_only,
+      grandfathered_key_server, team_mcp_subset, unknown_toolset, vector_store_subset, search_tool_subset,
+      missing_team_permissions.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^resource_delegation::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/resource_delegation.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-delegation-*")"
+        && grep -rlq "resource_delegation" tools/oracle/fuzz/corpus/helper_case/resource-delegation-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/resource-delegation/all-proxy-admin-only.yaml
+  - tools/oracle/cases/helpers/resource-delegation/grandfathered-key-server.yaml
+  - tools/oracle/cases/helpers/resource-delegation/team-mcp-subset.yaml
+  - tools/oracle/cases/helpers/resource-delegation/unknown-toolset.yaml
+  - tools/oracle/cases/helpers/resource-delegation/vector-store-subset.yaml
+  - tools/oracle/cases/helpers/resource-delegation/search-tool-subset.yaml
+  - tools/oracle/cases/helpers/resource-delegation/missing-team-permissions.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B816 owns attach_object_permission_to_dict
+    (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183),
+    invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries
+    (L324-L332), reject_ambiguous_mcp_tool_permission_keys (L335-L371).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248),
+    _mcp_server_identifier_matches (L251-L257), _get_db_mcp_servers_by_identifiers (L260-L276), _resolve_mcp_server_identifiers_to_ids
+    (L279-L318), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
+    (L393-L405), _drop_stale_object_permission_mcp_identifiers (L408-L422), _flatten_resolved_mcp_server_ids
+    (L425-L428), _resolve_team_allowed_mcp_servers (L431-L463), _get_allow_all_keys_server_ids (L466-L472),
+    _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Grandfathered existing MCP grants do not authorize arbitrary new server grants.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

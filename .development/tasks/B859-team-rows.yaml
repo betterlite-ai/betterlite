@@ -1,0 +1,160 @@
+id: B859
+title: Team and membership storage contracts
+description: >-
+  Add TeamRow, MemberIdentity and MembershipRow with every stored array/JSON/model-metadata field and
+  typed string-or-object decoding. Preserve user_id versus user_email identity validation and optional
+  member rate-limit accessors. These types are shared by repositories and auth; no team-management endpoint
+  is added.
+
+
+  The byte boundary is decode_team_rows(&[u8]) for stored JSON/string columns read from Postgres and Redis;
+  its fuzz target calls this production decoder. Count field declarations as well as validators when implementing
+  the complete row contracts.
+
+
+  Build the production team_rows module in betterlite-db; reuse the typed dependencies listed in the backlog.
+  Keep Rust implementation files below 300 lines by using named domain submodules with adjacent tests.rs
+  files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/models/team.py:
+  row_contracts (L1-L152; 119 source lines). litellm/models/team_membership.py: row_contracts (L1-L28;
+  22 source lines).
+
+
+  Add the team_rows operation under B856 Management::database. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-rows-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This task owns the outside-byte boundary team_rows::decode_team_rows(&[u8]) -> Result<TypedValue,DecodeError>
+  for stored team/membership JSON columns. Production calls this decoder before its typed policy functions;
+  the cargo-fuzz target team_rows calls that same function. Seed valid, truncated, malformed, duplicate-field
+  and limit-boundary inputs and add team_rows::tests::replays_the_team_rows_corpus. Reuse B002 limits
+  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
+  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B710
+  owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating the
+  workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 141 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  141 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 435 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/team_rows.rs
+    - crates/betterlite-db/src/team_rows/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/team_rows/fixtures/**
+    - tools/oracle/src/helpers/team_rows.rs
+    - tools/oracle/src/helpers/team_rows/**
+    - tools/oracle/helpers/team_rows.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/team-rows/**
+    - tools/oracle/fuzz/corpus/helper_case/team-rows-*
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/team_rows.rs
+    - crates/betterlite-db/fuzz/corpus/team_rows/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L1-L152
+    why: Own row_contracts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L1-L28
+    why: Own row_contracts; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_id_or_email,
+      team_model_alias_json, member_limits_absent, member_limits_zero, team_metadata, invalid_member_identity,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: The production decode_team_rows decoder is used by the service and its fuzz target and rejects
+      malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_rows::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_rows.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-rows-*")"
+        && grep -rlq "team_rows" tools/oracle/fuzz/corpus/helper_case/team-rows-* && cargo nextest run
+        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_failure_effects$/)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/team_rows.rs && grep -q "team_rows" crates/betterlite-db/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/team_rows)"
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_team_rows_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-rows/member-id-or-email.yaml
+  - tools/oracle/cases/helpers/team-rows/team-model-alias-json.yaml
+  - tools/oracle/cases/helpers/team-rows/member-limits-absent.yaml
+  - tools/oracle/cases/helpers/team-rows/member-limits-zero.yaml
+  - tools/oracle/cases/helpers/team-rows/team-metadata.yaml
+  - tools/oracle/cases/helpers/team-rows/invalid-member-identity.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L1-L152
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - Member identity requires user_id or user_email according to the pinned validator; an empty identity
+    is not a member.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

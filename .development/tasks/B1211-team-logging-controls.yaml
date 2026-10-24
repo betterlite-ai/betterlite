@@ -1,0 +1,115 @@
+id: B1211
+title: Read team callbacks and disable team logging
+description: >-
+  Implement GET /team/{team_id:path}/callback and POST /team/{team_id}/disable_logging with TeamAccess
+  and the shared callback redactor. Reuse the suffix-dispatch route adapter for path-style team IDs; auth
+  and audit attribute the actual requested team.
+
+
+  Build the production team_logging_controls module in betterlite-server; reuse the typed dependencies
+  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
+  with adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_callback_endpoints.py:
+  disable_team_logging (L586-L716; 93 source lines), get_team_callbacks (L725-L815; 73 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /team/{team_id}/disable_logging ->
+  disable_team_logging; GET /team/{team_id:path}/callback -> get_team_callbacks. For each route send a
+  typed successful request, an invalid or missing target, and a caller lacking that route permission through
+  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
+  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
+  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
+  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
+  error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 166 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  166 production, 139 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 370 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
+  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_logging_controls.rs
+    - crates/betterlite-server/src/team_logging_controls/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/team-logging-controls/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L586-L716
+    why: Own disable_team_logging; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L725-L815
+    why: Own get_team_callbacks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: list_masked_secrets,
+      disable_team_logging, non_admin_denied.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_logging_controls::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-success.yaml
+  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-invalid-target.yaml
+  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-success.yaml
+  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-invalid-target.yaml
+  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-logging-controls/list-masked-secrets.yaml
+  - tools/oracle/cases/management/team-logging-controls/disable-team-logging.yaml
+  - tools/oracle/cases/management/team-logging-controls/non-admin-denied.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B057 owns add_team_callbacks (L258-L432),
+    delete_team_callback (L442-L577).'
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1210 owns _callback_config_error
+    (L59-L60), _validate_team_callback (L63-L66), _redact_callback_secrets (L69-L92), _mask_sensitive_callback_vars
+    (L95-L118), _resolve_team_callbacks (L121-L161), _log_audit_task_exception (L164-L176), _emit_team_callback_audit_log
+    (L179-L225), _callback_error (L228-L233), _unknown_team_error (L236-L249).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Reuse the suffix-dispatch route adapter for path-style team IDs; auth and audit attribute the actual
+    requested team..
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

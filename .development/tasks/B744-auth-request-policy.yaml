@@ -1,0 +1,288 @@
+id: B744
+title: Caller-controlled request field safety
+description: >-
+  Implement pre-DB request checks in source order: request size, RequestBodySafety, client IP allowlist,
+  then proxy allowed_routes. Own invalid-virtual-key error provenance markers and _get_request_ip_address
+  for auth diagnostics. Honor the source use_x_forwarded_for switch and configured size limits; no downloading
+  is introduced.
+
+
+  Build the production auth_request_policy module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_utils.py:
+  is_invalid_virtual_key_error (L41-L58; 15 source lines), mark_invalid_virtual_key_error (L61-L75; 15
+  source lines), _get_request_ip_address (L78-L87; 9 source lines), _check_valid_ip (L90-L108; 14 source
+  lines), pre_db_read_auth_checks (L562-L618; 46 source lines), check_if_request_size_is_safe (L840-L898;
+  45 source lines), check_response_size_is_safe (L901-L939; 30 source lines), bytes_to_mb (L942-L946;
+  5 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.allowed_ips=None;
+  general_settings.use_x_forwarded_for=False; general_settings.max_request_size_mb=None; general_settings.max_response_size_mb=None;
+  general_settings.allowed_routes=required when this branch is enabled; allowed_ips=None; use_x_forwarded_for=False;
+  max_request_size_mb=None; max_response_size_mb=None.
+
+
+  general_settings.allowed_ips=None, allowed_routes absent, use_x_forwarded_for=false; max_request_size_mb=None
+  and max_response_size_mb=None. configured allowed_routes still gates traffic when LiteLLM logs its premium
+  warning.
+
+
+  Add the auth_request_policy operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-request-policy-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::auth_request_policy::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 179 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  179 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 501 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+  native_request_supplied_upstream_api_base_base_url_and_url_valued_fallback_de. Exercise the precise
+  changed setting/output branch and assert its configured status/error/side effects; do not add these
+  differing results to oracle equality cases.
+
+
+  Server wiring tests live under betterlite-server::auth::auth_request_policy::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_request_policy.rs
+    - crates/betterlite-auth/src/auth_request_policy/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/auth_request_policy.rs
+    - tools/oracle/src/helpers/auth_request_policy/**
+    - tools/oracle/helpers/auth_request_policy.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/auth-request-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-request-policy-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/auth-request-policy/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/auth_request_policy.rs
+    - crates/betterlite-config/src/auth_request_policy/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-request-policy-*
+    - crates/betterlite-server/src/auth/auth_request_policy.rs
+    - crates/betterlite-server/src/auth/auth_request_policy/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L41-L618
+    why: Pinned implementation and exact ownership boundary for auth_request_policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L840-L946
+    why: Pinned implementation and exact ownership boundary for auth_request_policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4371
+    why: ProxyException request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L41-L58
+    why: Own is_invalid_virtual_key_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L61-L75
+    why: Own mark_invalid_virtual_key_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L78-L87
+    why: Own _get_request_ip_address; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L90-L108
+    why: Own _check_valid_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L562-L618
+    why: Own pre_db_read_auth_checks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L840-L898
+    why: Own check_if_request_size_is_safe; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L901-L939
+    why: Own check_response_size_is_safe; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L942-L946
+    why: Own bytes_to_mb; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L594-L599
+    why: general_settings.allowed_ips default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L595-L600
+    why: general_settings.use_x_forwarded_for default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L857-L862
+    why: general_settings.max_request_size_mb default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L919-L924
+    why: general_settings.max_response_size_mb default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L607-L612
+    why: general_settings.allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1-L6
+    why: max_response_size_mb default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: body_size_boundary,
+      response_size_boundary, allowed_ips_denied_403, allowed_routes_denied_403.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+      native_request_supplied_upstream_api_base_base_url_and_url_valued_fallback_de.'
+    proof:
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_request_policy::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/auth_request_policy.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-request-policy-*")"
+        && grep -rlq "auth_request_policy" tools/oracle/fuzz/corpus/helper_case/auth-request-policy-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_request_policy::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-request-policy-*")"
+        && grep -rlq "allowed_ips" crates/betterlite-config/fuzz/corpus/config_yaml/auth-request-policy-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_request_policy::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-request-policy/body-size-boundary.yaml
+  - tools/oracle/cases/helpers/auth-request-policy/response-size-boundary.yaml
+  - tools/oracle/cases/helpers/auth-request-policy/allowed-ips-denied-403.yaml
+  - tools/oracle/cases/helpers/auth-request-policy/allowed-routes-denied-403.yaml
+  - tools/oracle/cases/auth/auth-request-policy/body-size-boundary.yaml
+  - tools/oracle/cases/auth/auth-request-policy/response-size-boundary.yaml
+  - tools/oracle/cases/auth/auth-request-policy/allowed-ips-denied-403.yaml
+  - tools/oracle/cases/auth/auth-request-policy/allowed-routes-denied-403.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L41-L618
+  - what: Request-supplied upstream api_base/base_url and URL-valued fallback destinations are rejected
+      with a typed 400 even when client-side destination overrides were enabled in LiteLLM.
+    why: The bounded-inputs rule allows upstream destinations from operator configuration only; B009 owns
+      the shared URL boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L477-L539
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
+    (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
+  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
+    (L668-L703), get_request_route_template (L706-L722), normalize_request_route (L726-L837).'
+  - 'litellm/proxy/auth/auth_utils.py: B745 owns _get_deployment_default_limit (L950-L975), _get_deployment_default_rpm_limit
+    (L978-L979), _get_deployment_default_tpm_limit (L982-L983), get_key_own_model_rate_limit (L986-L1003),
+    get_key_model_rpm_limit (L1006-L1035), get_key_model_tpm_limit (L1038-L1067), _validated_output_token_estimate
+    (L1080-L1092), _validated_output_token_estimates_per_model (L1095-L1107), _estimated_output_tokens_from_metadata
+    (L1110-L1130), get_estimated_output_tokens (L1133-L1151), OutputTokenEstimateRequest.metadata (L1161-L1161),
+    OutputTokenEstimateRequest.default_estimated_output_tokens (L1164-L1164), OutputTokenEstimateRequest.default_estimated_output_tokens_per_model
+    (L1167-L1167), OutputTokenEstimateRequest.model_fields_set (L1170-L1170), _requested_output_token_estimates
+    (L1173-L1194), enforce_output_token_estimates_are_admin_only (L1197-L1228), BatchEnqueuedTokenLimitRequest.metadata
+    (L1235-L1235), BatchEnqueuedTokenLimitRequest.model_fields_set (L1238-L1238), enforce_batch_enqueued_token_limit_is_admin_only
+    (L1241-L1268), get_model_rate_limit_from_metadata (L1271-L1278), get_key_mcp_rpm_limit (L1297-L1320),
+    get_team_mcp_rpm_limit (L1323-L1328), get_key_tag_rpm_limit (L1331-L1342).'
+  - 'litellm/proxy/auth/auth_utils.py: B746 owns _append_model_candidates (L1731-L1743), _dedupe_model_candidates
+    (L1746-L1751), _get_case_insensitive_mapping_value (L1754-L1763), _route_matches_any_marker (L1766-L1768),
+    _route_uses_model_routing_sources (L1771-L1772), _extract_models_from_managed_resource_id (L1775-L1842),
+    _resolve_model_id_with_router (L1845-L1852), get_cache_prediction_deployments (L1855-L1864), _cache_prediction_model_candidates
+    (L1867-L1877), _extract_model_candidates_from_request (L1880-L1943), _format_model_candidates (L1946-L1953),
+    request_dispatched_to_pass_through_endpoint (L1956-L1974), request_dispatched_to_provider_pass_through
+    (L1977-L1979), get_model_from_request (L1982-L2061), _router_model_from_azure_route (L2064-L2068),
+    _model_from_bedrock_route (L2071-L2083).'
+  - 'litellm/proxy/auth/auth_utils.py: B880 owns get_customer_user_header_from_mapping (L1511-L1530),
+    _get_customer_id_from_standard_headers (L1533-L1557), _coerce_user_id_to_str (L1560-L1592), get_end_user_id_from_request_body
+    (L1595-L1678).'
+  - 'litellm/proxy/auth/auth_utils.py: B881 owns has_user_setup_sso (L1431-L1451), _is_google_ready (L1454-L1455),
+    _is_microsoft_ready (L1458-L1463), _is_generic_oauth_ready (L1466-L1473), _is_saml_ready (L1476-L1490),
+    is_sso_provider_fully_configured (L1493-L1508), abbreviate_api_key (L2086-L2089).'
+  - 'litellm/proxy/auth/auth_utils.py: B884 owns check_regex_or_str_match (L159-L165), _is_param_allowed
+    (L168-L189), _allow_model_level_clientside_configurable_parameters (L192-L220), _build_banned_observability_params
+    (L281-L303), _check_banned_params (L380-L420), _iter_fallback_field_values (L430-L435), _iter_fallback_targets
+    (L438-L455), iter_request_fallback_targets (L458-L460), _reject_url_valued_fallback_target (L463-L474),
+    is_request_body_safe (L477-L539), _coerce_metadata_to_dict (L542-L559).'
+  - 'litellm/proxy/auth/auth_utils.py::check_complete_credentials: no caller at the pin; removed implicit
+    caller-credential bypass.'
+  - 'litellm/proxy/auth/auth_utils.py::get_team_model_rpm_limit: no production caller at the pinned commit;
+    repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_utils.py::get_team_model_tpm_limit: no production caller at the pinned commit;
+    repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_utils.py::get_project_model_rpm_limit: no production caller at the pinned
+    commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_utils.py::get_project_model_tpm_limit: no production caller at the pinned
+    commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_utils.py::is_pass_through_provider_route: no production caller at the pinned
+    commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - allowed_ips and allowed_routes denials are 403, while banned body fields become 401 auth_error.
+  - The legacy use_x_forwarded_for behavior is distinct from trusted OAuth proxy authentication.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

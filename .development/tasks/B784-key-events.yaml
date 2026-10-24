@@ -1,0 +1,134 @@
+id: B784
+title: Key lifecycle audit and secret-manager events
+description: >-
+  Implement key lifecycle event orchestration and create_key_deleted_audit_logs over typed KeyEvent and
+  injected AuditSink. Call B898 for secret-manager and legacy email effects in the pinned order. B065
+  owns audit persistence; this leaf owns event projection and scheduling, so key APIs do not depend on
+  the later audit endpoint umbrella.
+
+
+  Build the production key_events module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/hooks/key_management_event_hooks.py:
+  KeyManagementEventHooks.async_key_generated_hook (L36-L94; 53 source lines), KeyManagementEventHooks.async_key_updated_hook
+  (L97-L154; 55 source lines), KeyManagementEventHooks.async_key_rotated_hook (L157-L224; 62 source lines),
+  KeyManagementEventHooks.async_key_deleted_hook (L227-L245; 18 source lines), KeyManagementEventHooks.create_key_deleted_audit_logs
+  (L248-L286; 37 source lines).
+
+
+  Add the key_events operation under B856 Management::keys. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-events-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 225 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  225 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 459 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_events.rs
+    - crates/betterlite-server/src/key_events/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/key_events.rs
+    - tools/oracle/src/helpers/key_events/**
+    - tools/oracle/helpers/key_events.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/key-events/**
+    - tools/oracle/fuzz/corpus/helper_case/key-events-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L1-L645
+    why: Pinned implementation and exact ownership boundary for key_events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376-L1396
+    why: GenerateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1399-L1438
+    why: GenerateKeyResponse request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
+    why: UpdateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487-L1495
+    why: RegenerateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1512-L1521
+    why: KeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L36-L94
+    why: Own KeyManagementEventHooks.async_key_generated_hook; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L97-L154
+    why: Own KeyManagementEventHooks.async_key_updated_hook; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L157-L224
+    why: Own KeyManagementEventHooks.async_key_rotated_hook; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L227-L245
+    why: Own KeyManagementEventHooks.async_key_deleted_hook; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L248-L286
+    why: Own KeyManagementEventHooks.create_key_deleted_audit_logs; preserve caller-visible values and
+      failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: generated_event, rotated_event,
+      audit_no_raw_key.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_events::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/key_events.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-events-*")"
+        && grep -rlq "key_events" tools/oracle/fuzz/corpus/helper_case/key-events-* && cargo nextest run
+        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-events/generated-event.yaml
+  - tools/oracle/cases/helpers/key-events/rotated-event.yaml
+  - tools/oracle/cases/helpers/key-events/audit-no-raw-key.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/hooks/key_management_event_hooks.py: B898 owns KeyManagementEventHooks._store_virtual_key_in_secret_manager
+    (L289-L318), KeyManagementEventHooks._rotate_virtual_key_in_secret_manager (L321-L345), KeyManagementEventHooks._stored_virtual_key_secret_manager
+    (L348-L356), KeyManagementEventHooks._rename_virtual_key_in_secret_manager (L359-L395), KeyManagementEventHooks._get_secret_name
+    (L398-L402), KeyManagementEventHooks._delete_virtual_keys_from_secret_manager (L405-L438), KeyManagementEventHooks._get_secret_manager_optional_params
+    (L441-L484), KeyManagementEventHooks._is_email_sending_enabled (L487-L514), KeyManagementEventHooks._send_key_created_email
+    (L517-L589), KeyManagementEventHooks._send_key_rotated_email (L592-L645).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Missing enterprise email classes select the MIT legacy fallback, not invented V2 payload delivery.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

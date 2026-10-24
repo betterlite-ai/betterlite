@@ -1,0 +1,166 @@
+id: B843
+title: Model deprecation dates and alert formatting
+description: >-
+  Implement ModelDeprecations over B013 catalog dates and deployment overrides with an injected date.
+  Preserve provider/model lookup precedence, classification buckets, deduplication, ordering and escaped
+  Slack mrkdwn payload formatting. B116 sends alerts; this task only produces typed facts and text.
+
+
+  Build the production model_deprecation module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/model_deprecation.py:
+  _parse_deprecation_date (L32-L42; 11 source lines), _cost_map_lookup (L45-L59; 15 source lines), _mapping_field
+  (L62-L64; 3 source lines), _resolve_deployment_deprecation (L67-L95; 27 source lines), _classify (L98-L103;
+  6 source lines), _build_info (L106-L123; 16 source lines), _dedupe (L126-L133; 8 source lines), _bucket
+  (L136-L142; 7 source lines), collect_model_deprecations (L145-L175; 28 source lines), _escape_slack_mrkdwn
+  (L178-L180; 3 source lines), _format_entry (L183-L193; 11 source lines), format_deprecation_alert_message
+  (L196-L226; 28 source lines).
+
+
+  Add the model_deprecation operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-deprecation-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This task owns the outside-byte boundary model_deprecation::decode_deprecation_date(&[u8]) -> Result<TypedValue,DecodeError>
+  for catalog date strings. Production calls this decoder before its typed policy functions; the cargo-fuzz
+  target model_deprecation calls that same function. Seed valid, truncated, malformed, duplicate-field
+  and limit-boundary inputs and add model_deprecation::tests::replays_the_model_deprecation_corpus. Reuse
+  B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder
+  cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching
+  URLs. B770 owns crates/betterlite-server/fuzz; depend on it and register this decoder target without
+  recreating the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 163 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  163 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 454 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_deprecation.rs
+    - crates/betterlite-server/src/model_deprecation/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/model_deprecation.rs
+    - tools/oracle/src/helpers/model_deprecation/**
+    - tools/oracle/helpers/model_deprecation.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/model-deprecation/**
+    - tools/oracle/fuzz/corpus/helper_case/model-deprecation-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/model_deprecation.rs
+    - crates/betterlite-server/fuzz/corpus/model_deprecation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L1-L226
+    why: Pinned implementation and exact ownership boundary for model_deprecation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/model_deprecation.py#L1-L52
+    why: Pinned implementation and exact ownership boundary for model_deprecation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L32-L42
+    why: Own _parse_deprecation_date; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L45-L59
+    why: Own _cost_map_lookup; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L62-L64
+    why: Own _mapping_field; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L67-L95
+    why: Own _resolve_deployment_deprecation; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L98-L103
+    why: Own _classify; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L106-L123
+    why: Own _build_info; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L126-L133
+    why: Own _dedupe; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L136-L142
+    why: Own _bucket; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L145-L175
+    why: Own collect_model_deprecations; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L178-L180
+    why: Own _escape_slack_mrkdwn; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L183-L193
+    why: Own _format_entry; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L196-L226
+    why: Own format_deprecation_alert_message; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: deployment_date_override,
+      cost_map_date, invalid_date, already_deprecated, upcoming_boundary, deduplicated_model, escaped_alert.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The production decode_deprecation_date decoder is used by the service and its fuzz target and
+      rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_deprecation::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/model_deprecation.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-deprecation-*")"
+        && grep -rlq "model_deprecation" tools/oracle/fuzz/corpus/helper_case/model-deprecation-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/model_deprecation.rs && grep -q "model_deprecation"
+        crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-server/fuzz/corpus/model_deprecation)" && cargo nextest run --locked -p betterlite-server
+        --no-tests=fail -E 'test(replays_the_model_deprecation_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/model-deprecation/deployment-date-override.yaml
+  - tools/oracle/cases/helpers/model-deprecation/cost-map-date.yaml
+  - tools/oracle/cases/helpers/model-deprecation/invalid-date.yaml
+  - tools/oracle/cases/helpers/model-deprecation/already-deprecated.yaml
+  - tools/oracle/cases/helpers/model-deprecation/upcoming-boundary.yaml
+  - tools/oracle/cases/helpers/model-deprecation/deduplicated-model.yaml
+  - tools/oracle/cases/helpers/model-deprecation/escaped-alert.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L32-L42
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - Invalid deprecation dates follow the source fallback and must not remove the deployment.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

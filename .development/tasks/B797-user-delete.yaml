@@ -1,0 +1,218 @@
+id: B797
+title: User deletion and invitation creation
+description: >-
+  Implement /user/delete directly from internal_user_endpoints.py:2397-2604 and invitation creation; do
+  not invoke BulkUserDeletion. Preserve per-user validation followed immediately by audit scheduling and
+  team-roster rewrites inside that loop, then delete keys, invitation links, organization memberships,
+  team memberships and users. A later target failure can leave earlier writes behind. V2 invitation email
+  imports are unavailable without litellm_enterprise, so warn and use the MIT V1 fallback. Invitation
+  expiration remains seven days.
+
+
+  Build the production user_delete module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
+  delete_user (L2397-L2604; 163 source lines). litellm/proxy/management_helpers/user_invitation.py: create_invitation_for_user
+  (L11-L49; 36 source lines). litellm/proxy/hooks/user_management_event_hooks.py: UserManagementEventHooks.async_user_created_hook
+  (L32-L78; 38 source lines), UserManagementEventHooks.async_send_user_invitation_email (L81-L115; 30
+  source lines), UserManagementEventHooks._send_v2_user_invitation_emails (L118-L161; 39 source lines),
+  UserManagementEventHooks.send_legacy_v1_user_invitation_email (L164-L186; 19 source lines), UserManagementEventHooks.create_internal_user_audit_log
+  (L189-L232; 41 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.alerting=[];
+  alerting=[].
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /user/delete -> delete_user. For each
+  route send a typed successful request, an invalid or missing target, and a caller lacking that route
+  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
+  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
+  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
+  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
+  management error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::user_delete::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 366 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  366 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 635 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
+  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_delete.rs
+    - crates/betterlite-server/src/user_delete/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/user-delete/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/user_delete.rs
+    - crates/betterlite-config/src/user_delete/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2397-L2604
+    why: Own delete_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L1-L49
+    why: Pinned implementation and exact ownership boundary for user_delete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L1-L232
+    why: Pinned implementation and exact ownership boundary for user_delete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1939-L1967
+    why: NewUserRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1970-L1986
+    why: NewUserResponse request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2035-L2036
+    why: DeleteUserRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3912-L3925
+    why: WebhookEvent request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3942-L3943
+    why: InvitationNew request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L11-L49
+    why: Own create_invitation_for_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L32-L78
+    why: Own UserManagementEventHooks.async_user_created_hook; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L81-L115
+    why: Own UserManagementEventHooks.async_send_user_invitation_email; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L118-L161
+    why: Own UserManagementEventHooks._send_v2_user_invitation_emails; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L164-L186
+    why: Own UserManagementEventHooks.send_legacy_v1_user_invitation_email; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L189-L232
+    why: Own UserManagementEventHooks.create_internal_user_audit_log; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L176-L181
+    why: general_settings.alerting default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1-L6
+    why: alerting default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: delete_user, delete_forbidden,
+      invitation_seven_days, invitation_missing_user, v1_email_payload, enterprise_absent_v1_fallback,
+      earlier_roster_write_survives, audit_scheduled_before_later_error.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_delete::tests::/)
+        - test(/replays_the_/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^user_delete::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-*")"
+        && grep -rlq "alerting" crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-* && cargo
+        nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/user-delete/post--user-delete-success.yaml
+  - tools/oracle/cases/management/user-delete/post--user-delete-invalid-target.yaml
+  - tools/oracle/cases/management/user-delete/post--user-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/user-delete/delete-user.yaml
+  - tools/oracle/cases/management/user-delete/delete-forbidden.yaml
+  - tools/oracle/cases/management/user-delete/invitation-seven-days.yaml
+  - tools/oracle/cases/management/user-delete/invitation-missing-user.yaml
+  - tools/oracle/cases/management/user-delete/v1-email-payload.yaml
+  - tools/oracle/cases/management/user-delete/enterprise-absent-v1-fallback.yaml
+  - tools/oracle/cases/management/user-delete/earlier-roster-write-survives.yaml
+  - tools/oracle/cases/management/user-delete/audit-scheduled-before-later-error.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
+    _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
+    _invitation_link_table (L157-L163), _organization_table (L166-L172), _team_membership_table (L175-L181),
+    _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
+    (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
+    (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
+    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
+    (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
+    (L807-L813), _get_user_info_keys (L816-L824), _get_user_info_teams (L827-L876), _redact_scim_enterprise_metadata
+    (L884-L893), _build_user_info_response (L896-L924), user_info (L934-L1005), _check_user_info_v2_access
+    (L1008-L1064), user_info_v2 (L1074-L1170), _fetch_admin_teams_and_keys_rows (L1173-L1176), _get_user_info_for_proxy_admin
+    (L1179-L1241), _process_keys_for_user_info (L1244-L1283).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B792 owns _update_internal_user_params
+    (L1286-L1341), _schedule_user_update_audit_log (L1344-L1371), _check_user_update_authz (L1374-L1399),
+    _invalidate_user_spend_counter_if_changed (L1402-L1416), _clears_object_permission (L1419-L1428),
+    _invalidate_cached_user_entitlement (L1431-L1458), _update_single_user_helper (L1461-L1648), can_user_call_user_update
+    (L1651-L1663), user_update (L1672-L1753).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B795 owns bulk_update_processed_users
+    (L1756-L1831), bulk_user_update (L1841-L2064).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B796 owns get_user_key_counts (L2067-L2101),
+    _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
+    (L2205-L2215).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
+    (L413-L434), add_new_user_to_default_team (L437-L467).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:
+    no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The audit task and roster writes occur inside the validation loop despite the misleading upstream
+    comment about a second loop.
+  - BulkUserDeletion belongs to management_v1 users and would change /user/delete partial effects.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

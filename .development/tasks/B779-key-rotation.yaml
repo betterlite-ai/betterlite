@@ -1,0 +1,474 @@
+id: B779
+title: Regenerate keys with bounded overlap
+description: >-
+  Implement KeyRotationManager and register its server-owned scheduler after key regeneration routes exist.
+  The job cleans expired deprecated keys, selects due keys, calls the common authorized regeneration service
+  as the internal jobs principal, and continues after a per-key failure. Preserve Redis lock failure as
+  a skipped cycle and ensure shutdown drains the job.
+
+
+  Build the production key_rotation module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/key_rotation_manager.py:
+  KeyRotationManager.__init__ (L44-L46; 3 source lines), KeyRotationManager.process_rotations (L48-L111;
+  48 source lines), KeyRotationManager._find_keys_needing_rotation (L113-L133; 18 source lines), KeyRotationManager._cleanup_expired_deprecated_keys
+  (L135-L147; 13 source lines), KeyRotationManager._should_rotate_key (L149-L161; 9 source lines), KeyRotationManager._rotate_key
+  (L163-L208; 35 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS=600;
+  LITELLM_KEY_ROTATION_GRACE_PERIOD=''.
+
+
+  LITELLM_KEY_ROTATION_ENABLED="false"; LITELLM_KEY_ROTATION_CHECK_INTERVAL_SECONDS=86400; LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS=600
+  with max(value,300). The scheduler registration is proxy_server.py:11072-11108; B779 owns its native
+  equivalent.
+
+
+  Add the key_rotation operation under B856 Management::keys. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-rotation-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::key_rotation::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 126 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  126 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 413 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_rotation.rs
+    - crates/betterlite-server/src/key_rotation/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/key_rotation.rs
+    - tools/oracle/src/helpers/key_rotation/**
+    - tools/oracle/helpers/key_rotation.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/key-rotation/**
+    - tools/oracle/fuzz/corpus/helper_case/key-rotation-*
+    - crates/betterlite-server/src/key_rotation/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/key_rotation.rs
+    - crates/betterlite-config/src/key_rotation/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5448-L5986
+    why: Pinned implementation and exact ownership boundary for key_rotation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L1-L208
+    why: Pinned implementation and exact ownership boundary for key_rotation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487-L1495
+    why: RegenerateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L44-L46
+    why: Own KeyRotationManager.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L48-L111
+    why: Own KeyRotationManager.process_rotations; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L113-L133
+    why: Own KeyRotationManager._find_keys_needing_rotation; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L135-L147
+    why: Own KeyRotationManager._cleanup_expired_deprecated_keys; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L149-L161
+    why: Own KeyRotationManager._should_rotate_key; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L163-L208
+    why: Own KeyRotationManager._rotate_key; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11072-L11108
+    why: Scheduler ownership and enablement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1722-L1727
+    why: LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1719-L1724
+    why: LITELLM_KEY_ROTATION_GRACE_PERIOD default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: scheduled_due_key, rotation_not_due,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_rotation::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/key_rotation.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-rotation-*")"
+        && grep -rlq "key_rotation" tools/oracle/fuzz/corpus/helper_case/key-rotation-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_rotation::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_rotation::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^key_rotation::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*")"
+        && grep -rlq "LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS" crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-rotation/scheduled-due-key.yaml
+  - tools/oracle/cases/helpers/key-rotation/rotation-not-due.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5448-L5986
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
+    generate_service_account_key_fn (L2159-L2322).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
+    _UserRowLike.user_email (L185-L185), _UserRowLike.user_alias (L188-L188), _UserRowLike.model_dump
+    (L190-L190), _UserRowLike.dict (L192-L192), _KeyUpdateTx.litellm_verificationtoken (L237-L237), _KeyUpdateTx.litellm_budgettable
+    (L240-L240), _ConfigTableActions.find_many (L246-L246), _ConfigTableActions.update (L248-L253), _prisma_table
+    (L256-L261), _deleted_verification_token_table (L264-L267), _deprecated_verification_token_table (L270-L273),
+    _user_table (L276-L277), _credentials_table (L280-L283), _config_table (L286-L289), _LegacyDumpable.dict
+    (L466-L466), _legacy_model_dict (L469-L470), _as_object_dict (L473-L474), _model_items (L477-L478),
+    _EnvVarsParam.param_value (L483-L483), _env_vars_param_value (L486-L487).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B771 owns _check_custom_key_allowed
+    (L490-L503), _is_team_key (L506-L507), _is_allowed_to_make_key_request (L582-L605), _team_key_operation_team_member_check
+    (L608-L651), _key_generation_required_param_check (L654-L665), _team_key_generation_check (L668-L703),
+    _personal_key_membership_check (L706-L719), _object_permission_to_dict (L722-L727), _personal_key_generation_check
+    (L730-L755), key_generation_check (L758-L800), raise_on_invalid_key_logging_config (L803-L811), common_key_access_checks
+    (L814-L846), validate_team_id_used_in_service_account_request (L1074-L1102), _check_model_access_group
+    (L4494-L4513).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B772 owns _enforce_upperbound_key_params
+    (L1110-L1169), _check_key_model_specific_limits (L1565-L1633), _check_key_rpm_tpm_limits (L1636-L1671),
+    check_team_key_model_specific_limits (L1674-L1696), check_team_key_rpm_tpm_limits (L1699-L1713), _check_team_key_limits
+    (L1716-L1749), _check_project_key_limits (L1757-L1804), check_org_key_model_specific_limits (L1807-L1837),
+    check_org_key_rpm_tpm_limits (L1840-L1862), _validate_caller_can_assign_key_org (L1865-L1894), _check_org_key_limits
+    (L1897-L1937).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B773 owns _common_key_generation_helper
+    (L1172-L1562).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B774 owns _with_validated_object_permission
+    (L2914-L2936), _validate_mcp_servers_for_key_update (L2939-L2976), _acting_as_team_admin_for_key_update
+    (L3026-L3061), _validate_update_key_data (L3064-L3352).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B775 owns update_key_fn (L3357-L3617).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B776 owns bulk_update_keys (L3627-L3783),
+    _build_failed_team_key_update (L3786-L3812), bulk_update_team_keys (L3822-L4000).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B777 owns delete_key_fn (L4071-L4175),
+    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), _transform_verification_tokens_to_deleted_records
+    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
+    (L5171-L5188), delete_key_aliases (L5191-L5208).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B778 owns _build_model_max_budget_usage
+    (L4178-L4188), _window_max_budget (L4191-L4199), _budget_window_usage (L4202-L4228), _build_budget_limits_usage
+    (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491),
+    _can_user_query_key_info (L7606-L7627).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
+    (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
+    (L6056-L6087), _budget_limit_windows (L6090-L6104), _advance_one_key_budget_window (L6107-L6131),
+    _reset_key_budget_windows (L6134-L6172), reset_key_spend_fn (L6181-L6278).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B781 owns validate_key_list_check
+    (L6281-L6376), _fetch_user_team_objects (L6379-L6394), _get_admin_team_ids_from_objects (L6397-L6402),
+    _get_team_ids_with_key_list_permission_from_objects (L6405-L6422), _get_member_team_ids_from_objects
+    (L6425-L6437), _apply_non_admin_alias_scope (L6687-L6718).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B782 owns list_keys (L6492-L6684),
+    key_aliases (L6727-L6840).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B783 owns _check_key_admin_access
+    (L7237-L7285), block_key (L7290-L7399), unblock_key (L7404-L7513), key_health (L7523-L7603), test_key_logging
+    (L7630-L7703).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B785 owns _rotate_master_key (L5211-L5365),
+    _require_proxy_admin (L5368-L5375), migrate_encryption_endpoint (L5383-L5415), check_encryption_endpoint
+    (L5423-L5445).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B800 owns _get_user_in_team (L510-L517),
+    _get_caller_team_role (L520-L527).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B892 owns _validate_caller_can_change_key_ownership
+    (L873-L916), _check_allowed_routes_caller_permission (L919-L959), _is_safe_preset_route_transition
+    (L965-L981), _enforce_allowed_routes_update_permission (L984-L998), _check_permissions_caller_permission
+    (L1001-L1020), _check_budget_limits_delegation_ceiling (L1023-L1071).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B893 owns metadata_json_with_limits
+    (L4519-L4547), generate_key_helper_fn (L4550-L4854).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B894 owns prepare_metadata_fields
+    (L2325-L2373), _validate_soft_budget_value (L2376-L2381), _update_key_soft_budget (L2384-L2404), _apply_soft_budget_update
+    (L2407-L2423), _update_key_row_with_soft_budget (L2426-L2457), prepare_key_update_data (L2460-L2563),
+    _handle_update_object_permission (L2566-L2586), is_different_team (L2589-L2594), _validate_max_budget
+    (L2597-L2611), _resolve_token_to_update (L2685-L2695), _require_prisma_client (L2979-L2982), _requested_end_user_budget_id
+    (L2985-L2991), _general_settings (L3018-L3023).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B895 owns _check_regenerate_guardrail_opt_out
+    (L5701-L5713), regenerate_key_fn (L5727-L5986).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B896 owns get_new_token (L5448-L5467),
+    _insert_deprecated_key (L5470-L5528), _execute_virtual_key_regeneration (L5531-L5698).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B897 owns _derive_key_status (L6476-L6483),
+    _validate_sort_params (L6843-L6872), _build_expires_where_clause (L6875-L6878), _not_blocked_where_clause
+    (L6881-L6882), _build_status_where_clause (L6885-L6890), _build_key_search_where (L6893-L6900), _build_key_filter_conditions
+    (L6903-L7037), _list_key_helper (L7040-L7222), _get_condition_to_filter_out_ui_session_tokens (L7225-L7234).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1219 owns _get_and_validate_existing_key
+    (L2614-L2682), _validate_end_user_budget_id_change (L2994-L3012), validate_key_team_change (L4003-L4066).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1220 owns _process_single_key_update
+    (L2698-L2911).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1224 owns _custom_key_generate_hook
+    (L298-L301), _custom_key_update_hook (L304-L307), _custom_key_policy_hook (L310-L313), _enforce_custom_key_update_policy
+    (L316-L329), _enforce_custom_key_policy (L332-L345), _effective_key_after_update (L366-L375), _update_policy_request
+    (L378-L391), _generate_budget_windows (L394-L407), _effective_key_for_generate (L410-L444), _regenerate_request_as_update_request
+    (L450-L462), _calculate_key_rotation_time (L530-L542), _set_key_rotation_fields (L545-L579), parse_key_alias_pattern
+    (L7713-L7724), _key_alias_rule (L7727-L7736), _validate_key_alias_format (L7739-L7773), _enforce_unique_key_alias
+    (L7776-L7806), validate_model_max_budget (L7809-L7840), _decode_json_string_column (L355-L358), _verification_token_from_row
+    (L361-L363), handle_key_type (L852-L867).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::_team_key_deletion_check: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_admin_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_member_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
+    (L16320-L16351), model_group_info (L16359-L16581).'
+  - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
+    (L14190-L14205), non_admin_all_models (L14208-L14251), _add_team_models_to_all_models (L14254-L14297),
+    _add_access_group_models_to_team_models (L14300-L14356), get_all_team_models (L14359-L14404), _resolve_model_grant_to_deployment_ids
+    (L14407-L14430), get_direct_access_models (L14433-L14453), _filter_models_to_user_accessible (L14456-L14463),
+    _populate_team_access_on_models (L14466-L14519), get_all_team_and_direct_access_models (L14522-L14537).'
+  - 'litellm/proxy/proxy_server.py: B849 owns _enrich_model_info_with_litellm_data (L14540-L14610), _fetch_db_models_for_search
+    (L14671-L14735), _apply_search_filter_to_models (L14738-L14852), _normalize_datetime_for_sorting (L14855-L14894),
+    _sort_models (L14897-L14983), _is_auto_router_model (L14986-L14999), _model_in_access_group (L15002-L15007),
+    _matches_model_info_filters (L15010-L15020), _paginate_models_response (L15023-L15065).'
+  - 'litellm/proxy/proxy_server.py: B850 owns model_info_v2 (L15300-L15529).'
+  - 'litellm/proxy/proxy_server.py: B851 owns _deployment_matches_allowed_model_names (L15956-L15969),
+    _get_v1_model_info_allowed_model_names (L15972-L16001), _filter_v1_model_info_deployments (L16004-L16010),
+    _translate_model_name_for_response (L16013-L16037), _get_proxy_model_info (L16040-L16041), _model_info_json_response
+    (L16044-L16048), model_info_v1 (L16061-L16275).'
+  - 'litellm/proxy/proxy_server.py: B899 owns login (L16913-L17003), login_v2 (L17006-L17066), login_v3
+    (L17069-L17142), login_v3_exchange (L17145-L17206).'
+  - 'litellm/proxy/proxy_server.py: B1216 owns _get_caller_byok_team_scope (L14613-L14647), _byok_row_outside_caller_teams
+    (L14650-L14661), _team_models_resolve_to_names (L15068-L15076), _load_team_object_for_model_filter
+    (L15079-L15091), _gather_team_accessible_model_ids (L15094-L15142), _authorize_team_id_query (L15145-L15182),
+    _filter_models_by_team_id (L15185-L15249), _find_model_by_id (L15252-L15292).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'litellm/proxy/proxy_server.py: B124 owns the remaining functions showwarning (L195-L198), generate_feedback_box
+    (L236-L260), _redact_worker_config_for_logging (L997-L1015), cleanup_router_config_variables (L1055-L1092),
+    flush_spend_counters_on_shutdown (L1095-L1103), _flush_spend_logs_queue_on_shutdown (L1106-L1119),
+    proxy_shutdown_event (L1122-L1167), _initialize_shared_aiohttp_session (L1182-L1219), _connect_to_count_stored_values
+    (L1222-L1227), proxy_startup_event (L1230-L1645), _generate_stable_operation_id (L1648-L1653), _strip_operation_id_method_suffix
+    (L1677-L1681), ensure_unique_openapi_operation_ids (L1684-L1728), _inject_websocket_stubs_into_openapi_schema
+    (L1762-L1803), get_openapi_schema (L1806-L1846), custom_openapi (L1849-L1878), openai_exception_handler
+    (L1892-L1910), otlp_http_exception_handler (L1913-L1919), _log_model_access_denial (L1922-L1925),
+    _close_dangling_otel_server_span (L1928-L1963), management_problem_exception_handler (L1966-L1969),
+    _UserTeamsRow.teams (L2000-L2001), _config_param_table (L2007-L2010), otel_request_validation_exception_handler
+    (L2034-L2046), otel_unhandled_exception_handler (L2049-L2080), _get_cors_config (L2086-L2122), mount_swagger_ui
+    (L2477-L2558), general_settings_view (L2600-L2601), _gateway_request_redis_buffer (L2664-L2670), _resolve_typed_dict_type
+    (L2690-L2702), _resolve_pydantic_type (L2705-L2716), load_from_azure_key_vault (L2719-L2745), cost_tracking
+    (L2751-L2759), _drain_spend_event_producer_on_shutdown (L2762-L2766), _fail_closed_budget_enforcement
+    (L2774-L2775), _raise_budget_unverifiable (L2778-L2794), get_current_spend (L2797-L2875), _repair_stale_spend_counter
+    (L2878-L2912), reseed_spend_counter_from_db (L2915-L2936), _floor_spend_from_db (L2939-L2959), _authoritative_floor_spend
+    (L2962-L2995), read_spend_counter_cache_value (L2998-L3020), _read_spend_counter_estimate (L3023-L3042),
+    increment_spend_counters (L3045-L3093), _increment_spend_counters_batched (L3096-L3346), _reconcile_budget_reservation_for_counter_update
+    (L3358-L3391), _prepare_end_user_and_tag_spend_increments (L3394-L3429), _prepare_model_access_group_spend_increments
+    (L3432-L3462), _prepare_org_spend_increment (L3465-L3479), _prepare_project_spend_increment (L3482-L3496),
+    _prepare_unreserved_spend_counter_increment (L3499-L3512), _prepare_spend_counter_increment (L3515-L3541),
+    _enqueue_window_spend_row_update (L3544-L3590), _prepare_window_spend_counter_increment (L3593-L3617),
+    _ensure_spend_counter_initialized (L3620-L3637), _get_source_cache_base_spend (L3640-L3651), _ensure_window_spend_counter_initialized
+    (L3654-L3680), _is_spend_counter_cache_warm (L3683-L3711), increment_spend_counter (L3714-L3718),
+    refresh_spend_counter_ttl (L3721-L3728), _increment_spend_counter_cache (L3731-L3751), _invalidate_spend_counter
+    (L3754-L3765), _apply_spend_counter_increments (L3768-L3776), _defer_spend_counter_increments (L3779-L3792),
+    _settle_spend_counter_increment (L3795-L3811), increment_spend_counters_pipeline (L3814-L3823), run_spend_counter_pipeline
+    (L3826-L3850), update_cache_read_keys (L3853-L3866), arm_update_cache_read (L3872-L3881), _take_armed_update_cache_read
+    (L3884-L3892), _read_update_cache_values (L3895-L3920), update_cache (L3923-L4223), run_ollama_serve
+    (L4226-L4236), _get_process_rss_mb (L4239-L4252), _rss_mb_for_log (L4255-L4259), _run_direct_health_check_with_instrumentation
+    (L4265-L4297), _window_gated_health_check_db_save (L4300-L4332), _schedule_background_health_check_db_save
+    (L4335-L4364), _get_endpoint_exception_status (L4367-L4378), _write_health_state_to_router_cache (L4381-L4466),
+    _adaptive_router_flusher_loop (L4472-L4500), _run_background_health_check (L4503-L4678), _is_remote_module_url
+    (L4715-L4716), _scrub_guardrail_inner (L4719-L4736), _scrub_db_overlay_remote_module_loads (L4739-L4836),
+    _normalize_user_url_validation (L4839-L4844), _apply_ssrf_general_settings (L4847-L4858), _set_redis_usage_cache
+    (L4861-L4864), _resolve_coordination_redis_env_refs (L4867-L4872), _build_redis_usage_cache (L4875-L4891),
+    _environment_has_redis_connection_target (L4894-L4907), _build_redis_usage_cache_from_environment
+    (L4910-L4923), _attach_redis_usage_cache (L4926-L4962), resolve_routing_plugins (L4965-L5000), resolve_complexity_router_plugins
+    (L5003-L5028), validate_deployment_max_agentic_loops (L5031-L5051), validate_deployment_complexity_router_placement
+    (L5054-L5073), validate_deployment_access_windows (L5076-L5089), validate_auto_router_capability_limits
+    (L5092-L5113), pin_complexity_router_model_id (L5116-L5135), resolve_classifier_plugin (L5138-L5158),
+    _swap_in_model_cost_map (L5161-L5164), _websearch_handler_params (L5167-L5180), should_load_db_object
+    (L5183-L5205), _ConfigWithBaseline.__init__ (L5237-L5241), _ConfigWithBaseline.baseline (L5243-L5245),
+    _ConfigWithBaseline.update_baseline (L5247-L5248), _as_settings_mapping (L5257-L5260), _get_field_default
+    (L5263-L5266), _pass_through_endpoints_beside_db (L5269-L5276), _with_config_file_pass_through_endpoints
+    (L5279-L5292), _reload_settings_store (L5295-L5300), _bind_general_settings_store (L5303-L5305), _current_general_settings
+    (L5308-L5310), _cleanup_schedule_of (L5323-L5324), _log_ignored_cost_map_copy (L5327-L5334), _callback_list_entries
+    (L5349-L5350), _registered_callback_entries (L5353-L5354), _entries_missing_from (L5357-L5361), _restore_displaced_callback
+    (L5370-L5373), _unregister_db_callback (L5376-L5382), _configured_db_callbacks (L5385-L5389), ProxyConfig.__init__
+    (L5397-L5433), ProxyConfig._load_yaml_settings_stores (L5435-L5437), ProxyConfig._config_with_resolved_settings
+    (L5439-L5451), ProxyConfig._apply_resolved_runtime_settings (L5453-L5456), ProxyConfig.is_yaml (L5458-L5463),
+    ProxyConfig._load_yaml_file (L5465-L5473), ProxyConfig._get_config_from_file (L5475-L5509), ProxyConfig._process_includes
+    (L5511-L5540), ProxyConfig.save_config (L5542-L5588), ProxyConfig._save_changed_config_section (L5590-L5627),
+    ProxyConfig.reject_config_owned_deletes (L5629-L5636), ProxyConfig.reject_config_owned_writes (L5638-L5646),
+    ProxyConfig._raise_config_owned (L5648-L5672), ProxyConfig._upsert_changed_config_section (L5674-L5712),
+    ProxyConfig.save_environment_variables (L5714-L5746), ProxyConfig._check_for_os_environ_vars (L5748-L5770),
+    ProxyConfig._resolved_config_value (L5772-L5787), ProxyConfig._initialize_secret_manager_from_raw_config
+    (L5789-L5830), ProxyConfig._get_team_config (L5832-L5843), ProxyConfig.load_team_config (L5845-L5860),
+    ProxyConfig._init_coordination_redis (L5862-L5896), ProxyConfig._init_coordination_redis_env_fallback
+    (L5898-L5953), ProxyConfig._init_cache (L5955-L5999), ProxyConfig.switch_on_llm_response_caching (L6001-L6012),
+    ProxyConfig.get_config (L6014-L6076), ProxyConfig.update_config_state (L6078-L6079), ProxyConfig.get_config_state
+    (L6081-L6095), ProxyConfig.load_credential_list (L6097-L6105), ProxyConfig.parse_search_tools (L6107-L6160),
+    ProxyConfig._load_environment_variables (L6181-L6220), ProxyConfig._warn_on_misplaced_jwt_keys (L6222-L6233),
+    ProxyConfig.load_config (L6235-L7044), ProxyConfig._init_non_llm_configs (L7046-L7098), ProxyConfig._init_policy_engine
+    (L7100-L7138), ProxyConfig._load_alerting_settings (L7140-L7177), ProxyConfig.initialize_secret_manager
+    (L7179-L7239), ProxyConfig.get_model_info_with_id (L7241-L7277), ProxyConfig._delete_deployment (L7279-L7362),
+    ProxyConfig._resolve_db_litellm_param (L7364-L7371), ProxyConfig._add_deployment (L7373-L7413), ProxyConfig.decrypt_model_list_from_db
+    (L7415-L7441), ProxyConfig._update_llm_router (L7443-L7518), ProxyConfig._add_callback_from_db_to_in_memory_litellm_callbacks
+    (L7520-L7543), ProxyConfig._add_callbacks_from_db_config (L7545-L7559), ProxyConfig._register_db_config_callback
+    (L7561-L7573), ProxyConfig._encrypt_env_variables (L7575-L7583), ProxyConfig._decrypt_and_set_db_env_variables
+    (L7585-L7612), ProxyConfig._decrypt_db_variables (L7614-L7622), ProxyConfig._encrypt_env_variables_for_db
+    (L7624-L7643), ProxyConfig._parse_router_settings_value (L7645-L7671), ProxyConfig.get_hierarchical_router_settings
+    (L7673-L7679), ProxyConfig._get_hierarchical_router_settings (L7681-L7725), ProxyConfig._add_router_settings_from_db_config
+    (L7727-L7745), ProxyConfig._apply_router_settings (L7747-L7759), ProxyConfig._reschedule_spend_log_cleanup_job
+    (L7761-L7801), ProxyConfig._spend_log_cleanup_trigger (L7803-L7831), ProxyConfig._update_general_settings
+    (L7833-L7847), ProxyConfig._resolved_cleanup_schedule (L7849-L7850), ProxyConfig.record_cleanup_schedule_attempt
+    (L7852-L7853), ProxyConfig._apply_general_settings_side_effects (L7855-L7871), ProxyConfig._apply_alerting_settings
+    (L7873-L7894), ProxyConfig._apply_pass_through_settings (L7896-L7902), ProxyConfig._publish_pass_through_endpoints
+    (L7904-L7907), ProxyConfig._serve_pass_through_endpoints (L7909-L7911), ProxyConfig._apply_boolean_settings
+    (L7913-L7922), ProxyConfig._apply_cache_size_setting (L7924-L7949), ProxyConfig._apply_store_model_in_db_setting
+    (L7951-L7961), ProxyConfig._apply_retention_settings (L7963-L7995), ProxyConfig._apply_ssrf_settings
+    (L7997-L7998), ProxyConfig._update_config_from_db (L8000-L8030), ProxyConfig._warn_about_shadowed_db_settings
+    (L8032-L8040), ProxyConfig._prepared_db_settings_values (L8042-L8056), ProxyConfig._apply_litellm_settings_db_values
+    (L8058-L8062), ProxyConfig._should_load_db_object (L8064-L8065), ProxyConfig.remove_auto_router_catalog_entries
+    (L8067-L8071), ProxyConfig._get_models_from_db (L8073-L8099), ProxyConfig.add_deployment (L8101-L8130),
+    ProxyConfig._add_deployment_locked (L8132-L8187), ProxyConfig.start_config_sync_subscriber (L8189-L8206),
+    ProxyConfig.stop_config_sync_subscriber (L8208-L8216), ProxyConfig.start_auth_cache_invalidation_subscriber
+    (L8218-L8231), ProxyConfig.stop_auth_cache_invalidation_subscriber (L8233-L8241), ProxyConfig._init_non_llm_objects_in_db
+    (L8243-L8301), ProxyConfig._apply_safe_litellm_settings_overrides_from_db (L8303-L8309), ProxyConfig._init_semantic_filter_settings_in_db
+    (L8311-L8373), ProxyConfig.init_websearch_interception_settings_in_db (L8375-L8433), ProxyConfig._init_sso_settings_in_db
+    (L8435-L8458), ProxyConfig._init_hashicorp_vault_config_override (L8460-L8518), ProxyConfig._init_cyberark_config_override
+    (L8520-L8576), ProxyConfig.check_periodic_reloads (L8578-L8586), ProxyConfig._check_and_reload_model_cost_map
+    (L8588-L8634), ProxyConfig._check_and_reload_anthropic_beta_headers (L8636-L8731), ProxyConfig._get_prompt_spec_for_db_prompt
+    (L8733-L8747), ProxyConfig._init_prompts_in_db (L8749-L8793), ProxyConfig._init_guardrails_in_db (L8795-L8832),
+    ProxyConfig._init_policies_in_db (L8834-L8856), ProxyConfig._init_tool_policy_in_db (L8858-L8870),
+    ProxyConfig._init_vector_stores_in_db (L8872-L8889), ProxyConfig._init_vector_store_indexes_in_db
+    (L8891-L8913), ProxyConfig._init_mcp_servers_in_db (L8915-L8951), ProxyConfig.init_mcp_servers_from_db
+    (L8953-L8955), ProxyConfig.reload_mcp_servers_from_db (L8957-L8980), ProxyConfig._init_agents_in_db
+    (L8982-L8995), ProxyConfig._init_search_tools_in_db (L8997-L9037), ProxyConfig.reload_search_tools_from_db
+    (L9039-L9057), ProxyConfig._merge_config_and_db_search_tools (L9059-L9072), ProxyConfig._init_pass_through_endpoints_in_db
+    (L9074-L9079), ProxyConfig.decrypt_credentials (L9081-L9092), ProxyConfig.delete_credentials (L9094-L9113),
+    ProxyConfig.get_credentials (L9115-L9125), save_worker_config (L9131-L9134), initialize_from_worker_config
+    (L9140-L9142), initialize (L9145-L9276), data_generator (L9280-L9287), async_assistants_data_generator
+    (L9290-L9341), _get_client_requested_model_for_streaming (L9344-L9356), _is_positive_int_like (L9359-L9363),
+    _should_include_fallback_errors (L9366-L9369), _get_streaming_fallback_metadata (L9372-L9386), _format_fallback_metadata_sse_event
+    (L9389-L9407), _restamp_streaming_chunk_model (L9410-L9473), _fast_serialize_simple_model_response_stream
+    (L9476-L9551), _serialize_streaming_chunk (L9554-L9560), _is_injected_stream_usage_artifact (L9563-L9568),
+    _is_empty_streaming_choice (L9571-L9579), _apply_streaming_chunk_hooks (L9582-L9600), _format_streaming_sse_chunk
+    (L9603-L9606), _pop_complete_sse_frame (L9614-L9623), _iter_with_keepalive (L9634-L9682), _keepalive_from_deployment_config
+    (L9690-L9732), _is_explicit_keepalive_disable (L9735-L9741), _resolve_keepalive_seconds (L9744-L9785),
+    _make_keepalive_resolver (L9791-L9827), async_data_generator (L9830-L10079), select_data_generator
+    (L10082-L10096), _pricing_override_stamps (L10099-L10105), get_litellm_model_info (L10108-L10119),
+    on_backoff (L10122-L10124), giveup (L10127-L10140), ProxyStartupEvent._attach_router_to_prompt_injection_detectors
+    (L10144-L10150), ProxyStartupEvent.refresh_model_info (L10152-L10155), ProxyStartupEvent._warn_budget_without_db
+    (L10157-L10168), ProxyStartupEvent._warn_fail_closed_rate_limits_without_redis (L10170-L10182), ProxyStartupEvent._initialize_startup_logging
+    (L10184-L10195), ProxyStartupEvent._warn_if_mock_testing_params_enabled (L10197-L10226), ProxyStartupEvent._validate_redis_transaction_buffer_config
+    (L10228-L10256), ProxyStartupEvent._init_coordination_redis_from_db (L10258-L10298), ProxyStartupEvent._get_transaction_buffer_redis_cache
+    (L10300-L10321), ProxyStartupEvent._initialize_semantic_tool_filter (L10323-L10354), ProxyStartupEvent._initialize_jwt_auth
+    (L10356-L10388), ProxyStartupEvent._add_proxy_budget_to_db (L10390-L10396), ProxyStartupEvent._upsert_proxy_budget_with_reset_at_backfill
+    (L10398-L10449), ProxyStartupEvent._warm_global_spend_cache (L10451-L10466), ProxyStartupEvent._update_default_team_member_budget
+    (L10468-L10484), ProxyStartupEvent._sync_ui_settings_to_general_settings (L10486-L10493), ProxyStartupEvent._load_heuristic_v1_tuning_baselines
+    (L10495-L10540), ProxyStartupEvent.enforce_heuristic_v1_tuning_baseline (L10542-L10560), ProxyStartupEvent.initialize_scheduled_background_jobs
+    (L10562-L10990), ProxyStartupEvent._initialize_spend_tracking_background_jobs (L10992-L11110), ProxyStartupEvent._initialize_expired_ui_session_key_cleanup_background_job
+    (L11112-L11168), ProxyStartupEvent._initialize_spend_capture_rate_check_job (L11170-L11219), ProxyStartupEvent._spend_capture_rate_check_settings
+    (L11221-L11226), ProxyStartupEvent._initialize_slack_alerting_jobs (L11228-L11344), ProxyStartupEvent._setup_prisma_client
+    (L11346-L11399), ProxyStartupEvent._init_dd_tracer (L11401-L11424), ProxyStartupEvent._init_pyroscope
+    (L11426-L11507), _names_hidden_by_listing_callbacks (L11511-L11524), _entries_kept_by_listing_callbacks
+    (L11527-L11535), _deployment_hidden_by_listing_callbacks (L11538-L11542), model_list (L11545-L11784),
+    model_info (L11787-L11912), _blocked_response_usage (L11915-L11928), chat_completion (L11931-L12102),
+    completion (L12105-L12272), embeddings (L12275-L12395), moderations (L12398-L12507), _audio_speech_chunk_generator
+    (L12510-L12519), audio_speech (L12522-L12652), audio_transcriptions (L12655-L12803), vertex_ai_live_passthrough_endpoint
+    (L12813-L12845), _realtime_query_params_template (L12855-L12866), _release_realtime_budget_reservation
+    (L12869-L12876), _release_realtime_max_parallel_slot (L12879-L12883), _reject_realtime_session (L12886-L12905),
+    realtime_websocket_endpoint (L12908-L13045), get_assistants (L13056-L13143), create_assistant (L13146-L13233),
+    delete_assistant (L13236-L13322), create_threads (L13325-L13411), get_thread (L13414-L13498), add_messages
+    (L13501-L13589), get_messages (L13592-L13676), run_thread (L13679-L13798), _get_provider_token_counter
+    (L13824-L13876), _try_provider_token_count (L13879-L13926), _system_message (L13929-L13933), token_counter
+    (L13936-L14058), supported_openai_params (L14061-L14096), model_info_lookup (L14105-L14136), transform_request
+    (L14139-L14158), model_streaming_metrics (L15532-L15661), model_metrics (L15664-L15776), model_metrics_slow_responses
+    (L15779-L15865), model_metrics_exceptions (L15868-L15953), model_settings (L16584-L16611), _nested_setting_source
+    (L16617-L16630), alerting_settings (L16633-L16754), async_queue_request (L16758-L16884), fallback_login
+    (L16887-L16910), onboarding (L17209-L17303), _get_onboarding_claims_from_request (L17306-L17340),
+    _rollback_onboarding_invite_claim (L17343-L17363), _generate_onboarding_ui_session_token (L17366-L17408),
+    claim_onboarding_link (L17411-L17552), get_logo_url (L17555-L17570), _serve_custom_ui_logo (L17573-L17593),
+    get_image (L17596-L17668), get_favicon (L17671-L17701), new_invitation (L17707-L17775), invitation_info
+    (L17778-L17820), invitation_update (L17823-L17877), invitation_delete (L17880-L17950), update_config
+    (L17954-L18171), _preserve_redacted_plugin_keys (L18225-L18255), update_config_general_settings (L18258-L18370),
+    _is_secret_general_setting_field (L18373-L18374), _redact_secret_values_in_obj (L18384-L18399), _redact_config_param_value_for_logging
+    (L18402-L18407), _redact_general_setting_value (L18410-L18417), _dump_redacted_config (L18420-L18429),
+    create_config_audit_log (L18432-L18458), _redact_callback_env_vars (L18473-L18485), _apply_callback_role_gate
+    (L18488-L18491), _apply_alerting_env_role_gate (L18499-L18502), _apply_webhook_role_gate (L18505-L18508),
+    _declared_general_setting (L18511-L18522), get_config_general_settings (L18525-L18585), _general_settings_ui_litellm_default
+    (L18651-L18657), _validate_general_settings_ui_litellm_value (L18660-L18696), _persist_general_settings_ui_litellm_field
+    (L18699-L18712), _reset_general_settings_ui_litellm_field (L18715-L18725), get_config_list (L18728-L18901),
+    delete_config_general_settings (L18904-L18988), delete_callback (L18991-L19078), _normalize_callback_alias
+    (L19081-L19091), _callback_module_name (L19094-L19099), _is_litellm_internal_callback (L19102-L19107),
+    _is_instance_of_configured_callback (L19110-L19118), _hidden_runtime_callback_names (L19121-L19138),
+    get_config (L19141-L19306), config_yaml_endpoint (L19309-L19332), reload_model_cost_map (L19335-L19400),
+    schedule_model_cost_map_reload (L19403-L19449), cancel_model_cost_map_reload (L19452-L19489), get_model_cost_map_reload_status
+    (L19492-L19531), get_model_cost_map_source (L19534-L19582), reload_anthropic_beta_headers (L19588-L19658),
+    schedule_anthropic_beta_headers_reload (L19661-L19718), cancel_anthropic_beta_headers_reload (L19721-L19763),
+    get_anthropic_beta_headers_reload_status (L19766-L19857), home (L19860-L19862), get_adaptive_router_state
+    (L19865-L19897), get_routes (L19900-L19921), _stream_mcp_asgi_response (L20042-L20111), proxy_mcp_route
+    (L20119-L20141), aggregate_mcp_route (L20144-L20164), toolset_mcp_route (L20169-L20214), _mcp_forward_as_path
+    (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
+    dynamic_mcp_route (L20308-L20379).'
+pitfalls:
+  - The rotation lock TTL is independent of the daily scheduler interval and has a 300-second floor.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: security

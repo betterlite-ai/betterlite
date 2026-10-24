@@ -1,0 +1,123 @@
+id: B719
+title: Compatibility views and one-time database repairs
+description: >-
+  Create only the pinned compatibility views and race-tolerant existence checks. Keep selected columns
+  and joins exact and warn on the source insufficient-privilege path. Offline team repair and CSV token
+  import belong to B874.
+
+
+  Build the production database_views module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/create_views.py:
+  SupportsExecuteRaw.execute_raw (L10-L10; 1 source lines), SupportsRawQueries.query_raw (L16-L16; 1 source
+  lines), create_view_tolerating_race (L30-L46; 16 source lines), create_missing_views (L49-L248; 189
+  source lines), should_create_missing_views (L251-L279; 24 source lines). db_scripts/create_views.py:
+  check_view_exists (L18-L204; 166 source lines).
+
+
+  Also write tools/betterlite-db-admin::database_views::tests::dispatches_native_operation and rejects_bad_arguments;
+  the admin command check must fail without these real CLI dispatch tests.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 397 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  397 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 572 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_views.rs
+    - crates/betterlite-db/src/database_views/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.toml
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/database_views.rs
+    - tools/betterlite-db-admin/src/database_views/**
+    - crates/betterlite-db/src/database_views/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L1-L279
+    why: Pinned implementation and exact ownership boundary for database_views.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/create_views.py#L1-L207
+    why: Pinned implementation and exact ownership boundary for database_views.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L1-L34
+    why: Pinned implementation and exact ownership boundary for database_views.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L1-L187
+    why: Pinned implementation and exact ownership boundary for database_views.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L10-L10
+    why: Own SupportsExecuteRaw.execute_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L16-L16
+    why: Own SupportsRawQueries.query_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L30-L46
+    why: Own create_view_tolerating_race; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L49-L248
+    why: Own create_missing_views; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/create_views.py#L251-L279
+    why: Own should_create_missing_views; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/create_views.py#L18-L204
+    why: Own check_view_exists; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: joined_token_view, concurrent_create_race,
+      view_privilege_warning, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The offline admin command invokes the native operation and preserves its exit/error contract.
+    proof:
+      - admin-tests
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_views::tests::/)
+        - test(/replays_the_/)'
+    - id: admin-tests
+      why: The offline command does not dispatch the named native operation or reject bad arguments.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^database_views::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_views::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_views::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'db_scripts/migrate_keys.py: B874 owns parse_csv_value (L17-L50), migrate_verification_tokens (L53-L183).'
+  - 'db_scripts/update_unassigned_teams.py: B874 owns apply_db_fixes (L5-L34).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Only the specific concurrent-create SQLSTATE is tolerated; arbitrary SQL errors are not proof the
+    view exists.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: standard

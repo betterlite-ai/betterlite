@@ -1,0 +1,170 @@
+id: B862
+title: Membership budget merge-patch persistence
+description: >-
+  Implement MemberBudgetPatch with explicit absent, null and set states and transactional membership writes.
+  Preserve clone-on-write of shared team-default budgets, temporary-only override inheritance, carried
+  budget_reset_at, and disconnection when no meaningful limit remains. Empty allowed_models and None do
+  not count as limits. Callers supply the existing writer transaction.
+
+
+  Build the production member_budget_patch module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/common_utils.py:
+  _prisma_value (L488-L489; 2 source lines), member_budget_patch (L492-L501; 10 source lines), _is_set_budget_value
+  (L504-L509; 6 source lines), _has_meaningful_budget_limit (L512-L515; 4 source lines), _upsert_budget_and_membership
+  (L518-L636; 106 source lines). litellm/proxy/management_helpers/utils.py: handle_budget_for_entity (L180-L264;
+  62 source lines), _clone_team_default_budget_for_member (L283-L333; 41 source lines), _resolve_member_budget_id
+  (L336-L390; 50 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the member_budget_patch operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a member-budget-patch-* seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 281 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  281 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 530 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/member_budget_patch.rs
+    - crates/betterlite-server/src/member_budget_patch/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/member_budget_patch.rs
+    - tools/oracle/src/helpers/member_budget_patch/**
+    - tools/oracle/helpers/member_budget_patch.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/member-budget-patch/**
+    - tools/oracle/fuzz/corpus/helper_case/member-budget-patch-*
+    - crates/betterlite-server/src/member_budget_patch/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L488-L489
+    why: Own _prisma_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L492-L501
+    why: Own member_budget_patch; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L504-L509
+    why: Own _is_set_budget_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L512-L515
+    why: Own _has_meaningful_budget_limit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L518-L636
+    why: Own _upsert_budget_and_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L180-L264
+    why: Own handle_budget_for_entity; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L283-L333
+    why: Own _clone_team_default_budget_for_member; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L336-L390
+    why: Own _resolve_member_budget_id; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: absent_keeps, null_clears,
+      shared_default_clone, temporary_only_inherits, carried_window, no_limits_disconnect, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_budget_patch::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/member_budget_patch.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/member-budget-patch-*")"
+        && grep -rlq "member_budget_patch" tools/oracle/fuzz/corpus/helper_case/member-budget-patch-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/member_budget_patch::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/member_budget_patch::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/member-budget-patch/absent-keeps.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/null-clears.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/shared-default-clone.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/temporary-only-inherits.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/carried-window.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/no-limits-disconnect.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B861 owns validate_finite_spend (L13-L24), validate_budget_duration
+    (L27-L41), validate_team_model_max_budget (L77-L123), require_caller_user_id_for_non_admin (L126-L150),
+    _check_passthrough_routes_caller_permission (L153-L177), _check_disable_global_guardrails_caller_permission
+    (L180-L205), _set_object_metadata_field (L432-L456), _update_metadata_field (L639-L661), _update_metadata_fields
+    (L675-L688).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B863 owns _user_has_admin_privileges (L224-L287),
+    _org_admin_can_invite_user (L290-L317), _team_admin_can_invite_user (L320-L356), admin_can_invite_user
+    (L359-L429).'
+  - 'litellm/proxy/management_endpoints/common_utils.py::_has_non_empty_value: no production caller at
+    the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache
+    (L517-L528), _delete_team_id_from_cache (L531-L542), _delete_customer_id_from_cache (L545-L556), management_endpoint_wrapper
+    (L755-L823).'
+  - 'litellm/proxy/management_helpers/utils.py: B1227 owns _user_table (L112-L113), _budget_table (L116-L117),
+    _team_membership_table (L120-L121), _find_users_by_email (L124-L134), _upsert_user_row (L137-L150),
+    _create_user_row (L153-L158), get_new_internal_user_defaults (L161-L177), _append_team_id_if_absent
+    (L393-L408), add_new_member (L411-L500), _PrismaRecord.model_dump (L47-L47), _PrismaUserRecord.model_dump
+    (L55-L55), _PrismaBudgetRecord.model_dump (L63-L63), _PrismaBudgetTable.create (L69-L69), _PrismaBudgetTable.find_unique
+    (L71-L71), _PrismaUserTable.update_many (L77-L77), _PrismaUserTable.upsert (L79-L81), _PrismaUserTable.find_many
+    (L83-L83), _PrismaTeamMembershipTable.upsert (L89-L91), MemberWriteTx.litellm_usertable (L102-L103),
+    MemberWriteTx.litellm_budgettable (L105-L106), MemberWriteTx.litellm_teammembership (L108-L109).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns _object_mapping (L609-L611), _object_list (L614-L616),
+    _redacted_env_var (L619-L626), _redact_record_env_vars (L629-L647), _redact_env_var_values (L650-L666).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns send_management_endpoint_alert (L559-L606)
+    and _emit_management_endpoint_otel_span (L669-L752) as typed event/payload projections. B116 and B110
+    implement the injected alert and OTel transports.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve clone-on-write of shared team-default budgets, temporary-only override inheritance, carried
+    budget_reset_at, and disconnection when no meaningful limit remains.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

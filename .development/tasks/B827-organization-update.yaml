@@ -1,0 +1,175 @@
+id: B827
+title: Organization update and deletion routes
+description: >-
+  Implement legacy /organization/update, /v2/organization/{organization_id} and delete routes using OrganizationPatch.
+  Preserve nested budget/object permissions, key deletion and transaction behavior; update entitlements
+  only after commit and do not drop members on unrelated patches.
+
+
+  Build the production organization_update module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/organization_endpoints.py:
+  update_organization (L699-L808; 85 source lines), handle_update_object_permission (L811-L835; 19 source
+  lines), update_organization_v2 (L844-L997; 141 source lines), delete_organization (L1006-L1057; 42 source
+  lines), _delete_organization_keys (L1060-L1079; 20 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Register these actual HTTP routes and aliases exactly once: PATCH /organization/update -> update_organization;
+  PATCH /v2/organization/{organization_id} -> update_organization_v2; DELETE /organization/delete -> delete_organization.
+  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
+  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
+  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
+  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
+  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
+  management error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 307 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  307 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 526 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/organization_update.rs
+    - crates/betterlite-server/src/organization_update/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/organization-update/**
+    - crates/betterlite-server/src/organization_update/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L666-L1079
+    why: Pinned implementation and exact ownership boundary for organization_update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2432-L2444
+    why: NewOrganizationRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2451-L2452
+    why: DeleteOrganizationRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3634-L3655
+    why: OrganizationUpdateRequestV2 request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L699-L808
+    why: Own update_organization; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L811-L835
+    why: Own handle_update_object_permission; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L844-L997
+    why: Own update_organization_v2; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1006-L1057
+    why: Own delete_organization; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1060-L1079
+    why: Own _delete_organization_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: legacy_update, v2_null_clear,
+      nested_budget_update, object_permission_upsert, delete_org_keys, rollback, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_update::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_update::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_update::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/management/organization-update/patch--organization-update-success.yaml
+  - tools/oracle/cases/management/organization-update/patch--organization-update-invalid-target.yaml
+  - tools/oracle/cases/management/organization-update/patch--organization-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-success.yaml
+  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-invalid-target.yaml
+  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/organization-update/delete--organization-delete-success.yaml
+  - tools/oracle/cases/management/organization-update/delete--organization-delete-invalid-target.yaml
+  - tools/oracle/cases/management/organization-update/delete--organization-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/organization-update/legacy-update.yaml
+  - tools/oracle/cases/management/organization-update/v2-null-clear.yaml
+  - tools/oracle/cases/management/organization-update/nested-budget-update.yaml
+  - tools/oracle/cases/management/organization-update/object-permission-upsert.yaml
+  - tools/oracle/cases/management/organization-update/delete-org-keys.yaml
+  - tools/oracle/cases/management/organization-update/rollback.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B058 owns get_organization_daily_activity
+    (L565-L613), resolve_organization_daily_activity_scope (L621-L663).'
+  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B826 owns _enterprise_license_required
+    (L96-L108), _ObjectPermissionRow.object_permission_id (L116-L116), _UserTableClient.find_unique (L120-L120),
+    _BudgetTableClient.create (L124-L124), _ObjectPermissionTableClient.create (L128-L128), _OrganizationTableClient.create
+    (L132-L134), _OrganizationTableClient.find_unique (L136-L138), _OrganizationTableClient.find_many
+    (L140-L144), _OrganizationTableClient.update (L146-L151), _OrganizationTableClient.delete (L153-L155),
+    _OrganizationMembershipTableClient.create (L159-L159), _OrganizationMembershipTableClient.find_unique
+    (L161-L163), _OrganizationMembershipTableClient.find_many (L165-L167), _OrganizationMembershipTableClient.update
+    (L169-L171), _OrganizationMembershipTableClient.delete (L173-L173), _OrganizationMembershipTableClient.delete_many
+    (L175-L175), _TeamTableClient.delete_many (L179-L179), _VerificationTokenTableClient.find_many (L183-L183),
+    _VerificationTokenTableClient.delete_many (L185-L185), _ObjectPermissionTxClient.upsert (L193-L195),
+    _BudgetTxClient.update (L199-L199), _TransactionTables.litellm_objectpermissiontable (L204-L204),
+    _TransactionTables.litellm_budgettable (L207-L207), _TransactionTables.litellm_organizationtable (L210-L210),
+    _TransactionManager.__aenter__ (L214-L214), _TransactionManager.__aexit__ (L216-L221), _table (L225-L225),
+    _table (L229-L229), _table (L233-L233), _table (L237-L237), _table (L241-L241), _table (L245-L245),
+    _table (L249-L249), _table (L252-L262), _verify_org_access (L265-L306), build_budget_write_data (L317-L333),
+    handle_nested_budget_structure_in_organization_update_request (L336-L357), new_organization (L366-L557),
+    _set_object_permission (L666-L690).'
+  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B828 owns organization_member_add (L1281-L1397),
+    find_member_if_email (L1400-L1420), organization_member_update (L1430-L1572), organization_member_delete
+    (L1580-L1621), add_member_to_organization (L1624-L1706).'
+  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B1212 owns list_organization (L1088-L1185),
+    info_organization (L1194-L1232), deprecated_info_organization (L1240-L1271).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Organization patch omissions must not clear memberships or nested object permissions.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

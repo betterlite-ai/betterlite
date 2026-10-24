@@ -1,0 +1,179 @@
+id: B759
+title: Expand authorized model lists and fallbacks
+description: >-
+  Implement AuthorizedModels over catalog snapshots, visible key/team grants, access groups and wildcard
+  deployment expansion. Keep wildcard credentials loaded through an injected credential lookup, never
+  expose secrets in listing rows, and return all fallback names without granting them implicitly.
+
+
+  Build the production auth_model_lists module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/model_checks.py:
+  _check_wildcard_routing (L24-L35; 11 source lines), get_provider_models (L38-L48; 10 source lines),
+  _get_models_from_access_groups (L51-L68; 16 source lines), get_mcp_server_ids (L71-L94; 20 source lines),
+  get_key_models (L97-L138; 38 source lines), get_team_models (L141-L180; 34 source lines), get_complete_model_list
+  (L183-L244; 51 source lines), _hydrate_litellm_credential_name (L247-L262; 14 source lines), get_known_models_from_wildcard
+  (L265-L323; 43 source lines), expand_wildcard_deployments_for_model_info (L326-L377; 44 source lines),
+  _get_wildcard_models (L380-L410; 27 source lines), get_all_fallbacks (L413-L457; 36 source lines).
+
+
+  Add the auth_model_lists operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-model-lists-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 344 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  344 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 622 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Server wiring tests live under betterlite-server::auth::auth_model_lists::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_model_lists.rs
+    - crates/betterlite-auth/src/auth_model_lists/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/auth_model_lists.rs
+    - tools/oracle/src/helpers/auth_model_lists/**
+    - tools/oracle/helpers/auth_model_lists.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/auth-model-lists/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-model-lists-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/auth-model-lists/**
+    - crates/betterlite-server/src/auth/auth_model_lists.rs
+    - crates/betterlite-server/src/auth/auth_model_lists/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L1-L457
+    why: Pinned implementation and exact ownership boundary for auth_model_lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L24-L35
+    why: Own _check_wildcard_routing; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L38-L48
+    why: Own get_provider_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L51-L68
+    why: Own _get_models_from_access_groups; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L71-L94
+    why: Own get_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L97-L138
+    why: Own get_key_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L141-L180
+    why: Own get_team_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L183-L244
+    why: Own get_complete_model_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L247-L262
+    why: Own _hydrate_litellm_credential_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L265-L323
+    why: Own get_known_models_from_wildcard; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L326-L377
+    why: Own expand_wildcard_deployments_for_model_info; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L380-L410
+    why: Own _get_wildcard_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L413-L457
+    why: Own get_all_fallbacks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_team_list_intersection,
+      wildcard_known_models, team_public_name, credential_hydration, fallback_list, mcp_grants.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_model_lists::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/auth_model_lists.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-model-lists-*")"
+        && grep -rlq "auth_model_lists" tools/oracle/fuzz/corpus/helper_case/auth-model-lists-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_model_lists::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-model-lists/key-team-list-intersection.yaml
+  - tools/oracle/cases/helpers/auth-model-lists/wildcard-known-models.yaml
+  - tools/oracle/cases/helpers/auth-model-lists/team-public-name.yaml
+  - tools/oracle/cases/helpers/auth-model-lists/credential-hydration.yaml
+  - tools/oracle/cases/helpers/auth-model-lists/fallback-list.yaml
+  - tools/oracle/cases/helpers/auth-model-lists/mcp-grants.yaml
+  - tools/oracle/cases/auth/auth-model-lists/key-team-list-intersection.yaml
+  - tools/oracle/cases/auth/auth-model-lists/wildcard-known-models.yaml
+  - tools/oracle/cases/auth/auth-model-lists/team-public-name.yaml
+  - tools/oracle/cases/auth/auth-model-lists/credential-hydration.yaml
+  - tools/oracle/cases/auth/auth-model-lists/fallback-list.yaml
+  - tools/oracle/cases/auth/auth-model-lists/mcp-grants.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Listing fallback names does not grant permission to call them.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

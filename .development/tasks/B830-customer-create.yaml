@@ -1,0 +1,200 @@
+id: B830
+title: Customer creation and block state
+description: >-
+  Implement typed customer/end_user aliases for create, block and unblock, shared response fields and
+  linked default budgets/object permissions. Preserve source user-ID and budget validation and invalidate
+  only affected end-user cache keys.
+
+
+  Build the production customer_create module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/customer_endpoints.py:
+  _typed_table (L98-L98; 1 source lines), _typed_table (L100-L100; 1 source lines), _typed_table (L101-L102;
+  2 source lines), _evict_end_user_cache_keys (L108-L119; 11 source lines), _end_user_cache_keys (L122-L124;
+  3 source lines), _to_customer_response (L127-L134; 7 source lines), block_user (L149-L190; 37 source
+  lines), unblock_user (L205-L249; 41 source lines), new_budget_request (L252-L275; 21 source lines),
+  _handle_customer_object_permission_update (L278-L305; 26 source lines), new_end_user (L320-L492; 144
+  source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.blocked_user_list=None.
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /end_user/block -> block_user; POST
+  /customer/block -> block_user; POST /end_user/unblock -> unblock_user; POST /customer/unblock -> unblock_user;
+  POST /end_user/new -> new_end_user; POST /customer/new -> new_end_user. For each route send a typed
+  successful request, an invalid or missing target, and a caller lacking that route permission through
+  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
+  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
+  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
+  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
+  error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::customer_create::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 294 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  294 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 563 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/customer_create.rs
+    - crates/betterlite-server/src/customer_create/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/customer-create/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/customer_create.rs
+    - crates/betterlite-config/src/customer_create/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L492
+    why: Pinned implementation and exact ownership boundary for customer_create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/customer_endpoints.py#L1-L28
+    why: Pinned implementation and exact ownership boundary for customer_create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1249-L1250
+    why: BlockUsers request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2093-L2115
+    why: NewCustomerRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L98
+    why: Own _typed_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L100-L100
+    why: Own _typed_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L101-L102
+    why: Own _typed_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L108-L119
+    why: Own _evict_end_user_cache_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L122-L124
+    why: Own _end_user_cache_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L127-L134
+    why: Own _to_customer_response; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L149-L190
+    why: Own block_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L205-L249
+    why: Own unblock_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L252-L275
+    why: Own new_budget_request; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L278-L305
+    why: Own _handle_customer_object_permission_update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L320-L492
+    why: Own new_end_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L369-L374
+    why: litellm_settings.blocked_user_list default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: customer_end_user_aliases,
+      create_with_budget, create_with_permissions, block_customer, unblock_customer, duplicate_id, cache_eviction,
+      non_admin_route_policy_denied.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_create::tests::/)
+        - test(/replays_the_/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^customer_create::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*")"
+        && grep -rlq "blocked_user_list" crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/customer-create/post--end-user-block-success.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-block-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-block-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-block-success.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-block-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-block-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-unblock-success.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-unblock-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-unblock-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-unblock-success.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-unblock-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-unblock-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-new-success.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-new-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--end-user-new-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-new-success.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-new-invalid-target.yaml
+  - tools/oracle/cases/management/customer-create/post--customer-new-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-create/customer-end-user-aliases.yaml
+  - tools/oracle/cases/management/customer-create/create-with-budget.yaml
+  - tools/oracle/cases/management/customer-create/create-with-permissions.yaml
+  - tools/oracle/cases/management/customer-create/block-customer.yaml
+  - tools/oracle/cases/management/customer-create/unblock-customer.yaml
+  - tools/oracle/cases/management/customer-create/duplicate-id.yaml
+  - tools/oracle/cases/management/customer-create/cache-eviction.yaml
+  - tools/oracle/cases/management/customer-create/non-admin-route-policy-denied.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B059 owns resolve_customer_daily_activity_scope
+    (L500-L512), customer_daily_activity_is_admin (L515-L519), end_user_info (L534-L577), list_end_user
+    (L849-L891), get_customer_daily_activity (L906-L958).'
+  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B831 owns update_end_user (L592-L756),
+    delete_end_user (L771-L834).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Non-admin route policy runs before end-user create/block mutations.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

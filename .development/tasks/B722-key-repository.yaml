@@ -1,0 +1,211 @@
+id: B722
+title: Verification token repository and archived keys
+description: >-
+  Expose typed verification-token and deleted-token table access used by production call sites, plus BaseRepository
+  find_many_in and row conversion. Define KeyHash in crates/betterlite-db/src/key_hash.rs as SHA256 hex
+  of a presented LiteLLM token. Raw bearer tokens never cross the repository interface. Callers own their
+  domain policy and archive transactions; this task supplies both tables and a writer-pinned session.
+
+
+  Build the production key_repository module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/verification_token_repository.py:
+  _VerificationTokenTables.litellm_verificationtoken (L34-L34; 1 source lines), _VerificationTokenTables.litellm_deletedverificationtoken
+  (L37-L37; 1 source lines), _VerificationTokenTransactionManager.__aenter__ (L41-L41; 1 source lines),
+  _VerificationTokenTransactionManager.__aexit__ (L43-L48; 6 source lines), _PrismaVerificationTokenDb.tx
+  (L52-L52; 1 source lines), _PrismaClientView.db (L57-L57; 1 source lines), VerificationTokenRepository._db
+  (L77-L79; 3 source lines), VerificationTokenRepository.table (L82-L83; 2 source lines), VerificationTokenRepository.deleted_table
+  (L86-L87; 2 source lines), VerificationTokenRepository.model_class (L90-L91; 2 source lines), VerificationTokenRepository._to_model
+  (L93-L109; 15 source lines), VerificationTokenRepository.find_by_id (L111-L112; 2 source lines).
+
+
+  Add the key_repository operation under B856 Management::database. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-repository-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 37 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  65 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 311 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/key_repository.rs
+    - crates/betterlite-db/src/key_repository/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/key_repository/fixtures/**
+    - tools/oracle/src/helpers/key_repository.rs
+    - tools/oracle/src/helpers/key_repository/**
+    - tools/oracle/helpers/key_repository.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/key-repository/**
+    - tools/oracle/fuzz/corpus/helper_case/key-repository-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L1-L413
+    why: Pinned implementation and exact ownership boundary for key_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L34-L34
+    why: Own _VerificationTokenTables.litellm_verificationtoken; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L37-L37
+    why: Own _VerificationTokenTables.litellm_deletedverificationtoken; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L41-L41
+    why: Own _VerificationTokenTransactionManager.__aenter__; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L43-L48
+    why: Own _VerificationTokenTransactionManager.__aexit__; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L52-L52
+    why: Own _PrismaVerificationTokenDb.tx; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L57-L57
+    why: Own _PrismaClientView.db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L77-L79
+    why: Own VerificationTokenRepository._db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L82-L83
+    why: Own VerificationTokenRepository.table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L86-L87
+    why: Own VerificationTokenRepository.deleted_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L90-L91
+    why: Own VerificationTokenRepository.model_class; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L93-L109
+    why: Own VerificationTokenRepository._to_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L111-L112
+    why: Own VerificationTokenRepository.find_by_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4750-L4765
+    why: Production token table access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4902-L4936
+    why: Production table bulk read/write call sites.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: table_bound_filters,
+      deleted_table_columns, writer_pinned_transaction, token_row_conversion, token_hash, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^key_repository::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/key_repository.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-repository-*")"
+        && grep -rlq "key_repository" tools/oracle/fuzz/corpus/helper_case/key-repository-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/key_repository::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/key_repository::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-repository/token-row-conversion.yaml
+  - tools/oracle/cases/helpers/key-repository/token-hash.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_alias:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_user_id:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_team_id:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_project_id:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_active_tokens:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository._build_token_data:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.create_token:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_token:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.delete_token:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository._build_archive_data:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_spend:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_last_active:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.block_token: no
+    production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.unblock_token:
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_alias
+    (L114-L119): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_user_id
+    (L121-L124): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_team_id
+    (L126-L129): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_by_project_id
+    (L131-L134): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.find_active_tokens
+    (L136-L144): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository._build_token_data
+    (L146-L211): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.create_token (L213-L269):
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_token (L271-L335):
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.delete_token (L337-L362):
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository._build_archive_data
+    (L364-L391): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_spend (L393-L395):
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.update_last_active
+    (L397-L399): no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.block_token (L401-L406):
+    no production caller at the pin; callers use table access or find_many_in.'
+  - 'litellm/repositories/verification_token_repository.py::VerificationTokenRepository.unblock_token
+    (L408-L413): no production caller at the pin; callers use table access or find_many_in.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - VerificationTokenRepository domain methods have no production callers; do not implement unreachable
+    create_token or update_spend wrappers.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

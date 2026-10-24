@@ -1,0 +1,145 @@
+id: B817
+title: Canonical MCP server identifiers in grants
+description: >-
+  Implement McpGrantIds over injected registered MCP server snapshots and stored permission rows. Resolve
+  IDs/names/aliases consistently, reject ambiguous tool permission keys, remove stale identifiers according
+  to source behavior and preserve stable deduplication. This is permission plumbing, not an MCP runtime.
+
+
+  Build the production mcp_permission_ids module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
+  _dedupe_preserving_order (L240-L248; 9 source lines), _mcp_server_identifier_matches (L251-L257; 7 source
+  lines), _get_db_mcp_servers_by_identifiers (L260-L276; 16 source lines), _resolve_mcp_server_identifiers_to_ids
+  (L279-L318; 34 source lines), _drop_stale_object_permission_mcp_servers (L374-L390; 13 source lines),
+  _drop_stale_object_permission_mcp_tool_permissions (L393-L405; 12 source lines), _drop_stale_object_permission_mcp_identifiers
+  (L408-L422; 14 source lines), _flatten_resolved_mcp_server_ids (L425-L428; 4 source lines), _resolve_team_allowed_mcp_servers
+  (L431-L463; 31 source lines), _get_allow_all_keys_server_ids (L466-L472; 6 source lines), _get_all_mcp_server_ids
+  (L475-L481; 6 source lines), _existing_object_permission_mcp_servers (L484-L495; 12 source lines).
+
+
+  Add the mcp_permission_ids operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a mcp-permission-ids-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 164 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  164 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 410 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp_permission_ids.rs
+    - crates/betterlite-server/src/mcp_permission_ids/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/mcp_permission_ids.rs
+    - tools/oracle/src/helpers/mcp_permission_ids/**
+    - tools/oracle/helpers/mcp_permission_ids.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/mcp-permission-ids/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L240-L495
+    why: Pinned implementation and exact ownership boundary for mcp_permission_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L240-L248
+    why: Own _dedupe_preserving_order; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L251-L257
+    why: Own _mcp_server_identifier_matches; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L260-L276
+    why: Own _get_db_mcp_servers_by_identifiers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L279-L318
+    why: Own _resolve_mcp_server_identifiers_to_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L374-L390
+    why: Own _drop_stale_object_permission_mcp_servers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L393-L405
+    why: Own _drop_stale_object_permission_mcp_tool_permissions; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L408-L422
+    why: Own _drop_stale_object_permission_mcp_identifiers; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L425-L428
+    why: Own _flatten_resolved_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L431-L463
+    why: Own _resolve_team_allowed_mcp_servers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L466-L472
+    why: Own _get_allow_all_keys_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L475-L481
+    why: Own _get_all_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L484-L495
+    why: Own _existing_object_permission_mcp_servers; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: server_id, server_name,
+      ambiguous_alias, stale_server_drop, stale_tool_permission, allow_all_keys_server, stable_order.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_permission_ids::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/mcp_permission_ids.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-*")"
+        && grep -rlq "mcp_permission_ids" tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-permission-ids/server-id.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/server-name.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/ambiguous-alias.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/stale-server-drop.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/stale-tool-permission.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/allow-all-keys-server.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/stable-order.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B816 owns attach_object_permission_to_dict
+    (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183),
+    invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries
+    (L324-L332), reject_ambiguous_mcp_tool_permission_keys (L335-L371).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B818 owns enforce_all_proxy_mcp_servers_grant_is_admin_only
+    (L498-L528), _get_grandfathered_key_mcp_server_ids (L531-L558), _get_team_allowed_mcp_servers (L561-L599),
+    _extract_requested_mcp_server_ids (L602-L625), _extract_requested_mcp_access_groups (L628-L638), _extract_requested_mcp_toolsets
+    (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
+    _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
+    _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - An ambiguous MCP alias cannot silently resolve to the first server.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: security

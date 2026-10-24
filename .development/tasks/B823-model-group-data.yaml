@@ -1,0 +1,246 @@
+id: B823
+title: Model access-group deployment and budget helpers
+description: >-
+  Implement ModelAccessGroupStore for deployment-tag changes, DB read-through, readable model_info, reload-serving
+  checks and budget row projection. Use B368 catalog mutations and ModelRepository; database success with
+  degraded serving retains the source explicit error, never a false success response.
+
+
+  Build the production model_group_data module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_access_group_management_endpoints.py:
+  _http_error (L95-L97; 3 source lines), _DeploymentRow.model_id (L102-L102; 1 source lines), _DeploymentRow.model_name
+  (L105-L105; 1 source lines), _DeploymentRow.model_info (L108-L108; 1 source lines), _ModelTableClient.find_many
+  (L112-L112; 1 source lines), _ModelTableClient.find_unique (L114-L114; 1 source lines), _ModelTableClient.update
+  (L116-L116; 1 source lines), _BudgetRow.budget_id (L121-L121; 1 source lines), _BudgetRow.max_budget
+  (L124-L124; 1 source lines), _BudgetRow.soft_budget (L127-L127; 1 source lines), _BudgetRow.budget_duration
+  (L130-L130; 1 source lines), _BudgetRow.budget_reset_at (L133-L133; 1 source lines), _ModelAccessGroupBudgetRow.access_group_name
+  (L138-L138; 1 source lines), _ModelAccessGroupBudgetRow.spend (L141-L141; 1 source lines), _ModelAccessGroupBudgetRow.budget_id
+  (L144-L144; 1 source lines), _ModelAccessGroupBudgetRow.litellm_budget_table (L147-L147; 1 source lines),
+  _ModelAccessGroupBudgetTableClient.find_unique (L151-L153; 3 source lines), _ModelAccessGroupBudgetTableClient.upsert
+  (L155-L161; 7 source lines), _ModelAccessGroupBudgetTableClient.find_many (L163-L165; 3 source lines),
+  _ModelAccessGroupBudgetTableClient.delete (L167-L167; 1 source lines), _model_table (L170-L171; 2 source
+  lines), _model_access_group_budget_table (L174-L175; 2 source lines), _prisma_client_or_500 (L178-L183;
+  5 source lines), _auth_cache (L186-L189; 3 source lines), _evict_model_access_group_cache_keys (L192-L205;
+  13 source lines), _model_access_group_budget_row (L208-L213; 6 source lines), _model_access_group_budget_rows
+  (L216-L223; 8 source lines), _with_budget (L226-L235; 10 source lines), _budget_or_none (L238-L248;
+  11 source lines), _budget_response (L251-L256; 6 source lines), _delete_model_access_group_budget_row
+  (L259-L273; 14 source lines), _raise_404_if_model_access_group_missing (L276-L279; 4 source lines),
+  validate_models_exist (L282-L295; 12 source lines), _missing_models_after_read_through (L298-L312; 14
+  source lines), add_access_group_to_deployment (L315-L336; 15 source lines), _raise_http_if_reload_degraded_serving
+  (L339-L370; 32 source lines), _tag_deployment_with_access_group (L373-L393; 21 source lines), _readable_model_info_or_raise
+  (L396-L403; 8 source lines), _strip_access_group_from_deployment (L406-L425; 20 source lines), update_deployments_with_access_group
+  (L428-L467; 36 source lines), update_specific_deployments_with_access_group (L470-L493; 23 source lines),
+  _find_deployment_or_400 (L496-L503; 8 source lines), remove_access_group_from_deployment (L506-L527;
+  15 source lines), get_all_access_groups_from_db (L530-L566; 28 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the model_group_data operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-group-data-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 348 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  348 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 597 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_group_data.rs
+    - crates/betterlite-server/src/model_group_data/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/model_group_data.rs
+    - tools/oracle/src/helpers/model_group_data/**
+    - tools/oracle/helpers/model_group_data.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/model-group-data/**
+    - tools/oracle/fuzz/corpus/helper_case/model-group-data-*
+    - crates/betterlite-server/src/model_group_data/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L95-L566
+    why: Pinned implementation and exact ownership boundary for model_group_data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/model_access_group_budget.py#L1-L19
+    why: Pinned implementation and exact ownership boundary for model_group_data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L95-L97
+    why: Own _http_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L102-L102
+    why: Own _DeploymentRow.model_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L105-L105
+    why: Own _DeploymentRow.model_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L108-L108
+    why: Own _DeploymentRow.model_info; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L112-L112
+    why: Own _ModelTableClient.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L114-L114
+    why: Own _ModelTableClient.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L116-L116
+    why: Own _ModelTableClient.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L121-L121
+    why: Own _BudgetRow.budget_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L124-L124
+    why: Own _BudgetRow.max_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L127-L127
+    why: Own _BudgetRow.soft_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L130-L130
+    why: Own _BudgetRow.budget_duration; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L133-L133
+    why: Own _BudgetRow.budget_reset_at; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L138-L138
+    why: Own _ModelAccessGroupBudgetRow.access_group_name; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L141-L141
+    why: Own _ModelAccessGroupBudgetRow.spend; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L144-L144
+    why: Own _ModelAccessGroupBudgetRow.budget_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L147-L147
+    why: Own _ModelAccessGroupBudgetRow.litellm_budget_table; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L151-L153
+    why: Own _ModelAccessGroupBudgetTableClient.find_unique; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L155-L161
+    why: Own _ModelAccessGroupBudgetTableClient.upsert; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L163-L165
+    why: Own _ModelAccessGroupBudgetTableClient.find_many; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L167-L167
+    why: Own _ModelAccessGroupBudgetTableClient.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L170-L171
+    why: Own _model_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L174-L175
+    why: Own _model_access_group_budget_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L178-L183
+    why: Own _prisma_client_or_500; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L186-L189
+    why: Own _auth_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L192-L205
+    why: Own _evict_model_access_group_cache_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L208-L213
+    why: Own _model_access_group_budget_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L216-L223
+    why: Own _model_access_group_budget_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L226-L235
+    why: Own _with_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L238-L248
+    why: Own _budget_or_none; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L251-L256
+    why: Own _budget_response; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L259-L273
+    why: Own _delete_model_access_group_budget_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L276-L279
+    why: Own _raise_404_if_model_access_group_missing; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L282-L295
+    why: Own validate_models_exist; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L298-L312
+    why: Own _missing_models_after_read_through; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L315-L336
+    why: Own add_access_group_to_deployment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L339-L370
+    why: Own _raise_http_if_reload_degraded_serving; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L373-L393
+    why: Own _tag_deployment_with_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L396-L403
+    why: Own _readable_model_info_or_raise; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L406-L425
+    why: Own _strip_access_group_from_deployment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L428-L467
+    why: Own update_deployments_with_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L470-L493
+    why: Own update_specific_deployments_with_access_group; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L496-L503
+    why: Own _find_deployment_or_400; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L506-L527
+    why: Own remove_access_group_from_deployment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L530-L566
+    why: Own get_all_access_groups_from_db; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: model_exists_db_readthrough,
+      missing_model, tag_deployment, strip_group_tag, reload_degraded, budget_row_missing, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_group_data::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/model_group_data.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-group-data-*")"
+        && grep -rlq "model_group_data" tools/oracle/fuzz/corpus/helper_case/model-group-data-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_data::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_data::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/model-group-data/model-exists-db-readthrough.yaml
+  - tools/oracle/cases/helpers/model-group-data/missing-model.yaml
+  - tools/oracle/cases/helpers/model-group-data/tag-deployment.yaml
+  - tools/oracle/cases/helpers/model-group-data/strip-group-tag.yaml
+  - tools/oracle/cases/helpers/model-group-data/reload-degraded.yaml
+  - tools/oracle/cases/helpers/model-group-data/budget-row-missing.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B824 owns create_model_group
+    (L574-L712), list_access_groups (L720-L762), get_access_group_info (L770-L821), update_access_group
+    (L829-L975), delete_access_group (L983-L1085).'
+  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B825 owns get_access_group_budget
+    (L1093-L1120), set_access_group_budget (L1128-L1198), delete_access_group_budget (L1206-L1244).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A DB write followed by a serving reload failure remains a degraded serving result.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

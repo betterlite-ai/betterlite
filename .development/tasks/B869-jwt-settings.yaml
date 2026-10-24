@@ -1,0 +1,343 @@
+id: B869
+title: JWT configuration defaults and dependent field validation
+description: >-
+  Define typed litellm_jwtauth settings for every field in LiteLLM_JWTAuth and its issuer/routing-override
+  records. Preserve defaults, deprecated jwt_client_id_field alias precedence, paired role-field validation,
+  object-id/role-map dependency and scope-mapping validation. Represent custom_validate as an unresolved
+  configured callable reference; fail startup until B054 registers B165 callable support. Do not import
+  Python or perform JWKS/network requests in the config loader.
+
+
+  Config fuzzing uses the existing config_yaml target, which calls the production config loader; do not
+  create a second fuzz crate.
+
+
+  Build the production jwt_settings module in betterlite-config; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/_types.py:
+  LiteLLM_JWTAuth (L5331-L5576; 212 source lines), JWTLiteLLMRoleMap (L5198-L5200; 3 source lines), JWTRoutingOverride
+  (L5211-L5232; 18 source lines), UnregisteredJWTClientBehavior (L5235-L5251; 15 source lines), JWTIssuerConfig
+  (L5254-L5325; 68 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_jwt_scope='litellm_proxy_admin';
+  litellm_jwtauth.admin_allowed_routes=['management_routes', 'spend_tracking_routes', 'global_spend_tracking_routes',
+  'info_routes']; litellm_jwtauth.team_id_jwt_field=None; litellm_jwtauth.team_id_upsert=False; litellm_jwtauth.team_ids_jwt_field=None;
+  litellm_jwtauth.upsert_sso_user_to_team=False; litellm_jwtauth.team_allowed_routes=['openai_routes',
+  'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens']; litellm_jwtauth.team_id_default=None;
+  litellm_jwtauth.team_alias_jwt_field=None; litellm_jwtauth.org_id_jwt_field=None; litellm_jwtauth.org_alias_jwt_field=None;
+  litellm_jwtauth.user_id_jwt_field=None; litellm_jwtauth.user_email_jwt_field=None; litellm_jwtauth.user_allowed_email_domain=None;
+  litellm_jwtauth.user_roles_jwt_field=None; litellm_jwtauth.user_allowed_roles=None; litellm_jwtauth.user_id_upsert=False;
+  litellm_jwtauth.end_user_id_jwt_field=None; litellm_jwtauth.agent_id_jwt_field=None; litellm_jwtauth.mcp_client_id_jwt_field=None;
+  litellm_jwtauth.public_key_ttl=600; litellm_jwtauth.public_key_stale_ttl=DEFAULT_JWKS_STALE_TTL; litellm_jwtauth.public_allowed_routes=['public_routes'];
+  litellm_jwtauth.enforce_rbac=False; litellm_jwtauth.roles_jwt_field=None; litellm_jwtauth.role_mappings=None;
+  litellm_jwtauth.object_id_jwt_field=None; litellm_jwtauth.scope_mappings=None; litellm_jwtauth.enforce_scope_based_access=False;
+  litellm_jwtauth.enforce_team_based_model_access=False; litellm_jwtauth.custom_validate=None; litellm_jwtauth.jwt_litellm_role_map=None;
+  litellm_jwtauth.sync_user_role_and_teams=False; litellm_jwtauth.oidc_userinfo_endpoint=None; litellm_jwtauth.oidc_userinfo_enabled=False;
+  litellm_jwtauth.oidc_userinfo_cache_ttl=300; litellm_jwtauth.virtual_key_claim_field=None; litellm_jwtauth.virtual_key_mapping_cache_ttl=300;
+  litellm_jwtauth.unregistered_jwt_client_behavior=UnregisteredJWTClientBehavior.FALLBACK_TEAM_MAPPING;
+  litellm_jwtauth.routing_overrides=None; litellm_jwtauth.team_claim_fallback=False; litellm_jwtauth.fallback_to_db_teams=False;
+  litellm_jwtauth.issuers=None; JWTLiteLLMRoleMap.jwt_role=required; JWTLiteLLMRoleMap.litellm_role=required;
+  JWTRoutingOverride.iss=required; JWTRoutingOverride.client_id=None; JWTRoutingOverride.scope=None; JWTRoutingOverride.aud=None;
+  JWTRoutingOverride.path='oauth2'; JWTIssuerConfig.issuer=required; JWTIssuerConfig.jwks_url=None; JWTIssuerConfig.audience=None;
+  JWTIssuerConfig.disable_audience_validation=False; JWTIssuerConfig.user_id_jwt_field=None; JWTIssuerConfig.user_email_jwt_field=None;
+  JWTIssuerConfig.team_id_jwt_field=None; JWTIssuerConfig.team_ids_jwt_field=None; JWTIssuerConfig.org_id_jwt_field=None;
+  JWTIssuerConfig.end_user_id_jwt_field=None; JWTIssuerConfig.virtual_key_claim_field=None; JWTIssuerConfig.unregistered_jwt_client_behavior=None.
+
+
+  Add the jwt_settings operation under B856 Management::jwt. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-settings-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::jwt_settings::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 316 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  316 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 609 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-config/src/jwt_settings.rs
+    - crates/betterlite-config/src/jwt_settings/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/Cargo.toml
+    - tools/oracle/src/helpers/jwt_settings.rs
+    - tools/oracle/src/helpers/jwt_settings/**
+    - tools/oracle/helpers/jwt_settings.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/jwt.rs
+    - tools/oracle/helpers/management/jwt.py
+    - tools/oracle/cases/helpers/jwt-settings/**
+    - tools/oracle/fuzz/corpus/helper_case/jwt-settings-*
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5576
+    why: Own LiteLLM_JWTAuth; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5198-L5200
+    why: Own JWTLiteLLMRoleMap; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5211-L5232
+    why: Own JWTRoutingOverride; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5235-L5251
+    why: Own UnregisteredJWTClientBehavior; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5254-L5325
+    why: Own JWTIssuerConfig; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5358-L5363
+    why: litellm_jwtauth.admin_jwt_scope default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5359-L5364
+    why: litellm_jwtauth.admin_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5365-L5370
+    why: litellm_jwtauth.team_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5366-L5371
+    why: litellm_jwtauth.team_id_upsert default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5367-L5372
+    why: litellm_jwtauth.team_ids_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5368-L5373
+    why: litellm_jwtauth.upsert_sso_user_to_team default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5369-L5374
+    why: litellm_jwtauth.team_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5376-L5381
+    why: litellm_jwtauth.team_id_default default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5380-L5385
+    why: litellm_jwtauth.team_alias_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5385-L5390
+    why: litellm_jwtauth.org_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5386-L5391
+    why: litellm_jwtauth.org_alias_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5390-L5395
+    why: litellm_jwtauth.user_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5391-L5396
+    why: litellm_jwtauth.user_email_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5392-L5397
+    why: litellm_jwtauth.user_allowed_email_domain default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5393-L5398
+    why: litellm_jwtauth.user_roles_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5394-L5399
+    why: litellm_jwtauth.user_allowed_roles default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5395-L5400
+    why: litellm_jwtauth.user_id_upsert default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5396-L5401
+    why: litellm_jwtauth.end_user_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5397-L5402
+    why: litellm_jwtauth.agent_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5405-L5410
+    why: litellm_jwtauth.mcp_client_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5414-L5419
+    why: litellm_jwtauth.public_key_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5415-L5420
+    why: litellm_jwtauth.public_key_stale_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5424-L5429
+    why: litellm_jwtauth.public_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5425-L5430
+    why: litellm_jwtauth.enforce_rbac default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5426-L5431
+    why: litellm_jwtauth.roles_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5427-L5432
+    why: litellm_jwtauth.role_mappings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5428-L5433
+    why: litellm_jwtauth.object_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5429-L5434
+    why: litellm_jwtauth.scope_mappings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5430-L5435
+    why: litellm_jwtauth.enforce_scope_based_access default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5431-L5436
+    why: litellm_jwtauth.enforce_team_based_model_access default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5432-L5437
+    why: litellm_jwtauth.custom_validate default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5435-L5440
+    why: litellm_jwtauth.jwt_litellm_role_map default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5436-L5441
+    why: litellm_jwtauth.sync_user_role_and_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5440-L5445
+    why: litellm_jwtauth.oidc_userinfo_endpoint default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5444-L5449
+    why: litellm_jwtauth.oidc_userinfo_enabled default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5448-L5453
+    why: litellm_jwtauth.oidc_userinfo_cache_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5453-L5458
+    why: litellm_jwtauth.virtual_key_claim_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5457-L5462
+    why: litellm_jwtauth.virtual_key_mapping_cache_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5461-L5466
+    why: litellm_jwtauth.unregistered_jwt_client_behavior default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5470-L5475
+    why: litellm_jwtauth.routing_overrides default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5474-L5479
+    why: litellm_jwtauth.team_claim_fallback default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5484-L5489
+    why: litellm_jwtauth.fallback_to_db_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5496-L5501
+    why: litellm_jwtauth.issuers default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5199-L5204
+    why: JWTLiteLLMRoleMap.jwt_role default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5200-L5205
+    why: JWTLiteLLMRoleMap.litellm_role default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5224-L5229
+    why: JWTRoutingOverride.iss default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5225-L5230
+    why: JWTRoutingOverride.client_id default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5226-L5231
+    why: JWTRoutingOverride.scope default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5227-L5232
+    why: JWTRoutingOverride.aud default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5228-L5233
+    why: JWTRoutingOverride.path default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5265-L5270
+    why: JWTIssuerConfig.issuer default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5266-L5271
+    why: JWTIssuerConfig.jwks_url default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5270-L5275
+    why: JWTIssuerConfig.audience default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5274-L5279
+    why: JWTIssuerConfig.disable_audience_validation default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5278-L5283
+    why: JWTIssuerConfig.user_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5282-L5287
+    why: JWTIssuerConfig.user_email_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5286-L5291
+    why: JWTIssuerConfig.team_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5290-L5295
+    why: JWTIssuerConfig.team_ids_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5294-L5299
+    why: JWTIssuerConfig.org_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5298-L5303
+    why: JWTIssuerConfig.end_user_id_jwt_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5302-L5307
+    why: JWTIssuerConfig.virtual_key_claim_field default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5306-L5311
+    why: JWTIssuerConfig.unregistered_jwt_client_behavior default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: defaults, legacy_alias,
+      paired_role_fields, scope_mappings, fallback_requires_user_upsert, unknown_key.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_settings::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/jwt_settings.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-settings-*")"
+        && grep -rlq "jwt_settings" tools/oracle/fuzz/corpus/helper_case/jwt-settings-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_settings::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*")"
+        && grep -rlq "admin_jwt_scope" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/jwt-settings/defaults.yaml
+  - tools/oracle/cases/helpers/jwt-settings/legacy-alias.yaml
+  - tools/oracle/cases/helpers/jwt-settings/paired-role-fields.yaml
+  - tools/oracle/cases/helpers/jwt-settings/scope-mappings.yaml
+  - tools/oracle/cases/helpers/jwt-settings/fallback-requires-user-upsert.yaml
+  - tools/oracle/cases/helpers/jwt-settings/unknown-key.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
+    (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
+  - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
+    GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
+  - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
+    (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
+  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
+    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+    (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
+    (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
+    (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
+    (L915-L929), LiteLLMRoutes.org_admin_only_routes (L1024-L1036), LiteLLMRoutes.admin_viewer_routes
+    (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
+  - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
+    (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
+    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
+    LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
+    (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
+    (L931-L1019).'
+  - 'litellm/proxy/_types.py: B1231 owns NewTeamRequest (L2164-L2210), UpdateTeamRequest (L2219-L2281).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'litellm/proxy/_types.py: B124 owns the remaining functions SupportedDBObjectType.__str__ (L142-L143),
+    LitellmUserRoles.__str__ (L191-L192), LitellmUserRoles.values (L194-L195), LitellmUserRoles.description
+    (L197-L210), LitellmUserRoles.ui_label (L212-L225), LitellmUserRoles.is_internal_user_role (L227-L233),
+    hash_token (L278-L284), LiteLLMPromptInjectionParams.check_llm_api_params (L1144-L1155), ModelInfo.set_model_info
+    (L1226-L1241), ModelParams.set_model_info (L1260-L1265), GenerateRequestBase.check_max_budget (L1327-L1332),
+    ResetSpendRequest.reject_bool_reset_to (L1501-L1509), KeyRequest.validate_at_least_one (L1516-L1521),
+    _dcr_bridge_auth_type_error (L1554-L1559), _per_server_oauth_discovery_error (L1562-L1566), is_per_server_oauth_discovery_eligible
+    (L1569-L1572), _reject_unsupported_per_server_oauth_discovery (L1575-L1588), _validate_mcp_transport_fields
+    (L1591-L1612), NewMCPServerRequest.validate_transport_fields (L1678-L1682), NewMCPServerRequest.validate_credentials_requirements
+    (L1684-L1693), NewMCPServerRequest.validate_dcr_bridge_auth_type (L1695-L1703), NewMCPServerRequest.validate_per_server_oauth_discovery_auth_type
+    (L1705-L1709), UpdateMCPServerRequest.validate_transport_fields (L1761-L1765), UpdateMCPServerRequest.validate_dcr_bridge_auth_type
+    (L1767-L1780), UpdateMCPServerRequest.validate_per_server_oauth_discovery_auth_type (L1782-L1786),
+    NewUserRequest.password_not_supported (L1959-L1967), UpdateUserRequest.check_user_info (L2013-L2018),
+    NewCustomerRequest.check_user_info (L2109-L2115), DeleteTeamRequest.distinct_team_ids (L2314-L2318),
+    AddTeamCallback.validate_callback_vars (L2338-L2352), TeamCallbackMetadata.validate_callback_vars
+    (L2374-L2402), CoordinationRedisParams.has_connection_target (L2661-L2662), LiteLLM_VerificationTokenView.__init__
+    (L3331-L3353), UserAPIKeyAuth.check_api_key (L3445-L3473), UserAPIKeyAuth._safe_hash_litellm_api_key
+    (L3475-L3492), UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth (L3494-L3508), UserAPIKeyAuth.get_litellm_cli_user_api_key_auth
+    (L3510-L3524), UserAPIKeyAuth.get_litellm_internal_jobs_user_api_key_auth (L3526-L3542), UserAPIKeyAuth.is_team_service_account
+    (L3544-L3551), user_api_key_has_admin_view (L3554-L3564), LiteLLM_OrganizationTableUpdate.set_model_info
+    (L3621-L3631), NewProjectRequest.set_model_info (L3714-L3726), UpdateProjectRequest.set_model_info
+    (L3749-L3761), LiteLLM_AuditLogs.cast_changed_by_to_str (L3826-L3831), LiteLLM_AuditLogs.mask_api_keys
+    (L3833-L3861), ProxyException.__init__ (L4328-L4359), ProxyException.to_dict (L4361-L4371), ModelAccessDeniedProxyException.__init__
+    (L4375-L4384), ModelAccessDeniedProxyException.sanitized_internal_message (L4386-L4387), ProxyErrorTypes.get_model_access_error_type_for_object
+    (L4527-L4545), ProxyErrorTypes.get_vector_store_access_error_type_for_object (L4547-L4559), MemberAddRequest.__init__
+    (L4611-L4624), OrgMemberAddRequest.__init__ (L4630-L4646), MemberDeleteRequest.check_user_info (L4664-L4669),
+    TeamMemberUpdateRequest.validate_temp_budget (L4738-L4743), OrganizationMemberUpdateRequest.validate_role
+    (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
+    (L5766-L5772).'
+pitfalls:
+  - Preserve defaults, deprecated jwt_client_id_field alias precedence, paired role-field validation,
+    object-id/role-map dependency and scope-mapping validation.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

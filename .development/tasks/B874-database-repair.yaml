@@ -1,0 +1,138 @@
+id: B874
+title: Offline verification-token import and team repair
+description: >-
+  Expose explicit offline tools/betterlite-db-admin repair commands for unassigned teams and verification-token
+  CSV import. decode_verification_csv(&[u8]) uses the csv crate and typed column coercion, preserving
+  JSON/null values and source per-row failure behavior. No repair runs during gateway startup. Reuse PostgresStore
+  and the existing DB fuzz workspace from B710.
+
+
+  Build the production database_repair module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: db_scripts/update_unassigned_teams.py:
+  apply_db_fixes (L5-L34; 30 source lines). db_scripts/migrate_keys.py: parse_csv_value (L17-L50; 32 source
+  lines), migrate_verification_tokens (L53-L183; 111 source lines).
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This task owns the outside-byte boundary database_repair::decode_verification_csv(&[u8]) -> Result<TypedValue,DecodeError>
+  for offline CSV cell and row bytes. Production calls this decoder before its typed policy functions;
+  the cargo-fuzz target database_repair calls that same function. Seed valid, truncated, malformed, duplicate-field
+  and limit-boundary inputs and add database_repair::tests::replays_the_database_repair_corpus. Reuse
+  B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder
+  cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching
+  URLs. B710 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating
+  the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 173 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  173 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 393 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+
+
+  B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
+  operation only; do not recreate its Cargo package or depend on betterlite-server from the admin tool.
+  The operation adapter assembles native betterlite-db services directly. Write database_repair::tests::dispatches_native_operation
+  and rejects_bad_arguments in the admin package as well as the existing DB behavior tests.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_repair.rs
+    - crates/betterlite-db/src/database_repair/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/database_repair/fixtures/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/database_repair.rs
+    - crates/betterlite-db/fuzz/corpus/database_repair/**
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/database_repair.rs
+    - tools/betterlite-db-admin/src/database_repair/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L5-L34
+    why: Own apply_db_fixes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L17-L50
+    why: Own parse_csv_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L53-L183
+    why: Own migrate_verification_tokens; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: csv_json_null_coercion,
+      csv_invalid_value, unassigned_team_repair, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: The production decode_verification_csv decoder is used by the service and its fuzz target and
+      rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+  - text: The explicit repair/import CLI dispatch reaches the native operation and rejects bad arguments.
+    proof:
+      - admin-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_repair::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_repair::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_repair::tests::postgres_failure_effects$/)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/database_repair.rs && grep -q "database_repair"
+        crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-db/fuzz/corpus/database_repair)" && cargo nextest run --locked -p betterlite-db
+        --no-tests=fail -E 'test(replays_the_database_repair_corpus)'
+    - id: admin-tests
+      why: The offline repair/import command does not invoke the native operation or reject bad arguments.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^database_repair::tests::/)
+        - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L5-L34
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - decode_verification_csv(&[u8]) uses the csv crate and typed column coercion, preserving JSON/null
+    values and source per-row failure behavior.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

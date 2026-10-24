@@ -1,0 +1,152 @@
+id: B794
+title: Bulk user deletion and membership cleanup
+description: >-
+  Implement BulkUserDeletion and BulkTeamRemoval over writer transactions, scoped organization authority
+  and exact user/email identity matching. Remove key, invitation and membership references in source order,
+  return per-row failures and publish invalidations after commit.
+
+
+  Build the production user_bulk_delete module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/bulk_user_deletion.py:
+  _UserBatchDeletion.deleted_key_tokens (L110-L111; 2 source lines), _invitation_tx_db (L169-L170; 2 source
+  lines), _org_membership_tx_db (L173-L174; 2 source lines), _error_message (L199-L206; 8 source lines),
+  _bounded (L209-L216; 6 source lines), _caller_admin_org_ids (L368-L376; 9 source lines), _scope_error
+  (L379-L385; 7 source lines), _delete_user_rows (L388-L419; 32 source lines), _delete_users_tx (L422-L461;
+  40 source lines), _delete_users (L464-L510; 47 source lines), bulk_delete_users (L513-L596; 78 source
+  lines).
+
+
+  Add the user_bulk_delete operation under B856 Management::users. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a user-bulk-delete-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 233 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  233 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 473 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_bulk_delete.rs
+    - crates/betterlite-server/src/user_bulk_delete/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/user_bulk_delete.rs
+    - tools/oracle/src/helpers/user_bulk_delete/**
+    - tools/oracle/helpers/user_bulk_delete.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/cases/helpers/user-bulk-delete/**
+    - tools/oracle/fuzz/corpus/helper_case/user-bulk-delete-*
+    - crates/betterlite-server/src/user_bulk_delete/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L1-L596
+    why: Pinned implementation and exact ownership boundary for user_bulk_delete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4660-L4669
+    why: MemberDeleteRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L110-L111
+    why: Own _UserBatchDeletion.deleted_key_tokens; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L169-L170
+    why: Own _invitation_tx_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L173-L174
+    why: Own _org_membership_tx_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L199-L206
+    why: Own _error_message; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L209-L216
+    why: Own _bounded; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L368-L376
+    why: Own _caller_admin_org_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L379-L385
+    why: Own _scope_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L388-L419
+    why: Own _delete_user_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L422-L461
+    why: Own _delete_users_tx; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L464-L510
+    why: Own _delete_users; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L513-L596
+    why: Own bulk_delete_users; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_scope_denied, delete_user_cascade,
+      transaction_rollback, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_bulk_delete::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/user_bulk_delete.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-bulk-delete-*")"
+        && grep -rlq "user_bulk_delete" tools/oracle/fuzz/corpus/helper_case/user-bulk-delete-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_delete::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_delete::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-bulk-delete/org-scope-denied.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/delete-user-cascade.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/transaction-rollback.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/bulk_user_deletion.py: B1202 owns _TeamRemoval.deleted_key_tokens
+    (L99-L100), _team_not_found (L120-L128), _team_tx_db (L153-L154), _membership_tx_db (L161-L162), _same_email
+    (L177-L178), _addresses_member (L181-L184), _with_row_email (L187-L190), _remove_members_from_team
+    (L219-L288), _emit_team_members_metric (L291-L298), _duplicate_member_indexes (L301-L310), bulk_remove_team_members
+    (L313-L365), _forbidden (L131-L134), _in_filter (L137-L138), _eq_filter (L141-L142), _team_users_filter
+    (L145-L146), _any_filter (L149-L150), _user_tx_db (L157-L158), _token_tx_db (L165-L166), _addresses_user
+    (L193-L196).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Bulk deletion authority checks every target organization, not only the caller-supplied organization
+    filter.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

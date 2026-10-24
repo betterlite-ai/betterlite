@@ -1,0 +1,132 @@
+id: B863
+title: Management administrator and invitation scope
+description: >-
+  Resolve administrator and invitation scope from live organization memberships and team roles using injected
+  UserLookup and TeamRoleLookup ports. Invite targets must share an administered organization or team.
+  Preserve exception-to-false fallback and no-user/no-database refusal. The lower-level policy accepts
+  typed role snapshots; B736 and B800 implement the read ports after their services exist, avoiding a
+  dependency back to key or user endpoints.
+
+
+  Injected port instead of a reverse dependency on B736: UserLookup::load(UserId)->Result<UserRow,AuthError>;
+  B736 installs the lookup. A configured but unregistered implementation is a named startup error, never
+  a success stub.
+
+
+  Injected port instead of a reverse dependency on B800: TeamRoleLookup::is_admin(Caller,TeamRow)->bool;
+  B800 implements the policy over typed snapshots. A configured but unregistered implementation is a named
+  startup error, never a success stub.
+
+
+  Build the production management_admins module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/common_utils.py:
+  _user_has_admin_privileges (L224-L287; 46 source lines), _org_admin_can_invite_user (L290-L317; 26 source
+  lines), _team_admin_can_invite_user (L320-L356; 34 source lines), admin_can_invite_user (L359-L429;
+  61 source lines).
+
+
+  Add the management_admins operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-admins-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 167 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  167 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 407 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/management_admins.rs
+    - crates/betterlite-server/src/management_admins/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management_admins.rs
+    - tools/oracle/src/helpers/management_admins/**
+    - tools/oracle/helpers/management_admins.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/management-admins/**
+    - tools/oracle/fuzz/corpus/helper_case/management-admins-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L224-L287
+    why: Own _user_has_admin_privileges; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L290-L317
+    why: Own _org_admin_can_invite_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L320-L356
+    why: Own _team_admin_can_invite_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L359-L429
+    why: Own admin_can_invite_user; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: proxy_admin, shared_org,
+      shared_team, unrelated_target, lookup_failure_denies.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_admins::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/management_admins.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/management-admins-*")"
+        && grep -rlq "management_admins" tools/oracle/fuzz/corpus/helper_case/management-admins-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-admins/proxy-admin.yaml
+  - tools/oracle/cases/helpers/management-admins/shared-org.yaml
+  - tools/oracle/cases/helpers/management-admins/shared-team.yaml
+  - tools/oracle/cases/helpers/management-admins/unrelated-target.yaml
+  - tools/oracle/cases/helpers/management-admins/lookup-failure-denies.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B861 owns validate_finite_spend (L13-L24), validate_budget_duration
+    (L27-L41), validate_team_model_max_budget (L77-L123), require_caller_user_id_for_non_admin (L126-L150),
+    _check_passthrough_routes_caller_permission (L153-L177), _check_disable_global_guardrails_caller_permission
+    (L180-L205), _set_object_metadata_field (L432-L456), _update_metadata_field (L639-L661), _update_metadata_fields
+    (L675-L688).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B862 owns _prisma_value (L488-L489), member_budget_patch
+    (L492-L501), _is_set_budget_value (L504-L509), _has_meaningful_budget_limit (L512-L515), _upsert_budget_and_membership
+    (L518-L636).'
+  - 'litellm/proxy/management_endpoints/common_utils.py::_has_non_empty_value: no production caller at
+    the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Invite targets must share an administered organization or team.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,136 @@
+id: B864
+title: Feature and organization key generation switches
+description: >-
+  Implement feature gates for agents and vector stores and organization-admin key generation. The feature
+  gates exempt proxy admins and viewers; configured team-admin exemptions call ManagementAdmins. disable_key_generate_for_org_admin
+  only blocks ORG_ADMIN and never grants any otherwise missing permission.
+
+
+  Build the production management_rbac module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/rbac_utils.py:
+  check_feature_access_for_user (L17-L68; 42 source lines), check_org_admin_can_generate_keys (L71-L96;
+  22 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.disable_key_generate_for_org_admin=False.
+
+
+  Add the management_rbac operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-rbac-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::management_rbac::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 64 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  65 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 352 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/management_rbac.rs
+    - crates/betterlite-server/src/management_rbac/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management_rbac.rs
+    - tools/oracle/src/helpers/management_rbac/**
+    - tools/oracle/helpers/management_rbac.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/management-rbac/**
+    - tools/oracle/fuzz/corpus/helper_case/management-rbac-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/management_rbac.rs
+    - crates/betterlite-config/src/management_rbac/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L17-L68
+    why: Own check_feature_access_for_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L71-L96
+    why: Own check_org_admin_can_generate_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L90-L95
+    why: general_settings.disable_key_generate_for_org_admin default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_admin_disabled,
+      proxy_admin_unaffected, internal_feature_disabled, team_admin_exemption.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_rbac::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/management_rbac.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/management-rbac-*")"
+        && grep -rlq "management_rbac" tools/oracle/fuzz/corpus/helper_case/management-rbac-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^management_rbac::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*")"
+        && grep -rlq "disable_key_generate_for_org_admin" crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-rbac/org-admin-disabled.yaml
+  - tools/oracle/cases/helpers/management-rbac/proxy-admin-unaffected.yaml
+  - tools/oracle/cases/helpers/management-rbac/internal-feature-disabled.yaml
+  - tools/oracle/cases/helpers/management-rbac/team-admin-exemption.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The feature gates exempt proxy admins and viewers; configured team-admin exemptions call ManagementAdmins.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

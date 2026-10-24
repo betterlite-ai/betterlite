@@ -1,0 +1,110 @@
+id: B852
+title: Offline spend backfill operations
+description: >-
+  Expose explicit offline SQL backfills through tools/betterlite-db-admin. Preserve source active/archived-key
+  lifetime spend floors, resetting-key historical reconstruction and daily-tool aggregation, with transactional
+  execution and typed result counts. No backfill runs automatically on gateway startup; the operator selects
+  a named operation.
+
+
+  Build the production spend_backfills module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Also write tools/betterlite-db-admin::spend_backfills::tests::dispatches_native_operation and rejects_bad_arguments;
+  the admin command check must fail without these real CLI dispatch tests.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 170 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  170 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 354 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
+  operation only; do not recreate its Cargo package or depend on betterlite-server from the admin tool.
+  The operation adapter assembles native betterlite-db services directly.
+scope:
+  paths:
+    - crates/betterlite-db/src/spend_backfills.rs
+    - crates/betterlite-db/src/spend_backfills/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.toml
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/spend_backfills.rs
+    - tools/betterlite-db-admin/src/spend_backfills/**
+    - crates/betterlite-db/src/spend_backfills/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/backfill_daily_tool_spend.sql#L1-L46
+    why: Pinned implementation and exact ownership boundary for spend_backfills.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/backfill_key_total_spend.sql#L1-L43
+    why: Pinned implementation and exact ownership boundary for spend_backfills.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/backfill_key_total_spend_from_spend_logs.sql#L1-L89
+    why: Pinned implementation and exact ownership boundary for spend_backfills.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: lifetime_at_least_current,
+      already_correct_noop, archived_key, resetting_key_history, daily_tool_aggregation, rollback_on_error,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The offline admin command invokes the native operation and preserves its exit/error contract.
+    proof:
+      - admin-tests
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_backfills::tests::/)
+        - test(/replays_the_/)'
+    - id: admin-tests
+      why: The offline command does not dispatch the named native operation or reject bad arguments.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^spend_backfills::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_backfills::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_backfills::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Lifetime backfill never lowers spend below the source current-spend floor.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

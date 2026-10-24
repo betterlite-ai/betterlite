@@ -1,0 +1,199 @@
+id: B871
+title: Resolve user and membership authentication grants
+description: >-
+  Implement GrantResolver and team_grants over typed Principal, user, team and membership snapshots. Inject
+  UserLoader::load(UserId)->Result<UserRow,IdentityError>, TeamLoader::load(TeamId)->Result<TeamRow,IdentityError>
+  and MembershipLoader::load(UserId,TeamId)->Result<MembershipRow,IdentityError>; B736 and B737 install
+  the default loaders. Preserve canonical user_id, UserGone (401 auth_error param user_id), NotAMember
+  (403), and TeamGone public translation without a reverse dependency on concrete cache/lookup services.
+
+
+  Injected port instead of a reverse dependency on B736: UserLoader/MembershipLoader typed load ports
+  are implemented by B736. A configured but unregistered implementation is a named startup error, never
+  a success stub.
+
+
+  Injected port instead of a reverse dependency on B737: TeamLoader::load(TeamId)->Result<TeamRow,IdentityError>;
+  B737 implements it. A configured but unregistered implementation is a named startup error, never a success
+  stub.
+
+
+  Build the production identity_grants module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/resolvers/grants.py:
+  UserLoader.__call__ (L44-L55; 12 source lines), TeamLoader.__call__ (L59-L67; 9 source lines), MembershipLoader.__call__
+  (L71-L80; 10 source lines), user_models (L142-L146; 5 source lines), canonical_user_id (L149-L152; 4
+  source lines), raise_public (L155-L172; 18 source lines), GrantResolver.__init__ (L185-L202; 18 source
+  lines), GrantResolver.resolve_identity (L204-L220; 17 source lines), GrantResolver.resolve (L222-L245;
+  24 source lines), GrantResolver._user (L247-L257; 11 source lines), GrantResolver._membership (L259-L267;
+  9 source lines). litellm/proxy/auth/team_grants.py: _decode_model_aliases (L30-L37; 8 source lines),
+  _json_columns (L76-L80; 5 source lines), team_model_aliases (L83-L87; 5 source lines), team_grants (L90-L126;
+  37 source lines).
+
+
+  Add the identity_grants operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a identity-grants-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 192 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  192 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 470 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Server wiring tests live under betterlite-server::auth::identity_grants::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/identity_grants.rs
+    - crates/betterlite-auth/src/identity_grants/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/identity_grants.rs
+    - tools/oracle/src/helpers/identity_grants/**
+    - tools/oracle/helpers/identity_grants.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/identity-grants/**
+    - tools/oracle/fuzz/corpus/helper_case/identity-grants-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/identity-grants/**
+    - crates/betterlite-server/src/auth/identity_grants.rs
+    - crates/betterlite-server/src/auth/identity_grants/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L44-L55
+    why: Own UserLoader.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L59-L67
+    why: Own TeamLoader.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L71-L80
+    why: Own MembershipLoader.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L142-L146
+    why: Own user_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L149-L152
+    why: Own canonical_user_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L155-L172
+    why: Own raise_public; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L185-L202
+    why: Own GrantResolver.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L204-L220
+    why: Own GrantResolver.resolve_identity; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L222-L245
+    why: Own GrantResolver.resolve; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L247-L257
+    why: Own GrantResolver._user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L259-L267
+    why: Own GrantResolver._membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L30-L37
+    why: Own _decode_model_aliases; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L76-L80
+    why: Own _json_columns; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L83-L87
+    why: Own team_model_aliases; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L90-L126
+    why: Own team_grants; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: canonical_user_id, team_role_map,
+      membership_grant, user_gone, not_a_member, team_gone.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^identity_grants::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/identity_grants.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-grants-*")"
+        && grep -rlq "identity_grants" tools/oracle/fuzz/corpus/helper_case/identity-grants-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::identity_grants::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/identity-grants/canonical-user-id.yaml
+  - tools/oracle/cases/helpers/identity-grants/team-role-map.yaml
+  - tools/oracle/cases/helpers/identity-grants/membership-grant.yaml
+  - tools/oracle/cases/helpers/identity-grants/user-gone.yaml
+  - tools/oracle/cases/helpers/identity-grants/not-a-member.yaml
+  - tools/oracle/cases/helpers/identity-grants/team-gone.yaml
+  - tools/oracle/cases/auth/identity-grants/canonical-user-id.yaml
+  - tools/oracle/cases/auth/identity-grants/team-role-map.yaml
+  - tools/oracle/cases/auth/identity-grants/membership-grant.yaml
+  - tools/oracle/cases/auth/identity-grants/user-gone.yaml
+  - tools/oracle/cases/auth/identity-grants/not-a-member.yaml
+  - tools/oracle/cases/auth/identity-grants/team-gone.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Inject UserLoader::load(UserId)->Result<UserRow,IdentityError>, TeamLoader::load(TeamId)->Result<TeamRow,IdentityError>
+    and MembershipLoader::load(UserId,TeamId)->Result<MembershipRow,IdentityError>; B736 and B737 install
+    the default loaders.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

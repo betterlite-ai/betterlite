@@ -1,0 +1,130 @@
+id: B728
+title: Daily spend search and export queries
+description: >-
+  Implement typed key search, top model keys, cache leakage and cursor export query builders with stable
+  grouping/order and bounded limits. Preserve cursor tuple comparison and timezone behavior; export rows
+  remain scoped to the authorized entity set supplied by the endpoint.
+
+
+  This task returns SQL plans over typed filters and executes no query. Helper cases call the pinned SQL
+  builder only; real Postgres execution belongs to B729. There is no outside-byte decoder or task fuzz
+  target here.
+
+
+  Build the production daily_activity_export module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/daily_activity_sql.py:
+  _bounded_limit (L304-L306; 3 source lines), build_key_search_sql (L309-L341; 33 source lines), build_model_top_keys_sql
+  (L344-L363; 20 source lines), build_cache_leakage_keys_sql (L366-L380; 15 source lines), build_export_sql
+  (L383-L454; 72 source lines), _export_grouping (L457-L509; 53 source lines), _export_cursor_clause (L512-L526;
+  15 source lines).
+
+
+  Add the daily_activity_export operation under B856 Management::database. Python calls only the owned
+  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
+  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a daily-activity-export-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 211 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  211 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 454 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/daily_activity_export.rs
+    - crates/betterlite-db/src/daily_activity_export/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/daily_activity_export/fixtures/**
+    - tools/oracle/src/helpers/daily_activity_export.rs
+    - tools/oracle/src/helpers/daily_activity_export/**
+    - tools/oracle/helpers/daily_activity_export.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/daily-activity-export/**
+    - tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L304-L526
+    why: Pinned implementation and exact ownership boundary for daily_activity_export.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L304-L306
+    why: Own _bounded_limit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L309-L341
+    why: Own build_key_search_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L344-L363
+    why: Own build_model_top_keys_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L366-L380
+    why: Own build_cache_leakage_keys_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L383-L454
+    why: Own build_export_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L457-L509
+    why: Own _export_grouping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L512-L526
+    why: Own _export_cursor_clause; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: search_escaped_pattern,
+      cursor_next_page, same_timestamp_tie, bounded_limit, cache_leakage, model_top_keys.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_export::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/daily_activity_export.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*")"
+        && grep -rlq "daily_activity_export" tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-export/search-escaped-pattern.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/cursor-next-page.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/same-timestamp-tie.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/bounded-limit.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/cache-leakage.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/model-top-keys.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/repositories/daily_activity_sql.py: B727 owns adjust_dates_for_timezone (L43-L56), build_where_clause
+    (L59-L106), _ptu_flat_cost_select (L109-L112), _rollup_metric_select (L115-L132), _validate_api_key_limit
+    (L135-L137), _top_api_keys_sql (L140-L148), build_aggregated_sql (L151-L216), build_entity_rollup_sql
+    (L219-L261), _key_spend_select (L264-L274), build_key_page_sql (L277-L301).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Caller filter values must remain bind parameters even when the query contains dynamic grouping or
+    cursor predicates.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

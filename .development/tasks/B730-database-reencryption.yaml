@@ -1,0 +1,149 @@
+id: B730
+title: Transactional master-key ciphertext migration
+description: >-
+  Implement CiphertextMigration with explicitly injected old/new StoredCipher instances. Enumerate the
+  pinned secret columns, count ciphertexts encrypted by each key, replace only decryptable values, and
+  atomically update rows while preserving unknown ciphertexts and nulls. This does not implement the cryptographic
+  format; B061 supplies it. Expose migration outcome and sanitized refusal counts for startup and credential-management
+  routes.
+
+
+  Build the production database_reencryption module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/master_key_migration.py:
+  replace_ciphertexts (L54-L69; 16 source lines), count_values_encrypted_with (L72-L82; 10 source lines),
+  count_values_encrypted_with_or_none (L85-L91; 7 source lines), reencrypt_stored_values (L94-L105; 11
+  source lines), _secret_columns_in (L111-L121; 11 source lines), _rows_of (L124-L135; 12 source lines),
+  _reencrypt_row (L138-L156; 19 source lines), _as_sql_parameter (L159-L160; 2 source lines), migrate_if_requested
+  (L183-L203; 21 source lines), migrate_from_previous_master_key (L206-L222; 17 source lines), _migrate_or_failure
+  (L225-L242; 18 source lines), _migrate (L245-L268; 24 source lines), describe_outcome (L271-L307; 37
+  source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_MAX_RECURSE_DEPTH=100.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::database_reencryption::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 205 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  205 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 439 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_reencryption.rs
+    - crates/betterlite-db/src/database_reencryption/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/database_reencryption/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/database_reencryption.rs
+    - crates/betterlite-config/src/database_reencryption/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L1-L307
+    why: Pinned implementation and exact ownership boundary for database_reencryption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L54-L69
+    why: Own replace_ciphertexts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L72-L82
+    why: Own count_values_encrypted_with; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L85-L91
+    why: Own count_values_encrypted_with_or_none; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L94-L105
+    why: Own reencrypt_stored_values; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L111-L121
+    why: Own _secret_columns_in; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L124-L135
+    why: Own _rows_of; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L138-L156
+    why: Own _reencrypt_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L159-L160
+    why: Own _as_sql_parameter; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L183-L203
+    why: Own migrate_if_requested; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L206-L222
+    why: Own migrate_from_previous_master_key; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L225-L242
+    why: Own _migrate_or_failure; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L245-L268
+    why: Own _migrate; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L271-L307
+    why: Own describe_outcome; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L90
+    why: DEFAULT_MAX_RECURSE_DEPTH default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: mixed_ciphertexts, nested_secret_columns,
+      null_secret, old_key_not_matching, rollback_on_write_error, dry_count_no_mutation, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_reencryption::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_reencryption::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*")"
+        && grep -rlq "DEFAULT_MAX_RECURSE_DEPTH" crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Unknown ciphertext must be preserved rather than interpreted as decryptable plaintext.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security
