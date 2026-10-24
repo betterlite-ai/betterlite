@@ -2760,6 +2760,9 @@ tasks:
     - B330
     - B331
     - B343
+    - B301
+    - B361
+    - B002
     file: tasks/B363-routing-plugins.yaml
     covers:
     - router_plugins.json
