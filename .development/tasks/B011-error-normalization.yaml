@@ -8,7 +8,8 @@ description: >-
   rather than adding a new client field, and preserve existing betterlite-owned messages. Add error_normalization
   and error_call_id helper cases plus real HTTP cases for the call-id setting, including an upstream retry header
   allowlist. Extend the config corpus for the new setting. Budget 260 normalizer/config lines, 120 integration and
-  300 tests.
+  300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
+  parser.
 scope:
   paths:
   - Cargo.toml
@@ -26,11 +27,12 @@ scope:
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/error-normalization/**
   - tools/oracle/cases/errors/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/error_normalization.py#L32-L205
   why: Stable codes and exact precedence across proxy type, messages, classes and status.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L6-L21
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L6-L20
   why: Opt-in call id field placement.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L531
   why: Explicit error headers versus raw vendor response headers.
@@ -50,6 +52,9 @@ dod:
 - text: The config corpus replays the added call-id setting.
   proof:
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -67,6 +72,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/error-normalization/proxy-type-first.yaml
 - tools/oracle/cases/helpers/error-normalization/message-before-class.yaml
