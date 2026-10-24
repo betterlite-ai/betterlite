@@ -2333,10 +2333,11 @@ tasks:
     - B334
     - B330
     - B327
+    - B359
+    - B324
     file: tasks/B335-complexity-sessions.yaml
     covers:
-    - litellm/router_strategy/complexity_router/{complexity_router,stall_detector}.py
-
+    - litellm/router_strategy/complexity_router/complexity_router.py
   - id: B336
     milestone: M2 routing
     title: Complexity routing through context compaction
