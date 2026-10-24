@@ -1886,10 +1886,16 @@ tasks:
     milestone: M1 openai data plane
     title: Provider identity and model resolution
     status: todo
-    depends_on: [B005, B009, B193]
+    depends_on:
+    - B004
+    - B005
+    - B193
+    - B209
+    - B210
+    - B211
     file: tasks/B174-provider-resolution.yaml
     covers:
-      - "litellm/litellm_core_utils/get_llm_provider_logic.py"
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
   - id: B175
     milestone: M1 openai data plane
     title: Provider parameter capabilities and mapping
@@ -2173,3 +2179,34 @@ tasks:
     file: tasks/B208-http-proxies.yaml
     covers:
     - litellm/llms/custom_httpx/http_handler.py
+  - id: B209
+    milestone: M1 openai data plane
+    title: Provider identity, prefix and endpoint primitives
+    status: todo
+    depends_on:
+    - B004
+    - B193
+    - B171
+    file: tasks/B209-provider-identity.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B210
+    milestone: M1 openai data plane
+    title: OpenAI-compatible defaults A
+    status: todo
+    depends_on:
+    - B209
+    - B171
+    file: tasks/B210-provider-defaults-a.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B211
+    milestone: M1 openai data plane
+    title: OpenAI-compatible defaults B
+    status: todo
+    depends_on:
+    - B209
+    - B171
+    file: tasks/B211-provider-defaults-b.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py

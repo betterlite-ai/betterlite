@@ -1,0 +1,91 @@
+id: B209
+title: Provider identity, prefix and endpoint primitives
+description: >-
+  Create betterlite-provider with ProviderId in src/identity.rs and typed ResolvedIdentity/ProviderDefaults inputs.
+  Implement _endpoint_matches_api_base, _is_non_openai_azure_model, _is_azure_claude_model, handle_cohere_chat_model_custom_llm_provider,
+  handle_anthropic_text_model_custom_llm_provider, declared_authenticating_provider and inferred-provider declaration
+  handling (lines 19-155), plus explicit provider/prefix/OpenRouter identity classification from get_llm_provider
+  lines 158-277, without default credential resolution. Expose a typed classification consumed by B174. ProviderId
+  is metadata, never executable Provider (B010 owns that enum). Use B193 catalog membership and synthetic secret
+  inputs; never trigger OAuth or read process environment. Budget 260 types/classification, 120 adapters, 300 tests
+  and 80 manifests (760 total). Write the behavior rstest functions b209_behavior_tests_behavior in adjacent tests.rs
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations provider_identity in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/identity.rs
+  - crates/betterlite-provider/src/identity/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-identity/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L19-L277
+  why: Identity and prefix classification, before default resolution.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::b209_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'provider_identity' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-identity/explicit-provider.yaml
+- tools/oracle/cases/helpers/provider-identity/cohere.yaml
+- tools/oracle/cases/helpers/provider-identity/anthropic-text.yaml
+- tools/oracle/cases/helpers/provider-identity/azure-claude.yaml
+- tools/oracle/cases/helpers/provider-identity/openrouter-auto.yaml
+- tools/oracle/cases/helpers/provider-identity/openrouter-nested.yaml
+- tools/oracle/cases/helpers/provider-identity/endpoint-exact.yaml
+- tools/oracle/cases/helpers/provider-identity/endpoint-path-boundary.yaml
+- tools/oracle/cases/helpers/provider-identity/endpoint-suffix-attack.yaml
+deviations: []
+out_of_scope:
+- >-
+  Full inferred_provider/get_llm_provider orchestration and unknown-model errors are B174; default tables B210/B211;
+  is_registered_custom_provider is B164.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
