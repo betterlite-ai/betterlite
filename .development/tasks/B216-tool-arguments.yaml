@@ -51,7 +51,7 @@ dod:
   - helper-case-corpus
 - text: The outside-byte parser has its target and newly committed production replay corpus.
   proof:
-  - tool_arguments-corpus
+  - tool-arguments-corpus
 checks:
   optional:
   - mutants
@@ -73,7 +73,7 @@ checks:
       grep -rlq 'tool_arguments' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: tool_arguments-corpus
+  - id: tool-arguments-corpus
     why: the required new behavior or its evidence is missing
     run: >-
       test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/tool_arguments)"
