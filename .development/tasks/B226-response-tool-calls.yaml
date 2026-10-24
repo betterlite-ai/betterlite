@@ -4,10 +4,10 @@ description: >-
   Implement Every function and NormalizedToolCall in this range, including get_tool_calls_from_response, has_tool_with_name
   and resolve_structured_messages and their private parsing/selection helpers. Handle typed bounded projections
   of chat, Responses and Anthropic envelopes without importing future endpoint crates. Preserve all-choice selection
-  and call IDs. Router B016/B021, guardrails B100 and spend index B069 consume these helpers directly. All functions
-  are pure and bounded, use injected policy and preserve source values. Budget 280 transforms/types, 110 adapters,
-  300 tests and 60 wiring (750 total). Add the response_tool_calls cargo-fuzz target, call the production parser,
-  and commit/replay malformed and boundary seeds. Write the behavior rstest functions b226_behavior_tests_behavior
+  and call IDs. Router B016/B021, guardrails B104/B107/B108 and spend index B069 consume these helpers directly.
+  All functions are pure and bounded, use injected policy and preserve source values. Budget 280 transforms/types,
+  110 adapters, 300 tests and 60 wiring (750 total). Add the response_tool_calls cargo-fuzz target, call the production
+  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions b226_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations response_tool_calls in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
