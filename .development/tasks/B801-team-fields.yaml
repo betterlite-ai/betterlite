@@ -113,7 +113,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/team-fields-*
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/team_fields.rs
     - crates/betterlite-config/src/team_fields/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-fields-*

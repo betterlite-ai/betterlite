@@ -117,7 +117,10 @@ scope:
     - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-settings/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-settings-*
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*
   lint_tables: false
 references:

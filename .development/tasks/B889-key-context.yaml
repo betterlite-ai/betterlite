@@ -94,7 +94,10 @@ scope:
     - tools/oracle/cases/auth/key-context/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/key_context.rs
     - crates/betterlite-config/src/key_context/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-context-*

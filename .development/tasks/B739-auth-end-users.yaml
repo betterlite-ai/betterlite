@@ -105,7 +105,10 @@ scope:
     - tools/oracle/cases/auth/auth-end-users/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/auth_end_users.rs
     - crates/betterlite-config/src/auth_end_users/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-end-users-*

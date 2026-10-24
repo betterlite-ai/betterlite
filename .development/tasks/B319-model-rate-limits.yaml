@@ -43,7 +43,10 @@ scope:
   - tools/oracle/litellm/probes/model_rate_limits.py
   - tools/oracle/cases/routing/model-rate-limits/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/model_rate_limits.rs
   - crates/betterlite-config/src/model_rate_limits/**

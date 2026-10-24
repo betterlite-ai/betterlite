@@ -98,7 +98,10 @@ scope:
     - tools/oracle/cases/auth/end-user-identity/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/end_user_identity.rs
     - crates/betterlite-config/src/end_user_identity/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/end-user-identity-*
