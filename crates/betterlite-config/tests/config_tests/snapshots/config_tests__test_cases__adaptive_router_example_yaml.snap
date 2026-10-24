@@ -1,0 +1,15 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "model_list.0.litellm_params.adaptive_router_config",
+            "model_list.1.litellm_params.input_cost_per_token",
+            "model_list.1.model_info.adaptive_router_preferences",
+            "model_list.2.litellm_params.input_cost_per_token",
+            "model_list.2.model_info.adaptive_router_preferences",
+        ],
+    },
+)
