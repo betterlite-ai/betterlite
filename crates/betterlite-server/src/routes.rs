@@ -24,6 +24,7 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
     Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
+        .route("/health/readiness", get(health_readiness))
         .fallback(|| async {
             (
                 StatusCode::NOT_FOUND,
@@ -38,18 +39,28 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ShutdownBody {
-                status: "shutting_down",
-            }),
-        )
-            .into_response();
+        return shutdown_health_response();
     }
     Json("I'm alive!").into_response()
 }
+async fn health_readiness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
+    if shutting_down.load(Ordering::Acquire) {
+        return shutdown_health_response();
+    }
+    Json(ReadinessBody { status: "healthy" }).into_response()
+}
+fn shutdown_health_response() -> Response {
+    let body = ShutdownBody {
+        status: "shutting_down",
+    };
+    (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
+}
 #[derive(Serialize)]
 struct ShutdownBody {
+    status: &'static str,
+}
+#[derive(Serialize)]
+struct ReadinessBody {
     status: &'static str,
 }
 #[derive(Serialize)]

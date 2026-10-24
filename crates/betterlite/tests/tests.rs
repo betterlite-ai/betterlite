@@ -56,6 +56,28 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     assert_json_logs(&stderr);
 }
 #[tokio::test]
+async fn short_config_alias_starts_server() {
+    let port = free_port().await;
+    let config_path = fixture(port, STANDARD_CONFIG).await;
+    let child = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
+        .args([
+            "-c",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let server = ServerGuard { child: Some(child) };
+    wait_until_ready(port, 100).await;
+    drop(server);
+}
+#[tokio::test]
 async fn dropping_server_guard_kills_server() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;

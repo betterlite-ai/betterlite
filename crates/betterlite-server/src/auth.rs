@@ -6,6 +6,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use regex::Regex;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::str;
 use subtle::ConstantTimeEq as _;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -14,7 +15,7 @@ pub(crate) async fn authenticate(
 ) -> Response {
     if matches!(
         request.uri().path(),
-        "/health/liveliness" | "/health/liveness"
+        "/health/liveliness" | "/health/liveness" | "/health/readiness"
     ) {
         return next.run(request).await;
     }
@@ -61,11 +62,14 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
     if header_bytes.is_empty() {
         return None;
     }
-    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
+    let header_value = str::from_utf8(header_bytes).ok()?.to_owned();
+    if name == "x-litellm-api-key" && !header_value.is_ascii() {
+        return None;
+    }
     let token = if name == header::AUTHORIZATION.as_str() {
         strip_prefix(&header_value).unwrap_or_default()
     } else if name == "x-litellm-api-key" {
-        strip_prefix(&header_value).unwrap_or_else(|| header_value.clone())
+        strip_prefix(&header_value).unwrap_or(header_value)
     } else {
         header_value
     };
@@ -83,7 +87,8 @@ fn strip_prefix(value: &str) -> Option<String> {
         .flatten()
 }
 fn aws_credential(value: &str) -> Option<String> {
-    let credential = Regex::new(r"Credential=(?:Bearer\s+)?([^/\s,]+)").ok()?;
-    let captures = credential.captures(value)?;
+    let bearer = Regex::new(r"Credential=Bearer\s+([^/\s,]+)").ok()?;
+    let plain = Regex::new(r"Credential=([^/\s,]+)").ok()?;
+    let captures = bearer.captures(value).or_else(|| plain.captures(value))?;
     captures.get(1).map(|token| token.as_str().to_owned())
 }

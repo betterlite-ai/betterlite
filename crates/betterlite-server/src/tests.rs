@@ -13,7 +13,7 @@ use std::{fs, path::Path};
 )]
 #[case::aws_first_credential(
     "AWS4-HMAC-SHA256 Credential=first, Credential=Bearer master/20261024/eu/service/aws4_request",
-    "first"
+    "master"
 )]
 #[case::aws_first_bearer(
     "AWS4-HMAC-SHA256 Credential=Bearer test-master/d/r/s/aws4_request, Credential=other/d",
@@ -21,7 +21,7 @@ use std::{fs, path::Path};
 )]
 #[case::aws_bearer_before_plain(
     "AWS4-HMAC-SHA256 Credential=other/d, Credential=Bearer test-master/d",
-    "other"
+    "test-master"
 )]
 #[case::aws_first_plain(
     "AWS4-HMAC-SHA256 Credential=test-master/d, Credential=other/d",
@@ -35,6 +35,11 @@ use std::{fs, path::Path};
 fn authorization_prefixes_match_litellm(#[case] value: &str, #[case] expected: &str) {
     let key = parse_key_header("authorization", value.as_bytes()).unwrap();
     assert_eq!(key.expose_secret(), expected);
+}
+#[test]
+fn invalid_utf8_header_is_ignored() {
+    assert!(parse_key_header("x-litellm-api-key", b"invalid-\xFF").is_none());
+    assert!(parse_key_header("x-litellm-api-key", b"invalid-\xC3\xBF").is_none());
 }
 #[rstest]
 #[case::authorization("authorization")]

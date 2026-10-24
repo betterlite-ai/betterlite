@@ -10,7 +10,7 @@ use tokio::runtime::Builder;
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
-    #[arg(long)]
+    #[arg(short, long)]
     config: PathBuf,
     #[arg(long, env = "HOST", default_value = "0.0.0.0")]
     host: String,
