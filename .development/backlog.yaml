@@ -301,14 +301,16 @@ tasks:
     milestone: M2 routing
     title: Request scheduler, priorities and admission control
     status: todo
-    depends_on: [B016]
+    depends_on:
+    - B016
+    - B346
     file: null
     covers:
-      - "litellm/scheduler.py"
-      - "litellm/types/scheduler.py"
-      - "litellm/proxy/route_priority.py"
-      - "litellm/integrations/adaptive_concurrency.py"
-      - "litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py"
+    - litellm/scheduler.py
+    - litellm/types/scheduler.py
+    - litellm/proxy/route_priority.py
+    - litellm/integrations/adaptive_concurrency.py
+    - litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py
   - id: B023
     milestone: M2 routing
     title: Router settings and weights API
@@ -2458,3 +2460,16 @@ tasks:
     covers:
     - litellm/types/management_endpoints/auto_router_endpoints.py
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
+
+  - id: B346
+    milestone: M2 routing
+    title: Priority queues and scheduled routing
+    status: todo
+    depends_on:
+    - B016
+    - B017
+    - B304
+    file: tasks/B346-request-scheduler.yaml
+    covers:
+    - litellm/scheduler.py
+    - litellm/types/scheduler.py
