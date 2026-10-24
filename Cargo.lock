@@ -192,6 +192,7 @@ dependencies = [
  "axum",
  "betterlite-http",
  "clap",
+ "futures-util",
  "reqwest",
  "rstest",
  "serde",
