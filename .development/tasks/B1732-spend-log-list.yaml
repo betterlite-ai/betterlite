@@ -1,0 +1,84 @@
+id: B1732
+title: Execute authorized UI and public spend-log searches
+description: >-
+  Register one handler at GET /spend/logs/v2 and GET /spend/logs/ui in
+  server::spend::log_list. Consume B1728's decoded query and validation phases. After
+  framework query validation, missing database is 401 internal_error/param None; then
+  validate sorts/cache/span values. Inside the exception-converted body, apply B1704's
+  admin check and date policy. For a non-admin UI request_id, perform the owner precheck
+  even when search also exists. Explicit team filters require team permission. Without
+  one, own-user scope applies to UI ID lookups or B1704's internal-user log-view roles;
+  permitted teams expand it to own user OR those teams. Preserve an explicit user filter
+  as an additional intersection. With no permitted teams, append the caller user predicate
+  even when a different user filter was supplied. Do not turn nullable caller IDs into an
+  omitted authorization clause. Keep other admitted roles' pinned route-level behavior.
+  Own the post-authorization SQL assembly and execution L2766-L3075. Bind all equality,
+  spend and metadata values; only B1728's closed columns/directions may be interpolated.
+  UI search owns its window, while v2 retains an outer inclusive window. request_id expands
+  to primary ID OR litellm_call_id, and exact primary matches sort first. Session substring
+  filtering escapes backslash, percent and underscore; key_alias and error_message LIKE
+  filters intentionally retain wildcard meaning. OAuth filtering compares JSON text to
+  lowercase true/false and excludes old missing/null stamps. Cache hit is lower(cache_hit)
+  equal to true; miss includes null and all other spellings. Optional health filtering
+  excludes both the raw and hashed internal health-service identity.
+  With group_by_session and no search, evaluate status on the chosen session representative,
+  not each member; other filters constrain the candidate rows before that choice. Delegate
+  to B1731 keyset paging only for UI, group_by_session=true, no request_id/search, and
+  sort_by=startTime. Other grouped requests use DISTINCT ON session/key with offset paging;
+  search disables grouping entirely. Count at most 10001 rows/groups and expose capped
+  total 10000. Flat pages still use the requested offset rather than the keyset pager's
+  count-window trimming. ttft_ms sorts the completion-start delta, treating null or end-time
+  completion starts as null and always NULLS LAST; other sorts preserve PostgreSQL defaults.
+  Grouped offset rows add request_id as tie-breaker, ordinary flat rows do not.
+  Fetch only B1728 lean columns, recheck all fetched owner pairs for non-admin UI ID lookups,
+  hydrate metadata through B1729 and project with B1730. UI enables full-session enrichment;
+  public v2 skips it. Convert caught failures through B865 without rewriting their codes.
+  Booted HTTP oracle cases cover both aliases and every branch above with shared database
+  fixtures, including collisions, old IDs, wildcard inputs, grouped status and capped totals.
+  Native tests verify race-time owner changes, parameter binding and query count. No new
+  parser is introduced. The 263-line execution half plus route decorators fit 800 changed
+  lines, leaving more than half for the authorization and SQL regression cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/log_list.rs
+    - crates/betterlite-server/src/spend/log_list/**
+    - tools/oracle/cases/http/spend-log-list/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2458-L2474
+    why: Both public/UI route decorators, registered exactly once by this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2766-L3075
+    why: Authorization, parameterized SQL, grouped selection, counting and post-fetch recheck.
+dod:
+  - text: Both aliases enforce the pinned user/team/ID scope before and after fetching, including client call-ID collisions.
+    proof: [log-list-tests, oracle]
+  - text: Search, grouping, representative status, caps and sorting preserve public/UI differences without loading heavy bodies.
+    proof: [log-list-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: log-list-tests
+      why: Authorized SQL execution or one of the public/UI branches is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::log_list::/)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-log-list/aliases-old-id-and-public-window.yaml
+  - tools/oracle/cases/http/spend-log-list/team-permission-and-explicit-user-intersection.yaml
+  - tools/oracle/cases/http/spend-log-list/colliding-call-id-primary-priority.yaml
+  - tools/oracle/cases/http/spend-log-list/session-literal-versus-metadata-wildcards.yaml
+  - tools/oracle/cases/http/spend-log-list/cache-oauth-health-and-span-filters.yaml
+  - tools/oracle/cases/http/spend-log-list/representative-status-search-disables-grouping.yaml
+  - tools/oracle/cases/http/spend-log-list/keyset-offset-count-cap-and-ttft.yaml
+  - tools/oracle/cases/http/spend-log-list/ui-session-key-isolation-v2-no-enrichment.yaml
+  - tools/oracle/cases/http/spend-log-list/db-before-sort-and-date-errors.yaml
+deviations: []
+out_of_scope:
+  - B1728 owns L2475-L2765 inputs and filter primitives; B1731 grouped paging, B1730 row envelopes/legacy export, B1729 detail/daily projection and B1704 visibility checks.
+  - B1721-B1727 own non-log report handlers and B069 owns capture-rate routing and final composition.
+pitfalls:
+  - Adding a search value disables session grouping even when group_by_session=true remains in the query.
+  - Wildcards are escaped for session_id but intentionally remain active in metadata substring filters.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

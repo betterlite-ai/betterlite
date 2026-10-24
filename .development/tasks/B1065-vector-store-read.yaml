@@ -1,184 +1,97 @@
 id: B1065
-title: Vector store read
+title: Vector-store SDK retrieve and list
 description: >-
-  Implement provider vector store retrieve/list with source cursor/order parameters and typed objects. Resolve configured
-  provider credentials once and preserve pagination metadata and missing-store errors.
+  Implement complete retrieve/aretrieve/list/alist in core::api::vector_store_read. B174 resolves provider
+  names, B010 selects config, B2485 performs the HTTP read, B012 logs and B011 maps failures. Register VectorStoreRead in
+  B2401, with real SDK calls against OpenAI mock HTTP. Retrieve requires vector_store_id. List defaults
+  after/before=null,limit=20,order=desc; extras, timeout and provider default null. Only null provider uses
+  openai. A slash invokes get_llm_provider and passes its api_type into provider config selection.
+  No registry lookup happens here. REQUEST_TIMEOUT is the existing B002 float setting (6000 seconds);
+  null/zero timeout falls back to it even though the read transport does not forward timeout to GET.
 
-
-  Implement crates/betterlite-core/src/api/vector_store_read.rs. Use VectorStoreReadInput and VectorStoreReadResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions vector_retrieve, vector_list_after, vector_list_order, vector_not_found
-  under api::vector_store_read::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_store_read::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorStoreRead in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_read: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/vector_stores/main.py: aretrieve (L495-L543); litellm/vector_stores/main.py: retrieve
-  (L547-L623); litellm/vector_stores/main.py: alist (L627-L681); litellm/vector_stores/main.py: list (L685-L775).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 222 owned nonblank/non-comment/non-docstring Python lines (245 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 242 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 507 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1058 (Vector store contracts), B1087 (Api boundaries), B527 (OpenAI vector stores
-  and attached files), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Own 246 nonblank/non-comment physical lines at main.py:493-775, including decorators and all four
+  wrappers. Share mode-independent preparation; retain async context, true-only flags and awaitable result
+  handling. Allow 200 implementation, 120 tests, 85 adapters, 105 cases and 65 settings/corpus/wiring lines,
+  575 total. Inputs are already parsed B1131 records; reuse config/SDK decoders and do not create another parser.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_store_read.rs
   - crates/betterlite-core/src/api/vector_store_read/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/vector_store_read.rs
-  - crates/betterlite-config/src/api/vector_store_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/vector_store_read.rs
-  - tools/oracle/src/helpers/vector_store_read/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/vector_store_read.py
-  - tools/oracle/helpers/vector_store_read/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_store_read-*
-  - tools/oracle/cases/helpers/vector-store-read/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_store_read.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_store_read.py
+  - tools/oracle/cases/sdk-http/vector-store-read/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-read-*
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L493-L775
+  why: Retrieve and list retain different option records, but share provider resolution and exception mapping.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L495-L775
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Timeout fallback is an environment-loaded float, not a hard-coded client timeout.
 dod:
-- text: 'vector retrieve: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-retrieve
-  - oracle
-- text: 'vector list after: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-list-after
-  - oracle
-- text: 'vector list order: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-list-order
-  - oracle
-- text: 'vector not found: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-not-found
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    retrieve_preserves_record calls both modes with vs_a and mock 200 {id:vs_a,object:vector_store,name:notes,
+    status:completed,file_counts:{total:2,completed:2}}. Expect GET /v1/vector_stores/vs_a and that record.
+    extra_query={after:ignored} and extra_body={name:ignored} do not enter the request. A registry containing
+    a different credential is never consulted; caller api_key determines Authorization. Log model=null,
+    optional_params={vector_store_id:vs_a},litellm_params={litellm_call_id:null} before the handler.
+  proof: [read-tests, oracle, python-adapter]
+- text: >-
+    list_defaults_and_cursors calls without arguments and expects GET /v1/vector_stores?limit=20&order=desc.
+    after="",before=vs_z,limit=0,order=asc retains all four query values. Explicit null limit/order omits
+    both, and unsupported order=sideways is forwarded without local validation. Mock {object:list,data:[],
+    first_id:null,last_id:null,has_more:false} is preserved. List logs all four option fields, including nulls.
+  proof: [read-tests, oracle, python-adapter]
+- text: >-
+    read_provider_failures uses provider null->openai; empty/unknown names fail enum resolution with no HTTP;
+    vertex_ai/rag_api passes provider=vertex_ai,api_type=rag_api to configuration. Known unsupported anthropic
+    raises source ValueError "Vector store retrieve is not supported for anthropic" or "Vector store list is
+    not supported for anthropic", mapped to APIConnectionError,500,type/param/code=null. Mock HTTP 404 yields
+    NotFoundError,404,type/param/code=null in either mode. A supplied mode-matched client and request context
+    reach transport; true flags choose async while 1/"true" do not. Compare source messages but ignore
+    betterlite wording under the common error decision.
+  proof: [read-tests, oracle, python-adapter]
+- text: >-
+    loads_read_timeout loads REQUEST_TIMEOUT unset=6000,"4.5"=4.5 and invalid "bad" as config failure.
+    Native handler capture sees null/0->configured timeout and 3->3; no upstream GET receives this override.
+    Commit seeds for the existing config loader and vector_store_read SDK case decoder.
+  proof: [read-tests, config-tests, config-corpus, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_read::/)
-      - test(/::replays_corpus$/)'
-  - id: case-vector-retrieve
-    why: the vector-retrieve behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_read::tests::vector_retrieve($|::)/)'
-  - id: case-vector-list-after
-    why: the vector-list-after behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_read::tests::vector_list_after($|::)/)'
-  - id: case-vector-list-order
-    why: the vector-list-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_read::tests::vector_list_order($|::)/)'
-  - id: case-vector-not-found
-    why: the vector-not-found behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_read::tests::vector_not_found($|::)/)'
+  - id: read-tests
+    why: retrieve or pagination loses its source defaults and provider routing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_read::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_read::tests::loads_settings($|::)/)'
+    why: read timeout cannot be loaded and overridden through the production config
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_read::tests::loads_read_timeout($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_store_read.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_read-*)"
-      && grep -qE "^[[:space:]]+vector_store_read:" tools/oracle/fuzz/corpus/helper_case/vector_store_read-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-read)"
+    why: the environment input has no committed regression case
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: python-adapter
+    why: the read comparison lacks an independently executed SDK path
+    run: test -f tools/oracle/sdk_http/vector_store_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: no new read-case seed exercises the tagged operation
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-store-read/vector-retrieve.yaml
-- tools/oracle/cases/helpers/vector-store-read/vector-list-after.yaml
-- tools/oracle/cases/helpers/vector-store-read/vector-list-order.yaml
-- tools/oracle/cases/helpers/vector-store-read/vector-not-found.yaml
+- tools/oracle/cases/sdk-http/vector-store-read/retrieve-preserves-record.yaml
+- tools/oracle/cases/sdk-http/vector-store-read/list-defaults-and-cursors.yaml
+- tools/oracle/cases/sdk-http/vector-store-read/read-provider-failures.yaml
 deviations: []
 out_of_scope:
-- 'litellm/vector_stores/main.py: B1064 owns _direct_vector_store_embedding_executor L46-L53, mock_vector_store_search_response
-  L56-L77, mock_vector_store_create_response L80-L105, acreate L109-L169, create L173-L282, asearch L286-L355, search
-  L359-L491.'
-- 'litellm/vector_stores/main.py: B1066 owns aupdate L779-L833, update L837-L930, adelete L934-L982, delete L986-L1062.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1064 owns create/search and the mock/executor helpers; B1066 owns update/delete. B2485 owns complete GET transport functions.
+- B527 and the selected provider config own URL/response transforms; B158-B161 own package exports. HTTP routes are B1068.
 pitfalls:
-- Within retrieve\'s vector_store_provider_config is None branch, preserve raise ValueError(f'Vector store retrieve
-  is not supported for {custom_llm_provider}') and its nested guards.
-- retrieve uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field spelling in the typed
-  projection.
+- extra_query never reaches the transport, so it cannot override list's default limit=20.
+- A registry entry does not supply retrieve/list credentials, unlike search.
+- Passing timeout=0 chooses REQUEST_TIMEOUT rather than disabling a timeout.
 review_level: security
 budget:
-  max_changed_lines: 510
-  max_new_expects: 1
+  max_changed_lines: 610
+  max_new_expects: 0

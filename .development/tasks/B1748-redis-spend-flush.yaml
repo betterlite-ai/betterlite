@@ -1,0 +1,86 @@
+id: B1748
+title: Elect Redis spend flushers and restore only uncommitted cohorts
+description: >-
+  Add betterlite-db::spend_flush::redis for db_update_spend_transaction_handler,
+  _commit_spend_updates_to_db_with_redis, _commit_daily_tag_spend_to_db_with_redis,
+  _drain_and_commit_daily_tag_spend_from_redis and _restore_tag_spend_the_commit_left_behind.
+  Dispatch by B1737's loaded use_redis_transaction_buffer policy, preserving the memory
+  branch in B1747. Publish memory through B1738 before trying the db_spend_update_job pod
+  lock. Only the elected holder drains Redis. Keep a typed uncommitted-cohort record after
+  the seven-slot destructive pop: entity balances, daily user/team/org/end-user/agent,
+  window increments. Commit in that order and clear a cohort only after completion.
+  B1745 reports individual entity-table progress; on failure replace its cohort with
+  B1746's remaining-table projection before propagating to the outer log-and-restore path.
+  Daily writers mutate their pending maps, so restore those remaining maps rather than a
+  pre-write clone. Window errors remove that cohort when replay is unsafe. Finalization
+  pushes non-None uncommitted cohorts through B1738 and then releases the lock. Retain
+  the source ordering: a non-Redis exception during restoration can prevent the later
+  release call; do not claim an atomic pop/commit or guaranteed release across that fault.
+  Daily tags publish on their own queue and elect on db_daily_tag_spend_update_job. Settle
+  prior interrupted tag commits before popping. Empty tag aggregates return immediately.
+  Run B1746 daily-tag commits behind an owned commit-phase barrier. If failure or
+  cancellation arrives before committing, cancel the commit future, restore the remaining
+  map and propagate. Once committing, retain a continuation until the result is known;
+  restore only a noncancelled failed commit, never a successful commit. The outer tag
+  method logs ordinary failures and releases its acquired lock; cancellation propagates.
+  Extract proxy/utils.py::update_spend and update_daily_tag_spend as public job adapters.
+  Both pass three retries. The ordinary update first runs balance dispatch, then recovers
+  parked logs through B1749 and runs B1744 when its complete queue census is nonzero.
+  It does not catch a preceding balance failure. The tag adapter chooses Redis or memory
+  and logs any ordinary failure without a traceback, preserving the source's diagnostic
+  distinction from spend_log_error. B124 owns periodic scheduling and B070 assembles these
+  handles. Test two independent pod owners, lock refusal after successful publication,
+  partial entity and daily commits, unsafe windows, restoration failure and tag cancellation
+  with the real isolated Redis fixture and PostgreSQL. These live methods and job adapters
+  contain approximately 330 source lines; allocate 750 changed lines. All input is already
+  decoded by B1737, so this coordinator introduces no parser or helper-oracle facade.
+scope:
+  paths:
+    - crates/betterlite-db/src/spend_flush.rs
+    - crates/betterlite-db/src/spend_flush/{redis.rs,redis/**}
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L318-L328
+    why: Deferred tag restoration waits for a definitive commit result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1495-L1694
+    why: Buffer-mode dispatch, leader election and typed uncommitted cohorts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1876-L1912
+    why: Separate tag publication and pod lease.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1936-L1982
+    why: Destructive tag drain and commit-phase cancellation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7416-L7458
+    why: Direct periodic balance and log update adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7532-L7574
+    why: Independent daily-tag job and plain-error logging.
+dod:
+  - text: Only a lease holder drains Redis and restores precisely the uncommitted safe remainder after failure.
+    proof: [redis-leader-tests]
+  - text: Tag cancellation resolves the commit outcome before restoration and remains separate from the main spend job.
+    proof: [redis-tag-tests]
+  - text: Public job adapters pass the pinned retry count and preserve balance-before-log ordering.
+    proof: [spend-job-adapter-tests]
+checks:
+  optional: []
+  commands:
+    - id: redis-leader-tests
+      why: Leadership, destructive-pop recovery or partial-commit behavior is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::redis::leader::/)'
+    - id: redis-tag-tests
+      why: Tag leases and interrupted-commit restoration lack concurrency tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::redis::tags::/)'
+    - id: spend-job-adapter-tests
+      why: Direct and tag scheduler adapters are absent or use the wrong sequencing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::redis::jobs::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1747 supplies non-Redis queues and monitor/shutdown handling; B1737/B1738 own Redis serialization, destructive reads, publication and restoration.
+  - B1745 commits balances and B1746 owns daily/turn commits plus their safety state; B1749 stores request logs. B070/B1742/B1743/B1744 own the remaining writer entry and projection functions.
+  - B124 retains proxy/utils.py helpers outside the explicit spend extractions and all proxy_server.py scheduler registration.
+pitfalls:
+  - The main Redis path does not flush tool discovery; that call exists only in the non-Redis writer branch at the pin.
+  - Publishing to Redis must still occur on a pod that subsequently fails to acquire the database-writer lease.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

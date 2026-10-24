@@ -1,235 +1,133 @@
 id: B918
-title: Response chat request
+title: Assemble Responses requests from chat options
 description: >-
-  Build Responses requests from chat options and content with explicit nested text merging, sanitized litellm_params,
-  tool conversion, reasoning effort, web search and response_format. Consume response-chat-history and B175 parameter
-  outputs; preserve passthrough only in the named bounded provider field.
+  Implement api::response_chat_request with the full request builder and its option,
+  metadata, tool, extra_body, reasoning, web-search and response-format methods. B917
+  supplies history, B1136 tool choices, B216 custom-tool format conversion, B905 normalized
+  stream options and B1138 the optional-field set. B247 supplies logging state whose
+  call_type changes to responses before dispatch; debug diagnostics use B012's sink.
+  No provider request occurs here.
 
-
-  Implement crates/betterlite-core/src/api/response_chat_request.rs. Use ResponseChatRequestInput and ResponseChatRequestResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions mixed_text_image_content, reasoning_effort_text_merge, web_search_tool,
-  extra_body_overrides, json_schema_text_format under api::response_chat_request::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.reasoning_auto_summary
-  defaults to False; env.LITELLM_REASONING_AUTO_SUMMARY defaults to 'false'. No environment reads occur outside
-  betterlite-config. Test api::response_chat_request::tests::loads_settings uses the production Config loader and
-  an injected environment map, with a named rstest case for every key above, explicit override, unset/default and
-  invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report; a
-  grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
-  than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponseChatRequest in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_chat_request: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._map_optional_params_to_responses_api_request
-  (L489-L526); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._merge_text
-  (L529-L539); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._build_sanitized_litellm_params
-  (L541-L558); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._merge_responses_api_request_into_request_data
-  (L560-L579); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.transform_request
-  (L581-L659); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._convert_tools_to_responses_format
-  (L1117-L1149); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._extract_extra_body_params
-  (L1151-L1178); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._map_reasoning_effort
-  (L1180-L1197); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._add_web_search_tool
-  (L1199-L1225); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.transform_response_format_to_text_format
-  (L1227-L1228); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._transform_response_format_to_text_format
-  (L1230-L1275). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 230 owned nonblank/non-comment/non-docstring Python lines (266 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 250 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds and
-  30 wiring; 536 total within the 540-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
-  and mapping), B183 (Bounded inline media conversion), B917 (Response chat history), B1087 (Api boundaries), B1136
-  (Responses chat content projection), B905 (Responses parameters), B002 (Load LiteLLM config.yaml into typed config).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  Load litellm_settings.reasoning_auto_summary through B002 with default false and
+  LITELLM_REASONING_AUTO_SUMMARY with default "false". Effective auto-summary is the
+  boolean flag OR an environment string equal to "true" after lowercasing, without trimming.
+  Test the real config loader and add seeds to its existing corpus. B171's response_chat_request
+  operation compares output records, input mutations and logging effects with the pinned builder.
+  Owned functions contain 266 nonblank/non-comment lines, plus the setting declaration. Reserve 280 implementation,
+  180 tests, 110 cases, 80 adapters, 55 settings/seeds and 25 wiring lines: 730 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_chat_request.rs
   - crates/betterlite-core/src/api/response_chat_request/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/response_chat_request.rs
   - crates/betterlite-config/src/api/response_chat_request/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/response-chat-request-*
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/response_chat_request.rs
-  - tools/oracle/src/helpers/response_chat_request/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/response_chat_request.py
-  - tools/oracle/helpers/response_chat_request/**
   - tools/oracle/fuzz/corpus/helper_case/response_chat_request-*
   - tools/oracle/cases/helpers/response-chat-request/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L374-L374
-  why: Setting litellm_settings.reasoning_auto_summary and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1190-L1190
-  why: Setting env.LITELLM_REASONING_AUTO_SUMMARY and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L489-L659
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L996-L996
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1024-L1024
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1116-L1275
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Complete request mapping, text merge, metadata sanitization and system-only fallback, without split signatures.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1117-L1275
+  why: Tools, destructive extra_body extraction, reasoning summary flag, web search and JSON schema defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L374-L374
+  why: The public reasoning_auto_summary flag starts false.
 dod:
-- text: 'mixed text image content: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mixed-text-image-content
-  - oracle
-- text: 'reasoning effort text merge: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-reasoning-effort-text-merge
-  - oracle
-- text: 'web search tool: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-web-search-tool
-  - oracle
-- text: 'extra body overrides: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-extra-body-overrides
-  - oracle
-- text: 'json schema text format: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-json-schema-text-format
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    request_option_precedence maps max_tokens=4 then max_completion_tokens=7 to
+    max_output_tokens=7; reverse insertion order gives 4. Null values are skipped.
+    Every B1138 optional key is forwarded unchanged unless specially mapped: include,
+    instructions,max_output_tokens,metadata,parallel_tool_calls,previous_response_id,reasoning,
+    store,background,stream,temperature,text,tool_choice,tools,top_p,truncation,user,service_tier,
+    safety_identifier,prompt,max_tool_calls,prompt_cache_key,prompt_cache_retention,
+    prompt_cache_options,stream_options,top_logprobs,partial_images,context_management.
+    Unknown keys disappear. stream_options={include_usage:true,include_obfuscation:false}
+    becomes {include_obfuscation:false} via B905, not a chat stream-options object.
+  proof: [request-tests, oracle, request-adapter]
+- text: >-
+    text_format_merge combines verbosity=low with json_schema(name absent,schema absent,
+    strict absent) into text={verbosity:low,format:{type:json_schema,name:response_schema,
+    schema:{},strict:false}}, in either order. json_object and text become format with
+    just that type. Falsy/non-dict/unknown response_format yields no new format. Explicit
+    null schema/name/strict is preserved. Existing text fields survive a merge; later
+    direct text replaces earlier text. A user string of 65 characters is truncated to
+    its first 64 Unicode characters; 64 characters and nonstrings pass unchanged.
+  proof: [request-tests, oracle, request-adapter]
+- text: >-
+    extra_body_and_metadata takes extra_body.reasoning_effort over a top-level value,
+    removes extra_body from optional_params and promotes all recognized Responses keys.
+    Unsupported extra_body.vendor is dropped from the returned options, despite the
+    source docstring promising retention. Sanitization removes every Responses optional
+    key from litellm_params, merges metadata then litellm_metadata with the latter winning,
+    and omits an empty merged map. Non-dict metadata is ignored; other SDK params survive.
+  proof: [request-tests, oracle, request-adapter]
+- text: >-
+    system_only_and_stream sends [system:"rules"] as one system input_text message
+    and no instructions; an empty system string likewise becomes empty input_text.
+    With a user message, leading instructions="rules" wins over optional instructions="other".
+    optional stream=false plus litellm_params.stream=true still yields stream=true.
+    Missing stream defaults false and is omitted unless explicitly mapped. Preserve model,
+    client including null and the logging object; nonempty headers become extra_headers,
+    empty headers do not overwrite a surviving SDK extra_headers value. Set call_type=responses.
+    previous_response_id=resp_a is forwarded and logs
+    "Chat provider: Warning ignoring previous response ID: %s"; no session read occurs.
+    Pin "Chat provider: Stream parameter: %s" and
+    "Chat provider: Final request model=%s, input_items=%s" to the actual values.
+  proof: [request-tests, oracle, request-adapter]
+- text: >-
+    tool_and_search_mapping flattens nested function f into type=function,name=f with
+    parameters,strict,description null when absent. Custom names default "", description
+    is copied when nonnull and dict format uses B216; already flat/unknown tools pass through.
+    web_search_options={} appends {type:web_search}; a dict type=vendor overwrites that type,
+    existing tools remain and repeated calls append duplicates. Null options are skipped
+    by the mapper; a non-dict nonnull value still adds the bare web_search tool.
+  proof: [request-tests, oracle, request-adapter]
+- text: >-
+    reasoning_summary_policy leaves dict reasoning_effort={effort:low,summary:brief}
+    unchanged even when auto-summary is enabled. Scalar low becomes {effort:low} by default
+    and {effort:low,summary:detailed} when enabled. loads_reasoning_summary_settings tests
+    unset/false, flag=true, env=TRUE, env=" true ", env=1 and env=garbage: only flag=true
+    or env=TRUE enables it. Explicit flag=false does not suppress env=true. Invalid YAML
+    boolean is a B002 validation error and the recognized keys are absent from unsupported reporting.
+  proof: [request-tests, request-settings, request-config-corpus, oracle, request-adapter]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::response_chat_request::/)
-      - test(/::replays_corpus$/)'
-  - id: case-mixed-text-image-content
-    why: the mixed-text-image-content behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::tests::mixed_text_image_content($|::)/)'
-  - id: case-reasoning-effort-text-merge
-    why: the reasoning-effort-text-merge behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::tests::reasoning_effort_text_merge($|::)/)'
-  - id: case-web-search-tool
-    why: the web-search-tool behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::tests::web_search_tool($|::)/)'
-  - id: case-extra-body-overrides
-    why: the extra-body-overrides behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::tests::extra_body_overrides($|::)/)'
-  - id: case-json-schema-text-format
-    why: the json-schema-text-format behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::tests::json_schema_text_format($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::response_chat_request::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/response-chat-request-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/response_chat_request.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_chat_request-*)"
-      && grep -qE "^[[:space:]]+response_chat_request:" tools/oracle/fuzz/corpus/helper_case/response_chat_request-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-chat-request)"
+  - id: request-tests
+    why: request merge precedence, side effects or tool mapping differs
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_request::/)'
+  - id: request-settings
+    why: reasoning settings are declared without loading or application
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::response_chat_request::tests::loads_reasoning_summary_settings($|::)/)'
+  - id: request-config-corpus
+    why: the existing configuration parser has no auto-summary inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/response-chat-request-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: request-adapter
+    why: the real request builder and mutation effects are not compared
+    run: test -f tools/oracle/helpers/response_chat_request.py && grep -qE '^[[:space:]]+response_chat_request:' tools/oracle/fuzz/corpus/helper_case/response_chat_request-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/response-chat-request/mixed-text-image-content.yaml
-- tools/oracle/cases/helpers/response-chat-request/reasoning-effort-text-merge.yaml
-- tools/oracle/cases/helpers/response-chat-request/web-search-tool.yaml
-- tools/oracle/cases/helpers/response-chat-request/extra-body-overrides.yaml
-- tools/oracle/cases/helpers/response-chat-request/json-schema-text-format.yaml
+- tools/oracle/cases/helpers/response-chat-request/request-option-precedence.yaml
+- tools/oracle/cases/helpers/response-chat-request/text-format-merge.yaml
+- tools/oracle/cases/helpers/response-chat-request/extra-body-and-metadata.yaml
+- tools/oracle/cases/helpers/response-chat-request/system-only-and-stream.yaml
+- tools/oracle/cases/helpers/response-chat-request/tool-and-search-mapping.yaml
+- tools/oracle/cases/helpers/response-chat-request/reasoning-summary-policy.yaml
 deviations: []
 out_of_scope:
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B917 owns _provider_metadata L81-L88,
-  _upstream_response_id L91-L94, _get_reasoning_items L109-L116, _reasoning_input_items L119-L132, _build_reasoning_item
-  L135-L160, _reasoning_item_from_output_item L163-L178, _reasoning_items_from_output_items L181-L186, _as_chat_reasoning_items
-  L189-L194, _map_incomplete_reason_to_finish_reason L200-L203, _incomplete_reason_from_response_payload L216-L223,
-  tool_call_dict_from_output_item L230-L262, _reasoning_item_to_response_input L271-L283, LiteLLMResponsesTransformationHandler.__init__
-  L291-L292, LiteLLMResponsesTransformationHandler._handle_raw_dict_response_item L315-L358, LiteLLMResponsesTransformationHandler.convert_chat_completion_messages_to_responses_api
-  L360-L487.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B1136 owns _input_file_from_file_value
-  L206-L213, _flat_responses_tool_choice L265-L268, LiteLLMResponsesTransformationHandler._normalize_tool_choice_for_responses_api
-  L294-L313, LiteLLMResponsesTransformationHandler._convert_content_str_to_input_text L991-L995, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format_image
-  L997-L1023, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format L1025-L1115, LiteLLMResponsesTransformationHandler._convert_annotations_to_chat_format
-  L1278-L1311.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B919 owns LiteLLMResponsesTransformationHandler._convert_response_output_to_choices
-  L662-L802, LiteLLMResponsesTransformationHandler._build_empty_incomplete_choice L805-L823, LiteLLMResponsesTransformationHandler._extract_output_from_completed_event
-  L826-L833, LiteLLMResponsesTransformationHandler._recover_output_items_from_raw_sse L836-L882, LiteLLMResponsesTransformationHandler._recover_output_items_from_logging
-  L885-L888, LiteLLMResponsesTransformationHandler.transform_response L890-L981, LiteLLMResponsesTransformationHandler.get_model_response_iterator
-  L983-L989.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._map_responses_status_to_finish_reason
-  L1313-L1325 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B920 owns OpenAiResponsesToChatCompletionStreamIterator.__init__
-  L1329-L1338, OpenAiResponsesToChatCompletionStreamIterator._handle_string_chunk L1340-L1355, OpenAiResponsesToChatCompletionStreamIterator._sequential_tool_call_index
-  L1358-L1373, OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream L1376-L1636,
-  OpenAiResponsesToChatCompletionStreamIterator.chunk_parser L1638-L1656, OpenAiResponsesToChatCompletionStreamIterator._remember_served_service_tier
-  L1658-L1664, OpenAiResponsesToChatCompletionStreamIterator._with_served_service_tier L1666-L1669, OpenAiResponsesToChatCompletionStreamIterator._with_stream_scoped_id
-  L1671-L1676.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B917 owns history/shared reasoning; B1136 content/choices/annotations; B919 response assembly; B920 iterator construction and streaming; B2412 SSE recovery; the status helper at L1313-L1325 has no caller at the pin.
+- B216 owns custom-tool grammar normalization and B921 executes the request over HTTP.
 pitfalls:
-- 'transformation.py:622 emits the diagnostic ''Chat provider: Stream parameter: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
-- 'transformation.py:652 emits the diagnostic ''Chat provider: Final request model=%s, input_items=%s''; retain
-  its level and fallback instead of turning it into a hard error.'
+- The source mutates extra_body and discards its unsupported leftovers; its docstring is inaccurate.
+- reasoning_auto_summary and its environment flag are ORed, so an explicit false cannot override true in the environment.
+- The previous-response warning says the ID is ignored but it remains in the request.
 review_level: standard
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 730
   max_new_expects: 1

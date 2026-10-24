@@ -1,100 +1,43 @@
 id: B1022
 title: File upload validation
 description: >-
-  Validate every file upload before forwarding, then validate batch JSONL rows for purpose=batch. Add general_settings.max_file_size_mb,
-  allowed_file_extensions, blocked_file_extensions and batch size/validation settings from the pinned declarations
-  with their exact defaults; integer settings reject booleans. Preserve source status/type/param/code for unsafe
-  filename, wrong extension, empty file and malformed rows. The concrete general_settings keys are max_file_size_mb=None,
-  max_batch_file_size_mb=None, allowed_file_extensions=None and blocked_file_extensions=None; absent/nonpositive
-  size settings disable that logical limit, while streaming/parser memory remains bounded by transport ownership.
+  Implement both general_upload_validation.py and batch_file_validation.py completely in
+  betterlite-core::api::file_upload_validation, using B2460's safe_filename for extension extraction.
+  The result is a typed failure or success; the corresponding raise functions preserve ProxyException
+  type=invalid_request_error, param and string code. The route in B1032 owns HTTP ordering and mapping.
+  Every message below ends with the literal "The file was not forwarded to the provider." unless
+  already quoted in full. Assert the source message for each named input as well as status/type/param/code.
 
+  Add general_settings.max_file_size_mb and max_batch_file_size_mb (both default null, <=0 disables
+  the logical size cap), allowed_file_extensions and blocked_file_extensions (both default null).
+  General max_file_size_mb accepts integers excluding booleans; extensions accept lists containing
+  only strings. max_batch_file_size_mb uses the route's separate Pydantic int-or-null coercion:
+  "1" and true become 1, fractional 1.5 fails; B1032 owns that adapter. Preserve general coercion failures
+  as typed configuration-value errors. The source coercers raise
+  TypeError, with "expected an integer, got <repr>" or "expected a list of strings, got <repr>".
+  Use the existing config loader and add api::file_upload_validation::tests::loads_settings there.
+  No environment variables are read by these modules.
 
-  Implement crates/betterlite-core/src/api/file_upload_validation.rs. Use FileUploadValidationInput and FileUploadValidationResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  decode_file_upload_validation(bytes, line_shape, limits) is the production bounded JSONL decoder.
+  It reports physical line numbers starting at 1, skips blank lines, and tests key presence rather
+  than value types. OpenAI rows require custom_id, method, url, body in that order; Vertex-native
+  rows require request. Fuzz this decoder, including BOM/UTF-16/UTF-32 input and escaped surrogate
+  strings accepted by Python's json.loads(bytes); parsing must not be stricter than the validator.
+  A typed JSON-token representation may retain strings for validation without materializing invalid
+  Unicode. All checks use finite B1087 limits while file bodies remain streamed.
 
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): general_upload_validation.py:144 type='invalid_request_error', param='file', code=413; general_upload_validation.py:154
-  type='invalid_request_error', param='file', code=400; general_upload_validation.py:165 type='invalid_request_error',
-  param='file', code=400; general_upload_validation.py:175 type='invalid_request_error', param='file', code=400;
-  batch_file_validation.py:143 type='invalid_request_error', param='file', code=413; batch_file_validation.py:153
-  type='invalid_request_error', param='file', code=400; batch_file_validation.py:163 type='invalid_request_error',
-  param='file', code=400; batch_file_validation.py:170 type='invalid_request_error', param='file', code=400; batch_file_validation.py:180
-  type='invalid_request_error', param='file', code=400; batch_file_validation.py:190 type='invalid_request_error',
-  param=key, code=400. Compare the actual source status, error type, param and code; ignore only error wording except
-  in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions unsafe_dotdot_filename, nul_filename, extension_casefold, file_too_large_413,
-  empty_batch, batch_row_missing_body, vertex_native_request_row under api::file_upload_validation::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.max_file_size_mb
-  defaults to None; nonpositive disables logical size limit; general_settings.max_batch_file_size_mb defaults to
-  None; nonpositive disables logical size limit; general_settings.allowed_file_extensions defaults to None; general_settings.blocked_file_extensions
-  defaults to None. No environment reads occur outside betterlite-config. Test api::file_upload_validation::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  The production external-byte decoder is betterlite-core::api::file_upload_validation::decode_file_upload_validation(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input raw_line at litellm/proxy/openai_files_endpoints/batch_file_validation.py:91.
-  Place its implementation in crates/betterlite-core/src/api/file_upload_validation.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/file_upload_validation.rs passes arbitrary
-  bounded bytes to that exact decoder; api::file_upload_validation::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::FileUploadValidation in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_upload_validation: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/general_upload_validation.py: coerce_optional_int_setting
-  (L21-L31); litellm/proxy/openai_files_endpoints/general_upload_validation.py: coerce_optional_str_list_setting
-  (L34-L39); litellm/proxy/openai_files_endpoints/general_upload_validation.py: _file_size_bytes (L68-L75); litellm/proxy/openai_files_endpoints/general_upload_validation.py:
-  check_upload_file_size (L78-L87); litellm/proxy/openai_files_endpoints/general_upload_validation.py: _normalized_extension
-  (L90-L96); litellm/proxy/openai_files_endpoints/general_upload_validation.py: check_allowed_extension (L99-L109);
-  litellm/proxy/openai_files_endpoints/general_upload_validation.py: check_blocked_extension (L112-L122); litellm/proxy/openai_files_endpoints/general_upload_validation.py:
-  check_unsafe_filename (L125-L138); litellm/proxy/openai_files_endpoints/general_upload_validation.py: raise_upload_validation_failure
-  (L141-L185); litellm/proxy/openai_files_endpoints/batch_file_validation.py: _file_size_bytes (L73-L79); litellm/proxy/openai_files_endpoints/batch_file_validation.py:
-  _iter_lines (L82-L86); litellm/proxy/openai_files_endpoints/batch_file_validation.py: _check_line (L89-L99); litellm/proxy/openai_files_endpoints/batch_file_validation.py:
-  _scan_lines (L102-L119); litellm/proxy/openai_files_endpoints/batch_file_validation.py: check_batch_file_upload
-  (L122-L137); litellm/proxy/openai_files_endpoints/batch_file_validation.py: raise_batch_file_validation_failure
-  (L140-L201). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 304 owned nonblank/non-comment/non-docstring Python lines (318 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 324 implementation,
-  82 behavior tests, 84 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 42 config tests/seeds
-  and 30 wiring; 712 total within the 720-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B171 (Direct helper oracle and URL
-  path encoding), B1015 (File contracts), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Named behavior tests live under api::file_upload_validation::tests. The file_upload_validation
+  helper compares pure validation outcomes over bytes and controlled seekable buffers; it never
+  calls a FastAPI handler. The owned spans contain 299 nonblank, non-comment lines. Budget 280 production,
+  170 tests, 115 fixtures, 75 adapters, 55 fuzz/replay, 65 config and 30 wiring lines: 790 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_upload_validation.rs
   - crates/betterlite-core/src/api/file_upload_validation/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
@@ -108,149 +51,120 @@ scope:
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_upload_validation.rs
-  - tools/oracle/src/helpers/file_upload_validation/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_upload_validation.py
-  - tools/oracle/helpers/file_upload_validation/**
   - tools/oracle/fuzz/corpus/helper_case/file_upload_validation-*
   - tools/oracle/cases/helpers/file-upload-validation/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L21-L39
-  why: Setting general_settings.max_file_size_mb and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L122-L137
-  why: Setting general_settings.max_batch_file_size_mb and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L99-L109
-  why: Setting general_settings.allowed_file_extensions and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L112-L122
-  why: Setting general_settings.blocked_file_extensions and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L1-L185
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L1-L201
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L18-L185
+  why: Owns setting coercion, size/extension/filename failure records and their exact error projection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L11-L201
+  why: Owns both line shapes, streaming line validation, size-before-content order and all batch failure variants.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2860-L2876
+  why: Public general_settings declarations consumed by the upload route.
 dod:
-- text: 'unsafe dotdot filename: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unsafe-dotdot-filename
-  - oracle
-- text: 'nul filename: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-nul-filename
-  - oracle
-- text: 'extension casefold: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-extension-casefold
-  - oracle
-- text: 'file too large 413: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-too-large-413
-  - oracle
-- text: 'empty batch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-empty-batch
-  - oracle
-- text: 'batch row missing body: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-batch-row-missing-body
-  - oracle
-- text: 'vertex native request row: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vertex-native-request-row
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    unsafe_filename_components accepts null, "", .env, report..pdf, report.v2.pdf and dir/file.pdf;
+    ../file, dir/../file, backslash traversal and a NUL produce 400/invalid_request_error/file/"400".
+    The source message is "Filename '../file' is not allowed: directory traversal sequences are not
+    permitted in uploaded file names. The file was not forwarded to the provider."
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    extension_policy sends REPORT.PDF with allow=[.pdf] and block=[.PDF] and gets allow success then
+    blocked failure. allow=[] denies every name; block=[] denies none. allow=[pdf] does not match
+    .pdf; missing filename, .env and an unsafe name normalize to "". Allow failure is 400/file/"400"
+    with invalid_request_error and "File extension '.pdf' is not in this proxy's allowed_file_extensions
+    setting. The file was not forwarded to the provider." Missing extension substitutes "A file without
+    an extension". Block failure says "File extension '.pdf' is blocked by this proxy's blocked_file_extensions
+    setting. The file was not forwarded to the provider."
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    upload_size_boundaries tests max_file_size_mb=1 at 1048576 bytes (success) and 1048577 (413,
+    invalid_request_error, file, "413"). Its source message is "Uploaded file exceeds the configured
+    max_file_size_mb of 1 MB (read stopped at 1.0 MB). The file was not forwarded to the provider."
+    Null, 0 and -1 disable this cap. A seekable buffer positioned at 7 returns to 7 after sizing.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    batch_size_and_extension sends absent filename and x.txt even with oversized content and gets
+    400/file/"400", source "Invalid file format for Batch API: 'x.txt'. Batch input files must be
+    .jsonl files. The file was not forwarded to the provider." Absent name renders ''. x.JSONL is
+    accepted. With cap=1, valid JSONL padded with blank bytes to 1048576 passes and 1048577 gives
+    413/file/"413", source "Batch input file is 1.0 MB, which exceeds the configured max_batch_file_size_mb
+    of 1 MB. The file was not forwarded to the provider." Nonpositive/null caps are disabled.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    batch_line_failures sends blank bytes (400/file/"400", "Batch input file has no request lines.");
+    a blank first line then malformed JSON or invalid UTF-8 (400/file/"400", "Batch input file line 2
+    is not valid JSON."); and [] on line 2 (400/file/"400", "Batch input file line 2 must be a JSON
+    object."). Each has invalid_request_error and the common not-forwarded suffix. The first failing
+    physical line wins, and successful or failed scans rewind seekable input to 0.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    required_batch_keys supplies {} then progressively adds custom_id, method, url and body:
+    missing-key errors are 400/invalid_request_error with param equal to the first missing key and
+    code="400". For missing body on line 1 the source message is "Missing required parameter: 'body'
+    (batch input file line 1). Each line must be a JSON object with keys custom_id, method, url, body.
+    The file was not forwarded to the provider." All four keys set to null pass shape validation.
+    Vertex shape accepts {request: null}; {} fails with param=request and hint "A passthrough upload
+    takes native Vertex batch rows, so each line must be a JSON object with a request key".
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    json_byte_compatibility accepts valid BOM-prefixed UTF-8, UTF-16 and UTF-32 object rows and
+    escaped lone-surrogate values without changing the presence-only result. Numeric values,
+    duplicate keys and null values are not content-type validation errors here.
+  proof: [behavior-tests, oracle, helper-python, parser-corpus]
+- text: >-
+    loads_settings loads every absent/default, integer and string-list override through Config.
+    General max_file_size_mb coercion rejects true, 1.5 and "1"; max_batch_file_size_mb preserves
+    the separate route adapter's "1"/true-to-1 semantics and rejects 1.5. Extension settings reject
+    strings or mixed lists; [] and null stay distinct. The four keys do not appear as unsupported.
+  proof: [config-tests, config-corpus, behavior-tests, oracle, helper-python]
+- text: New validation and helper decoder corpora exercise actual production entry points.
+  proof: [parser-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_validation::/)
-      - test(/::replays_corpus$/)'
-  - id: case-unsafe-dotdot-filename
-    why: the unsafe-dotdot-filename behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::unsafe_dotdot_filename($|::)/)'
-  - id: case-nul-filename
-    why: the nul-filename behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::nul_filename($|::)/)'
-  - id: case-extension-casefold
-    why: the extension-casefold behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::extension_casefold($|::)/)'
-  - id: case-file-too-large-413
-    why: the file-too-large-413 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::file_too_large_413($|::)/)'
-  - id: case-empty-batch
-    why: the empty-batch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::empty_batch($|::)/)'
-  - id: case-batch-row-missing-body
-    why: the batch-row-missing-body behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::batch_row_missing_body($|::)/)'
-  - id: case-vertex-native-request-row
-    why: the vertex-native-request-row behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::vertex_native_request_row($|::)/)'
+    why: upload or batch validation assertions are absent
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_validation::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: upload policy keys are not loaded by the real config loader
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_validation::tests::loads_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-validation-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: upload settings have no new YAML input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-validation-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_upload_validation)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/file_upload_validation.rs && grep -qF "decode_file_upload_validation"
-      crates/betterlite-core/fuzz/fuzz_targets/file_upload_validation.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::file_upload_validation::tests::replays_corpus$/)'
+    why: batch byte parsing is not connected to fuzz/replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_upload_validation)" && grep -qF decode_file_upload_validation crates/betterlite-core/fuzz/fuzz_targets/file_upload_validation.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_validation::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_upload_validation.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: independent validation adapter is missing or invalid
+    run: test -f tools/oracle/helpers/file_upload_validation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_validation-*)"
-      && grep -qE "^[[:space:]]+file_upload_validation:" tools/oracle/fuzz/corpus/helper_case/file_upload_validation-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: no newly tagged validation seed exists
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_validation-*)" && grep -qE '^[[:space:]]+file_upload_validation:' tools/oracle/fuzz/corpus/helper_case/file_upload_validation-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: validation outcomes lack new oracle cases
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-upload-validation)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-upload-validation/unsafe-dotdot-filename.yaml
-- tools/oracle/cases/helpers/file-upload-validation/nul-filename.yaml
-- tools/oracle/cases/helpers/file-upload-validation/extension-casefold.yaml
-- tools/oracle/cases/helpers/file-upload-validation/file-too-large-413.yaml
-- tools/oracle/cases/helpers/file-upload-validation/empty-batch.yaml
-- tools/oracle/cases/helpers/file-upload-validation/batch-row-missing-body.yaml
-- tools/oracle/cases/helpers/file-upload-validation/vertex-native-request-row.yaml
+- tools/oracle/cases/helpers/file-upload-validation/unsafe-filename-components.yaml
+- tools/oracle/cases/helpers/file-upload-validation/extension-policy.yaml
+- tools/oracle/cases/helpers/file-upload-validation/upload-size-boundaries.yaml
+- tools/oracle/cases/helpers/file-upload-validation/batch-size-and-extension.yaml
+- tools/oracle/cases/helpers/file-upload-validation/batch-line-failures.yaml
+- tools/oracle/cases/helpers/file-upload-validation/required-batch-keys.yaml
+- tools/oracle/cases/helpers/file-upload-validation/json-byte-compatibility.yaml
+- tools/oracle/cases/helpers/file-upload-validation/setting-coercion.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1032 applies these checks to HTTP multipart requests and owns auth, purpose selection and response headers.
+- B2460 owns path_utils.safe_filename; this task must not use an uploaded filename as a local path.
 pitfalls:
-- general_upload_validation.py:144 uses type='invalid_request_error', param='file', code=413; preserve this envelope
-  rather than a family-wide error default.
-- Within coerce_optional_int_setting\'s raw is None branch, preserve return None and its nested guards.
+- A batch extension failure precedes its size test; general upload policy runs in the separate route-defined order.
+- General sizing restores the old offset but batch scanning resets to zero, including failure paths.
+- The batch shape validator permits null body; guardrail scanning later rejects it as unparseable.
 review_level: security
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 790
   max_new_expects: 1

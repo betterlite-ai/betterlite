@@ -1,0 +1,98 @@
+id: B2462
+title: Generic file metadata HTTP and pagination
+description: >-
+  Implement betterlite-core::api::file_http_metadata for the complete retrieve_file,
+  async_retrieve_file, delete_file, async_delete_file, list_files, async_list_files,
+  _files_per_listing_page, _files_per_async_listing_page, _next_listing_page_headers and
+  _next_listing_request methods. This is the shared execution layer called by B1028/B1029,
+  below SDK dispatch and above B173 transport. Use B1015's typed provider operations and
+  B2402's error conversion. Provider transforms decode replies; no new byte parser belongs here.
+
+  Preserve the order transform request, validate environment, pre_call, HTTP, transform response.
+  A selected sync/async client is used only when its source class matches that mode. New SDK HTTP
+  operation file_http_metadata invokes these real methods against the mock through B2401.
+  Native tests under api::file_http_metadata::tests observe deadlines, callback ordering and
+  pagination boundaries. The linked whole-method range has 399 nonblank, non-comment lines;
+  shared native async execution needs 280 implementation, 170 tests, 135 fixtures, 100 adapters
+  and 35 wiring lines, 720 total.
+scope:
+  paths:
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/file_http_metadata.rs
+  - crates/betterlite-core/src/api/file_http_metadata/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_http_metadata.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_http_metadata.py
+  - tools/oracle/cases/sdk-http/file-http-metadata/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-http-metadata-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4553-L5005
+  why: Entire generic metadata, deletion and eager listing implementation, including continuation authentication and the 10000-file cap.
+dod:
+- text: >-
+    metadata_request_order passes file_id=f, api_key=k and provider parameters; transform receives
+    optional_params={}, validate_environment receives model="",messages=[],optional_params={},
+    and pre_call receives input="",api_key="",additional_args={api_base:url,headers:validated,file_id:f}.
+    GET uses transformed URL/query and validated headers. Response transform receives the same
+    mutable operation context. A failed transform or validation makes zero provider requests;
+    network/HTTP failure is B2402's provider error, retaining status, body and headers.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    metadata_timeout_asymmetry supplies timeout=0.01 to a delayed mock: retrieve in both modes
+    omits the per-call timeout; sync delete also omits it, async delete includes 0.01. Test with
+    an independently fixed client default to distinguish omission from inheritance. DELETE sends
+    no body, uses provider query parameters and returns the provider's FileDeleted projection.
+    Extra source data not in the transformed request must not leak into the request.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    eager_file_pages supplies purpose=batch: first GET carries transformed purpose query and
+    timeout, pre_call records purpose=batch rather than file_id. A provider continuation fetches
+    with newly validated credentials and the same timeout; response pages flatten in order with
+    duplicates retained. A null continuation ends immediately, including an empty first page.
+    A non-null continuation after an empty page is followed. Failure on page two returns an error,
+    never a partial successful list; first and later transport errors use the same mapper.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    file_listing_ceiling returns exactly 10000 rows from pages of 9999 then 3, and does not ask
+    for another continuation after the second page. A first page of 10001 is truncated to 10000.
+    At 9999 a continuation is still consulted. The count advances by the full source page length,
+    not the truncated length. Query selection and cursor syntax belong to the concrete provider;
+    this layer imposes no client after cursor or deduplication policy.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Every metadata transport scenario is newly added and the SDK operation seed replays successfully.
+  proof: [new-cases, sdk-seeds, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: metadata ordering, timeout omission or pagination bounds are missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_metadata::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: generic metadata HTTP adapter is absent or fails typing
+    run: test -f tools/oracle/sdk_http/file_http_metadata.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: typed SDK metadata operation has no new seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-http-metadata-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: mock captures were not added for generic file metadata
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-http-metadata)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/file-http-metadata/metadata-request-order.yaml
+- tools/oracle/cases/sdk-http/file-http-metadata/metadata-timeout-asymmetry.yaml
+- tools/oracle/cases/sdk-http/file-http-metadata/eager-file-pages.yaml
+- tools/oracle/cases/sdk-http/file-http-metadata/file-listing-ceiling.yaml
+deviations: []
+out_of_scope:
+- Upload methods are B2461; file-content methods and decoded body streams are B2463; _handle_error belongs to B2402.
+- B1015 supplies the file contract, concrete provider tasks own URL/query/result transforms, and B173 owns client construction and connection policy. Remaining HTTP handler endpoint families are not reimplemented here.
+pitfalls:
+- List returns all available pages eagerly, whereas the proxy's limit/after view belongs to its route.
+- Passing timeout into retrieve_file does not mean its GET passes timeout to the client.
+- Continuation requests validate environment again; cached first-page authorization can become stale.
+review_level: standard
+budget:
+  max_changed_lines: 720
+  max_new_expects: 0

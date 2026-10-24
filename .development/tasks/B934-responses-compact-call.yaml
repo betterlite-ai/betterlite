@@ -1,203 +1,119 @@
 id: B934
-title: Responses compact call
+title: Responses compact SDK call
 description: >-
-  Implement the Responses compact operation's provider dispatch and typed request/result contract over configured
-  provider transforms. This is API transport and error normalization only; B100 owns prompt-compression/native-compaction
-  algorithms and later consumes this service.
+  Implement the whole acompact_responses and compact_responses functions in betterlite-core
+  api/responses_compact_call. Resolve model/provider with B931, construct generic parameters with
+  B010 and look up the provider config through B157. Compact never falls back to chat. B905
+  collects and filters Responses optional parameters, with allowed_openai_params fixed to null;
+  B206 normalizes the request's drop_params value. Restore encrypted item IDs with B904 before
+  B2418 executes HTTP and encode the returned typed response ID with the same B904 service.
 
+  The async wrapper detects a provider for error mapping, sets acompact_responses=true, preserves
+  context and awaits a coroutine returned by the sync implementation. Its preliminary provider
+  lookup gets api_base=null from the nonexistent local base_url; full resolution later uses the
+  supplied generic parameters. B174 owns the resolver, B247 logging, B500 residency inference,
+  B185/B186 mapped exceptions and B198 REQUEST_TIMEOUT (default 6000). Sync mode pops the marker
+  using is True, overlays locals with kwargs, then maps options. Log optional parameters plus
+  litellm_call_id and inferred data_residency. extra_query is ignored; extra_body reaches B2418
+  but is unused. No prompt-management, managed-file mapping or mock-response shortcut runs here.
 
-  Implement crates/betterlite-core/src/api/responses_compact_call.rs. Use ResponsesCompactCallInput and ResponsesCompactCallResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions compact_input_and_instructions, compact_encoded_items, compact_provider_error,
-  unsupported_compact_provider under api::responses_compact_call::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::responses_compact_call::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesCompactCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_compact_call: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/main.py: acompact_responses (L2081-L2155); litellm/responses/main.py: compact_responses
-  (L2159-L2279). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 146 owned nonblank/non-comment/non-docstring Python lines (156 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 166 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 431 total within the 440-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B011 (Exception types and provider error mapping),
-  B171 (Direct helper oracle and URL path encoding), B904 (Response id traversal), B1087 (Api boundaries), B509
-  (OpenAI Responses retrieve cancel delete and compact), B931 (Responses provider selection), B905 (Responses parameters),
-  B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Drive SdkHttpCall::ResponsesCompact through B2401 with production SDK calls and the mock
+  provider. Native tests in api::responses_compact_call::tests cover ordered logging and typed
+  dependency outcomes. B509 owns JSON decoding downstream. Count 155 owned nonblank/non-comment
+  lines; estimate 175 implementation, 125 tests, 85 fixtures, 85 adapters and 25 wiring, 495
+  changed lines within 540.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_compact_call.rs
   - crates/betterlite-core/src/api/responses_compact_call/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_compact.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_compact.py
+  - tools/oracle/cases/sdk-http/responses-compact/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-*
   - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/responses_compact_call.rs
-  - crates/betterlite-config/src/api/responses_compact_call/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-compact-call-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_compact_call.rs
-  - tools/oracle/src/helpers/responses_compact_call/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/responses_compact_call.py
-  - tools/oracle/helpers/responses_compact_call/**
-  - tools/oracle/fuzz/corpus/helper_case/responses_compact_call-*
-  - tools/oracle/cases/helpers/responses-compact-call/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2081-L2279
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2080-L2279
+  why: Complete compact SDK wrappers and their option filtering, timeout, logging and encrypted-ID handoff.
 dod:
-- text: 'compact input and instructions: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-compact-input-and-instructions
-  - oracle
-- text: 'compact encoded items: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-compact-encoded-items
-  - oracle
-- text: 'compact provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-compact-provider-error
-  - oracle
-- text: 'unsupported compact provider: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-unsupported-compact-provider
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    compact_model_and_encrypted_items sends model=openai/gpt-4o,input containing a B904 encoded
+    encrypted-content item ID, instructions=short and previous_response_id=resp_previous. Both
+    modes POST /v1/responses/compact with model=gpt-4o, the original provider item ID and the
+    supplied instructions/previous response. Mock response id=resp_compact,output=[] is encoded
+    to provider=openai,model_id=deployment_a,response_id=resp_compact when metadata supplies
+    deployment_a. The async wrapper does not nest the encoding. A responses/ routing prefix
+    is removed by B931 after provider resolution, not passed as part of the upstream model.
+  proof: [compact-ids, oracle, python-adapter]
+- text: >-
+    compact_optional_parameters sends temperature=0.2 in kwargs, instructions=short and
+    extra_query={trace:ignored},extra_body={model:ignored}. The mock receives the supported
+    temperature and instructions, no trace query and no model override. With a provider that
+    reports temperature unsupported, default drop_params rejects via B905 before HTTP; true
+    drops it, and "false" normalizes false. allowed_openai_params=[temperature] does not bypass
+    this compact call's fixed null allowed list. Null optional values are omitted. Native rows
+    assert unknown kwargs are filtered by B905 instead of copied into the provider body.
+  proof: [compact-options, oracle, python-adapter]
+- text: >-
+    compact_timeout_and_residency passes timeout=null,0,7: transport receives 6000,6000,7 by
+    default; injected REQUEST_TIMEOUT=17 changes the first two to 17. B198 tests loader errors.
+    Logging for provider=openai,api_base=https://eu.api.openai.com/v1 records data_residency=eu,
+    the us host records us and the default host records null through B500. Context call-a and
+    mapped options survive async handoff. Only acompact_responses=true selects the async path.
+  proof: [compact-context]
+- text: >-
+    compact_native_support_required gives provider=anthropic with no native config and expects
+    zero requests, cause "COMPACT responses is not supported for anthropic", SDK APIConnectionError,
+    status=500,type=null,param=null,code=null. A scripted resolver yielding provider=null uses
+    cause "custom_llm_provider is required but passed as None" with the same classification.
+    Mock 401 {error:{message:bad key,type:invalid_api_key,param:null,code:invalid_api_key}} yields
+    AuthenticationError,status=401,type=null,param=null,code=null; its upstream body is not copied
+    into the SDK exception. Error messages follow the shared redaction deviation.
+  proof: [compact-errors, oracle, python-adapter]
+- text: New compact SDK corpus seeds select the public operation and exercise its HTTP adapter in both modes.
+  proof: [sdk-corpus, oracle, python-adapter]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_compact_call::/)
-      - test(/::replays_corpus$/)'
-  - id: case-compact-input-and-instructions
-    why: the compact-input-and-instructions behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_input_and_instructions($|::)/)'
-  - id: case-compact-encoded-items
-    why: the compact-encoded-items behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_encoded_items($|::)/)'
-  - id: case-compact-provider-error
-    why: the compact-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_provider_error($|::)/)'
-  - id: case-unsupported-compact-provider
-    why: the unsupported-compact-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::unsupported_compact_provider($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_compact_call::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-compact-call-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_compact_call.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_compact_call-*)"
-      && grep -qE "^[[:space:]]+responses_compact_call:" tools/oracle/fuzz/corpus/helper_case/responses_compact_call-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-compact-call)"
+  - id: compact-ids
+    why: compaction sends encoded item IDs upstream or nests response IDs
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_model_and_encrypted_items($|::)/)'
+  - id: compact-options
+    why: compact permits an unsupported option or forwards ignored extras
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_optional_parameters($|::)/)'
+  - id: compact-context
+    why: residency, call context or zero-timeout fallback is omitted
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_timeout_and_residency($|::)/)'
+  - id: compact-errors
+    why: absent native support falls through to a chat completion
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_native_support_required($|::)/)'
+  - id: python-adapter
+    why: the compact SDK fixture never reaches its actual provider handler
+    run: test -f tools/oracle/sdk_http/responses_compact.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: compact SDK calls have no newly added typed input seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-compact-call/compact-input-and-instructions.yaml
-- tools/oracle/cases/helpers/responses-compact-call/compact-encoded-items.yaml
-- tools/oracle/cases/helpers/responses-compact-call/compact-provider-error.yaml
-- tools/oracle/cases/helpers/responses-compact-call/unsupported-compact-provider.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/responses-compact/compact-model-and-encrypted-items.yaml
+- tools/oracle/cases/sdk-http/responses-compact/compact-optional-parameters.yaml
+- tools/oracle/cases/sdk-http/responses-compact/compact-native-support-required.yaml
+deviations:
+- what: Compact local failures keep their SDK status/class but expose bounded redacted messages instead of Python tracebacks.
+  why: B184/B187 own the shared public diagnostics contract; exact local cause literals remain tested.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709
 out_of_scope:
-- 'litellm/responses/main.py: B1078 owns _has_file_search_tool L98-L102, mock_responses_api_response L105-L154,
-  responses L1128-L1458.'
-- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
-  _responses_try_dispatch_emulated_file_search L1038-L1124.'
-- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure
-  L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap
-  L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions
-  L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790,
-  _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891,
-  _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses
-  L909-L931, _apply_managed_file_id_mapping L934-L964.'
-- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1128-L1458.'
-- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
-  L1929-L1986, cancel_responses L1990-L2077.'
-- 'litellm/responses/main.py: B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items
-  L1794-L1846, list_input_items L1850-L1925.'
-- 'litellm/responses/main.py: B943 owns _build_litellm_metadata_for_ws L2287-L2292, _deployment_reasoning_default
-  L2298-L2306, _first_ws_frame_with_routed_input L2312-L2327, _build_responses_websocket_request_defaults L2330-L2340,
-  _aresponses_websocket L2344-L2445.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1078/B932 own create, B931 shared helpers, B1116 delete/cancel, B933 reads, B955 interception and B943 websocket entry points in main.py.
+- B2418 performs compact HTTP; B509 builds the provider compact body/URL and parses its response.
+- B939 owns compact proxy registration and authentication, independently of the SDK HTTP cases here.
 pitfalls:
-- acompact_responses uses local_vars.get('base_url', None); retain its missing-value behavior and field spelling
-  in the typed projection.
-- acompact_responses uses kwargs.get('litellm_metadata', {}); retain its missing-value behavior and field spelling
-  in the typed projection.
-review_level: standard
+- compact passes allowed_openai_params=null even if the caller supplied that kwarg.
+- The async preliminary resolver reads base_url from locals, where no such named argument exists.
+- Compaction restores encrypted item IDs but does not invoke create's prompt or managed-file mapping helpers.
+review_level: security
 budget:
-  max_changed_lines: 440
-  max_new_expects: 1
+  max_changed_lines: 540
+  max_new_expects: 0

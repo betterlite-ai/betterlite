@@ -1,0 +1,93 @@
+id: B2452
+title: Generic speech HTTP execution
+description: >-
+  Own text_to_speech_handler and async_text_to_speech_handler whole in
+  betterlite-provider::api::speech_http. Compose B1135's speech config, B173 client/send boundary, B2402
+  _handle_error, B004 binary response records and B206 hidden response headers. Select a matching-kind client or the pool with
+  ssl_verify from litellm_params, default None. Validate headers using params.api_key/api_base, then merge
+  explicit extra_headers, resolve the URL, transform input/voice/options, and finally overlay request_data.headers.
+  Provider-returned headers therefore beat caller headers. Log the final request data with api_key="".
+
+  Presence of dict_body selects JSON even when empty/null and even when ssml_body is also present. Otherwise
+  presence of ssml_body selects a raw text body. Neither text_body nor binary_body is implemented, despite the
+  missing-body diagnostic naming them. Missing-body errors occur inside the send try and are converted through
+  _handle_error without network traffic. Validation/transformation/URL/logging/response-transform errors are
+  outside that conversion. Attach provider response headers only after a successful binary transformation.
+
+  Add sdk_http speech_http with finite injected config transforms and a trusted mock endpoint. It executes
+  actual HTTP independently in both implementations; B173 owns raw response bytes and B2401 the input decoder.
+  The two methods contain 191 nonblank/non-comment lines; allocate 170 implementation,120 tests,100 fixtures,
+  80 adapters and 30 wiring, 500 total. This is buffered binary execution; streaming cancellation is B083's
+  consuming route concern and is not a method in this range.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/speech_http.rs
+  - crates/betterlite-provider/src/api/speech_http/**
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/error.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/speech_http.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/speech_http.py
+  - tools/oracle/cases/sdk-http/speech-http/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/speech-http-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11827-L12043
+  why: Own both speech send methods, body-key precedence, final header merge and send-only error conversion.
+dod:
+- text: >-
+    speech_http_body_and_headers sets input=hello,voice=alloy,params.api_key=key,timeout=5,extra_headers={x:caller},
+    validated={x:validated},transformed={dict_body:{input:hello},ssml_body:ignored,headers:{x:provider}}. Expect
+    one JSON POST with {input:hello},x=provider and no SSML. Mock bytes 000102 with Content-Type=audio/wav
+    and x-request-id=speech_1 are transformed to the binary result and retained hidden provider headers.
+    Empty dict_body sends {}; its presence wins over ssml_body. The sync and async paths produce the same HTTP.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    speech_http_ssml sends transformed {ssml_body:"<speak>hello</speak>"}: expect those exact UTF-8 body bytes,
+    not a JSON string or form field. No transformed headers leaves caller-over-validated precedence intact.
+    Wrong-kind clients use the pooled transport; ssl_verify=None is the default and explicit false is preserved.
+    Native effect capture records input=hello,api_key="",final headers and complete transformed request before send.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    speech_http_missing_body supplies {} then {text_body:hello} and {binary_body:abc}. Each makes zero HTTP
+    requests and calls the provider error constructor with status=500,headers={} and source message "No body
+    found in request_data. Must provide one of: dict_body, ssml_body, text_body, binary_body". Mock 429 with
+    body="slow" is converted by B2402 with status=429 and provider headers; response transformation is skipped.
+    A native response-transform failure propagates without passing through _handle_error. Only message wording
+    is ignored in SDK parity, retaining class/status and optional type,param,code fields.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Speech transport adds HTTP fixtures and a typed SDK case seed, using the existing decoder and replay.
+  proof: [new-cases, sdk-corpus, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Body presence and provider-header precedence must be tested against the actual speech send service.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::speech_http::tests::/)'
+  - id: sdk-python
+    why: Generic speech must be compared through captured HTTP, not a pure helper result.
+    run: test -f tools/oracle/sdk_http/speech_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: Speech HTTP's operation tag must be accepted by the shared SDK parser.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/speech-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: The JSON, SSML and missing-body branches require new fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/speech-http)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/speech-http/speech-http-body-and-headers.yaml
+- tools/oracle/cases/sdk-http/speech-http/speech-http-ssml.yaml
+- tools/oracle/cases/sdk-http/speech-http/speech-http-missing-body.yaml
+deviations: []
+out_of_scope:
+- B1084 owns speech SDK dispatch; B1135 owns config interfaces; B2402 owns _handle_error; B004 owns binary response records, B206 hidden response headers and B173 shared HTTP clients/send methods.
+- Other llm_http_handler.py endpoint methods remain with their endpoint owners, including image methods B2450/B2451.
+pitfalls:
+- The error message advertises text_body and binary_body even though neither is a send branch.
+- request_data.headers overrides extra_headers, including credential header names.
+- A missing body is converted as a provider error despite no request having been sent.
+review_level: security
+budget:
+  max_changed_lines: 520
+  max_new_expects: 0

@@ -1,0 +1,114 @@
+id: B1691
+title: Compute PTU daily charges and maintain deployment-keyed sentinel rows
+description: >-
+  Add betterlite-db::ptu::charges and ::store for PTUModel, PTUCharge, deployment/result
+  records and the rollup file's parsing, arithmetic, scanning, row-writing and pruning
+  helpers. Reuse B1664 ptu_terms. decode_ptu_model_info accepts an existing mapping or
+  JSON text; malformed JSON and decoded nonobjects return None. Store the decoder in the
+  db crate with ptu_model_info fuzz/replay. Public name is nonempty team_public_model_name
+  before row.model_name stringification. A DB model ID may stringify to empty, but a router
+  entry requires a nonempty string model_info.id and a copied model_info snapshot.
+  Scan all B725 model rows, then append router deployments whose IDs are not DB-owned,
+  db_model is not exactly true and original_model_id is None. Keep scanned_ids wider than
+  valid PTU models so removal of PTU settings can retract stale charges; include every
+  priced ID even when it is empty. Do not import Router into db: accept immutable deployment
+  records from the caller. Parse invalid PTU terms as absent, without discarding other rows.
+  Compute the overlap of [effective_from,effective_to) with a UTC calendar day, in hours,
+  multiply count and hourly Decimal rate, and include only strictly positive charges sorted
+  by team_id/model_id. A public-name collision does not merge deployment IDs. Escape &, <
+  and > in lapsed-model alerts; include windows ending exactly now, newest bound first.
+  Backfill dates start at the latest of the earliest declared effective_from date and
+  end minus 90 days, through end inclusively; no starts or all-future starts yields none.
+  This inclusive window can contain 91 dates, so do not replace it with a 90-element cap.
+  Use B726 LiteLLM_DailyTeamSpend with sentinel api_key=__ptu_flat_cost__, date ISO string,
+  model=deployment ID, model_group=public name and empty provider/tool/endpoint identity
+  fields. Upsert replaces ptu_flat_cost rather than incrementing it. On update also replace
+  model_group and set updated_at from B198; create leaves timestamps and normal usage
+  counters to the pinned schema defaults. Retry each charge at most three times, delaying
+  0.5 then 1.0 seconds through the injected sleeper; after the third failure report false
+  and log the recovery instruction. No transaction combines separate deployment charges.
+  Existing-key lookup selects only sentinel rows in the inclusive date range and returns
+  (team_id,model,date), independent of model_group. Prune only the requested date's sentinel
+  rows with model in scanned IDs and updated_at strictly earlier than run_started minus
+  300 seconds. Sort IDs and issue sequential chunks of 5000; an empty scan deletes nothing.
+  Keep this helper's database errors visible to its caller. The prune predicate deliberately
+  does not include team_id and cannot delete non-sentinel usage or unseen deployments.
+  Pure ptu_charge fixtures cover parsing, overlap, display identity, date windows and filter
+  construction. Native Postgres tests verify rename replacement, ordinary counters staying
+  intact, retries, timestamp grace, bounded deletion and partial writes. These helpers own
+  387 nonblank lines, much of it source documentation; budget 310 Rust, 280 tests and
+  210 oracle/decoder fuzz lines within 800.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/ptu.rs
+    - crates/betterlite-db/src/ptu/charges.rs
+    - crates/betterlite-db/src/ptu/charges/**
+    - crates/betterlite-db/src/ptu/store.rs
+    - crates/betterlite-db/src/ptu/store/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/ptu_model_info.rs
+    - crates/betterlite-db/fuzz/corpus/ptu_model_info/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/ptu_charge.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/ptu_charge.py
+    - tools/oracle/cases/helpers/ptu-charge/**
+    - tools/oracle/fuzz/corpus/helper_case/ptu-charge-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L45-L387
+    why: Deployment parsing, UTC overlap, replacement upserts, retry schedule and DB/config ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L470-L536
+    why: Escaped lapse names, inclusive backfill dates and sentinel identity lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L745-L803
+    why: Grace-adjusted, deployment-bounded pruning in 5000-ID chunks.
+dod:
+  - text: PTU deployments are selected and priced by stable identity with correct UTC overlap, zero filtering, alert escaping and inclusive catch-up dates.
+    proof: [ptu-charge-tests, oracle, ptu-charge-python, ptu-charge-corpus]
+  - text: Sentinel writes replace a deployment's charge, retry independently and prune only stale scanned rows under the pinned daily-table key.
+    proof: [ptu-store-tests, oracle, ptu-charge-python]
+  - text: Stored model_info text is decoded by the db-owned parser and malformed or nonobject JSON is safely rejected as absent.
+    proof: [ptu-charge-tests, ptu-info-corpus, oracle, ptu-charge-python]
+checks:
+  optional: []
+  commands:
+    - id: ptu-charge-tests
+      why: A deployment's PTU overlap, identity or catch-up dates are computed incorrectly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^ptu::charges::/) - test(replays_the_ptu_model_info_corpus)'
+    - id: ptu-store-tests
+      why: Sentinel replacement, retries or pruning changes persisted daily charges.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^ptu::store::/)'
+    - id: ptu-info-corpus
+      why: Model-info JSON has no new db-local fuzz corpus or production decoder replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/ptu_model_info)" && test -f crates/betterlite-db/fuzz/fuzz_targets/ptu_model_info.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_ptu_model_info_corpus)'
+    - id: ptu-charge-python
+      why: Charge helpers lack the checked adapters for their actual pinned functions.
+      run: test -f tools/oracle/helpers/ptu_charge.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ptu-charge-corpus
+      why: No PTU charge records are consumed by the shared helper parser.
+      run: grep -rlq 'ptu_charge:' tools/oracle/fuzz/corpus/helper_case/ptu-charge-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ptu-charge/partial-utc-day-and-exclusive-end.yaml
+  - tools/oracle/cases/helpers/ptu-charge/public-name-with-distinct-deployment-ids.yaml
+  - tools/oracle/cases/helpers/ptu-charge/db-owned-and-credential-clone-exclusions.yaml
+  - tools/oracle/cases/helpers/ptu-charge/json-nonobject-and-invalid-terms.yaml
+  - tools/oracle/cases/helpers/ptu-charge/ninety-day-floor-is-inclusive.yaml
+  - tools/oracle/cases/helpers/ptu-charge/lapsed-name-markup-and-equal-now.yaml
+  - tools/oracle/cases/helpers/ptu-charge/prune-sentinel-date-and-scanned-id-filter.yaml
+deviations:
+  - what: PTU overlap and hourly charges use checked Decimal arithmetic, with an error for unrepresentable totals rather than floating-point infinity.
+    why: Daily reserved-capacity spend must remain finite and exactly serializable in the existing schema.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L186-L199
+out_of_scope:
+  - B1692 owns run_ptu_flat_cost_rollup, run_ptu_flat_cost_backfill, run_scheduled_ptu_rollup, _lock_is_held, _run_and_alert, _backfill_and_alert and _deliver_alert in this file.
+  - B1664 owns PTU term validity and the attribution feature flag; this task adds no settings and does not schedule any job.
+pitfalls:
+  - model_group is a mutable display name, while the unique sentinel model field must remain the deployment ID.
+  - scanned_ids includes deployments whose PTU terms were removed, otherwise their stale rows can never be pruned.
+  - A 90-day subtraction followed by an inclusive range produces up to 91 backfill dates.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,83 @@
+id: B1619
+title: Preserve PKCE verifier state across OAuth retries
+description: >-
+  Implement sso_pkce in betterlite-server for SSOAuthenticationHandler's
+  _get_generic_sso_redirect_params, prepare_token_exchange_parameters,
+  _handle_missing_pkce_verifier, _delete_pkce_verifier and generate_pkce_params.
+  GENERIC_CLIENT_USE_PKCE and PKCE_STRICT_CACHE_MISS default false and activate only for
+  case-insensitive true; GENERIC_CLIENT_STATE defaults absent. A supplied nonempty CLI state
+  wins over a nonempty configured state, then a UUID hex value. Generate a 32-byte random
+  verifier encoded as 43 unpadded base64url characters and its S256 challenge. Cache storage
+  belongs to B1628's authorization producer; this reader uses pkce_verifier:<state>, Redis
+  usage cache first, otherwise B733's user cache. Accept the modern code_verifier object
+  and legacy string, retaining the source's distinction between a missing entry, empty/null
+  field and unexpected cached shape. On a present state, strict misses return 401 auth_error
+  with param PKCE_CACHE_MISS; invalid present entries are deleted before the error. Permissive
+  misses delete corrupt entries, warn and continue without a verifier. A missing state only
+  warns, even in strict mode. Return the cache key with a valid verifier so the caller deletes
+  it after successful conversion, not before the provider exchange. Cleanup errors warn and
+  never replace a successful login. These operations consume typed cache values from their
+  owners, with no new byte parser. Test cache faults, retention on exchange failure and
+  deterministic S256 vectors in Rust. Compare pure redirect-parameter structure via sso_pkce,
+  excluding only generated state/verifier bytes while asserting their format and relationship
+  natively. loads_pkce_settings exercises all three env bindings. Measured ownership is
+  231 source lines; allow 250 product, 170 tests, 80 adapters and 80 config/wiring, cap 650.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_pkce.rs
+    - crates/betterlite-server/src/sso_pkce/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_pkce.rs
+    - crates/betterlite-config/src/sso_pkce/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-pkce-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_pkce.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_pkce.py
+    - tools/oracle/cases/helpers/sso-pkce/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-pkce-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3178-L3229
+    why: State priority and authorization PKCE parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3737-L3957
+    why: Cache format compatibility, strict/permissive miss handling and best-effort cleanup.
+  - url: https://docs.rs/oauth2/latest/oauth2/struct.PkceCodeChallenge.html
+    why: Reuse a reviewed PKCE implementation where its verifier length and encoding match the pin.
+dod:
+  - text: Missing-state, corrupt-cache and strict-mode paths retain their distinct warnings, deletion effects and errors.
+    proof: [pkce-tests]
+  - text: State selection and PKCE activation match the helper oracle and configured settings reach production.
+    proof: [pkce-tests, pkce-config, oracle, pkce-python, pkce-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: pkce-tests
+      why: PKCE state can be consumed prematurely or its fallback/error branch differs from the pin.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_pkce::/)'
+    - id: pkce-config
+      why: PKCE activation, strictness or configured state is not loaded correctly.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_pkce::tests::loads_pkce_settings/)'
+    - id: pkce-python
+      why: The original redirect-parameter helper is not available to the oracle.
+      run: test -f tools/oracle/helpers/sso_pkce.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: pkce-corpora
+      why: PKCE environment and helper cases do not enter existing decoder replay.
+      run: grep -rlq 'sso_pkce:' tools/oracle/fuzz/corpus/helper_case/sso-pkce-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-pkce-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-pkce/cli-state-over-environment.yaml
+  - tools/oracle/cases/helpers/sso-pkce/empty-state-generates-uuid.yaml
+  - tools/oracle/cases/helpers/sso-pkce/s256-only-when-enabled.yaml
+deviations: []
+out_of_scope:
+  - B1628 stores the authorization verifier and B1623 decides when successful token conversion permits deletion.
+  - The SSO functions outside the owned method ranges remain with the owners indexed by B063.
+pitfalls:
+  - PKCE_STRICT_CACHE_MISS does not turn a callback with no state parameter into a local 401.
+  - A legacy plain-string verifier remains usable and emits a warning rather than being classified as corrupt.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

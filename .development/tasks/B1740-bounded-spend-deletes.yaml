@@ -1,0 +1,100 @@
+id: B1740
+title: Delete expired spend rows in bounded batches with capped backlog probes
+description: >-
+  Add betterlite-db::spend_retention::batches and CleanupBounds. Own the cutoff helpers,
+  TableCleanupResult, remaining-row shape, constructor, settings readers, timeout helpers,
+  _execute_delete_batch, _count_remaining, _delete_old_rows_batched and _finish_table from
+  spend_log_cleanup.py. Supply clock, settings snapshot, partition manager and pod lock
+  explicitly. Refresh bounds on every run. Four general_settings overrides are
+  maximum_spend_logs_cleanup_batch_size, maximum_spend_logs_cleanup_max_batches,
+  maximum_spend_logs_cleanup_run_budget and maximum_spend_logs_cleanup_batch_timeout.
+  Their fallback environment settings are SPEND_LOG_CLEANUP_BATCH_SIZE=1000,
+  SPEND_LOG_RUN_LOOPS=500, SPEND_LOG_CLEANUP_RUN_BUDGET_SECONDS=300 and
+  SPEND_LOG_CLEANUP_BATCH_TIMEOUT_SECONDS=30. Invalid/nonpositive overrides warn and use
+  the environment-derived default; integer conversion retains Python bool and numeric
+  truncation semantics. Duration overrides use B199. Also load
+  SPEND_LOG_CLEANUP_MAX_CONSECUTIVE_BATCH_FAILURES=3,
+  SPEND_LOG_CLEANUP_BATCH_FAILURE_BACKOFF_SECONDS=0.5 and
+  SPEND_LOG_CLEANUP_REMAINING_COUNT_CAP=100000. Malformed environment numbers fail loading.
+  The retention reader accepts absent as disabled, integers as days with a warning and
+  strings via B199; invalid duration warns and disables that retention group. It does
+  not add a positive-only restriction to retention itself. Keep the four retention keys
+  maximum_spend_logs_retention_period, maximum_autorouter_session_retention_period,
+  maximum_health_check_retention_period and maximum_daily_tag_spend_retention_period,
+  all unset by default. A named config test loads every key and reset-to-default case.
+  Build DELETE statements from a closed table/key/time-column enum, binding cutoff and
+  batch size. Timestamp cutoffs cast to timestamptz; daily ISO dates cast to text. Each
+  delete transaction sets LOCAL statement_timeout and lock_timeout to the smaller of
+  remaining run time and batch timeout, with a one-millisecond floor. Delete keys in one
+  subquery without fetching rows to Rust. Check deadline before batch cap. A failure at
+  or beyond deadline ends budget_exhausted without incrementing failures; other failures
+  increment the consecutive count, record metrics, back off, and abort at the configured
+  threshold. Successful batches reset failures. Zero rows records a duration sample then
+  ends exhausted; only nonzero successful batches increment progress and consume the batch
+  cap, followed by 100 ms sleep. A driver result that is not a row count aborts immediately.
+  Finishing inside the deadline probes at most the count cap under a statement timeout;
+  probe errors warn and leave the previous gauge untouched. No probe starts after expiry.
+  Expose a progress sink for B1741 cancellation reporting. About 340 source lines belong
+  to this layer; reserve 800 changed lines including real PostgreSQL lock/deadline tests,
+  config seeds and pure cleanup_bounds helper cases. Those cases call only cutoff functions
+  and settings-reader methods on an immutable general_settings view; they never construct
+  the cleanup service, read proxy globals or run async deletion methods. The existing config decoder and
+  B199 duration parser cover external input; SQL identifiers never come from requests.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_retention.rs
+    - crates/betterlite-db/src/spend_retention/{batches.rs,batches/**}
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-retention-*
+    - tools/oracle/src/helpers/{mod.rs,cleanup_bounds.rs}
+    - tools/oracle/helpers/{dispatch.py,cleanup_bounds.py}
+    - tools/oracle/cases/helpers/cleanup-bounds/**
+    - tools/oracle/fuzz/corpus/helper_case/cleanup-bounds-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L37-L55
+    why: Cutoff representation and table result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L78-L491
+    why: Bounds, retention conversion, transactional deletes and capped probes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1780-L1788
+    why: Batch, budget, backoff and outstanding-count defaults.
+dod:
+  - text: Bounds and retention values load with pinned coercion, defaults and live-reset behavior.
+    proof: [retention-settings, retention-config-corpus, oracle, cleanup-bounds-python, cleanup-bounds-corpus]
+  - text: Deletes stop for exhaustion, deadline, batch cap and failure threshold without issuing a late probe.
+    proof: [bounded-delete-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bounded-delete-tests
+      why: Real database batching, transaction-local timeouts or failure accounting is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_retention::batches::/)'
+    - id: retention-settings
+      why: Retention and cleanup bounds lack a loader test covering all settings.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_retention_settings)'
+    - id: retention-config-corpus
+      why: Cleanup setting coercion has no new config-parser seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-retention-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: cleanup-bounds-python
+      why: Pure bounds/retention adapter is missing or fails strict typing.
+      run: test -f tools/oracle/helpers/cleanup_bounds.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: cleanup-bounds-corpus
+      why: Cleanup helper calls cannot be replayed through their operation tag.
+      run: grep -rlq 'cleanup_bounds:' tools/oracle/fuzz/corpus/helper_case/cleanup-bounds-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cleanup-bounds/integer-days-and-invalid-retention.yaml
+  - tools/oracle/cases/helpers/cleanup-bounds/override-fallback-and-numeric-truncation.yaml
+  - tools/oracle/cases/helpers/cleanup-bounds/group-shares-and-millisecond-floor.yaml
+deviations: []
+out_of_scope:
+  - B1741 owns run progress, six table-specific callers, cleanup groups, outcome summary and cleanup_old_spend_logs in this file.
+  - B1739 owns partition operations and the cleanup metrics called by batches.
+pitfalls:
+  - A timeout caused by the run deadline is not a consecutive database failure.
+  - maximum_spend_logs_cleanup_max_batches counts successful nonempty deletes, so failed attempts do not consume that cap.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

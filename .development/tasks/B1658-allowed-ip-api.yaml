@@ -1,0 +1,85 @@
+id: B1658
+title: Edit allowed IP strings with the source's asymmetric write guards
+description: >-
+  Add allowed_ip_routes for authenticated GET /get/allowed_ips, POST /add/allowed_ip and
+  POST /delete/allowed_ip. Keep GET out of OpenAPI as the decorator specifies; it returns
+  data equal to effective general_settings.allowed_ips, including null when absent. Reuse
+  B744's existing allowed_ips=None binding and B120's SettingsStore. Decode the two mutations
+  through decode_allowed_ip_request(bytes), requiring ip as a string without adding IP/CIDR
+  validation, trimming or canonicalization. B052 supplies route authorization; the handlers
+  have no additional role predicate.
+  Add first requires DB, then rejects an exact duplicate with 400. Publish the appended
+  runtime list before checking store_model_in_db is True; a disabled storage guard returns
+  the source's 500 but leaves that runtime mutation visible. Load config, create missing
+  general_settings/allowed_ips containers, append to the persisted list only if absent, save,
+  then submit the B124 config-audit record through B065. Delete instead checks membership
+  first, returning 404 when absent, and has no explicit DB or store_model_in_db guard. Remove
+  every exact occurrence from the runtime sequence, but only the first occurrence from the
+  loaded persisted list, then save and audit with action deleted. Preserve the source's
+  success strings and operation-specific error shapes. Neither operation rolls runtime state
+  back when reading or saving config fails.
+  Map ConfigOwnedKeyError from runtime assignment to 400 detail containing error, keys,
+  section and stored_database_value_ignored. This happens before either operation loads
+  persisted configuration. Avoid logging the loaded full config; report only the allowed-IP
+  operation because unrelated config fields may contain credentials. Native tests inspect
+  runtime versus DB state after guard/save failures and duplicate removal. HTTP sequences use
+  B1630 and retain the fixture caller's permitted IP while testing changes; include config-owned
+  rejection, arbitrary accepted strings, duplicate-add/missing-delete and authentication errors.
+  Fuzz allowed_ip_request and replay replays_the_allowed_ip_request_corpus. The IPAddress model
+  and 95 function lines budget 150 implementation, 180 state/order tests and 170 HTTP/fuzz
+  cases within 550 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/allowed_ip_routes.rs
+    - crates/betterlite-server/src/allowed_ip_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/allowed_ip_request.rs
+    - crates/betterlite-server/fuzz/corpus/allowed_ip_request/**
+    - tools/oracle/cases/management/allowed-ips/**
+    - tools/oracle/fuzz/corpus/http_case/allowed-ips-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L170-L171
+    why: The API accepts an ordinary string, not a validated IP-address type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L585-L720
+    why: All three decorators, config ownership errors and the different add/delete guards.
+dod:
+  - text: Allowed-IP edits preserve exact string membership, asymmetric guards and different runtime/persisted duplicate removal.
+    proof: [allowed-ip-tests, oracle, allowed-ip-corpus]
+  - text: Config-owned keys fail before persistence and later save failures retain prior runtime mutations.
+    proof: [allowed-ip-tests, oracle]
+  - text: The three HTTP paths retain authentication, hidden GET documentation and their status/error contracts.
+    proof: [allowed-ip-tests, oracle, allowed-ip-corpus]
+checks:
+  optional: []
+  commands:
+    - id: allowed-ip-tests
+      why: Allowed-IP updates apply the wrong guard order or unexpectedly restore failed mutations.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^allowed_ip_routes::/) - test(replays_the_allowed_ip_request_corpus)'
+    - id: allowed-ip-corpus
+      why: Allowed-IP request decoding has no new malformed-body replay examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/allowed_ip_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_allowed_ip_request_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/allowed-ips/get-absent-and-configured.yaml
+  - tools/oracle/cases/management/allowed-ips/arbitrary-string-roundtrip.yaml
+  - tools/oracle/cases/management/allowed-ips/exact-duplicate-and-missing-delete.yaml
+  - tools/oracle/cases/management/allowed-ips/add-mutates-runtime-before-storage-guard.yaml
+  - tools/oracle/cases/management/allowed-ips/delete-does-not-use-add-storage-guard.yaml
+  - tools/oracle/cases/management/allowed-ips/config-owned-key-error-fields.yaml
+  - tools/oracle/cases/management/allowed-ips/invalid-body-and-unauthenticated.yaml
+deviations:
+  - what: Debug logging omits the loaded full configuration, and audit-queue overload can omit an audit record while a saved IP edit still succeeds.
+    why: Credential-bearing config must not enter logs, and B065 provides bounded audit admission instead of detached tasks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L648-L667
+out_of_scope:
+  - "Function ownership elsewhere in proxy_setting_endpoints.py is B1656 for L88-L127, L723-L783, L800-L849 and L1001-L1072; B1657 for L858-L998 and L1080-L1127; B1659 for L379-L399, L453-L470, L786-L797 and L1671-L1742; B1660 for L1750-L1961; B1661 for L1136-L1322; B1662 for L141-L167, L1330-L1463 and L1969-L2024; B1663 for L548-L582 and L1472-L1664."
+  - register_extra_ui_setting L439-L450 is an absent enterprise extension with no caller at the pin.
+  - B744 enforces allowed IPs on incoming requests; this task changes only the existing setting through management routes.
+pitfalls:
+  - Deleting an IP removes all runtime duplicates but only one duplicate from the stored list.
+  - Moving the store_model_in_db guard before the runtime append would erase the pinned add route's observable failure side effect.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

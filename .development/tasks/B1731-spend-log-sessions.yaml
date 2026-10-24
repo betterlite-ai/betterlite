@@ -1,0 +1,93 @@
+id: B1731
+title: Page session representatives and authorize session expansion
+description: >-
+  Implement server::spend::sessions for the grouped-session helpers L3078-L3262 and
+  GET /spend/logs/session/ui. Grouped paging receives already-authorized SQL predicates
+  from B1732 and uses B1728's fixed session expressions. A session is the pair of
+  COALESCE(NULLIF(session_id,''),request_id) and api_key. Sort groups by MAX(startTime),
+  session key and API key in the same direction. Fetch page_size+1 groups and return
+  representatives in that group order, selecting the final agent outcome before the
+  newest non-MCP row. Fetch only selected pairs with bound unnest arrays.
+  decode_session_cursor splits at the first two pipes: wire order is time|api_key|session,
+  SQL tuple order is time,session,api_key. Missing two separators or empty time/session
+  means no cursor; an empty API key and pipes inside the session are retained. Leave time
+  validation to PostgreSQL's timestamp cast. Cursor mode uses a strict tuple comparison
+  and no offset. Without a cursor, offset=(page-1)*page_size and the page limit is trimmed
+  at the 10000 count window; no query is issued when that limit is nonpositive. Cursor
+  continuation is not globally stopped by the capped total. Count at most 10001 groups
+  and expose total_is_capped; skip counting only when a noncursor page ends the list and
+  starts inside it, deriving total from offset plus returned groups. An empty page beyond
+  the end cannot establish the total and must still count. Emit next_session_cursor only
+  when a visible last row and an extra group exist, plus has_more. Hydrate metadata with
+  B1729 and enrich representative rows with B1730, even though the representative's own
+  timestamp may differ from the session's last activity.
+  The expansion route requires session_id, defaults page=1/page_size=50, allows sizes
+  1..100 and positive pages, and queries exact session_id without a time window. Admins
+  see all matching rows. Others get own-user OR permitted-team scope; a failed team lookup
+  falls back to own-user scope, and null user IDs remain bound rather than deleting the
+  predicate. Its ORM count is uncapped while its raw row projection excludes heavy bodies,
+  duration and litellm_call_id. Return raw hydrated rows newest-first with five pagination
+  fields, no session enrichment and no total_is_capped field. HTTPExceptions propagate;
+  other failures become HTTP 500 detail strings. Missing database is 500.
+  Fuzz decode_session_query and decode_session_cursor through tagged session_inputs bytes,
+  with a normal replay test. Native PostgreSQL tests prove representative priority, tuple
+  cursor order, count shortcuts and capped offset behavior. HTTP oracle cases cover the
+  expansion route; pure session_cursor cases exercise only its standalone parser. These
+  283 source lines receive 800 changed lines for both pagers and their boundary tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/sessions.rs
+    - crates/betterlite-server/src/spend/sessions/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/session_inputs.rs
+    - crates/betterlite-server/fuzz/corpus/session_inputs/**
+    - tools/oracle/src/helpers/{mod.rs,session_cursor.rs}
+    - tools/oracle/helpers/{dispatch.py,session_cursor.py}
+    - tools/oracle/cases/helpers/session-cursor/**
+    - tools/oracle/fuzz/corpus/helper_case/session-cursor-*
+    - tools/oracle/cases/http/spend-session/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3078-L3262
+    why: Cursor parsing, representative fetch, capped counts and keyset paging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4505-L4625
+    why: Session-expansion route, own/team authorization and uncapped count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L396-L398
+    why: Expansion's count operation reuses the existing repository directly.
+dod:
+  - text: Session grouping pages by last activity, chooses the pinned representative and preserves count shortcuts and offset caps.
+    proof: [session-tests, session-input-corpus, oracle, session-python, session-helper-corpus]
+  - text: Session expansion retains own/team authorization, its separate size limit and the lean uncapped-count response contract.
+    proof: [session-tests, session-input-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: session-tests
+      why: Session pagination, representative priority or expansion authorization is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::sessions::/) - test(replays_the_session_inputs_corpus)'
+    - id: session-input-corpus
+      why: Session query/cursor decoders have no added boundary corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/session_inputs)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_session_inputs_corpus)'
+    - id: session-python
+      why: Cursor projection lacks a strictly checked Python adapter.
+      run: test -f tools/oracle/helpers/session_cursor.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: session-helper-corpus
+      why: Cursor operation is missing from typed helper replay.
+      run: grep -rlq 'session_cursor:' tools/oracle/fuzz/corpus/helper_case/session-cursor-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-session/own-user-permitted-team-and-collision.yaml
+  - tools/oracle/cases/http/spend-session/page-size-100-and-lean-row-fields.yaml
+  - tools/oracle/cases/helpers/session-cursor/tuple-order-empty-key-and-extra-pipes.yaml
+  - tools/oracle/cases/helpers/session-cursor/malformed-cursor-falls-back.yaml
+deviations: []
+out_of_scope:
+  - B1732 selects when the grouped pager applies and constructs its filters; B1730 owns aggregate enrichment and legacy exports, B1729 payload hydration and B1728 shared query constants.
+  - B1704 owns row/team visibility and B1721-B1727/B069 retain other report endpoints.
+pitfalls:
+  - The cursor encodes API key before session key but binds session key before API key to the SQL comparison.
+  - A page beyond the end still runs the count query because its empty result cannot establish the total.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

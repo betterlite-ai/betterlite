@@ -1,204 +1,116 @@
 id: B917
-title: Response chat history
+title: Convert chat history and preserve Responses reasoning identity
 description: >-
-  Implement chat-to-Responses conversation conversion and reasoning replay, retaining provider metadata and upstream
-  response IDs. Convert raw provider-shaped response items only through explicit typed variants; map incomplete
-  reasons and file parts without fetching URLs.
+  Implement api::response_chat_history for conversation conversion and the shared reasoning,
+  metadata, response-ID and tool-call helpers. B1136 converts content; B220 replays thinking
+  blocks; B903 unwraps response IDs and B912 resolves call IDs. Keep these helpers below the
+  request/result/stream callers in the dependency graph. Move the complete raw-output
+  callback L315-L358 to B919, which alone calls it. __init__ has no state to reproduce.
 
-
-  Implement crates/betterlite-core/src/api/response_chat_history.rs. Use ResponseChatHistoryInput and ResponseChatHistoryResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions chat_system_to_instructions, assistant_reasoning_replay, tool_call_output_history,
-  raw_output_item, input_file_value under api::response_chat_history::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponseChatHistory in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_chat_history: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/completion_extras/litellm_responses_transformation/transformation.py: _provider_metadata
-  (L81-L88); litellm/completion_extras/litellm_responses_transformation/transformation.py: _upstream_response_id
-  (L91-L94); litellm/completion_extras/litellm_responses_transformation/transformation.py: _get_reasoning_items
-  (L109-L116); litellm/completion_extras/litellm_responses_transformation/transformation.py: _reasoning_input_items
-  (L119-L132); litellm/completion_extras/litellm_responses_transformation/transformation.py: _build_reasoning_item
-  (L135-L160); litellm/completion_extras/litellm_responses_transformation/transformation.py: _reasoning_item_from_output_item
-  (L163-L178); litellm/completion_extras/litellm_responses_transformation/transformation.py: _reasoning_items_from_output_items
-  (L181-L186); litellm/completion_extras/litellm_responses_transformation/transformation.py: _as_chat_reasoning_items
-  (L189-L194); litellm/completion_extras/litellm_responses_transformation/transformation.py: _map_incomplete_reason_to_finish_reason
-  (L200-L203); litellm/completion_extras/litellm_responses_transformation/transformation.py: _incomplete_reason_from_response_payload
-  (L216-L223); litellm/completion_extras/litellm_responses_transformation/transformation.py: tool_call_dict_from_output_item
-  (L230-L262); litellm/completion_extras/litellm_responses_transformation/transformation.py: _reasoning_item_to_response_input
-  (L271-L283); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.__init__
-  (L291-L292); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._handle_raw_dict_response_item
-  (L315-L358); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.convert_chat_completion_messages_to_responses_api
-  (L360-L487). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 279 owned nonblank/non-comment/non-docstring Python lines (305 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 299 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 549 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
-  encoding), B902 (Responses shapes), B1087 (Api boundaries), B1136 (Responses chat content projection), B903 (Response
-  id codecs), B912 (Responses tool results). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Provide a B171 response_chat_history operation selecting typed history, reasoning-item,
+  metadata or tool-output projections. Missing reasoning IDs use an opaque rs_ identifier;
+  compare its prefix and reuse within a conversion, not Python's process address.
+  There is no JSON parsing or provider I/O here. The owned ranges contain 277 nonblank/
+  non-comment lines; budget 265 implementation, 165 tests, 110 cases, 90 adapters and
+  25 wiring lines, totaling 655.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_chat_history.rs
   - crates/betterlite-core/src/api/response_chat_history/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/response_chat_history.rs
-  - tools/oracle/src/helpers/response_chat_history/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/response_chat_history.py
-  - tools/oracle/helpers/response_chat_history/**
   - tools/oracle/fuzz/corpus/helper_case/response_chat_history-*
   - tools/oracle/cases/helpers/response-chat-history/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L81-L205
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L76-L205
+  why: Shared metadata exclusion sets, upstream IDs and reasoning record/default construction.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L214-L264
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Incomplete-reason extraction and custom/function call conversion retain distinct payload fields.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L269-L293
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L314-L487
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Stored reasoning needs summary and preserves only truthy encrypted_content; construction has no state.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L360-L487
+  why: One complete history conversion owns leading systems, assistant calls and correlated tool output ordering.
 dod:
-- text: 'chat system to instructions: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-chat-system-to-instructions
-  - oracle
-- text: 'assistant reasoning replay: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-assistant-reasoning-replay
-  - oracle
-- text: 'tool call output history: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-call-output-history
-  - oracle
-- text: 'raw output item: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-raw-output-item
-  - oracle
-- text: 'input file value: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-input-file-value
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    leading_system_instructions converts system a,system b,user c to instructions="a b"
+    and one user input message c. A later system d remains a system message; nonstring
+    leading system content also remains an input message. Empty system text follows
+    truthiness when joining, so ["","b"] gives "b". System-only conversion returns
+    input=[] and instructions; B918 alone turns it back into a system input item.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    assistant_call_history emits stored reasoning, then a truthy assistant content message,
+    then calls in order. Function calls copy id to call_id and only present name/arguments;
+    custom calls use name/input default "". A truthy function wins over custom. An assistant
+    call {id:c} with neither supported payload raises ValueError
+    "tool call not supported: {'id': 'c'}". Assistant content=null with no calls can still
+    emit reasoning; non-assistant null content emits nothing. Empty assistant text without
+    calls produces an empty output_text message, but with calls produces no text message.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    correlated_tool_output collects custom call IDs from all assistant messages before
+    conversion. Tool text=ok becomes function_call_output.output=[{type:input_text,text:ok}],
+    but a matching custom call produces custom_tool_call_output.output="ok". Null gives [],
+    multimodal lists use B1136 with role=user, and number 7 becomes input_text text="7".
+    Missing tool_call_id stays null; a custom dict paired with a truthy function is not
+    counted as custom. Tool results can precede their definition and still be classified.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    reasoning_history gives nonempty reasoning_items precedence over thinking_blocks.
+    Stored {id:rs_a,summary:null,encrypted_content:""} becomes
+    {type:reasoning,id:rs_a,summary:[]} with no encrypted_content; missing/falsy id gets rs_.
+    With no stored items, B220 converts thinking text=x to a summary_text x item without id
+    and preserves a litellm_encrypted_reasoning:cipher signature as encrypted_content=cipher.
+    Building output reasoning from dict or typed item fills missing summary block type with
+    summary_text and text with ""; missing dict id becomes "", encrypted_content stays null.
+    Non-reasoning items are ignored and an empty reasoning list projects to null.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    output_tool_fields maps function arguments or custom input into function.arguments,
+    defaulting falsy payloads to ""; default names are "" for function and custom_tool
+    for custom. Preserve the supplied index=3 and B912 call-ID choice. Nonempty dict or
+    attribute-backed provider_specific_fields appears both on the tool and function;
+    empty/unsupported metadata is absent. The output type is always function.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    shared_output_metadata removes null values, every B004 ModelResponse field plus usage,
+    and every Responses-only field from B1138/OpenAI Response minus ChatCompletion fields.
+    For {id:bad,output:[],instructions:x,vendor:7,empty:null}, retain only vendor=7.
+    Null upstream ID stays null; encoded resp_a unwraps to resp_a. Incomplete details must
+    be mappings with string reason; content_filter maps to content_filter, while null,
+    max_output_tokens and unknown map to length. Nonstring reason becomes null.
+  proof: [history-tests, oracle, history-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::/)
-      - test(/::replays_corpus$/)'
-  - id: case-chat-system-to-instructions
-    why: the chat-system-to-instructions behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::tests::chat_system_to_instructions($|::)/)'
-  - id: case-assistant-reasoning-replay
-    why: the assistant-reasoning-replay behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::tests::assistant_reasoning_replay($|::)/)'
-  - id: case-tool-call-output-history
-    why: the tool-call-output-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::tests::tool_call_output_history($|::)/)'
-  - id: case-raw-output-item
-    why: the raw-output-item behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::tests::raw_output_item($|::)/)'
-  - id: case-input-file-value
-    why: the input-file-value behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::tests::input_file_value($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/response_chat_history.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_chat_history-*)"
-      && grep -qE "^[[:space:]]+response_chat_history:" tools/oracle/fuzz/corpus/helper_case/response_chat_history-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-chat-history)"
+  - id: history-tests
+    why: history ordering or shared reasoning and metadata rules are missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_history::/)'
+  - id: history-adapter
+    why: chat history has no independently executed helper comparison
+    run: test -f tools/oracle/helpers/response_chat_history.py && grep -qE '^[[:space:]]+response_chat_history:' tools/oracle/fuzz/corpus/helper_case/response_chat_history-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/response-chat-history/chat-system-to-instructions.yaml
-- tools/oracle/cases/helpers/response-chat-history/assistant-reasoning-replay.yaml
-- tools/oracle/cases/helpers/response-chat-history/tool-call-output-history.yaml
-- tools/oracle/cases/helpers/response-chat-history/raw-output-item.yaml
-- tools/oracle/cases/helpers/response-chat-history/input-file-value.yaml
+- tools/oracle/cases/helpers/response-chat-history/leading-system-instructions.yaml
+- tools/oracle/cases/helpers/response-chat-history/assistant-call-history.yaml
+- tools/oracle/cases/helpers/response-chat-history/correlated-tool-output.yaml
+- tools/oracle/cases/helpers/response-chat-history/reasoning-history.yaml
+- tools/oracle/cases/helpers/response-chat-history/output-tool-fields.yaml
+- tools/oracle/cases/helpers/response-chat-history/shared-output-metadata.yaml
 deviations: []
 out_of_scope:
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B1136 owns _input_file_from_file_value
-  L206-L213, _flat_responses_tool_choice L265-L268, LiteLLMResponsesTransformationHandler._normalize_tool_choice_for_responses_api
-  L294-L313, LiteLLMResponsesTransformationHandler._convert_content_str_to_input_text L991-L995, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format_image
-  L997-L1023, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format L1025-L1115, LiteLLMResponsesTransformationHandler._convert_annotations_to_chat_format
-  L1278-L1311.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B918 owns LiteLLMResponsesTransformationHandler._map_optional_params_to_responses_api_request
-  L489-L526, LiteLLMResponsesTransformationHandler._merge_text L529-L539, LiteLLMResponsesTransformationHandler._build_sanitized_litellm_params
-  L541-L558, LiteLLMResponsesTransformationHandler._merge_responses_api_request_into_request_data L560-L579, LiteLLMResponsesTransformationHandler.transform_request
-  L581-L659, LiteLLMResponsesTransformationHandler._convert_tools_to_responses_format L1117-L1149, LiteLLMResponsesTransformationHandler._extract_extra_body_params
-  L1151-L1178, LiteLLMResponsesTransformationHandler._map_reasoning_effort L1180-L1197, LiteLLMResponsesTransformationHandler._add_web_search_tool
-  L1199-L1225, LiteLLMResponsesTransformationHandler.transform_response_format_to_text_format L1227-L1228, LiteLLMResponsesTransformationHandler._transform_response_format_to_text_format
-  L1230-L1275.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B919 owns LiteLLMResponsesTransformationHandler._convert_response_output_to_choices
-  L662-L802, LiteLLMResponsesTransformationHandler._build_empty_incomplete_choice L805-L823, LiteLLMResponsesTransformationHandler._extract_output_from_completed_event
-  L826-L833, LiteLLMResponsesTransformationHandler._recover_output_items_from_raw_sse L836-L882, LiteLLMResponsesTransformationHandler._recover_output_items_from_logging
-  L885-L888, LiteLLMResponsesTransformationHandler.transform_response L890-L981, LiteLLMResponsesTransformationHandler.get_model_response_iterator
-  L983-L989.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._map_responses_status_to_finish_reason
-  L1313-L1325 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B920 owns OpenAiResponsesToChatCompletionStreamIterator.__init__
-  L1329-L1338, OpenAiResponsesToChatCompletionStreamIterator._handle_string_chunk L1340-L1355, OpenAiResponsesToChatCompletionStreamIterator._sequential_tool_call_index
-  L1358-L1373, OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream L1376-L1636,
-  OpenAiResponsesToChatCompletionStreamIterator.chunk_parser L1638-L1656, OpenAiResponsesToChatCompletionStreamIterator._remember_served_service_tier
-  L1658-L1664, OpenAiResponsesToChatCompletionStreamIterator._with_served_service_tier L1666-L1669, OpenAiResponsesToChatCompletionStreamIterator._with_stream_scoped_id
-  L1671-L1676.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1136 owns file/content/choice/annotation helpers; B918 request mapping; B919 raw-output callbacks and final response assembly; B920 stream iterator construction and conversion; B2412 raw SSE recovery.
+- _map_responses_status_to_finish_reason has no caller at the pin; do not add a parallel status implementation.
+- B220 owns the thinking-block grouping and encrypted-signature protocol in common_utils.py.
 pitfalls:
-- Within _upstream_response_id\'s response_id is None branch, preserve return None and its nested guards.
-- Within _get_reasoning_items\'s items branch, preserve return items and its nested guards.
+- Custom call IDs are collected across the entire history, so results do not require a preceding definition here.
+- Only consecutive leading string system messages become instructions; later system messages stay in input.
+- An empty function payload is falsy and may select the custom branch instead.
 review_level: standard
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 655
   max_new_expects: 1

@@ -4,6 +4,7 @@ mod checks;
 mod coverage;
 mod dependencies;
 mod development;
+mod deviations;
 mod dispatch;
 mod error;
 mod facts;
@@ -17,6 +18,7 @@ mod report_check;
 mod review_check;
 mod schema;
 mod spec;
+mod trace;
 mod validate;
 mod yaml;
 
@@ -84,6 +86,13 @@ enum Command {
         about = "Print how many LiteLLM paths each backlog entry covers, then every path nothing covers"
     )]
     Coverage,
+    #[command(
+        about = "Show which task owns a LiteLLM path or a betterlite file, with the LiteLLM lines it ports and its deviations"
+    )]
+    Trace {
+        #[arg(help = "A path from the repository or LiteLLM root, optionally with :line")]
+        target: String,
+    },
 }
 
 fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, GateError> {
@@ -169,6 +178,7 @@ fn run_command(
             Ok((inventory::write(&development.root, &checkout)?, true))
         }
         Command::Coverage => coverage_report(development),
+        Command::Trace { target } => trace::trace(development, &target),
         Command::Hook => Ok((Vec::new(), true)),
     }
 }

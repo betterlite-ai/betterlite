@@ -1,0 +1,76 @@
+id: B1631
+title: Sign SAML assertions for real HTTP oracle flows
+description: >-
+  Extend the browser-flow oracle with a narrowly typed saml_assertion request-body producer.
+  It reads an AuthnRequest ID captured from the prior login redirect, signs a fresh response
+  for that proxy's request and posts the URL-encoded SAMLResponse to the gateway callback.
+  Keep the signing certificate/key under test fixtures, publish the matching IdP metadata
+  through the existing mock, and set a common configured PROXY_BASE_URL for both proxies so
+  audience/destination comparison is meaningful despite their different listening ports.
+  Use the pinned oracle environment's OneLogin_Saml2_Utils.add_sign, following the source
+  regression test's signed-assertion envelope; the signer is independent of betterlite's
+  verifier. No FastAPI route is invoked in process. The typed input supplies subject,
+  attributes, audience, destination, request-ID capture, assertion ID, validity offsets,
+  RelayState and an explicit test mutation enum: unsigned, wrong_key, expired, wrong_audience,
+  wrong_destination or subject_confirmation_only. Permit reusing the exact signed output
+  for replay tests. Decode an AuthnRequest only as bounded URL/base64/DEFLATE/XML data and
+  select its root ID; never treat metadata or XML references as fetch instructions.
+  The signer receives one bounded JSON document and emits one base64 response; run it with
+  B171's isolated Python environment/process limits and keep private-key material out of
+  diff artifacts. Validate transcript capture references before starting proxies. Add a
+  saml_oracle_input fuzz target for the AuthnRequest/case input decoder, plus http_case seeds
+  exercising the new body variant. Tests must verify signatures with the independent OneLogin
+  validator, reject expansion/DTD payloads and prove separate proxy request IDs are not mixed.
+  This test-only part owns no production SAML functions: its source basis is the pin's
+  70-line signed-response fixture plus B1625's dynamic AuthnRequest contract. Budget 230
+  driver/signing adapter, 180 tests, 100 parser/fuzz and 70 schema/typing lines within 650.
+scope:
+  paths:
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/case/**
+    - tools/oracle/src/http/browser_flow.rs
+    - tools/oracle/src/http/browser_flow/**
+    - tools/oracle/src/http/saml_idp.rs
+    - tools/oracle/src/http/saml_idp/**
+    - tools/oracle/fixtures/saml-idp/**
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+    - tools/oracle/fuzz/Cargo.toml
+    - tools/oracle/fuzz/fuzz_targets/saml_oracle_input.rs
+    - tools/oracle/fuzz/corpus/saml_oracle_input/**
+    - tools/oracle/fuzz/corpus/http_case/saml-assertion-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/management_endpoints/test_saml_sso.py#L102-L175
+    why: Existing independently signed assertion fixture and response envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L243-L266
+    why: Generated login request ID and browser-binding cookie that the fixture must use.
+dod:
+  - text: The HTTP driver produces independently signed responses bound to each real proxy's own AuthnRequest.
+    proof: [saml-fixture-tests, saml-fixture-python]
+  - text: Explicit signature/time/audience mutations and replay reuse produce distinguishable test inputs without arbitrary script execution.
+    proof: [saml-fixture-tests, saml-fixture-corpora]
+checks:
+  optional: []
+  commands:
+    - id: saml-fixture-tests
+      why: Runtime SAML signing, mutation selection or per-proxy request binding is missing.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::saml_idp::/) - test(replays_the_saml_oracle_input_corpus)'
+    - id: saml-fixture-python
+      why: The independent signer lacks a strictly checked Python driver.
+      run: test -f tools/oracle/fixtures/saml-idp/driver.py && uv run --locked --project tools/oracle/litellm ruff check --config tools/oracle/helpers/ruff.toml tools/oracle/fixtures/saml-idp && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/saml-idp/pyrightconfig.json
+    - id: saml-fixture-corpora
+      why: AuthnRequest parsing and the new assertion-body case variant have no added replay coverage.
+      run: test -f tools/oracle/fuzz/fuzz_targets/saml_oracle_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/saml_oracle_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/saml-assertion-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_saml_oracle_input_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1625/B1626 implement the SAML provider and callback; the signer cannot become a production authentication bypass or substitute for those HTTP endpoints.
+pitfalls:
+  - Editing InResponseTo after signing invalidates the signature, so each proxy's captured request ID must enter the document before signing.
+  - Re-signing an assertion for the second replay attempt tests a new login instead of the replay guard.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

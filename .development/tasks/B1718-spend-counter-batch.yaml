@@ -1,0 +1,75 @@
+id: B1718
+title: Share authoritative counter reads within one spend phase
+description: >-
+  Implement SpendCounterBatch in betterlite-auth::spend_batch using B126's request Redis
+  batch and B733's counter-key constructors. An explicit request-owned context replaces
+  the Python ContextVar: an inner scope joins an open outer batch, a closed outer batch
+  causes a fresh scope, and exit restores the previous context even after cancellation.
+  With no Redis backend the scope does nothing. Binding unions keys while open; closing
+  prevents subsequent bindings, reads and recorded writes from using the snapshot.
+  The first read fetches every bound-but-unread key in sorted order with one MGET. If a
+  request batch exists, install its flush hook before any auth prefetch so counters can
+  ride that pipeline. Newly bound keys enter the next MGET. Coalesce concurrent readers
+  without holding a mutex across I/O: reserve a fetch generation under the lock, release
+  it, then publish the result to its waiters. Mark attempted keys fetched even if the
+  request fails; the caller then uses a direct Redis read rather than retrying the batch.
+  A present null is an authoritative miss; an absent key is not. Validate the entire
+  returned counter map with B204's Decimal decoder, and fall back for the whole result on
+  a malformed value. Merge fetched values underneath already recorded values, preserving
+  a write that completes during MGET. record binds and marks the key fetched; forget
+  removes it from all three sets/maps, including when the batch is closed.
+  Extract PendingSpendIncrement and the admission/post-call key projections here. String
+  IDs, including empty strings, produce entity counters; team membership needs both team
+  and user strings. Include key, team, member, user, end_user, org and project counters.
+  Tags and access groups require nonempty strings and deduplicate. A budget-window read
+  binds its key on demand. Reuse B733's exact group/project key spelling. Do not add an
+  extra process-global cache or transport-specific task-local state.
+  Pure counter_keys oracle cases compare only key sets. Native Redis tests prove pipeline
+  round trips, late binds, authoritative misses, malformed-map fallback, closure and
+  write/read races using B1690's fixture. The existing Redis value decoder is reused;
+  this module transforms parsed records and adds no byte parser. The 231 owned source
+  lines leave room in 650 changed lines for the concurrency implementation and tests.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/spend_batch.rs
+    - crates/betterlite-auth/src/spend_batch/**
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/{mod.rs,counter_keys.rs}
+    - tools/oracle/helpers/{dispatch.py,counter_keys.py}
+    - tools/oracle/cases/helpers/counter-keys/**
+    - tools/oracle/fuzz/corpus/helper_case/counter-keys-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L1-L281
+    why: Complete counter snapshot, nested scopes, write invalidation and key projection.
+dod:
+  - text: A spend scope combines eligible counter reads without turning failed Redis results into authoritative misses or overwriting newer writes.
+    proof: [counter-batch-tests]
+  - text: Admission and post-call keys include exactly the source entities and filtered tags/groups.
+    proof: [counter-batch-tests, oracle, counter-keys-python, counter-keys-corpus]
+checks:
+  optional: []
+  commands:
+    - id: counter-batch-tests
+      why: Shared reads, nested scope restoration or write visibility are missing.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_batch::/)'
+    - id: counter-keys-python
+      why: Counter key projections are not checked against the pinned functions.
+      run: test -f tools/oracle/helpers/counter_keys.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: counter-keys-corpus
+      why: Counter-key helper cases are absent from typed replay.
+      run: grep -rlq 'counter_keys:' tools/oracle/fuzz/corpus/helper_case/counter-keys-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/counter-keys/entities-empty-ids-and-member-pair.yaml
+  - tools/oracle/cases/helpers/counter-keys/tags-groups-and-project-namespace.yaml
+deviations: []
+out_of_scope:
+  - B126 owns Redis pipelines and response decoding; this task owns every function in spend_counter_batch.py but no counter increment or reservation policy.
+pitfalls:
+  - A null MGET result suppresses a redundant per-key read, whereas an omitted key requires that fallback.
+  - Closing a scope must happen before a read-then-write operation can mistake the old snapshot for current spend.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,144 @@
+id: B2401
+title: HTTP oracle execution for SDK operations
+description: >-
+  Add kind=sdk_http to the oracle so a task that calls a provider can compare real outbound HTTP without
+  depending on the later proxy route that calls it. Each case runs a native production service and the pinned
+  LiteLLM SDK independently against the mock provider. This is an HTTP capture driver, not HelperCall and not
+  a FastAPI-function adapter. Keep the existing gateway HTTP, multipart, helper and WebSocket drivers unchanged.
+
+  SdkHttpCase contains name, env, call, upstream and compare. call is an externally tagged SdkHttpCall enum;
+  begin with openai_chat {model,messages,api_key,timeout_seconds}. Resolve api_base only from the harness's
+  freshly bound loopback mock, never an arbitrary destination from the case. Native openai_chat calls B004's
+  typed OpenAI execution directly; Python calls litellm.completion with custom_llm_provider=openai, the same
+  model/messages/key/timeout and the mock api_base. It sets num_retries=0. Keep the normal SDK decorator and
+  exception mapper active. Subsequent API tasks add typed enum variants and their two dispatch implementations.
+  A case cannot supply a Python module/function name or executable code. No production server route is added.
+
+  Reuse B001's canned upstream answers, captured requests, comparator and artifacts. Reuse B900 for byte and
+  multipart HTTP bodies. Capture an SDK result as success{value} or failure{class,status,type,param,code,message},
+  with optional exception fields absent/null distinguished by the typed projection. SDK code is not the proxy's
+  stringified HTTP-status code: never manufacture a client HTTP response for an SDK exception. Each operation
+  owns its result projection. Compare actual provider method/path/query/headers/body and result values. Compare
+  zero expected requests too; an unexpected request must fail rather than borrow the next case's canned answer.
+
+  Start a separate mock capture per implementation and case; do not partition captures by the number of canned
+  answers. --self-check uses two fresh LiteLLM SDK processes. Normal mode uses one native service and one fresh
+  pinned Python process. Reuse the no-enterprise uv environment and LITELLM_LOCAL_MODEL_COST_MAP=True. Pass only
+  the case environment plus harness-required variables. The Python protocol reads one bounded JSON call from
+  stdin and writes one typed result; logs go to stderr. Retain both logs and captures on mismatch or crash.
+
+  Implement decode_sdk_http_case(bytes:&[u8],limits:&OracleLimits) in tools/oracle/src/sdk_http.rs and route the
+  CLI's sdk_http cases through it. Cap case and result input at 1 MiB, each captured body at 16 MiB, requests at
+  128 and each execution at 120 seconds. The same decoder is called by the sdk_http_case fuzz target and replay.
+  A timeout kills and joins the Python child, closes native work and joins the mock; cancellation does the same.
+  Unknown/duplicate fields and unsupported operation tags fail before launching either implementation.
+  decode_sdk_http_result(bytes,limits) validates the child's bounded JSON result. The fuzz input's first byte
+  selects case YAML (0) or result JSON (1); the remaining bytes reach the corresponding production decoder.
+
+  No LiteLLM function changes ownership here; B004 remains the chat execution owner and B001 the base oracle
+  owner. Size from the tooling work: 250 Rust driver/dispatch lines, 90 Python protocol lines, 160 tests,
+  100 fixture lines, 55 fuzz/replay and 40 wiring, 695 total. Keep adapter code limited to typed input/output
+  projection; it must not reproduce SDK parameter mapping or return the fixture's expected value.
+scope:
+  paths:
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/artifacts.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/**
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/openai_chat.py
+  - tools/oracle/sdk_http/pyrightconfig.json
+  - tools/oracle/cases/sdk-http/oracle/**
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/sdk_http_case.rs
+  - tools/oracle/fuzz/corpus/sdk_http_case/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779-L1062
+  why: These SDK operations reach provider HTTP; comparing them as pure helper values would hide missing requests.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1959-L1985
+  why: Router callers expose update/delete independently of their proxy routes, so the SDK driver must not require those route tasks.
+dod:
+- text: >-
+    sdk_chat_http sends model=gpt-4o-mini,messages=[{role:user,content:hello}],api_key=sk-test,timeout_seconds=10.
+    Both implementations make one POST /chat/completions relative to the configured /v1 base, with
+    Authorization="Bearer sk-test", model=gpt-4o-mini and that message. A mock 200 completion with id=chat_a,
+    created=1,object=chat.completion,model=gpt-4o-mini,assistant content=hi and finish_reason=stop returns those
+    same fields. Captured values come from the service and HTTP server, not the expected fixture.
+  proof: [sdk-tests, oracle, python-adapter]
+- text: >-
+    sdk_failure_fields supplies a mock 401 error {type:invalid_api_key,message:bad key,param:null,code:invalid_api_key}.
+    The SDK result has failure.class=AuthenticationError,status=401, with type/param/code null from the pinned
+    SDK exception's body=None. It is not a ProxyException code="401" record. Both sides issue one request
+    because retries are disabled. The error message is captured; B011's allowed wording difference is explicit
+    in compare.ignore with a reason and does not hide class, status or provider requests.
+  proof: [sdk-tests, oracle, python-adapter]
+- text: >-
+    independent_captures runs two cases whose mocks return ids=chat_a and chat_b. Each side receives the correct
+    id regardless of a prior case's zero requests. A deliberately changed provider body content=wrong reports
+    the first /upstream/0/body/messages/0/content difference; changing only success.value.id reports that result
+    pointer. An unexpected second request fails, even if the returned SDK value still matches.
+  proof: [capture-tests]
+- text: >-
+    sdk_driver_isolation rejects call={python_function:os.system}, a duplicate call key, unknown timeout field
+    and a case carrying api_base=https://external.test before a process or socket starts. A valid call launches
+    one native execution and one Python SDK process; --self-check launches two independent Python executions.
+    Logs never corrupt the JSON result on stdout and no FastAPI route function is imported by the adapter.
+  proof: [isolation-tests, python-adapter]
+- text: >-
+    sdk_limits rejects a 1048577-byte case or result, a 129th captured request and a body over 16777216 bytes.
+    At the execution deadline, the child is terminated and reaped and the mock is joined. Cancellation during
+    a provider response performs the same cleanup. Tests use an injected deadline, not a 120-second sleep.
+  proof: [limits-tests, corpus]
+- text: Existing chat, health and multipart cases still execute the gateway driver and retain their comparison rules.
+  proof: [legacy-cases]
+checks:
+  optional: [mutants]
+  commands:
+  - id: sdk-tests
+    why: direct service calls do not send the expected HTTP or project SDK results correctly
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::sdk_chat_http($|::)/) | test(/^sdk_http::tests::sdk_failure_fields($|::)/)'
+  - id: capture-tests
+    why: actual request counts corrupt the next case or an SDK fixture can pass without provider parity
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::independent_captures($|::)/)'
+  - id: isolation-tests
+    why: sdk_http can dispatch arbitrary code, reuse one result or call a proxy route
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::sdk_driver_isolation($|::)/)'
+  - id: limits-tests
+    why: malformed or stalled SDK processes escape the harness bounds
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::sdk_limits($|::)/)'
+  - id: python-adapter
+    why: the independent Python protocol does not exist or fails strict checking
+    run: test -f tools/oracle/sdk_http/dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: the two external-byte decoders have no new fuzz inputs or replay
+    run: test -f tools/oracle/fuzz/fuzz_targets/sdk_http_case.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: legacy-cases
+    why: the new driver breaks existing case kinds
+    run: test -f tools/oracle/src/sdk_http.rs && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/chat tools/oracle/cases/health tools/oracle/cases/harness/multipart-oracle
+oracle_cases:
+- tools/oracle/cases/sdk-http/oracle/chat-success.yaml
+- tools/oracle/cases/sdk-http/oracle/chat-authentication-error.yaml
+deviations: []
+out_of_scope:
+- B001 owns ordinary gateway startup, the base HTTP comparator and artifact retention; B900 owns multipart capture parsing.
+- B004 owns chat execution and B011 owns SDK error normalization; this task only projects their returned records.
+- Endpoint-specific SDK variants, including vector-store update/delete, belong to their API tasks and depend on this driver.
+- Route authentication and aliases must still use the gateway driver, not sdk_http.
+pitfalls:
+- Counting mock requests from the number of canned answers can assign one implementation's traffic to the other implementation.
+- An SDK AuthenticationError has body=None, so copying the upstream error.code into the SDK projection changes LiteLLM's result.
+- A helper stdin adapter is not provider parity; sdk_http must record each actual outbound request.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

@@ -1,0 +1,101 @@
+id: B1651
+title: Quote token costs from the same resolved prices used for billing
+description: >-
+  Implement cost_estimate_route for POST /cost/estimate and every helper/record before
+  the cost-setting routes in cost_tracking_settings.py. Use B124's CostEstimateRequest/
+  Response contract, with model and nonnegative input/output counts required, cache-read,
+  cache-creation and reasoning counts defaulting zero, and daily/monthly counts defaulting
+  None. Decode through decode_cost_estimate_request(bytes), applying the shared model's
+  subset validation without unchecked addition: cache counts cannot exceed input tokens,
+  reasoning cannot exceed output. Fuzz that boundary as cost_estimate_request.
+  Resolve B844's first matching deployment, respecting aliases and stable deployment order.
+  model_info.base_model wins over litellm_params.base_model, then the deployment model;
+  retain explicit custom_llm_provider. Lookup errors or an unusable match fall back to the
+  requested model with no custom prices. _configured_price accepts numeric record values,
+  not numeric strings, and litellm_params precedes model_info. Custom pricing activates
+  when either input/output price exists, filling the other with zero. Cache rates fall
+  back through deployment fields, builtin model info, then the custom input rate, while
+  explicit zero remains zero. _lookup_model_info logs no failure and returns None on error.
+  Build Usage with cache details only when either cache count is nonzero, total input plus
+  output, and reasoning inside output rather than additional tokens. Pin one B198 billing
+  timestamp and call B068's completion-cost service with a per-estimate breakdown/rate
+  collector; no provider request or completion is sent. Calculation errors become 404,
+  while malformed bodies keep normal 422 validation. Project missing breakdown components
+  to zero and preserve cache/reasoning costs as shares of input/output, not extra charges.
+  CostLines.times returns None for zero or absent daily/monthly counts. Echo the requested
+  model name even when an alias resolves, report the rates returned by billing rather than
+  a second rate lookup, and prefer catalog litellm_provider over the resolved provider.
+  Test off-peak boundary pinning and all aliases/price fallbacks with native catalog/router
+  instances. Pure cost_estimate_values cases compare custom-price extraction, usage and
+  line scaling; real HTTP cases verify quote fields, auth and errors with no upstream calls.
+  Use exactly representable custom prices in arithmetic parity fixtures and test exact
+  decimal edge values natively. The 212 function lines plus 18 record declarations budget
+  260 implementation, 200 tests and 260 adapter/fuzz/HTTP lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cost_estimate_route.rs
+    - crates/betterlite-server/src/cost_estimate_route/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/cost_estimate_request.rs
+    - crates/betterlite-server/fuzz/corpus/cost_estimate_request/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/cost_estimate_values.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/cost_estimate_values.py
+    - tools/oracle/cases/helpers/cost-estimate-values/**
+    - tools/oracle/cases/management/cost-estimate/**
+    - tools/oracle/fuzz/corpus/helper_case/cost-estimate-values-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L48-L189
+    why: Deployment price selection, cost lines and synthetic usage construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L563-L699
+    why: Authenticated quote route, pinned billing time and actual billed rates in the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5748-L5820
+    why: Dependency-owned request subsets, nonnegative counts and response field defaults.
+dod:
+  - text: Quote resolution uses the first deployment, custom-price precedence and cache-rate fallback without sending a provider request.
+    proof: [cost-estimate-tests, oracle, estimate-values-python]
+  - text: Returned totals, shares and reported rates come from one pinned billing calculation, with zero period counts producing null projections.
+    proof: [cost-estimate-tests, oracle, estimate-values-python]
+  - text: The HTTP quote route enforces token subsets and preserves authentication, validation and unpriceable-model errors.
+    proof: [cost-estimate-tests, oracle, estimate-request-corpus]
+checks:
+  optional: []
+  commands:
+    - id: cost-estimate-tests
+      why: Estimated costs or returned rate metadata differ from the underlying billing result.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cost_estimate_route::/) - test(replays_the_cost_estimate_request_corpus)'
+    - id: estimate-values-python
+      why: Quote projection helper cases lack their checked Python implementation.
+      run: test -f tools/oracle/helpers/cost_estimate_values.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: estimate-request-corpus
+      why: Quote request decoding and its pure helper variant have no committed malformed-input regressions.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/cost_estimate_request)" && grep -rlq 'cost_estimate_values:' tools/oracle/fuzz/corpus/helper_case/cost-estimate-values-* && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_cost_estimate_request_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cost-estimate-values/params-before-info-cache-before-input-fallback.yaml
+  - tools/oracle/cases/helpers/cost-estimate-values/explicit-zero-cache-rate.yaml
+  - tools/oracle/cases/helpers/cost-estimate-values/zero-period-count-is-null.yaml
+  - tools/oracle/cases/management/cost-estimate/alias-with-on-prem-custom-prices.yaml
+  - tools/oracle/cases/management/cost-estimate/cache-and-reasoning-are-subsets.yaml
+  - tools/oracle/cases/management/cost-estimate/provider-tier-rates-come-from-calculation.yaml
+  - tools/oracle/cases/management/cost-estimate/unpriceable-model-and-invalid-subsets.yaml
+  - tools/oracle/cases/management/cost-estimate/authenticated-quote-never-calls-provider.yaml
+deviations:
+  - what: Quote amounts and rates are Decimal-backed JSON numbers, so binary-float rounding tails can differ from LiteLLM's estimates.
+    why: Estimates must report the same exact-money result as betterlite's actual billing service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L163-L173
+out_of_scope:
+  - B1650 owns all cost_tracking_settings.py setting handlers and block-pricing records at L192-L560.
+  - B075 owns the included prompt-cache prediction router; B066 composes it without duplicating its registration.
+  - B068 supplies completion-cost calculation, billed rates and breakdown collection; B124 owns the public estimate model validator.
+pitfalls:
+  - Reporting a second catalog lookup's rates can disagree with the quoted total when provider inference, token tiers or an off-peak boundary changes pricing.
+  - Cache-read/cache-write and reasoning lines are portions of input/output costs, not amounts to add again to the total.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

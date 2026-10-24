@@ -1,0 +1,85 @@
+id: B1736
+title: Reseed cold spend counters without trusting stale per-pod balances
+description: >-
+  Implement the remaining SpendCounterReseed methods in betterlite-auth::spend_reseed,
+  consuming B1735's authoritative row reads, B1718's active snapshot and B125/B126 caches.
+  An injected registry replaces class-global locks. Keep an LRU keyed by counter string;
+  SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE defaults 10000, invalid integers fail config load,
+  and nonpositive values disable retained entries as in the source's immediate eviction.
+  Eviction may remove an in-flight key, so do not promise cross-eviction singleflight.
+  Implement waiting through owned per-key operation state and notifications, without a
+  mutex guard across I/O. Local increments join that same per-key sequencing and request
+  local_only=true,refresh_ttl=true, preventing them from preceding an active reseed.
+  Recheck B1718 first. A non-null batched value returns immediately; a batched null is a
+  clean Redis miss and forbids consulting stale local state. Otherwise read Redis when
+  attached. A successful missing Redis key likewise suppresses local fallback; only no
+  Redis or a Redis failure allows an existing in-memory value to answer. Then use the
+  authoritative database read and warm even zero. With Redis, SET NX selects one seeder;
+  losers reread the winner and use the database amount only if that read is still missing.
+  Store the resulting value locally and record it into the active batch. With no Redis,
+  preserve max(database,current-local) before setting. Primary warm failure logs and
+  returns the known amount unless require_cache_warm=true, which propagates the failure.
+  Own window_from_table/window_from_db/window_from_spend_logs here. Only counter-facing
+  labels Key and Team map to window rows. A maintained row is usable when its UTC start
+  is at or ahead of the expected start; stale, absent or unreadable rows fall back to the
+  raw spend-log aggregate since window_start. A null duration skips the maintained row.
+  No matching logs yields zero; unsupported entities, unavailable DB and read failures
+  yield None. Treat naive stored timestamps as UTC while retaining aware instants.
+  coalesced_window shares the read precedence but has its own warm contract: after losing
+  SET NX and finding the winner absent, increment Redis by the known window amount.
+  Always propagate window warm failures. Do not copy the primary path's require_cache_warm
+  default into window admission or silently return a stale local balance after a clean miss.
+  loads_reseed_lock_limit proves environment loading, and config_yaml replay supplies
+  valid/invalid/nonpositive limits without changing process environment. Native tests use
+  real PostgreSQL/Redis plus controlled failure seams for cross-pod SET NX races, local
+  increments during reseed, active-batch misses, reset rows and every warm-error branch.
+  This is an asynchronous storage service, so no Python helper calls its database methods.
+  Approximately 310 owned source lines allow 800 changed lines including concurrency tests.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/spend_reseed.rs
+    - crates/betterlite-auth/src/spend_reseed/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L48-L117
+    why: Window mappings, bounded LRU registry and sequenced local increments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L210-L491
+    why: Primary/window read authority, SET NX warming and differing error policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1809-L1809
+    why: Reseed lock registry capacity environment binding and default.
+dod:
+  - text: Coalesced reads distinguish clean Redis misses from unavailable Redis and cannot multiply database spend across seeders.
+    proof: [reseed-tests]
+  - text: Window fallback, future reset rows and strict warm failures retain their distinct authority semantics.
+    proof: [reseed-tests]
+  - text: Registry capacity loads from the named environment variable and controls retention without changing process state.
+    proof: [reseed-settings, reseed-config-corpus, reseed-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: reseed-tests
+      why: Counter authority, coalescing or warm failure behavior is missing.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_reseed::/)'
+    - id: reseed-settings
+      why: Reseed registry capacity is declared but not loaded.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_reseed_lock_limit)'
+    - id: reseed-config-corpus
+      why: Reseed lock settings have no newly added parser input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1735 owns from_db, _counter_row, end_user_from_db and window-counter prefix recognition; this task owns every other function in spend_counter_reseed.py.
+  - B071 and B124 decide budget admission and call these lower services; they do not own this cache-reseed mechanism.
+pitfalls:
+  - A successful Redis miss must ignore the per-pod value even when it is nonzero.
+  - Window warm failures propagate unconditionally, unlike the default primary-counter warm path.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

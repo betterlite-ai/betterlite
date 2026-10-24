@@ -1,95 +1,54 @@
 id: B1021
-title: File upload options
+title: File target options and managed-id requirements
 description: >-
-  Parse file creation form fields into typed target_storage, target_model_names, model, purpose and MIME records.
-  Preserve filename/content MIME normalization and managed-files requirement checks, including repeated and JSON-encoded
-  target names; no form string can become a local path.
+  Implement the complete callable slice common_utils.py L889-L1130 in
+  betterlite-core::api::file_upload_options: FileCreationParams,
+  extract_file_creation_params, the target-storage and target-model-name extractors,
+  validate_managed_files_requirement, validate_managed_id_requirement and
+  _extract_model_param. B1100 supplies the cached parsed body and B1101 supplies an
+  ordered multipart field view; this task consumes those typed values and does not add
+  another byte or multipart decoder. HTTP route registration and final error envelopes
+  remain with B1032, B086, B088 and the other route owners.
 
+  FileCreationParams has target_storage="default", target_model_names=[] and model=null
+  as its constructor defaults. Its __post_init__ turns only a falsy target_storage (None
+  or "") into "default", turns None target_model_names into [], and strips and removes
+  empty model names. It does not strip target_storage: direct construction with
+  target_storage=" azure_storage " remains " azure_storage ", and direct construction
+  with target_storage="   " remains "   ". The form extractor is different: a truthy
+  target_storage form value is stripped by _extract_target_storage_simple before the
+  dataclass is built, so " azure_storage " becomes "azure_storage" and "   " becomes
+  "default" only after that helper returns "" and __post_init__ applies its falsy rule.
+  Model strings are never stripped. Comma-separated text is split literally, so JSON
+  looking text is not decoded; only the raw multipart fallback deduplicates names in
+  first-seen order.
 
-  is_gemini_supported_mime_type (litellm/proxy/openai_files_endpoints/common_utils.py:L824-L846) has no MIT runtime
-  caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case
-  exercises that unused entry point.
+  extract_file_creation_params reads B1100's request body exactly once only when its
+  request_body argument is None, replacing a falsey read result with {}. It extracts
+  target_storage from the explicit form argument, uses the explicit simple
+  target_model_names argument first, falls back to ordered request.form().multi_items()
+  only when that simple result is empty, and resolves model from body, query parameter
+  model, then x-litellm-model header. Load litellm_settings.require_managed_files through
+  B002 with LiteLLM's default false; only the actual boolean true enables either managed
+  check, and the source performs no environment lookup. Keep non-enterprise MIT behavior
+  when no ManagedResourceAccessChecker is installed. The owned span has no database write
+  or warn-and-drop call; ignored unrelated, non-bracket, non-string and malformed form
+  values are covered as silent outcomes.
 
-
-  get_content_type_from_file_object (litellm/proxy/openai_files_endpoints/common_utils.py:L849-L882) has no MIT
-  runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior
-  case exercises that unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/file_upload_options.rs. Use FileUploadOptionsInput and FileUploadOptionsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): common_utils.py:1115 status_code=403, exception_detail=FastAPI detail string; common_utils.py:1042
-  status_code=400, exception_detail=FastAPI detail string; common_utils.py:1052 status_code=400, exception_detail=FastAPI
-  detail string; common_utils.py:1092 status_code=400, exception_detail=FastAPI detail string; common_utils.py:1102
-  status_code=500, exception_detail=FastAPI detail string. Compare the actual source status, error type, param and
-  code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions target_models_repeated_form, target_models_json_form, gemini_mime_alias,
-  managed_required, target_storage_selected, filename_mime under api::file_upload_options::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.require_managed_files
-  defaults to False. No environment reads occur outside betterlite-config. Test api::file_upload_options::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileUploadOptions in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_upload_options: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/common_utils.py: detect_content_type_from_filename (L772-L793);
-  litellm/proxy/openai_files_endpoints/common_utils.py: normalize_mime_type_for_provider (L796-L821); litellm/proxy/openai_files_endpoints/common_utils.py:
-  FileCreationParams.__post_init__ (L905-L915); litellm/proxy/openai_files_endpoints/common_utils.py: extract_file_creation_params
-  (L918-L956); litellm/proxy/openai_files_endpoints/common_utils.py: _extract_target_storage_simple (L959-L971);
-  litellm/proxy/openai_files_endpoints/common_utils.py: _extract_target_model_names_simple (L974-L989); litellm/proxy/openai_files_endpoints/common_utils.py:
-  _is_target_model_names_key (L992-L993); litellm/proxy/openai_files_endpoints/common_utils.py: _extract_target_model_names_from_form
-  (L996-L1019); litellm/proxy/openai_files_endpoints/common_utils.py: validate_managed_files_requirement (L1022-L1059);
-  litellm/proxy/openai_files_endpoints/common_utils.py: validate_managed_id_requirement (L1062-L1118); litellm/proxy/openai_files_endpoints/common_utils.py:
-  _extract_model_param (L1121-L1130). Abstract/protocol declarations map to native types and synchronous/async wrappers
-  share one implementation; a partial function span is the explicit preparation/transition stage described above,
-  with typed values passed to the following stage.
-
-
-  Sizing: 143 owned nonblank/non-comment/non-docstring Python lines (219 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 163 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 464 total within the 470-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1015 (File contracts), B1016 (Managed
-  resource ids), B1087 (Api boundaries), B1100 (Shared request body decoding), B1019 (File routing ids), B002 (Load
-  LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add pure helper and config behavior tests under api::file_upload_options::tests and
+  direct helper-oracle adapters over typed inputs. Provider-reaching route behavior,
+  multipart HTTP status mapping and the route's authentication/error headers belong to
+  their route tasks. The 185 nonblank, non-comment source lines in the owned span allow
+  165 production, 130 tests, 90 fixtures, 75 adapters, 55 config tests/seeds and 35
+  wiring lines, 550 changed lines total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_upload_options.rs
   - crates/betterlite-core/src/api/file_upload_options/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
@@ -100,146 +59,185 @@ scope:
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_upload_options.rs
-  - tools/oracle/src/helpers/file_upload_options/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_upload_options.py
-  - tools/oracle/helpers/file_upload_options/**
   - tools/oracle/fuzz/corpus/helper_case/file_upload_options-*
   - tools/oracle/cases/helpers/file-upload-options/**
+  - Cargo.lock
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L889-L956
+  why: FileCreationParams and extract_file_creation_params define the constructor normalization, body-read condition, form precedence and model resolution that the worker must preserve.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L959-L1019
+  why: These four helpers specify stripping, comma splitting, bracket-key recognition, ordered multi-item collection, silent skips and first-seen deduplication.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1022-L1118
+  why: These validators specify the literal managed-upload and managed-id status/detail outcomes, strict-True gate and checker dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1121-L1130
+  why: _extract_model_param fixes body, query and x-litellm-model precedence and preserves falsey fallthrough without trimming.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L396-L396
-  why: Setting litellm_settings.require_managed_files and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L772-L823
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L847-L848
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L883-L1130
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The process setting litellm.require_managed_files starts as the literal boolean False and is tested with `is True` by both validators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4409-L4417
+  why: The managed-id decoder owned by B1019 recognizes strings beginning with the literal prefix `litellm_proxy`; this supplies a stable encoded-id fixture without inventing an enterprise hook.
 dod:
-- text: 'target models repeated form: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-target-models-repeated-form
-  - oracle
-- text: 'target models json form: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-target-models-json-form
-  - oracle
-- text: 'gemini mime alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-gemini-mime-alias
-  - oracle
-- text: 'managed required: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-managed-required
-  - oracle
-- text: 'target storage selected: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-target-storage-selected
-  - oracle
-- text: 'filename mime: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-filename-mime
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    creation_defaults_direct constructs FileCreationParams() and gets
+    target_storage="default", target_model_names=[] and model=null. Direct construction
+    with target_storage="" and target_storage=null gets "default"; direct construction
+    with target_storage=" azure_storage " stays " azure_storage ", and with
+    target_storage="   " stays "   ". Direct construction with target_model_names=null
+    gets [], while [" a ", "", "  b  "] becomes ["a", "b"]. No __post_init__ branch
+    trims storage whitespace.
+  proof: [behavior-tests]
+- text: >-
+    creation_extraction reads a supplied request_body once without calling B1100 again;
+    with request_body={"model":" b "}, query model="q" and header x-litellm-model="h",
+    the model is " b " and target_storage_form=" azure_storage " becomes
+    "azure_storage". With target_storage_form="   ", _extract_target_storage_simple
+    returns "" and the constructed value is "default". When request_body is absent,
+    B1100 is called once and a falsey result becomes {}; body model="" falls through to
+    query "q", then header "h", and a final header value of "" is returned as "".
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    simple_targets sends target_model_names_form=" a, b,,a " and gets ["a", "b", "a"];
+    the duplicate remains because the simple parser does not deduplicate. A compatibility
+    list [" a ", 0, 2, " "] is parsed as ["a", "2", ""] before dataclass post-init
+    and becomes ["a", "2"] in FileCreationParams; None, "" and a non-list/non-string
+    value produce []. Text "[\"a\",\"b\"]" is split into literal fragments
+    ["[\"a\"", "\"b\"]"], never JSON-decoded. A nonempty simple result does not
+    call the raw form fallback; " " has an empty simple result and does call it.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    repeated_targets iterates form pairs in order and collects string values for the exact
+    key "target_model_names" and any key beginning "target_model_names[" and ending "]".
+    Ordered pairs target_model_names[]=a, target_model_names[0]=" b,a ",
+    target_model_names=a, target_model_names[xyz]=b, target_model_names_extra=c,
+    target_model_names[unterminated=d and target_model_names[]=a produce ["a", "b",
+    "a", "a", "b", "a"] before first-seen deduplication and ["a", "b"] after it.
+    An UploadFile/non-string value, target_model_names_extra and the missing-closing-bracket
+    key are silently ignored; repeated values are never reduced to the last map value.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    managed_upload_errors sets litellm_settings.require_managed_files to the actual bool
+    true. targets=[] and model="m" raises HTTPException status_code=400 with the exact
+    detail "target_model_names is required when require_managed_files is enabled in
+    litellm_settings. Provide one or more model aliases via the target_model_names form
+    field (e.g. target_model_names=my-model-alias)." before checking model. targets=["a"]
+    and model="m" raises status_code=400 with the exact detail "model is not allowed when
+    require_managed_files is enabled in litellm_settings. Uploads must go through managed
+    files using target_model_names instead of the model parameter." targets=["a"] and
+    model="" passes. False, null, 0, 1 and "true" are disabled compatibility values and
+    pass both inputs. These direct helper exceptions expose no type, param or code field;
+    B1032 owns their later HTTP error mapping.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    managed_id_gate uses resource_kind="file", "batch" and "fine-tuning job". With the
+    gate true, resource_id=null and resource_id="" return without decoding or checking;
+    raw ids "file-1", "batch-1" and "job-1" raise HTTPException status_code=400 with
+    respectively the exact details "Raw provider file ids cannot be used when
+    require_managed_files is enabled in litellm_settings. Use the LiteLLM managed file id
+    returned when the file was created.", "Raw provider batch ids cannot be used when
+    require_managed_files is enabled in litellm_settings. Use the LiteLLM managed batch id
+    returned when the batch was created.", and "Raw provider fine-tuning job ids cannot be
+    used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed
+    fine-tuning job id returned when the fine-tuning job was created.". An encoded id whose
+    decoded text begins "litellm_proxy" and managed_files_obj=null raises status_code=500
+    with detail "Managed resource ownership validation is unavailable.". These exceptions
+    have no type, param or code field, and false/none/0/1/"true" gate values bypass every
+    branch.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    managed_id_checker_contract injects a structural ManagedResourceAccessChecker. For an
+    encoded id beginning "litellm_proxy", resource_kind="file" calls
+    can_user_call_unified_file_id(id, user_api_key_dict), while "batch" and
+    "fine-tuning job" call can_user_call_unified_object_id(id, user_api_key_dict). A true
+    result returns None; a false result raises HTTPException status_code=403 with exact
+    detail "The caller does not have access to this managed file id." or the same string
+    with "batch" or "fine-tuning job" substituted. No checker is installed globally as a
+    replacement for LiteLLM's missing MIT managed_files hook.
+  proof: [behavior-tests]
+- text: >-
+    settings_loader loads omitted litellm_settings.require_managed_files as false, explicit
+    false as false and explicit true as true through the production Config loader; named
+    compatibility inputs null, 0, 1 and "true" remain disabled and never become true.
+    The loader reads no environment variable for this key. The config and helper corpus
+    seeds reach the same production decoders, and managed_id_gate records the no-enterprise
+    encoded-id outcome as status_code=500 rather than a paid-tier rejection or fabricated
+    owner. The owned span performs no database write and emits no warning while dropping a
+    field.
+  proof: [config-tests, config-corpus, helper-corpus, behavior-tests, new-cases, oracle, helper-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::/)
-      - test(/::replays_corpus$/)'
-  - id: case-target-models-repeated-form
-    why: the target-models-repeated-form behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::target_models_repeated_form($|::)/)'
-  - id: case-target-models-json-form
-    why: the target-models-json-form behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::target_models_json_form($|::)/)'
-  - id: case-gemini-mime-alias
-    why: the gemini-mime-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::gemini_mime_alias($|::)/)'
-  - id: case-managed-required
-    why: the managed-required behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::managed_required($|::)/)'
-  - id: case-target-storage-selected
-    why: the target-storage-selected behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::target_storage_selected($|::)/)'
-  - id: case-filename-mime
-    why: the filename-mime behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_options::tests::filename_mime($|::)/)'
+    why: The file-upload options production helpers or their literal edge cases are missing or failing.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::tests::loads_settings($|::)/)'
+    why: require_managed_files is not loaded and tested through the production Config path.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_options::tests::settings_loader($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-options-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: A newly added file-upload-options YAML seed is absent or the config corpus replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-options-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_upload_options.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The file-upload-options Python adapter is missing or fails strict ruff or basedpyright checks.
+    run: test -f tools/oracle/helpers/file_upload_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_options-*)"
-      && grep -qE "^[[:space:]]+file_upload_options:" tools/oracle/fuzz/corpus/helper_case/file_upload_options-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: A helper-case corpus seed does not dispatch file_upload_options or its replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_options-*)" && grep -qE '^[[:space:]]+file_upload_options:' tools/oracle/fuzz/corpus/helper_case/file_upload_options-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: No new file-upload-options oracle cases were added for the literal helper outcomes.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-upload-options)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-upload-options/target-models-repeated-form.yaml
-- tools/oracle/cases/helpers/file-upload-options/target-models-json-form.yaml
-- tools/oracle/cases/helpers/file-upload-options/gemini-mime-alias.yaml
-- tools/oracle/cases/helpers/file-upload-options/managed-required.yaml
-- tools/oracle/cases/helpers/file-upload-options/target-storage-selected.yaml
-- tools/oracle/cases/helpers/file-upload-options/filename-mime.yaml
-deviations: []
+- tools/oracle/cases/helpers/file-upload-options/creation-extraction.yaml
+- tools/oracle/cases/helpers/file-upload-options/simple-targets.yaml
+- tools/oracle/cases/helpers/file-upload-options/repeated-targets.yaml
+- tools/oracle/cases/helpers/file-upload-options/managed-upload-errors.yaml
+- tools/oracle/cases/helpers/file-upload-options/managed-id-gate.yaml
+deviations:
+- what: >-
+    With litellm_settings.require_managed_files=true and an encoded id, betterlite returns
+    status 500 with detail "Managed resource ownership validation is unavailable." when no
+    ManagedResourceAccessChecker is installed; raw ids still return status 400 with the
+    exact resource-specific detail above.
+  why: >-
+    The pinned open-source package has no enterprise managed_files hook in this checkout.
+    Betterlite follows that MIT fallback and does not fabricate ownership, silently allow
+    cross-tenant access or add a paid-tier/license rejection.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1085-L1118
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1019 owns validate_file_list_limit L44-L59, ManagedResourceAccessChecker.can_user_call_unified_file_id
-  L85-L89, ManagedResourceAccessChecker.can_user_call_unified_object_id L91-L95, _is_base64_encoded_unified_file_id
-  L98-L112, convert_b64_uid_to_unified_uid L115-L120, resolve_managed_output_file_model_name L123-L131, get_models_from_unified_file_id
-  L134-L152, get_model_id_from_unified_batch_id L155-L168, get_batch_id_from_unified_batch_id L171-L180, is_litellm_executed_batch
-  L183-L185, encode_file_id_with_model L188-L229, encode_batch_response_ids L232-L243, decode_model_from_file_id
-  L246-L272, get_original_file_id L275-L302, is_model_embedded_id L305-L309.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: validate_file_list_purpose L62-L80, is_gemini_supported_mime_type
-  L824-L846, get_content_type_from_file_object L849-L882, map_raw_file_ids_to_unified L1244-L1259, apply_unified_file_ids
-  L1262-L1269 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1020 owns extract_model_from_sources L317-L348, get_credentials_for_model
-  L351-L391, authorize_model_for_key L394-L418, get_authorized_credentials_for_model L421-L433, get_team_provider_credentials
-  L436-L553, apply_team_provider_credentials L556-L575, add_internal_model_credentials L578-L600, add_deployment_model_info
-  L603-L619, prepare_data_with_credentials L622-L644, handle_model_based_routing L647-L709.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1041 owns _batch_response_model_id_candidates L1138-L1158,
-  _model_id_for_batch_response L1161-L1176, _model_name_for_batch_response L1179-L1187, _batch_owner_auth_from_db_object
-  L1190-L1197, resolve_input_file_id_to_unified L1200-L1219, resolve_output_file_ids_to_unified L1222-L1241, ensure_batch_response_managed_file_ids
-  L1272-L1321, get_batch_from_database L1324-L1393, batch_cost_poller_is_active L1396-L1425, _completed_batch_safe_to_retire
-  L1428-L1441, update_batch_in_database L1444-L1549.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1019 owns ManagedResourceAccessChecker, _is_base64_encoded_unified_file_id and the other common_utils.py id/list helpers through L309; this task calls that decoder but does not reimplement or change its permissive startswith("litellm_proxy") rule.
+- B1020 owns common_utils.py credential and model-routing functions L317-L709; no function in this task crosses into that slice.
+- detect_content_type_from_filename, normalize_mime_type_for_provider, is_gemini_supported_mime_type and get_content_type_from_file_object at L772-L882 have no live MIT caller at the pin; their MIME tables and cases are excluded.
+- B1041 owns common_utils.py batch-response/database functions L1138-L1549, including all database writes and their order; the owned L889-L1130 span performs no database write.
+- Route decorators, multipart HTTP decoding, route status/type/param/code serialization, authentication and provider calls belong to B1032, B086, B088 and the other route owners; this task tests the pure helper exception fields before route mapping.
+- The enterprise package, premium-user gates and managed_files implementation are excluded by the MIT checkout; the only supported hook input is an injected structural checker in the native contract test.
 pitfalls:
-- request.query_params reads 'model' with default None; omission and an explicit value must not collapse into one
-  case.
-- common_utils.py:1115 uses status_code=403, detail=f'The caller does not have access to this managed {resource_kind}
-  id.'; preserve this envelope rather than a family-wide error default.
-review_level: standard
+- >-
+  The review-sensitive storage distinction is real: _extract_target_storage_simple("   ")
+  returns "", so extraction ends at "default", while FileCreationParams(target_storage="   ")
+  remains three spaces because __post_init__ tests truthiness and never calls strip().
+- >-
+  _extract_target_model_names_simple('["a","b"]') splits on commas into '["a"' and
+  '"b"]'; JSON decoding would change LiteLLM's literal output.
+- >-
+  Only the raw form fallback deduplicates, and it deduplicates after flattening every
+  qualifying multi-item string; simple input preserves duplicate "a" values.
+- >-
+  A key such as target_model_names[unterminated is rejected because it does not end with
+  "]", while target_model_names[xyz] qualifies even though the bracket contents are not numeric.
+- >-
+  require_managed_files uses identity with True: numeric 1 and string "true" must not enable
+  either validator even if a config compatibility decoder accepts them.
+- >-
+  Empty resource_id returns before base64 recognition and checker dispatch, so required-id
+  validation and this helper's managed check cannot be merged into one branch.
+- >-
+  A decoded id beginning "litellm_proxy" is enough for recognition; the helper does not
+  verify a colon, UUID, ownership record or resource-kind-specific encoding before asking the checker.
+- >-
+  The file checker method is distinct from the object checker method: only resource_kind="file"
+  calls can_user_call_unified_file_id; both "batch" and "fine-tuning job" call
+  can_user_call_unified_object_id.
+review_level: security
 budget:
-  max_changed_lines: 470
-  max_new_expects: 1
+  max_changed_lines: 550
+  max_new_expects: 0

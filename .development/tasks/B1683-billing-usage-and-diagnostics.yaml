@@ -1,0 +1,127 @@
+id: B1683
+title: Normalize response usage and explain billable zero-cost results
+description: >-
+  Implement betterlite-core::cost::usage for cost_calculator.py L301-L317, L941-L1118,
+  L1293-L1296 and L1962-L1976. Define a typed BillingResponse projection that preserves
+  response kind, optional usage, top-level service tier and hidden provider fields without
+  redefining public endpoint DTOs. Its usage variants distinguish chat, Responses, typed
+  transcription, Decisions IR/OpenAI Decisions, Interactions, generic mapping and other
+  typed records. Future endpoint owners project into these variants at their existing
+  response boundary; no dependency on an unimplemented endpoint umbrella is required.
+  get_usage_object selects Decisions first, then absent usage, existing chat Usage,
+  B579-detected Anthropic dictionary, B906 Responses usage, B1668 typed transcription,
+  B1668 Interactions dictionary, generic mapping, generic typed-record dump, and finally
+  unknown type with debug/None. Keep this order: a duration transcription returns None
+  rather than an empty token Usage. Decisions builds prompt/output totals and cache details
+  from its own variant, recomputes total as input+output and does not add reasoning from
+  OpenAI Decisions output details. Generic dictionary handling follows the existing usage
+  DTO constructor, not permissive arbitrary number extraction. The known-usage predicate
+  recognizes chat, Responses, both Decisions types and typed transcription only.
+  Explicit call_type always wins; otherwise infer completion for chat/stream, embedding,
+  transcription, speech for binary content, rerank, image_generation, text_completion or
+  send_message for their tagged kinds. Other kinds remain None for the caller to default.
+  Transcription token-detail detection accepts positive prompt/completion or positive input
+  audio/text details. Removing provider-stated usage cost clones only when cost is nonnull,
+  preserving other usage fields. Hidden provider response cost reads exact
+  additional_headers['llm_provider-x-litellm-response-cost']; missing/null is absent,
+  numeric strings are accepted, and malformed values fail rather than disappear.
+  Service-tier resolution takes the first string on response then usage, including empty
+  string or auto. Only when neither supplies a string does truthy hidden traffic_type map
+  case-insensitively: ON_DEMAND_PRIORITY=>priority; FLEX/BATCH/ON_DEMAND_FLEX=>flex;
+  ON_DEMAND or unknown=>default. No whitespace trimming. A served recognized priced tier
+  wins in lowercase; served default/standard forces base pricing; otherwise normalize the
+  requested tier, treating nonstrings/auto as absent while retaining unknown strings.
+  Add betterlite-models::zero_cost for every function and constant in zero_cost_diagnostic.py.
+  Diagnose only positive input/output text/audio use, in that fixed key order; text is
+  positive total minus positive audio. Missing used keys are exactly null/absent. All used
+  keys explicit numeric zero suppress diagnostics, as does a price entry without any positive
+  non-Boolean numeric leaf. Discover leaves through four expansion rounds, following mapping
+  keys containing case-sensitive cost or pricing and traversing sequence children; numeric
+  strings and Boolean values never declare a rate. Preserve the source's bounded depth and
+  nested Mapping/tuple validation behavior. With declared positive pricing, calculation_failed
+  takes priority, then missing_pricing_key with ordered keys, then pricing_not_applied.
+  Reproduce warning text and litellm_zero_cost_requests_total reason labels; metric emission
+  belongs to the logging caller. Native tests cover typed projection and exact bounded
+  numeric failures; pure billing_usage and zero_cost_diagnostic helper operations call the
+  original transforms/probes. Reuse helper_case for parsed records. These 303 nonblank lines
+  budget 330 implementation, 240 tests and 230 adapters/fixtures, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/usage.rs
+    - crates/betterlite-core/src/cost/usage/**
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/zero_cost.rs
+    - crates/betterlite-models/src/zero_cost/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/billing_usage.rs
+    - tools/oracle/src/helpers/zero_cost_diagnostic.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/billing_usage.py
+    - tools/oracle/helpers/zero_cost_diagnostic.py
+    - tools/oracle/cases/helpers/billing-usage/**
+    - tools/oracle/cases/helpers/zero-cost-diagnostic/**
+    - tools/oracle/fuzz/corpus/helper_case/billing-usage-*
+    - tools/oracle/fuzz/corpus/helper_case/zero-cost-diagnostic-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L301-L317
+    why: Transcription switches to token billing only for positive token evidence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L941-L1118
+    why: Served-tier authority, ordered usage recognition and tagged response call inference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1293-L1296
+    why: Custom pricing clears only a present provider-stated usage cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1962-L1976
+    why: The hidden response-cost header is nullable but malformed values raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/zero_cost_diagnostic.py#L1-L151
+    why: Bounded nested-rate discovery, reason priority and exact operator warning text.
+dod:
+  - text: Usage recognition, typed response inference and provider-cost clearing preserve source variant and missing-value distinctions.
+    proof: [billing-usage-tests, oracle, billing-diagnostics-python, billing-diagnostics-corpus]
+  - text: Served tiers override requested tiers only under the pinned priced/base rules, including Gemini unknown-traffic fallback.
+    proof: [billing-usage-tests, oracle, billing-diagnostics-python]
+  - text: Zero-cost diagnostics distinguish deliberately free models, missing used prices and calculation failure using bounded nested-rate inspection.
+    proof: [zero-cost-tests, oracle, billing-diagnostics-python, billing-diagnostics-corpus]
+checks:
+  optional: []
+  commands:
+    - id: billing-usage-tests
+      why: A response is priced with the wrong usage shape or service tier.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::usage::/)'
+    - id: zero-cost-tests
+      why: A free model is falsely diagnosed or a positive declared price is missed at the depth boundary.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^zero_cost::/)'
+    - id: billing-diagnostics-python
+      why: Either response-usage or zero-cost diagnostics lacks its strict source adapter.
+      run: test -f tools/oracle/helpers/billing_usage.py && test -f tools/oracle/helpers/zero_cost_diagnostic.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: billing-diagnostics-corpus
+      why: Both newly parsed helper variants must have a committed seed before replay can prove their inputs.
+      run: grep -rlq 'billing_usage:' tools/oracle/fuzz/corpus/helper_case/billing-usage-* && grep -rlq 'zero_cost_diagnostic:' tools/oracle/fuzz/corpus/helper_case/zero-cost-diagnostic-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/billing-usage/anthropic-before-responses-before-interactions.yaml
+  - tools/oracle/cases/helpers/billing-usage/typed-duration-is-not-token-usage.yaml
+  - tools/oracle/cases/helpers/billing-usage/decision-cache-fields-without-output-reasoning.yaml
+  - tools/oracle/cases/helpers/billing-usage/served-default-cancels-requested-priority.yaml
+  - tools/oracle/cases/helpers/billing-usage/unknown-traffic-forces-base-but-empty-tier-stops-search.yaml
+  - tools/oracle/cases/helpers/billing-usage/provider-cost-null-malformed-and-clone.yaml
+  - tools/oracle/cases/helpers/zero-cost-diagnostic/free-used-rates-suppress-unrelated-positive-price.yaml
+  - tools/oracle/cases/helpers/zero-cost-diagnostic/four-round-depth-and-case-sensitive-rate-keys.yaml
+  - tools/oracle/cases/helpers/zero-cost-diagnostic/calculation-error-before-missing-pricing-key.yaml
+  - tools/oracle/cases/helpers/zero-cost-diagnostic/audio-count-exceeds-total-and-warning-label.yaml
+deviations:
+  - what: Provider-stated costs and usage arithmetic reject nonfinite or unrepresentable values with typed errors instead of admitting float infinity or unchecked counters.
+    why: Even an upstream price header must obey the same finite money contract as calculated spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1962-L1976
+out_of_scope:
+  - B579 owns Anthropic usage recognition/calculation and B906 owns Responses usage conversion; B1668 owns transcription/Interactions projections.
+  - cost_calculator.py's prices are separated into B1649 adjustments, B1673 custom tokens, B1674 images, B1676 duration/transcription/video, B1677 extra fees, B1678 OCR and B1679 batches; its usage merging, realtime and model/breakdown context are B1680-B1682. B1686 dispatches token/vector/rerank pricing, B1688 prepares inputs, B1689 handles replicate and early-call charges, and B068 owns completion_cost/response_cost_calculator composition.
+  - The zero-cost counter's exporter and decision to emit diagnostics stay with the logging lifecycle owner; this task supplies the diagnostic record and warning string only.
+pitfalls:
+  - An empty or auto service-tier string on the response stops the search before usage and hidden traffic_type are inspected.
+  - A positive nested price deeper than four expansion rounds is invisible to the diagnostic even if it would be billable elsewhere.
+  - Explicitly free used rates suppress a diagnostic before calculation_failed is considered.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

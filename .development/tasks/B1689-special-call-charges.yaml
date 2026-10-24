@@ -1,0 +1,139 @@
+id: B1689
+title: Calculate early-return charges for media, realtime and protocol calls
+description: >-
+  Add betterlite-core::cost::special for completion_cost L1562-L1810 and the Replicate
+  duration helper. Return either a completed charge or an updated PreparedBillingAttempt
+  for B068's ordinary token stage. A2A send_message/asend_message runs after B1688's usage
+  preparation but before the second model check. Other calls require a nonnull model;
+  infer and strip its provider only when the current provider is None, logging inference
+  failure at debug and continuing. Invoke B1687 only for a recognized image call with a
+  typed ImageResponse, passing B1682 deployment prices. That result is final: no tool fees,
+  discount, margin or token breakdown is added by this stage.
+  Handle video create/acreate, video_edit/avideo_edit and video_remix/avideo_remix. Read usage
+  as an attribute, not a dictionary response key. A truthy usage record exposes duration,
+  resolution stringified/trimmed/lowercased, provider_reported_cost_usd and video_count.
+  Only a non-Boolean integer greater than one multiplies the duration price. With no
+  deployment price record, a nonnull provider cost returns immediately, including zero.
+  Otherwise a nonnull duration uses B1676's OpenAI video function; absent duration uses
+  default video pricing with zero seconds. Do not extend this branch to unrelated video
+  operations. Speech records B1688 whitespace-free prompt characters; transcription takes
+  hidden audio_transcription_duration by key presence before response.duration, so explicit
+  null blocks fallback. Typed rerank stores both billed units and uses search_units or one
+  as completion_tokens, preserving the zero-to-one fallback.
+  Search counts a list query by length, including an empty list, otherwise one; a provider
+  plus a slash-free model becomes provider/search. Call the provider search pricing policy
+  with request optional_params, apply B1649 discount then margin unconditionally, and store
+  B1682's breakdown with zero tool cost and tier/residency but no Vertex location. Realtime
+  requires usage and provider and delegates to B1681 with custom/base selection precedence.
+  call_mcp_tool delegates to the protocol arithmetic below. These results bypass the normal
+  token-cost tail. For remaining calls derive B1682 response milliseconds, request the
+  Together policy's legacy category only when its registry predicate fails, and otherwise
+  apply unmapped Replicate pricing when the name/list membership matches and no raw catalog
+  entry exists. Add Together category/predicate operations to B1686's provider interface;
+  their implementation remains B041. Exact vertex_ai computes prompt/response characters
+  through B1688, and capture logging.model for the later Foundry additional-fee lookup.
+  Extract the complete A2ACostCalculator and MCPCostCalculator into the low-level
+  betterlite-models::protocol_cost so future B142/B136 callers can share them without core
+  dependencies. A2A precedence is nonnull response_cost, nonnull cost_per_query, either
+  token rate, then zero; typed usage attributes count tokens while a dictionary usage has
+  no such attributes. A missing rate contributes zero and Python float-compatible strings
+  are accepted. MCP precedence is nonnull response_cost, exact tool-name map membership
+  even when its value is null, nonnull default_cost_per_query, then zero. Keep presence
+  distinct from truthiness and return invalid-money errors at the typed charge boundary.
+  Replicate multiplies DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND, default 0.001400, by supplied
+  total_time/1000. Only total_time equal to zero reads created via dictionary get and ended
+  via attribute get, with two B198 clock reads supplying defaults; their difference is
+  still divided by 1000. Add config test loads_replicate_gpu_price and decode_replicate_price
+  for the environment scalar, accepting signed finite decimals, with config fuzz/replay.
+  Pure protocol_charge and explicit-time replicate_charge helpers compare the extracted
+  arithmetic; native tests assert branch order, early exits and policy arguments. B068
+  supplies HTTP charge integration. The 302 owned nonblank lines allow 300 logic/config,
+  280 behavior tests and 220 adapter/fuzz lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/special.rs
+    - crates/betterlite-core/src/cost/special/**
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/protocol_cost.rs
+    - crates/betterlite-models/src/protocol_cost/**
+    - crates/betterlite-provider/src/pricing.rs
+    - crates/betterlite-provider/src/pricing/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/replicate_price.rs
+    - crates/betterlite-config/src/replicate_price/**
+    - crates/betterlite-config/fuzz/Cargo.toml
+    - crates/betterlite-config/fuzz/fuzz_targets/replicate_price.rs
+    - crates/betterlite-config/fuzz/corpus/replicate_price/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/protocol_charge.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/protocol_charge.py
+    - tools/oracle/cases/helpers/protocol-charge/**
+    - tools/oracle/fuzz/corpus/helper_case/protocol-charge-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1562-L1810
+    why: Call-specific early returns, search adjustments and late provider/category normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L759-L770
+    why: Replicate's millisecond divisor and different created/ended access methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L601-L604
+    why: The Replicate GPU price environment default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L18-L103
+    why: Agent per-call and per-token fee precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/cost_calculator.py#L18-L69
+    why: Tool override, name mapping and default fee selection.
+dod:
+  - text: Special call branches stop at the same point as the source, including media override selection, search adjustments and realtime argument requirements.
+    proof: [special-charge-tests, special-policy-tests]
+  - text: Agent and MCP prices retain their distinct presence, conversion and usage-access rules, while Replicate retains its divisor and clock fallback.
+    proof: [protocol-charge-tests, special-charge-tests, oracle, protocol-charge-python, protocol-charge-corpus]
+  - text: The actual config loader supplies the Replicate default/override and rejects nonfinite or malformed environment prices through the replayed decoder.
+    proof: [replicate-setting-tests, replicate-price-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: special-charge-tests
+      why: An early-return call falls through into a second charge or loses its source argument precedence.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::special::/)'
+    - id: special-policy-tests
+      why: Search and legacy Together policy operations cannot be installed or receive the wrong inputs.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^pricing::special::/)'
+    - id: protocol-charge-tests
+      why: Protocol fee selection changes a zero override, missing usage or exact tool mapping.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^protocol_cost::/)'
+    - id: replicate-setting-tests
+      why: The GPU price constant is not loaded from its real environment name.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_replicate_gpu_price) | (test(/^replicate_price::/) - test(replays_the_replicate_price_corpus))'
+    - id: replicate-price-corpus
+      why: Replicate price scalar decoding has no new malformed-input seeds or production replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/replicate_price)" && test -f crates/betterlite-config/fuzz/fuzz_targets/replicate_price.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_replicate_price_corpus)'
+    - id: protocol-charge-python
+      why: Isolated protocol records do not reach the actual pinned cost methods.
+      run: test -f tools/oracle/helpers/protocol_charge.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: protocol-charge-corpus
+      why: The shared parser lacks either new protocol or explicit-duration operation.
+      run: grep -rlq 'protocol_charge:' tools/oracle/fuzz/corpus/helper_case/protocol-charge-* && grep -rlq 'replicate_charge:' tools/oracle/fuzz/corpus/helper_case/protocol-charge-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/protocol-charge/agent-response-cost-before-query-and-token-prices.yaml
+  - tools/oracle/cases/helpers/protocol-charge/agent-dictionary-usage-has-no-token-attributes.yaml
+  - tools/oracle/cases/helpers/protocol-charge/mcp-zero-tool-price-before-default.yaml
+  - tools/oracle/cases/helpers/protocol-charge/missing-logging-record-is-free.yaml
+  - tools/oracle/cases/helpers/protocol-charge/replicate-explicit-milliseconds-and-negative-duration.yaml
+deviations:
+  - what: MCP prices that are null, strings or nonnumeric records fail as invalid monetary values instead of escaping the calculator as a non-number; finite numeric fees use Decimal.
+    why: The pinned MCP helper returns configured values without validation, but spend storage requires a finite monetary result. A2A's explicit numeric-string conversion remains supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/cost_calculator.py#L63-L69
+out_of_scope:
+  - B142 retains A2A protocol transport and streaming; B136 retains MCP server behavior. Their cost_calculator.py methods are extracted here for those callers to consume directly.
+  - B041 owns has_together_registry_pricing/get_model_params_and_category and its embedding category helper; the price-policy interface invokes them without importing a provider umbrella into core.
+  - B068 assembles ordinary token/tool fees and public cost entry points; B1688 owns preparation, and the remaining cost_calculator.py helper ranges retain their B1666-B1687 owners.
+pitfalls:
+  - A dictionary video response with a usage key does not satisfy the attribute access used by the video branch.
+  - Search with query=[] bills zero queries here, whereas direct cost_per_token replaces a falsey count with one.
+  - Replicate's timestamp fallback is also divided by 1000 even though subtracting timestamps already produced seconds.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

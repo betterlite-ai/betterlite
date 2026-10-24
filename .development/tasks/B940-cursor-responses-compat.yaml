@@ -1,83 +1,76 @@
 id: B940
 title: Cursor responses compat
 description: >-
-  Implement Cursor model variant parsing, tool envelope normalization and Cursor chat/models compatibility routes
-  around B014 and Responses services. Resolve model variants before auth without authorizing a new model, and keep
-  the explicit tool dialect decision in a typed enum.
+  Implement the Cursor compatibility helpers and the three routes in
+  litellm/proxy/response_api_endpoints/endpoints.py. GET /cursor/models and GET
+  /cursor/v1/models require the normal user_api_key_auth dependency and delegate
+  to B007's model_list, preserving its {"object": "list", "data": [...]} body.
+  Query strings such as ?scope=expand&healthy_only=true are not parameters of
+  cursor_model_list and are ignored rather than forwarded to model_list.
+  POST /cursor/chat/completions has the dependencies
+  _resolve_cursor_model_variant_before_auth followed by user_api_key_auth and
+  accepts either a chat body or a Responses body. The route has no query
+  parameters and adds no configuration keys, environment variables, database
+  writes, or warning-and-drop behavior.
 
+  Preserve the exact pure-helper contract. _TOOL_PAYLOAD_KEYS recognizes only
+  "custom" with name, description, format and "function" with name, description,
+  parameters, strict; _EMPTY_TOOL_PAYLOAD is {}. Convert only dict values under
+  the key "format". For to_chat=true, a flat grammar format
+  {"type": "grammar", "definition": D, "syntax": S} becomes
+  {"type": "grammar", "grammar": {"definition": D, "syntax": S}}; for
+  to_chat=false the nested grammar becomes flat. Text formats and unknown format
+  values pass through. A recognized envelope takes its payload from the nested
+  "custom" or "function" dict when it is a dict, otherwise from top-level
+  fields; nested fields win, and an envelope without "name" is returned
+  unchanged. to_chat=true emits {"type": T, T: payload}; to_chat=false emits
+  {"type": T, **payload}. Non-dicts, unknown types, malformed sentinels such
+  as "auto", "required", "none", None and 42, and entries without a name pass
+  through unchanged. Normalize both the "tools" list and "tool_choice" when
+  present, but never invent either key; return the original body when neither
+  field changes.
 
-  Implement crates/betterlite-server/src/api/cursor_responses_compat.rs, crates/betterlite-core/src/api/cursor_responses_compat.rs.
-  Use CursorResponsesCompatInput and CursorResponsesCompatResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
+  _is_chat_completions_body is true when messages is a non-empty list, or when
+  the body contains the "messages" key and does not contain "input". Thus
+  messages=[] or messages=None without input is chat, while messages=[] or
+  messages=None with input is Responses. _parse_cursor_model_variant removes
+  one trailing "-fast", then recognizes the final "-thinking-" suffix only for
+  REASONING_EFFORT values "none", "minimal", "low", "medium", "high",
+  "xhigh" and "max"; it returns the stripped base and an optional effort.
+  _router_can_serve returns false for a missing router and true only for an
+  is_recognized_model result, a team_public_model_names member, or a matching
+  pattern_router.get_pattern result. Resolve a variant only when the requested
+  model is a string not already served and its base is served. For chat bodies,
+  add reasoning_effort only when the key is absent; for Responses bodies merge
+  effort into reasoning unless reasoning is a dict with a truthy existing
+  effort. A bare -fast variant adds no effort. The pre-auth dependency reads the
+  body, silently returns on json.JSONDecodeError or ProxyException, and writes
+  the resolved body into the request parsed-body cache before auth sees it.
 
+  In cursor_chat_completions, a chat body is normalized with to_chat=true and
+  delegated to B004's chat_completion with model=None. A Responses body is
+  copied with every "stream_options" key removed, normalized with to_chat=false,
+  and sent through ProxyBaseLLMRequestProcessing.base_process_llm_request with
+  route_type="aresponses". Its cursor_data_generator transforms any response
+  having __anext__ through B919's Responses-to-chat iterator with
+  sync_stream=False and json_mode=False, CustomStreamWrapper's
+  custom_llm_provider=None, model=request_data.get("model", ""), and
+  logging_obj=request_data.get("litellm_logging_obj"); non-async responses use
+  async_data_generator directly. A non-streaming ResponsesAPIResponse is
+  transformed with messages=processor.data.get("input", []),
+  optional_params={}, litellm_params={}, encoding=None, api_key=None and
+  json_mode=None; an already transformed result is returned unchanged. All
+  exceptions from processing go to B014's _handle_llm_api_exception.
 
-  Register exactly these routes in this task: GET /cursor/models; GET /cursor/v1/models; POST /cursor/chat/completions.
-  Each alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts
-  its child factories without re-registering their methods/paths.
-
-
-  Route input projections: data.tools (absent None); data.tool_choice (absent None); data.messages (absent None);
-  data.model (absent None); data.reasoning (absent None).
-
-
-  Write adjacent tests.rs behavior functions cursor_thinking_model, cursor_model_not_served, nested_tool_dialect,
-  chat_body_detection, cursor_stream_response, route_aliases, auth_missing, auth_invalid under api::cursor_responses_compat::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: _convert_tool_payload_value (L77-L86);
-  litellm/proxy/response_api_endpoints/endpoints.py: _convert_tool_envelope (L89-L105); litellm/proxy/response_api_endpoints/endpoints.py:
-  _normalize_tool_dialect (L108-L120); litellm/proxy/response_api_endpoints/endpoints.py: _is_chat_completions_body
-  (L123-L127); litellm/proxy/response_api_endpoints/endpoints.py: _parse_cursor_model_variant (L140-L145); litellm/proxy/response_api_endpoints/endpoints.py:
-  _router_can_serve (L148-L155); litellm/proxy/response_api_endpoints/endpoints.py: _resolve_cursor_model_variant
-  (L158-L179); litellm/proxy/response_api_endpoints/endpoints.py: _resolve_cursor_model_variant_before_auth (L182-L191);
-  litellm/proxy/response_api_endpoints/endpoints.py: cursor_model_list (L471-L485); litellm/proxy/response_api_endpoints/endpoints.py:
-  cursor_chat_completions (L496-L674). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 226 owned nonblank/non-comment/non-docstring Python lines (271 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 246 implementation,
-  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 468 total within the 470-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B302 (Deployment catalog, aliases and wildcard routes), B368 (Transactional
-  deployment catalog updates), B919 (Response chat result), B932 (Responses create call), B1087 (Api boundaries),
-  B1100 (Shared request body decoding), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
-  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B003 (HTTP server,
-  health routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces
-  and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Implement crates/betterlite-server/src/api/cursor_responses_compat.rs and
+  crates/betterlite-core/src/api/cursor_responses_compat.rs with typed
+  CursorResponsesCompatInput and CursorResponsesCompatResult records. Inject
+  clock, repositories, transports and resolved settings through constructors;
+  reuse ApiLimits from B1087 and do not add ambient environment or duplicate
+  auth/config resolution. Register exactly GET /cursor/models, GET
+  /cursor/v1/models and POST /cursor/chat/completions once each. Test pure
+  transformations in native behavior tests, and test every route and provider
+  call through the booted HTTP oracle with a mock provider.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -100,112 +93,111 @@ scope:
   - tools/oracle/fixtures/cursor-responses-compat/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L77-L191
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L461-L674
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L68-L127
+  why: Defines the recognized custom/function payload keys, grammar conversion entry points, body-shape predicate, and no-op identity behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L130-L191
+  why: Defines -thinking-/-fast parsing, all accepted reasoning effort literals, router-served checks, and the pre-auth cache rewrite.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L461-L485
+  why: Registers both Cursor model-list aliases and delegates their authenticated response to model_list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L488-L674
+  why: Defines the chat/completions route, dependency order, stream_options removal, provider call arguments, stream pump, response conversion, and exception handoff.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1619-L1645
+  why: Gives the exact flat and nested grammar objects produced by the two delegated format converters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1932-L1932
+  why: Pins the seven REASONING_EFFORT values consumed by the Cursor suffix parser.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11545-L11784
+  why: Defines the delegated model-list body and its default filtering/query arguments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1910
+  why: Defines the public ProxyException status and error.{message,type,param,code} envelope used when delegated processing fails.
 dod:
-- text: 'cursor thinking model: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cursor-thinking-model
-  - oracle
-- text: 'cursor model not served: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cursor-model-not-served
-  - oracle
-- text: 'nested tool dialect: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-nested-tool-dialect
-  - oracle
-- text: 'chat body detection: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-chat-body-detection
-  - oracle
-- text: 'cursor stream response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cursor-stream-response
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: 'tool envelope conversion: custom {type:"custom",name:"ApplyPatch",format:{type:"text"}} and function {type:"function",name:"read_file",parameters:{type:"object"}} become nested under custom/function for to_chat=true; nested inputs flatten for to_chat=false, nested fields win, missing name and unknown/scalar entries remain byte-for-byte unchanged, and flat grammar {type:"grammar",definition:"start: patch",syntax:"lark"} becomes the nested grammar object.'
+  proof: [case-tool-envelope]
+- text: 'body detection: messages=[{role:"user"}] is chat even with input, messages=[] or null without input is chat, messages=[] or null with input is Responses, input-only and empty bodies are Responses, and absent tools/tool_choice are not invented.'
+  proof: [case-body-detection]
+- text: 'variant parsing and resolution: claude-opus-5-thinking-xhigh-fast resolves to model claude-opus-5 and xhigh, claude-opus-5-fast resolves only to claude-opus-5, existing reasoning_effort:"low" or reasoning.effort:"low" wins, and recognized, team-public, pattern, unserved-base, no-router, missing and non-string models remain unchanged.'
+  proof: [case-variant-resolution]
+- text: 'pre-auth resolution: a served claude-opus-5-thinking-high request is cached as model claude-opus-5 with its inferred effort before auth reads it, while malformed JSON and ProxyException from the body reader are swallowed by the dependency and leave auth processing to its owner.'
+  proof: [case-pre-auth]
+- text: 'GET /cursor/models and GET /cursor/v1/models: with a valid key and one configured gpt-4o model, each returns HTTP 200 with object "list" and the same ordered data as B007; ?scope=expand&healthy_only=true is ignored; missing or invalid credentials return HTTP 401 with auth_error, param="None" and code="401" without provider traffic.'
+  proof: [case-model-routes, oracle]
+- text: 'POST /cursor/chat/completions chat arm: a valid messages body reaches B004 with the exact messages, converts flat custom/function tools and tool_choice to nested chat shapes, and a mock completion returns HTTP 200 chat.completion JSON with no Responses output field.'
+  proof: [case-chat-arm, oracle]
+- text: 'POST /cursor/chat/completions Responses arm: input=[{role:"user",content:"hello"}] with stream_options:{include_usage:true} removes only stream_options before the aresponses provider call, flattens nested custom/function tools, and converts a successful ResponsesAPIResponse to HTTP 200 chat.completion JSON.'
+  proof: [case-responses-arm, oracle]
+- text: 'POST /cursor/chat/completions streaming: an async Responses event iterator is converted with sync_stream=false and json_mode=false and returns HTTP 200 text/event-stream chat chunks, never raw response.* events; a non-async response uses the default async_data_generator.'
+  proof: [case-stream-arm, oracle]
+- text: 'POST /cursor/chat/completions auth: absent Authorization and Bearer sk-invalid each return HTTP 401 auth_error, param="None", code="401" before model routing or mock-provider traffic; all three registered paths use the same auth result.'
+  proof: [case-auth, oracle]
+- text: 'POST /cursor/chat/completions budget ordering: an exhausted model_max_budget for claude-opus-5 rejects claude-opus-5-thinking-high as HTTP 422 budget_exceeded with the message containing "exceeded budget for model=claude-opus-5", code="422", and no provider request because auth receives the base model.'
+  proof: [case-budget, oracle]
+- text: Every listed HTTP fixture sends one request through each named alias where applicable and compares status, error type/param/code, selected headers, exact mock-provider requests, response body and ordered stream output against independent LiteLLM and betterlite processes.
+  proof: [oracle, new-oracle-cases]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::cursor_responses_compat::/)
-      - test(/::replays_corpus$/)'
-  - id: case-cursor-thinking-model
-    why: the cursor-thinking-model behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::cursor_thinking_model($|::)/)'
-  - id: case-cursor-model-not-served
-    why: the cursor-model-not-served behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::cursor_model_not_served($|::)/)'
-  - id: case-nested-tool-dialect
-    why: the nested-tool-dialect behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::nested_tool_dialect($|::)/)'
-  - id: case-chat-body-detection
-    why: the chat-body-detection behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::chat_body_detection($|::)/)'
-  - id: case-cursor-stream-response
-    why: the cursor-stream-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::cursor_stream_response($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::auth_invalid($|::)/)'
+    why: The cursor compatibility production tests or one of the two scoped crates is missing its required behavior.
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::cursor_responses_compat::/) - test(/::replays_corpus$/)'
+  - id: case-tool-envelope
+    why: The exact custom/function/grammar conversion matrix or pass-through behavior is absent.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::tool_envelope($|::)/)'
+  - id: case-body-detection
+    why: A messages/input combination selects the wrong provider pipeline or invents tool fields.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::body_detection($|::)/)'
+  - id: case-variant-resolution
+    why: A Cursor suffix, reasoning precedence branch, or router-served guard is wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::variant_resolution($|::)/)'
+  - id: case-pre-auth
+    why: Auth sees the original model or malformed-body handling changes before the route runs.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::pre_auth($|::)/)'
+  - id: case-model-routes
+    why: One Cursor model-list alias fails to delegate the authenticated B007 response.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::model_routes($|::)/)'
+  - id: case-chat-arm
+    why: A messages body reaches the wrong pipeline or its upstream tool request is not normalized.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::chat_arm($|::)/)'
+  - id: case-responses-arm
+    why: The Responses body retains stream_options, sends the wrong tool dialect, or returns Responses JSON to Cursor.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::responses_arm($|::)/)'
+  - id: case-stream-arm
+    why: An async Responses stream leaks raw events or loses the chat SSE framing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::stream_arm($|::)/)'
+  - id: case-auth
+    why: A protected Cursor route admits missing or invalid credentials or calls a provider before rejecting them.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::auth($|::)/)'
+  - id: case-budget
+    why: A suffixed model bypasses the base model budget check or reaches the provider after rejection.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::cursor_responses_compat::tests::budget($|::)/)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The branch has no newly added Cursor HTTP parity fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/cursor-responses-compat)"
 oracle_cases:
-- tools/oracle/cases/api/cursor-responses-compat/cursor-thinking-model.yaml
-- tools/oracle/cases/api/cursor-responses-compat/cursor-model-not-served.yaml
-- tools/oracle/cases/api/cursor-responses-compat/nested-tool-dialect.yaml
-- tools/oracle/cases/api/cursor-responses-compat/chat-body-detection.yaml
-- tools/oracle/cases/api/cursor-responses-compat/cursor-stream-response.yaml
+- tools/oracle/cases/api/cursor-responses-compat/tool-envelope.yaml
+- tools/oracle/cases/api/cursor-responses-compat/body-detection.yaml
+- tools/oracle/cases/api/cursor-responses-compat/variant-chat.yaml
+- tools/oracle/cases/api/cursor-responses-compat/variant-responses.yaml
+- tools/oracle/cases/api/cursor-responses-compat/stream-arm.yaml
 - tools/oracle/cases/api/cursor-responses-compat/route-aliases.yaml
-- tools/oracle/cases/api/cursor-responses-compat/auth-missing.yaml
-- tools/oracle/cases/api/cursor-responses-compat/auth-invalid.yaml
+- tools/oracle/cases/api/cursor-responses-compat/auth.yaml
+- tools/oracle/cases/api/cursor-responses-compat/budget.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B938 owns get_response L695-L790, delete_response L811-L899,
-  get_response_input_items L920-L970, cancel_response L1216-L1313.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B939 owns compact_response L988-L1052, _TokenCounter.__call__
-  L1078-L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response
-  L1102-L1107, _responses_input_as_token_count_messages L1110-L1125, responses_input_tokens L1143-L1198.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B941 owns _read_ws_model_from_first_frame L1316-L1384, _extract_model_from_first_ws_event
-  L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth
-  L1431-L1471, responses_websocket_endpoint L1476-L1620.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api and its decorators/body processing L194-L458; B938 owns get_response L695-L790, delete_response L811-L899, get_response_input_items L920-L970 and cancel_response L1216-L1313; B939 owns compact_response, token counting and responses_input_tokens L988-L1198; B941 owns the WebSocket helpers and responses_websocket_endpoint L1316-L1620.'
+- 'litellm/proxy/proxy_server.py: B007 owns model_list L11545-L11784; this task only owns cursor_model_list L471-L485 and its two aliases, so model-list filtering, query defaults and model entry construction are not copied.'
+- 'litellm/proxy/proxy_server.py: B004 owns chat_completion L11952-L12102; B014 owns ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception; B932 owns the aresponses call reached through responses_api_bridge; B919 owns the ResponsesAPIResponse transform and handler get_model_response_iterator.'
+- 'litellm/proxy/common_utils/http_parsing_utils.py: B1100 owns _read_request_body and _safe_set_request_parsed_body; malformed JSON/form status and request cache storage stay with that decoder.'
+- 'litellm/proxy/auth/user_api_key_auth.py: B732, B756 and B855 own user_api_key_auth, credential extraction, authorization, model grants, budgets and their public error mapping; B940 owns only the dependency ordering and model-body rewrite before that call.'
+- 'litellm/router.py: B302 owns is_recognized_model, team_public_model_names and pattern_router catalog lookup; B940 only applies those booleans to Cursor suffix resolution. B368 owns catalog mutation and is not called by this range.'
+- 'litellm/litellm_core_utils/prompt_templates/common_utils.py: B216 owns convert_custom_tool_format_to_chat_shape and convert_custom_tool_format_to_responses_shape; B940 owns invoking them for Cursor envelopes, not the shared converter implementation.'
+- 'Provider execution, response object definitions, stream event decoding, database repositories and Python package/event-loop facades belong to their existing provider, response, storage and B158-B161 tasks; the oracle never installs litellm-enterprise.'
 pitfalls:
-- data reads 'tools' with default None; omission and an explicit value must not collapse into one case.
-- Within _convert_tool_payload_value\'s key != 'format' or not isinstance(value, dict) branch, preserve return value
-  and its nested guards.
+- 'The predicate treats messages=[] or messages=None as chat only when input is absent; adding a truthiness check without the key/input test routes Cursor agent bodies to the wrong pipeline.'
+- 'Nested custom/function payload fields override stray top-level fields, but an empty nested dict falls back to top-level name/format; dropping either rule changes the upstream tool body.'
+- 'A pre-nested envelope with a flat grammar format still needs grammar conversion; checking only the outer envelope shape leaves {type:"grammar",definition:"start: patch",syntax:"lark"} in the wrong dialect.'
+- 'The Responses arm rebuilds body_without_stream_options because mutating the request-scope parsed-body dict deletes keys for later readers; the chat arm must retain stream_options.'
+- 'The resolver must run before user_api_key_auth: otherwise claude-opus-5-thinking-high is authorized as a different model and can bypass the base model budget or grant check.'
+- 'The stream branch checks __anext__ rather than a concrete iterator class because router wrappers are async iterables; class-only detection leaks response events instead of chat chunks.'
 review_level: security
 budget:
-  max_changed_lines: 470
+  max_changed_lines: 560
   max_new_expects: 0

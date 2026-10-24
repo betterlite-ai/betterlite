@@ -1,0 +1,102 @@
+id: B1688
+title: Prepare completion billing candidates and text accounting inputs
+description: >-
+  Build betterlite-core::cost::prepare for completion_cost L1401-L1560, with a typed
+  CompletionBillingInput and PreparedBillingAttempt. B068 will own the candidate loop and
+  execute returned websocket partitions recursively; preparation must not call the final
+  calculator and create a dependency cycle. Preserve an ordered candidate vector containing
+  B1682's selected model, the response model even when absent, and the requested model only
+  when nonnull. Retain duplicates. Carry provider/region updates between attempts just as
+  the original loop rebinds them; do not restart every candidate from the incoming provider.
+  Infer call type through B1683, defaulting to completion. Ask B1681 to partition only an
+  aresponses_websocket typed realtime logging object; one tier continues normally. Rewrite
+  an explicitly empty Azure model to dall-e-2 only for image_generation/aimage_generation.
+  Obtain provider usage once; truthy custom_pricing clones it with provider-stated cost
+  removed. Explicit normalized service_tier wins, otherwise resolve requested optional tier
+  against served tier. Region suppression later uses custom_pricing is True or a nonnull
+  base_model, which is intentionally narrower than the truthy provider-cost suppression.
+  For typed model or dictionary responses, extract usage with the source's None/empty
+  distinctions. Convert unknown typed usage on the response to CostUsage, but derive the
+  current attempt's counters from the original dumped record. Apply Decisions, Anthropic,
+  Responses, typed transcription and Interactions recognition in their actual order using
+  B1683/B579/B906/B1668; dumping a transcription object before recognition must not silently
+  turn this branch into the separate typed-duration path. A truthy nonempty prompt detail
+  object overrides cache_read_input_tokens with cached_tokens defaulting to zero. Hidden
+  attributes may overwrite provider/region with explicit null; dictionary keys named
+  _hidden_params do not act as attributes. For other response kinds require a model first,
+  count nonempty messages before a nonempty prompt, and always count completion text through
+  B196. This requirement occurs before the later A2A early return.
+  Add betterlite-models::billing_text for _count_characters, get_response_string and the
+  complete get_formatted_prompt function, using parsed text/choice/event views rather than
+  importing endpoint crates. Count Unicode scalar values after removing Python whitespace.
+  Formatted chat concatenates string content, text parts and tool function arguments without
+  separators; malformed indexed fields still error. Text/image use prompt; embeddings and
+  moderation concatenate input strings; transcription permits a missing prompt. Response
+  events prefer nested response output text, then a matching text.delta delta, then chat
+  choice message/delta content. Preserve empty output returning an empty string.
+  Pure billing_text oracle fixtures exercise these three source helpers. Native preparation
+  tests cover all usage shapes, tier resolution and candidate state; B068's booted cost
+  cases exercise this stage through the complete calculator. The owned ranges comprise
+  226 nonblank lines; allow 250 implementation, 270 tests and 180 oracle integration lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/prepare.rs
+    - crates/betterlite-core/src/cost/prepare/**
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/billing_text.rs
+    - crates/betterlite-models/src/billing_text/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/billing_text.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/billing_text.py
+    - tools/oracle/cases/helpers/billing-text/**
+    - tools/oracle/fuzz/corpus/helper_case/billing-text-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1401-L1560
+    why: Recursive tier splitting, candidate construction, usage normalization and token-count fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5383-L5432
+    why: Whitespace-free character counts and response/event text concatenation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py#L4-L50
+    why: Call-specific prompt extraction including tool function arguments.
+dod:
+  - text: Preparation exposes ordered repeatable attempts while retaining source usage mutations, hidden nulls, tier precedence and the pre-A2A model check.
+    proof: [billing-prepare-tests]
+  - text: Character and prompt extraction preserve Unicode whitespace, message concatenation, event precedence and missing-field failures.
+    proof: [billing-text-tests, oracle, billing-text-python, billing-text-corpus]
+checks:
+  optional: []
+  commands:
+    - id: billing-prepare-tests
+      why: The candidate or usage preparation stage loses an observable branch before pricing begins.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prepare::/)'
+    - id: billing-text-tests
+      why: Text counted for character billing differs from the provider's normalized prompt or response.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^billing_text::/)'
+    - id: billing-text-python
+      why: The text-accounting oracle cannot call its pinned helpers with typed response fixtures.
+      run: test -f tools/oracle/helpers/billing_text.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: billing-text-corpus
+      why: No billing_text operation reaches the shared parsed-record adapter.
+      run: grep -rlq 'billing_text:' tools/oracle/fuzz/corpus/helper_case/billing-text-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/billing-text/unicode-whitespace-and-combining-characters.yaml
+  - tools/oracle/cases/helpers/billing-text/chat-text-parts-and-tool-arguments.yaml
+  - tools/oracle/cases/helpers/billing-text/event-output-before-delta.yaml
+  - tools/oracle/cases/helpers/billing-text/embedding-list-and-missing-transcription-prompt.yaml
+  - tools/oracle/cases/helpers/billing-text/malformed-function-arguments.yaml
+deviations: []
+out_of_scope:
+  - B068 owns execution of the candidate loop, recursive websocket totals and final charge composition; B1689 owns the early call-specific branches after preparation.
+  - B014 retains utils.py functions other than the two text helpers extracted here; existing B195/B196/B197/B259 tokenizer ownership remains intact.
+  - B1681-B1683 own the called tier, identity and usage helpers in cost_calculator.py; this task only composes them for L1401-L1560.
+pitfalls:
+  - Null and duplicate model candidates are real attempts; deduplicating them changes which failure is returned last.
+  - A nonempty prompt_tokens_details with no cached_tokens changes the explicit cache-read count to zero.
+  - Removing spaces by byte value misses Unicode whitespace and changes billed character counts.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

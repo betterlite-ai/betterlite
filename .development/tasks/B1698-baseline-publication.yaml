@@ -1,0 +1,122 @@
+id: B1698
+title: Validate baseline records and publish reversible savings corrections
+description: >-
+  Add betterlite-db::baseline::records and ::publication for the strict accounting/publication
+  records, baseline_publication, _serialized, _change, _project_group, _session_correction_sql
+  and _publish. Reuse B1696 history, B1694 pricing and B1697 turn/daily primitives. A record's
+  scope must match autorouter-baseline:v3: plus 64 lowercase hex digits; api_key/router_name/
+  baseline_model are nonempty and session_id has 1..256 characters. turn and daily are
+  required nullable fields. A supplied turn must match all four scope identity fields,
+  have spend equal to actual_spend+classifier_cost, and have zero saved_spend plus all three
+  estimated-turn/actual/saved fields. Reject inconsistent input before persistence.
+  Daily attribution retains nullable model/provider/group/endpoint/tool and an ordered
+  tuple of entity targets. adjustment produces only its identity fields, request_id and
+  autorouter_savings_spend delta, using the target entity's actual ID column. Do not add
+  another request, token or spend increment. Duplicate targets remain duplicate adjustments
+  until B1697 merges their conflict keys.
+  A publication is version 3 with comparison ID/start, estimated/unknown status, reason,
+  optional provenance/costs and text/read/5m-write/1h-write counts. costs is present only
+  for estimated status and two nonnull amounts. Price an estimate through B1694; an unavailable
+  price with existing usage changes reason to pricing_unavailable, while absent usage keeps
+  its history reason. Retain usage bucket evidence even on an unknown publication, and
+  omit cost/provenance values when pricing is unavailable.
+  decode_baseline_record, decode_baseline_publication and decode_baseline_history consume
+  stored JSON bytes through the same db-owned decoders used in replay. Add a baseline_json
+  fuzz target with a record/publication/history discriminator and production replay. Match
+  strict record validation while retaining the source history dataclass's coercions. Canonical
+  record serialization sorts keys and uses compact separators with Python-compatible escaped
+  strings and numeric field representation; use B700's numeric storage boundary for source
+  Float fields, with no floating-point pricing arithmetic. Test canonical duplicate bytes
+  against an existing Python-produced row so a retry is not mistaken for a conflict.
+  _project_group decodes stored rows, replaces conflicted observations with uncertain,
+  baseline_equivalent=false, reason=conflicting_observation, and advances one timestamp group.
+  Compare new publications to decoded previous values and produce changes only when unequal.
+  Each change carries covered_delta as new-known minus old-known, actual_delta and savings_delta
+  relative to zero for unknown values, plus original scope/daily attribution. Retraction must
+  subtract previously published savings rather than merely changing metadata.
+  _publish executes on its caller's transaction: update spend-log metadata first, key session
+  corrections second, user session corrections only if any nonempty user_id, daily entity
+  adjustments next, and observation publications last. Spend metadata removes
+  autorouter_baseline_observation and replaces autorouter_savings_estimate plus the signed
+  savings number or JSON null. Session corrections add covered/actual/saved deltas and merge
+  per-baseline counts, deleting entries whose summed count is not positive; user SQL excludes
+  empty IDs. Daily changes run only for nonzero savings deltas. Empty change lists issue no
+  statement. Errors propagate so B1699 rolls back the complete publication transaction.
+  Pure baseline_publication fixtures compare validation, canonical records, estimates and
+  reversible change records. Postgres tests seed all three reporting surfaces and inject a
+  failure between writes to verify the enclosing transaction contract. The owned record,
+  projection and correction ranges contain 249 nonblank lines; budget 280 code, 270 tests
+  and 225 adapters/decoder fuzz within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/baseline.rs
+    - crates/betterlite-db/src/baseline/records.rs
+    - crates/betterlite-db/src/baseline/records/**
+    - crates/betterlite-db/src/baseline/publication.rs
+    - crates/betterlite-db/src/baseline/publication/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/baseline_json.rs
+    - crates/betterlite-db/fuzz/corpus/baseline_json/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/baseline_publication.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/baseline_publication.py
+    - tools/oracle/cases/helpers/baseline-publication/**
+    - tools/oracle/fuzz/corpus/helper_case/baseline-publication-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L41-L182
+    why: Strict scope/turn consistency, daily attribution and publication records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L241-L305
+    why: Metadata replacement and reversible key/user session corrections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L313-L386
+    why: Canonical records, change deltas, conflicted replay and publication statement order.
+dod:
+  - text: Accounting records reject inconsistent turns and decode stored JSON with canonical duplicate serialization compatible with the source.
+    proof: [baseline-record-tests, oracle, baseline-publication-python, baseline-publication-corpus, baseline-json-corpus]
+  - text: Publication and change generation preserve unavailable pricing, bucket evidence, conflict reasons and signed retractions.
+    proof: [baseline-publication-tests, oracle, baseline-publication-python]
+  - text: One transaction applies the same correction to logs, scoped sessions, daily savings and stored publications, with no extra request or actual-spend increment.
+    proof: [baseline-publication-tests]
+checks:
+  optional: []
+  commands:
+    - id: baseline-record-tests
+      why: Stored observations are accepted with inconsistent identity/cost or retries serialize differently.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^baseline::records::/) - test(replays_the_baseline_json_corpus)'
+    - id: baseline-publication-tests
+      why: Publication correction loses a reporting surface, delta or rollback boundary.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^baseline::publication::/)'
+    - id: baseline-json-corpus
+      why: Persisted baseline JSON lacks new decoder fuzz inputs and replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/baseline_json)" && test -f crates/betterlite-db/fuzz/fuzz_targets/baseline_json.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_baseline_json_corpus)'
+    - id: baseline-publication-python
+      why: Publication fixtures have no checked source record/projection adapter.
+      run: test -f tools/oracle/helpers/baseline_publication.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: baseline-publication-corpus
+      why: The baseline publication operation has no shared helper seed.
+      run: grep -rlq 'baseline_publication:' tools/oracle/fuzz/corpus/helper_case/baseline-publication-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/baseline-publication/scope-and-unestimated-turn-consistency.yaml
+  - tools/oracle/cases/helpers/baseline-publication/canonical-float-and-unicode-record.yaml
+  - tools/oracle/cases/helpers/baseline-publication/pricing-unavailable-keeps-token-evidence.yaml
+  - tools/oracle/cases/helpers/baseline-publication/estimated-to-unknown-retracts-deltas.yaml
+  - tools/oracle/cases/helpers/baseline-publication/conflict-replaces-observation-outcome.yaml
+  - tools/oracle/cases/helpers/baseline-publication/daily-adjustment-adds-only-savings.yaml
+deviations:
+  - what: Baseline correction amounts and deltas are checked finite values before storage; a malformed nonfinite publication is rejected instead of contaminating cumulative savings.
+    why: Persisted corrections must be reversible monetary values under the workspace's finite-money contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L317-L334
+out_of_scope:
+  - B1699 owns BaselineAccountingStore, transaction construction/protocols, paging/append/project/retire SQL and _Scope/_flush_records/flush_baseline_accounting; it supplies the transaction used by _publish.
+  - B1696 owns chronological cache state and B1694 owns comparison pricing; no provider request or baseline capture is performed here.
+pitfalls:
+  - Retraction requires negative session/daily deltas; replacing only the spend-log estimate leaves cumulative savings overstated.
+  - A publication with unknown status may still carry useful token buckets, but its provenance and monetary fields are absent.
+  - Actual turn spend already includes classifier cost, so the record consistency check must compare that full sum.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

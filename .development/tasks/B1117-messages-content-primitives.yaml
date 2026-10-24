@@ -1,198 +1,185 @@
 id: B1117
-title: Messages content primitives
+title: Messages content primitives and capability markers
 description: >-
-  Provide tool-name mapping, signature/cache helpers, media conversion and target capability facts used by Messages
-  chat input/options/output. The input traversal depends on these primitives.
+  Implement the whole value-only helper slice of
+  litellm/llms/anthropic/pass_through/adapters/transformation.py in
+  betterlite-core::api::messages_content_primitives. The owned functions are
+  _optional_attr, _as_string_mapping, _thought_signature, _compaction_blocks,
+  _is_openai_function_tool, is_provider_native_tool_dict and truncate_tool_name
+  (L25-L93); target_supports_mid_conversation_system and _chat_tool_param
+  (L213-L225); LiteLLMAnthropicMessagesAdapter's signature, cache-marker,
+  translatable-parameter and web-search helpers (L357-L454); its model/cache
+  predicates (L672-L700); and its image/tool-result helpers (L1290-L1343).
+  Keep each function together; the surrounding import block and every other
+  method in transformation.py belong to the owners listed below.
 
+  Match the pinned literals. A tool name of at most 64 Unicode characters is
+  returned unchanged; a longer name is 55 Unicode characters, an underscore,
+  and the first 8 lowercase hexadecimal characters of SHA-256 over the full
+  UTF-8 name. Native-tool detection requires exactly one dict-valued key and
+  rejects the six Anthropic schema keys name, type, input_schema, description,
+  cache_control and strict. Tool-call output reads thought_signature while
+  tool_use input reads signature. Cache control is copied only for a truthy
+  marker and an accepted Claude, Bedrock ARN or Gemini model. A prompt marker
+  is selected by key presence and delegated to B216; None is dropped there,
+  while false and 0 remain present.
 
-  create_tool_name_mapping (litellm/llms/anthropic/pass_through/adapters/transformation.py:L94-L114) has no MIT
-  runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior
-  case exercises that unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/messages_content_primitives.rs. Use MessagesContentPrimitiInput and MessagesContentPrimitiResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions tool_name_truncation_collision, tool_result_image, thinking_signature
-  under api::messages_content_primitives::tests. Each named function drives production code and asserts its case
-  result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesContentPrimitives in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_content_primitives: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/transformation.py: _optional_attr (L25-L26);
-  litellm/llms/anthropic/pass_through/adapters/transformation.py: _as_string_mapping (L29-L32); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  _thought_signature (L35-L40); litellm/llms/anthropic/pass_through/adapters/transformation.py: _compaction_blocks
-  (L43-L54); litellm/llms/anthropic/pass_through/adapters/transformation.py: _is_openai_function_tool (L62-L63);
-  litellm/llms/anthropic/pass_through/adapters/transformation.py: is_provider_native_tool_dict (L66-L70); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  truncate_tool_name (L73-L91); litellm/llms/anthropic/pass_through/adapters/transformation.py: target_supports_mid_conversation_system
-  (L213-L216); litellm/llms/anthropic/pass_through/adapters/transformation.py: _chat_tool_param (L219-L225); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_call (L357-L370); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_use_content (L372-L380); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._add_cache_control_if_applicable (L382-L412); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._add_prompt_cache_breakpoint_if_present (L415-L418); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter.translatable_anthropic_params (L420-L434); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._is_web_search_tool (L436-L454); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter.is_anthropic_claude_model (L672-L682); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter.is_bedrock_arn_model (L685-L696); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter.target_consumes_cache_control (L699-L700); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._translate_anthropic_image_to_openai (L1290-L1302); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._tool_result_content (L1304-L1317); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._tool_result_part (L1319-L1335); litellm/llms/anthropic/pass_through/adapters/transformation.py:
-  LiteLLMAnthropicMessagesAdapter._tool_result_image_part (L1337-L1343). Abstract/protocol declarations map to native
-  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 243 owned nonblank/non-comment/non-docstring Python lines (305 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 263 implementation,
-  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 477 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B180 (Anthropic prompt and tool conversion helpers), B183 (Bounded inline media conversion),
-  B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register messages_content_primitives in B171's helper enum and Python
+  dispatcher. The Python side must create attribute-bearing typed tool-call
+  probes as well as a separately tested raw dict; it must invoke B218, B216,
+  B568 and B2221 at their seams rather than copy their algorithms. Image
+  conversion only produces a data URL or passes through an existing URL; it
+  never downloads a URL. This is parsed-record transformation, so add no
+  external-byte parser or fuzz target. The owned ranges contain 215
+  nonblank/non-comment lines excluding the import context. Reserve 200
+  implementation, 180 behavior tests, 125 fixtures, 85 adapters and 30
+  wiring lines, 620 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_content_primitives.rs
   - crates/betterlite-core/src/api/messages_content_primitives/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_content_primitives.rs
-  - tools/oracle/src/helpers/messages_content_primitives/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_content_primitives.py
-  - tools/oracle/helpers/messages_content_primitives/**
   - tools/oracle/fuzz/corpus/helper_case/messages_content_primitives-*
   - tools/oracle/cases/helpers/messages-content-primitives/**
+  - Cargo.lock
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L25-L93
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L115-L225
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The six small projections establish mapping defaults, compaction filtering, schema-key exclusions and the 64-character name hash contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L213-L225
+  why: The wrapper has a falsey-model short circuit, while the tool constructor distinguishes omitted eager_input_streaming from an explicit boolean.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L357-L454
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: These methods select outer versus nested signatures, preserve cache markers, expose the exact translated-key inventory and recognize legacy web search.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L672-L700
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The model predicates use case-insensitive substrings and the Bedrock service segment to decide cache-control eligibility.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1290-L1343
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The image and tool-result projection preserves scalar content, collapses one text part and filters malformed blocks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L224-L234
+  why: B218 supplies the base64 default image/jpeg, empty-data result, URL string pass-through and non-string URL result.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1689-L1693
+  why: B216 defines which prompt_cache_breakpoint values survive the owned key-presence check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L297-L306
+  why: B568 supplies top-level-over-nested eager-input precedence and the UnsupportedParamsError boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3061-L3067
+  why: B2221 is the exact supports_mid_conversation_system delegate whose arguments and returned boolean must pass through.
 dod:
-- text: 'tool name truncation collision: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-tool-name-truncation-collision
-  - oracle
-- text: 'tool result image: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-result-image
-  - oracle
-- text: 'thinking signature: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thinking-signature
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    tool_names_and_native_tools: is_provider_native_tool_dict({web_search:{}})
+    returns true, while {}, {web_search:{},other:{}} and {web_search:true}
+    return false; each one-key dict {name:{}}, {type:{}}, {input_schema:{}},
+    {description:{}}, {cache_control:{}} and {strict:{}} also returns false.
+    _is_openai_function_tool returns true only for {type:function,function:null}
+    (and a dict-valued function), not for {type:function}, {type:custom,function:{}},
+    or {function:{}}. truncate_tool_name returns the exact input for "" and
+    a 64-character name, and maps 65 a characters to 55 a characters followed
+    by _635361c4; a 65-character name with the same prefix but a different
+    suffix gets a different 8-hex hash. The prefix counts Unicode characters
+    and the hash consumes the complete UTF-8 name.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    signature_and_compaction: an attribute-bearing tool call with outer
+    provider_specific_fields={thought_signature:outer} and nested
+    function.provider_specific_fields={thought_signature:inner} returns "outer";
+    a truthy outer {other:x} returns null instead of falling back, an outer {}
+    falls back to "inner", a non-string thought_signature=7 returns null, and
+    thought_signature="" returns the empty string. A raw dict with those keys
+    is not treated as an attribute-bearing tool call and returns null. Tool-use
+    content reads provider_specific_fields.signature="sig" (including "") and
+    ignores thought_signature; a missing/non-mapping provider_specific_fields or
+    signature=7 returns null. _compaction_blocks keeps only mapping blocks with
+    type=compaction from list or tuple compaction_blocks, returns them in order,
+    and returns an empty tuple for absent, null, a dict or a scalar value.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    cache_and_feature_markers: target_supports_mid_conversation_system(null,
+    "anthropic") and target_supports_mid_conversation_system("", "anthropic")
+    return false without calling B2221; with model="claude-3-opus"
+    and custom_llm_provider="anthropic", its result equals B2221's
+    supports_mid_conversation_system("claude-3-opus","anthropic") result,
+    proving both arguments and the returned boolean are forwarded. For
+    _chat_tool_param, absent or null eager_input_streaming omits the field,
+    false remains false even when the nested value is true, and
+    {function:{eager_input_streaming:true}} supplies true when top-level is
+    absent; a non-mapping tool=7 also omits the field. {eager_input_streaming:"true"} propagates
+    B568's status=400 UnsupportedParamsError with message
+    "litellm.UnsupportedParamsError: eager_input_streaming must be a boolean"
+    and param=null, code=null. A truthy cache_control={type:ephemeral,ttl:1h}
+    is copied to a dict target for model="anthropic/claude-3-opus",
+    model="gemini/gemini-2.5-pro" and model="arn:aws:bedrock:us-east-1:123:application-inference-profile/id",
+    but not for model="arn:aws:sagemaker:us-east-1:123:endpoint/my-bedrock-endpoint",
+    model="openai/gpt-4o", model=null, model="" or cache_control={}; model matching
+    "ANTHROPIC" or "CLAUDE" is case-insensitive. An absent prompt_cache_breakpoint
+    leaves the target unchanged, null is dropped by B216, and false or 0 is
+    retained. translatable_anthropic_params returns exactly
+    [messages,metadata,system,tool_choice,tools,thinking,output_format,output_config,stop_sequences].
+    _is_web_search_tool returns true for type="web_search_20260209", type="web_search"
+    and name="web_search" without input_schema; name="web_search" with
+    input_schema={} and type="function" return false.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    image_source_projection: a dict {type:base64,data:YWJj} becomes
+    "data:image/jpeg;base64,YWJj" through B218, while media_type=application/pdf
+    becomes "data:application/pdf;base64,YWJj"; absent or empty data returns
+    null, and a non-dict source returns null before B218. {type:url,url:"https://image.test/a"}
+    returns that URL without network I/O, url=7 returns the empty string, and
+    an unknown type returns null. _tool_result_image_part accepts image and
+    document blocks with a valid source as {type:image_url,image_url:{url:<url>}},
+    but drops a non-dict/invalid source. _tool_result_part maps string "hello"
+    to text, non-dicts and unknown types to null, text with text=null or 0 to
+    text="", tool_reference with missing or null tool_name to tool_name="", and both
+    image/document types through the image projection.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    tool_result_content_shape: raw string "hello" survives; null, 7 and {} become
+    the empty string; [] and a list whose entries all drop become the empty
+    string; ["a"] collapses to {type:text,text:"a"}'s string "a"; and
+    ["a",{type:text,text:7}] remains an ordered list with text "a" and "7".
+    A list containing valid image and text parts remains a list, while invalid
+    images, unsupported blocks and arbitrary non-dict items disappear. The
+    helper and oracle fixtures independently exercise attribute objects, raw
+    mappings, scalar/list content and every delegated marker outcome above.
+  proof: [behavior-tests, new-cases, oracle, helper-python, helper-corpus]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_content_primitives::/)
-      - test(/::replays_corpus$/)'
-  - id: case-tool-name-truncation-collision
-    why: the tool-name-truncation-collision behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_content_primitives::tests::tool_name_truncation_collision($|::)/)'
-  - id: case-tool-result-image
-    why: the tool-result-image behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_content_primitives::tests::tool_result_image($|::)/)'
-  - id: case-thinking-signature
-    why: the thinking-signature behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_content_primitives::tests::thinking_signature($|::)/)'
+    why: The production module is missing branch-specific tests for signatures, markers, model predicates and tool-result shapes.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_content_primitives::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_content_primitives.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The independent pinned adapters for typed attributes, raw mappings and delegated outcomes are absent or fail strict checks.
+    run: test -f tools/oracle/helpers/messages_content_primitives.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/messages_content_primitives.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_content_primitives-*)"
-      && grep -qE "^[[:space:]]+messages_content_primitives:" tools/oracle/fuzz/corpus/helper_case/messages_content_primitives-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The messages_content_primitives HelperCase variant is not represented by a newly added shared-parser seed or cannot replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_content_primitives-*)" && grep -qE '^[[:space:]]+messages_content_primitives:' tools/oracle/fuzz/corpus/helper_case/messages_content_primitives-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: The named primitive scenarios have no newly added parity fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-content-primitives)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-content-primitives/tool-name-truncation-collision.yaml
-- tools/oracle/cases/helpers/messages-content-primitives/tool-result-image.yaml
-- tools/oracle/cases/helpers/messages-content-primitives/thinking-signature.yaml
+- tools/oracle/cases/helpers/messages-content-primitives/tool-names-and-native-tools.yaml
+- tools/oracle/cases/helpers/messages-content-primitives/signature-and-compaction.yaml
+- tools/oracle/cases/helpers/messages-content-primitives/cache-and-feature-markers.yaml
+- tools/oracle/cases/helpers/messages-content-primitives/image-source-projection.yaml
+- tools/oracle/cases/helpers/messages-content-primitives/tool-result-content-shape.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: create_tool_name_mapping L94-L114, LiteLLMAnthropicMessagesAdapter.translate_thinking_for_model
-  L703-L737 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B967 owns AnthropicAdapter.__init__ L229-L230,
-  AnthropicAdapter.translate_completion_input_params L232-L243, AnthropicAdapter.translate_completion_input_params_with_tool_mapping
-  L245-L282, AnthropicAdapter.translate_completion_output_params L284-L304, AnthropicAdapter.translate_completion_output_params_streaming
-  L306-L345, LiteLLMAnthropicMessagesAdapter.translate_anthropic_to_openai L1214-L1288.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B964 owns LiteLLMAnthropicMessagesAdapter.__init__
-  L352-L353, LiteLLMAnthropicMessagesAdapter.translate_anthropic_messages_to_openai L456-L639.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B965 owns LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort
-  L642-L669, LiteLLMAnthropicMessagesAdapter._apply_reasoning_summary_wrapping L740-L761, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tool_choice_to_openai
-  L763-L779, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tools_to_openai L781-L848, LiteLLMAnthropicMessagesAdapter.translate_anthropic_output_format_to_openai
-  L850-L887, LiteLLMAnthropicMessagesAdapter._add_additional_properties_false L890-L921, LiteLLMAnthropicMessagesAdapter._translate_midturn_system_message_to_openai
-  L923-L944, LiteLLMAnthropicMessagesAdapter._add_system_message_to_messages L946-L979, LiteLLMAnthropicMessagesAdapter._supports_prompt_cache_key
-  L982-L990, LiteLLMAnthropicMessagesAdapter._target_declares_reasoning_effort L993-L1015, LiteLLMAnthropicMessagesAdapter._translate_metadata_to_openai
-  L1017-L1037, LiteLLMAnthropicMessagesAdapter._translate_tool_choice_to_openai L1039-L1052, LiteLLMAnthropicMessagesAdapter._translate_stop_sequences_to_openai
-  L1054-L1064, LiteLLMAnthropicMessagesAdapter._translate_tools_to_openai L1066-L1099, LiteLLMAnthropicMessagesAdapter._translate_thinking_to_openai
-  L1101-L1173, LiteLLMAnthropicMessagesAdapter._translate_output_format_to_openai L1175-L1201, LiteLLMAnthropicMessagesAdapter._copy_untranslated_anthropic_params
-  L1203-L1212.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B966 owns LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic
-  L1345-L1430, LiteLLMAnthropicMessagesAdapter._translate_openai_finish_reason_to_anthropic L1432-L1441, LiteLLMAnthropicMessagesAdapter._positive_int
-  L1444-L1451, LiteLLMAnthropicMessagesAdapter._first_positive_usage_value L1454-L1459, LiteLLMAnthropicMessagesAdapter._first_positive_prompt_tokens_detail_value
-  L1462-L1474, LiteLLMAnthropicMessagesAdapter._get_cache_read_input_tokens L1477-L1481, LiteLLMAnthropicMessagesAdapter._get_cache_creation_input_tokens
-  L1484-L1490, LiteLLMAnthropicMessagesAdapter._get_web_search_request_count L1493-L1501, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage_delta
-  L1504-L1526, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage L1529-L1533, LiteLLMAnthropicMessagesAdapter.translate_openai_response_to_anthropic
-  L1535-L1616, LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic_content_block L1618-L1676,
-  LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic L1678-L1727, LiteLLMAnthropicMessagesAdapter.translate_streaming_openai_response_to_anthropic
-  L1729-L1766.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- create_tool_name_mapping L94-L114 and translate_thinking_for_model L703-L737 have no caller at the pinned commit; no behavior case is needed for either.
+- B964 owns LiteLLMAnthropicMessagesAdapter.__init__ L351-L353 and translate_anthropic_messages_to_openai L456-L639; B965 owns translate_anthropic_thinking_to_reasoning_effort L642-L669, _apply_reasoning_summary_wrapping L739-L761 and the non-tool option methods in L923-L1212.
+- B2431 owns the tool/schema methods L763-L921, L1039-L1052, L1066-L1099 and L1175-L1201; B966 owns output and streaming conversion L1345-L1766; B967 owns AnthropicAdapter and request composition L229-L345,L1214-L1288.
+- B218 owns anthropic_image_source_to_openai_url; B216 owns with_prompt_cache_breakpoint; B568 owns eager_input_streaming_flag; B2221 owns supports_mid_conversation_system. This task calls each at its seam and does not reimplement it.
 pitfalls:
-- Within _as_string_mapping\'s isinstance(value, Mapping) branch, preserve return value and its nested guards.
-- Within _thought_signature\'s fields is None branch, preserve return None and its nested guards.
+- A truthy outer provider_specific_fields mapping without thought_signature prevents the nested function mapping from being consulted; an empty mapping has the opposite fallback behavior.
+- _add_prompt_cache_breakpoint_if_present checks key presence, but B216 drops only None, so false and 0 must not be normalized away.
+- A non-string URL from a url source becomes the empty string through B218, whereas an invalid source type becomes None; treating both as the same drop changes the projection.
+- One surviving text part collapses to a scalar string, but two surviving parts, including text plus an image, remain a list.
 review_level: standard
 budget:
-  max_changed_lines: 480
-  max_new_expects: 1
+  max_changed_lines: 620
+  max_new_expects: 0

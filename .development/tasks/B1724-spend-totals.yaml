@@ -1,0 +1,89 @@
+id: B1724
+title: Project monthly spend views and team totals for the dashboard
+description: >-
+  Build server::spend::totals for GET /global/spend/logs, /global/spend,
+  /global/spend/keys, /global/spend/models and /global/spend/teams. The three internal-user
+  helpers belong here. /logs requires a database even when B111's Prometheus source is
+  configured. Internal users/viewers always read MonthlyGlobalSpendPerUserPerKey scoped
+  by user and optional literal api_key; other admitted roles use Prometheus when connected,
+  otherwise MonthlyGlobalSpend or MonthlyGlobalSpendPerKey ordered by date. Pass api_key
+  through B111's escaped PromQL API, never interpolate it into a metric expression here.
+  Missing internal user ID fails. Preserve the handler's internal_error wrapper and
+  parameter/status fields instead of exposing raw database exceptions.
+  /global/spend sums MonthlyGlobalSpend and returns spend plus litellm_settings.max_budget,
+  default zero. A returned null SQL sum stays null; absence of a result starts at zero.
+  loads_spend_summary_budget must load max_budget through the real config loader and prove
+  that the route uses it. Existing config_yaml decoding receives a new seed for this key.
+  /keys has optional limit with no default for global callers; nonpositive supplied limits
+  return 422. Internal-user keys ignore the query limit and use the helper's default ten,
+  aggregating all SpendLogs and left-joining current key alias/name. /models defaults limit
+  to ten for everyone, passes it through without the key route's positivity check, and uses
+  all-history own-user aggregation or Last30dModelsBySpend accordingly. Keep absent versus
+  invalid integer validation distinct. Neither endpoint hashes its filter values.
+  /teams reads the last 30 days from CURRENT_DATE, groups by team_alias and day, maps null
+  aliases to Unassigned, and skips null days. Round each day/team amount to two decimal
+  places before summing totals. Return every daily row and team alias, but only the ten
+  highest rounded team totals; output team_id contains the alias. Preserve alias collisions
+  caused by grouping, and compare the unordered teams set independently from ranked totals.
+  The five handlers, three internal helpers and row declarations own approximately 357
+  source lines. Use bound view queries and B724/B726 projections, with native PostgreSQL
+  tests and HTTP oracle cases for source choice, user isolation, nullable totals, limit
+  behavior and rounding order. decode_spend_totals_query consumes raw query bytes; fuzz
+  literal api_key and integer limit inputs and replay the corpus. All work fits 800 lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/totals.rs
+    - crates/betterlite-server/src/spend/totals/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-summary-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/spend_totals_query.rs
+    - crates/betterlite-server/fuzz/corpus/spend_totals_query/**
+    - tools/oracle/cases/http/spend-totals/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3802-L4155
+    why: Monthly view selection, key totals, global budget and rounded team output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4243-L4308
+    why: Model totals and the different limit handling for this route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L119-L173
+    why: B111's escaped daily-spend query contract consumed by the logs endpoint.
+dod:
+  - text: Monthly reports select the correct database/Prometheus source and preserve user scope, null sums and distinct limit rules.
+    proof: [total-tests, totals-corpus, oracle]
+  - text: Team totals sum rounded daily amounts and the configured global max_budget reaches the response.
+    proof: [total-tests, summary-budget-test, summary-budget-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: total-tests
+      why: View selection, ranked output or user isolation is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::totals::/) - test(replays_the_spend_totals_query_corpus)'
+    - id: summary-budget-test
+      why: max_budget is not actually loaded into the summary policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_summary_budget)'
+    - id: summary-budget-corpus
+      why: The summary budget setting has no new configuration replay seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-summary-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: totals-corpus
+      why: Spend total filters lack a fuzzed raw-query decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_totals_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_totals_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-totals/monthly-view-and-internal-user.yaml
+  - tools/oracle/cases/http/spend-totals/prometheus-escaped-key-and-required-db.yaml
+  - tools/oracle/cases/http/spend-totals/null-sum-and-global-budget.yaml
+  - tools/oracle/cases/http/spend-totals/keys-ignore-internal-limit-models-do-not.yaml
+  - tools/oracle/cases/http/spend-totals/team-alias-collision-and-rounded-total.yaml
+deviations: []
+out_of_scope:
+  - B111 implements Prometheus transport and parsing; B1722 owns resets and end-user diagnostics, while B1723 owns the separate /spend/keys and /spend/users APIs.
+  - B1721, B1725, B1726, B1727, B1704, B069 and the remaining log leaves own other functions in spend_management_endpoints.py.
+pitfalls:
+  - Internal-user /global/spend/keys always asks for ten keys even when limit=1 was supplied.
+  - Team totals add already rounded daily values, so rounding only the final sum changes the result.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,112 @@
+id: B1729
+title: Resolve authorized request bodies from logs and cold storage
+description: >-
+  Add GET /spend/logs/ui/{request_id} in server::spend::log_payload. Non-admin callers
+  require a database (403 otherwise) and B1704's owner precheck before date parsing or
+  callback reads. Resolve the scoped row and stored request ID with B1704; exact request_id
+  takes precedence over the client-settable call ID. Admins may use callback storage
+  without a database. Optional dates accept second-precision UTC strings and restrict only
+  callback reads, not the row lookup. decode_detail_dates receives the two optional query
+  strings after authorization, using the literal format %Y-%m-%d %H:%M:%S with no trimming;
+  invalid dates propagate to the proxy's server-error boundary, not a new 400 validator.
+  Iterate B189's active additional logging utilities
+  in registry order, returning the first non-null payload; callback errors propagate.
+  For non-admins validate that payload's owner through B1704 before returning it. No match
+  and no row yields null. Otherwise resolve just messages,response,proxy_server_request.
+  ColdStorageHandler uses an injected logger when present, else the active callback named
+  by litellm_settings.cold_storage_custom_logger (default null). No selected/active logger
+  means no payload. B115 owns configured storage transports; a stored object key is not a
+  request URL. Load the setting through loads_spend_cold_storage and seed config_yaml.
+  Prefer database content when any of the three fields is nonempty: null, empty containers
+  and strings stripping to empty, {}, [] or null are empty. Metadata cold_storage_object_key
+  must be a nonempty string; malformed metadata JSON has no key. Fetch failures warn and
+  fall back to database values. The exception is a stored classifier audit carrying the
+  truncation marker: attempt cold retrieval even alongside content, but replace only the
+  request audit fields, retaining database messages/response. B1714 extracts snapshots and
+  audit fields; cold audit overlays its request snapshot, then stored snapshot fallback.
+  Without a truncated audit, successful cold retrieval replaces all three payload fields.
+  Also own _hydrate_spend_log_metadata: parse string metadata as JSON, including scalars,
+  and use {} only on parse failure; nonstring metadata is unchanged. decode_log_metadata
+  handles these database/callback byte strings. The log_metadata fuzz target dispatches
+  bounded JSON and detail-date inputs separately, including malformed dates after an
+  authorized request; the HTTP denial case proves parsing cannot precede owner checks.
+  Keep this shared helper available to list/session readers without depending on their routes.
+  Supply the legacy daily-summary SQL and projection helpers L285-L342 here: optional
+  non-null key/request/user filters, exact request_id only, UTC inclusive timestamp bounds,
+  day/key/user/model groups, dynamic non-null API-key top-level totals followed by reserved
+  startTime/spend/users/models keys. Preserve nullable user keys in the serialized map.
+  Pure log_payload helpers cover content, metadata-key and daily-summary projections;
+  native tests cover ordered callback selection, foreign payload denial, cold fallback and
+  classifier recovery. HTTP oracle cases use actual DB payloads and colliding call IDs.
+  The detail/cold-storage cohort plus daily projection owns about 290 source lines and
+  receives 800 changed lines for security tests, configuration and tagged parser corpora.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/log_payload.rs
+    - crates/betterlite-server/src/spend/log_payload/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-cold-storage-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/log_metadata.rs
+    - crates/betterlite-server/fuzz/corpus/log_metadata/**
+    - tools/oracle/src/helpers/{mod.rs,log_payload.rs}
+    - tools/oracle/helpers/{dispatch.py,log_payload.py}
+    - tools/oracle/cases/helpers/log-payload/**
+    - tools/oracle/fuzz/corpus/helper_case/log-payload-*
+    - tools/oracle/cases/http/spend-log-payload/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L285-L342
+    why: Legacy daily-summary SQL and collision-sensitive result projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3265-L3475
+    why: Payload selection, metadata hydration and authorized detail route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cold_storage_handler.py#L1-L61
+    why: Entire configured/injected cold-storage logger resolver.
+dod:
+  - text: Detail reads authorize before accessing callbacks and reject foreign payloads sharing a client call ID.
+    proof: [log-payload-tests, log-metadata-corpus, oracle]
+  - text: Database versus cold content and classifier audit recovery preserve the pinned fallback behavior.
+    proof: [log-payload-tests, cold-storage-settings, cold-storage-corpus, oracle, log-payload-python]
+  - text: Metadata and daily-summary projections retain JSON presence, nullable users and reserved output keys.
+    proof: [log-payload-tests, log-metadata-corpus, oracle, log-payload-python, log-payload-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: log-payload-tests
+      why: Payload authorization, callback order or historical storage selection is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::log_payload::/) - test(replays_the_log_metadata_corpus)'
+    - id: cold-storage-settings
+      why: The selected cold-storage callback setting is not loaded.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_cold_storage)'
+    - id: cold-storage-corpus
+      why: Cold-storage selection has no new YAML decoder sample.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-cold-storage-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: log-metadata-corpus
+      why: Metadata JSON or the detail-date operation has no new decoder replay input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/log_metadata)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_log_metadata_corpus)'
+    - id: log-payload-python
+      why: The pure payload projection adapter is absent or unchecked.
+      run: test -f tools/oracle/helpers/log_payload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: log-payload-corpus
+      why: Payload projection operations have no helper replay seed.
+      run: grep -rlq 'log_payload:' tools/oracle/fuzz/corpus/helper_case/log-payload-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-log-payload/owner-and-colliding-call-id.yaml
+  - tools/oracle/cases/http/spend-log-payload/authorization-before-dates-and-null-row.yaml
+  - tools/oracle/cases/helpers/log-payload/empty-json-content-and-cold-key.yaml
+  - tools/oracle/cases/helpers/log-payload/metadata-scalar-and-malformed-json.yaml
+  - tools/oracle/cases/helpers/log-payload/daily-summary-null-users-and-key-collision.yaml
+deviations: []
+out_of_scope:
+  - B115 implements S3/GCS callback storage; this task owns every ColdStorageHandler method but no cloud transport.
+  - B1730 owns legacy listing and UI enrichment, B1731 session listing and B1732 flat/grouped route coordination; B1728 owns query primitives and B1704 owner checks.
+  - B1721-B1727 and B069 retain non-log reports; B1600/B1713-B1716/B1726/B1727 retain spend_tracking_utils.
+pitfalls:
+  - A single nonempty database field normally suppresses cold retrieval for all three fields.
+  - Metadata JSON that decodes to a scalar remains a scalar; only invalid JSON becomes an empty object.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

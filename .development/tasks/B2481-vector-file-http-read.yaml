@@ -1,0 +1,88 @@
+id: B2481
+title: Attached-file HTTP retrieval and content
+description: >-
+  Implement the complete async_vector_store_file_retrieve_handler/vector_store_file_retrieve_handler and
+  async_vector_store_file_content_handler/vector_store_file_content_handler in core::api::vector_file_http_read.
+  They select a matching-mode supplied client or B173 pool, with ssl_verify default null; the async forwarding
+  branch drops a sync client. B527 validates extra_headers or {}, then the handler overlays the mutated
+  extra_headers, obtains the complete store-files URL and asks the appropriate provider transform for
+  (url,request_params). Log and GET that result. No read send passes its accepted timeout argument.
+
+  Invoke B2402 _handle_error only around the GET, then call the corresponding B527 response transform
+  outside the catch. Use B1071 wire records and B012 logging. Add VectorFileReadTransport to B2401 for
+  actual handler HTTP comparisons, plus native client/log/error-boundary tests. These four whole functions
+  have 232 nonblank/non-comment lines. Estimate 220 implementation, 145 tests, 85 adapters, 85 fixtures,
+  35 wiring/corpus lines, 570 total within 610. No new wire parser or proxy route belongs here.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_file_http_read.rs
+  - crates/betterlite-core/src/api/vector_file_http_read/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_file_read_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_file_read_transport.py
+  - tools/oracle/cases/sdk-http/vector-file-read-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11038-L11298
+  why: Four complete GET handlers share client selection and logging but call different response transforms; none forwards timeout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L178-L232
+  why: B527 appends the encoded file segment and optional content suffix and returns parsed JSON without enforcing an object schema.
+dod:
+- text: >-
+    retrieve_and_content_paths sends vector_store_id=vs/a,file_id=file/b in both modes. Retrieve issues
+    GET /v1/vector_stores/vs%2Fa/files/file%2Fb; content adds /content. No body or query is sent with
+    OpenAI. Retrieve mock 200 {id:file_b,object:vector_store.file,status:completed} and content mock 200
+    {file_id:file_b,filename:b,content:[{type:text,text:hello}]} are returned without selecting the other
+    transform. A mock 200 [1,2] remains parsed JSON here; do not add a stronger schema in transport.
+  proof: [read-tests, oracle, python-adapter]
+- text: >-
+    read_header_mutation supplies api_key=sk-provider,Authorization="Bearer caller",Content-Type=text/plain,
+    OpenAI-Beta=assistants=v1,X-Trace=t. Expect Authorization="Bearer sk-provider",Content-Type=application/json,
+    preserved beta/trace; omitted beta becomes assistants=v2. Absent/empty headers work in both modes.
+    pre_call precedes GET with input="",api_key="",complete_input_dict={},api_base and the validated headers.
+  proof: [read-tests, oracle, python-adapter]
+- text: >-
+    read_clients_and_timeouts captures supplied timeout=null and 7; neither appears as a GET argument.
+    A matching client is reused; a missing or wrong-mode client selects a pool with ssl_verify=null or
+    configured false. An injected provider transform returning params={cursor:c} causes GET query cursor=c
+    and logs that map, proving transport does not hardcode OpenAI's empty query. This native seam tests
+    preparation only; the HTTP cases still run real OpenAI transforms and sends.
+  proof: [read-tests]
+- text: >-
+    read_error_scope returns HTTP 404 text="missing",X-Request-Id=r. Expect BaseLLMException status=404,
+    message="missing",headers containing X-Request-Id=r; no retry. Malformed JSON at status=200 is a
+    response-transform error retaining status=200. Native errors during URL/header preparation or pre_call
+    make zero requests and bypass _handle_error; only the send failure enters that converter.
+  proof: [read-tests, oracle, python-adapter]
+- text: Committed vector_file_read_transport seeds replay through B2401's SDK case decoder.
+  proof: [sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: read-tests
+    why: retrieval and content use the wrong endpoint, response transform or client boundary
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_read::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: the attached-file GET comparison does not call pinned handlers
+    run: test -f tools/oracle/sdk_http/vector_file_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: retrieval transport's operation tag lacks new decoder coverage
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-file-read-transport/retrieve-and-content-paths.yaml
+- tools/oracle/cases/sdk-http/vector-file-read-transport/read-header-mutation.yaml
+- tools/oracle/cases/sdk-http/vector-file-read-transport/read-error-scope.yaml
+deviations: []
+out_of_scope:
+- B1073 owns public retrieve/content argument processing; B527 owns file URL and response transformation; B1071 owns records.
+- B173 owns reusable clients, B2402 owns _handle_error, B2480 owns create/list sends and B2482 owns file writes. All other llm_http_handler.py functions retain their endpoint owners.
+pitfalls:
+- The content path is a GET returning JSON content parts, not the raw bytes of the ordinary Files API.
+- timeout is accepted and propagated to the async helper but omitted at the actual GET in both modes.
+review_level: security
+budget:
+  max_changed_lines: 610
+  max_new_expects: 0

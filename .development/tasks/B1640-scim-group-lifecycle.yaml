@@ -1,0 +1,77 @@
+id: B1640
+title: Create and replace SCIM groups while preserving team defaults and write order
+description: >-
+  Implement scim_group_lifecycle with POST /scim/v2/Groups and PUT/DELETE
+  /scim/v2/Groups/{group_id}, plus _new_team_request_with_defaults. POST chooses id,
+  then externalId, then UUID, rejects an existing team with 409 before resolving members,
+  and uses B1636 to admit users and create placeholders. Construct Member(role=user)
+  records and call B804's team creation service with the source's SCIM request path and
+  proxy_admin identity. Deep-copy litellm.default_team_params=None through B1621's loaded
+  binding; typed defaults exclude None, dictionary defaults do not. Explicit SCIM id,
+  alias and roster override defaults, while metadata merges defaults with scim_managed=true.
+  Recompute admitted users' global roles only after team creation, then return 201 SCIM JSON.
+  PUT resolves members before changing the team, merges prior metadata with scim_data equal
+  to the supplied group dump and scim_managed=true, then updates alias/metadata before
+  reconciling the roster through B1637. A rename recomputes roles for the union of old and
+  new members; otherwise use their symmetric difference. Preserve the response's pre-roster
+  updated_team snapshot rather than rereading it, even when that makes the returned members
+  stale relative to the completed writes. DELETE removes the group id from each current
+  member's user.teams, recomputes their roles, then deletes the team directly and returns
+  an empty 204. It does not invoke the general team-delete endpoint or add its cascade logic.
+  Native PostgreSQL tests cover default overlays, placeholders left after a later team
+  failure, alias persistence after roster failure, and delete ordering with real constraints.
+  Eligible HTTP oracle cases compare POST/PUT status and content type, conflict/missing/auth
+  errors, provenance and the stale PUT response; use follow-up database assertions for
+  resulting memberships. The 139 owned function lines need about 200 route/default code,
+  230 tests and 150 request/corpus fixtures, with a 650-line ceiling. All body parsing and
+  config defaults already have owners; contribute group-lifecycle resource seeds only.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_group_lifecycle.rs
+    - crates/betterlite-server/src/scim_group_lifecycle/**
+    - crates/betterlite-server/fuzz/corpus/scim_resource/group-lifecycle-*
+    - tools/oracle/cases/management/scim-group-lifecycle/**
+    - tools/oracle/fuzz/corpus/http_case/scim-group-lifecycle-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2511-L2708
+    why: Default team request construction and the POST, PUT and DELETE route bodies/decorators.
+dod:
+  - text: Group creation honors configured defaults, explicit SCIM fields and member admission before the team write.
+    proof: [group-lifecycle-tests, oracle]
+  - text: Group replacement and deletion preserve metadata, role recomputation and partial-write ordering.
+    proof: [group-lifecycle-tests, oracle]
+  - text: Real HTTP responses retain the stale PUT snapshot, 201/200/204 semantics and authentication/error envelopes.
+    proof: [group-lifecycle-tests, oracle, group-lifecycle-corpora]
+checks:
+  optional: []
+  commands:
+    - id: group-lifecycle-tests
+      why: SCIM team defaults or write sequencing diverge from the pinned group lifecycle.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_group_lifecycle::/)'
+    - id: group-lifecycle-corpora
+      why: Group lifecycle decoding and HTTP case envelopes lack their added regression inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-lifecycle-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-group-lifecycle-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/scim-group-lifecycle/default-models-and-scim-metadata.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/explicit-id-before-external-id.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/strict-mode-refuses-unknown-user.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/nested-group-does-not-create-user.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/put-returns-pre-reconciliation-roster.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/rename-demotes-retained-member.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/delete-and-missing-group.yaml
+  - tools/oracle/cases/management/scim-group-lifecycle/auth-and-duplicate-id.yaml
+deviations: []
+out_of_scope:
+  - "Group GET operations and display lookup are B1641/B1633, while B064 owns PATCH and router assembly."
+  - "scim_v2.py shared implementations: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "All remaining scim_v2.py function ranges: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - PUT serializes the team object returned before roster reconciliation, whereas PATCH performs a final reread.
+  - Deleting a group uses a direct team-row delete after user updates, so substituting the broader team-delete service changes both effects and failures.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,108 @@
+id: B1664
+title: Unify PTU reservation validity, free token rates and Azure spillover
+description: >-
+  Implement all of litellm_core_utils/ptu_pricing.py in betterlite-models::ptu_pricing, with
+  its proxy feature-flag module represented by a re-export. Keep this below both router and
+  server crates. Add betterlite-config::ptu_pricing for LITELLM_ENABLE_PTU_COST_ATTRIBUTION,
+  default false, using B129's secret-Boolean resolution; loads_ptu_cost_flag verifies real
+  environment loading and exact-true enablement. Pass the resolved flag to pricing functions
+  rather than consulting ambient process state. PtuTerms contains team ID, count, exact Decimal
+  hourly rate and UTC start/optional end. Use B204's typed price fields and checked monetary
+  conversions throughout.
+  Preserve three distinct predicates. declares_ptu means any of the four PTU fields is non-null.
+  ptu_config_error checks an inverted parsed window first, then count/rate paired presence,
+  a parseable required start and a truthy team ID; it does not perform ptu_terms' numeric bounds.
+  ptu_terms accepts Python-compatible int conversion of count and numeric-string rates, rejects
+  failed conversions, requires 0<count<=1000000 and 0<=rate<=1000000, and rejects an invalid
+  supplied end rather than treating it as unbounded. Convert typed YAML dates to UTC midnight,
+  naive datetimes to UTC and aware values to their UTC instant. parse_ptu_instant(text) must
+  reproduce datetime.fromisoformat's accepted ISO forms after replacing Z with +00:00; invalid
+  input yields no instant. Use the workspace date/time library, with a ptu_instant fuzz target
+  and replays_the_ptu_instant_corpus for string input. Identity errors require a nonempty
+  declared ID, include the current ID or GET /model/info hint, and reject duplicate declared
+  IDs with the source's separate explanation; optional model_name adds its named prefix.
+  zeroed_ptu_pricing returns no override unless terms are valid and the feature flag is on.
+  Construct the exact source zero set from mirrored rate fields except tiered_pricing, its
+  four additional cache/grounding rates, and declared custom fields whose names contain cost.
+  Empty tiered_pricing, and always supply all three zero search_context_cost_per_query sizes;
+  zeroing only an existing table would allow provider defaults to bill the reservation again.
+  Do not zero non-price deployment settings. Azure spillover inspects response_headers before
+  additional_headers, with llm_provider- prefix on the latter. The spilled-over header is
+  stringified and compared case-insensitively to true without trimming; from-deployment is
+  stringified when non-null. Return that descriptor independently of PTU validity, but the
+  is_spilled_over_ptu_request predicate additionally requires valid terms and enabled attribution.
+  The pure ptu_pricing helper oracle calls terms/config/identity/declares/spillover functions;
+  flag-dependent zero projection uses native tests plus HTTP model callers owned by B833's
+  consumers. Test every source price-field inventory entry, expired-versus-invalid windows,
+  header precedence and zero hourly rate. The 217 core source lines and nine-line re-export
+  budget 270 implementation/config, 230 tests and 220 helpers/fuzz within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/ptu_pricing.rs
+    - crates/betterlite-models/src/ptu_pricing/**
+    - crates/betterlite-models/fuzz/Cargo.toml
+    - crates/betterlite-models/fuzz/fuzz_targets/ptu_instant.rs
+    - crates/betterlite-models/fuzz/corpus/ptu_instant/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/ptu_pricing.rs
+    - crates/betterlite-config/src/ptu_pricing/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/ptu-pricing-*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/ptu_pricing.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/ptu_pricing.py
+    - tools/oracle/cases/helpers/ptu-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/ptu-pricing-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/ptu_pricing.py#L1-L269
+    why: Complete reservation validity, zero-price inventory, stable identity errors and spillover rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_feature_flag.py#L1-L12
+    why: Proxy compatibility import delegates to the core flag rather than defining another flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L252-L295
+    why: Reservation count and rate upper bounds shared with model validation.
+dod:
+  - text: PTU terms, configuration errors and identity requirements preserve their intentionally different validation rules.
+    proof: [ptu-pricing-tests, oracle, ptu-pricing-python, ptu-pricing-corpora]
+  - text: Enabled valid reservations zero every applicable token/tool rate without leaving tiers or search-context defaults active.
+    proof: [ptu-pricing-tests, ptu-pricing-config]
+  - text: Azure spillover and UTC reservation bounds preserve header precedence and invalid-end handling.
+    proof: [ptu-pricing-tests, oracle, ptu-pricing-python, ptu-pricing-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ptu-pricing-tests
+      why: Reservation acceptance disagrees with zeroed pricing or spillover bypasses paid usage.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ptu_pricing::/) - test(replays_the_ptu_instant_corpus)'
+    - id: ptu-pricing-config
+      why: PTU cost attribution is enabled without its configured secret-Boolean flag.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^ptu_pricing::tests::loads_ptu_cost_flag/)'
+    - id: ptu-pricing-python
+      why: Pure PTU comparisons have no independently checked pinned implementation adapter.
+      run: test -f tools/oracle/helpers/ptu_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ptu-pricing-corpora
+      why: PTU timestamps, flag configuration and helper operations have no new replay inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/ptu_instant)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/ptu-pricing-*')" && grep -rlq 'ptu_pricing:' tools/oracle/fuzz/corpus/helper_case/ptu-pricing-* && cargo nextest run --locked -p betterlite-models -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_ptu_instant_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ptu-pricing/partial-config-validation-versus-chargeable-terms.yaml
+  - tools/oracle/cases/helpers/ptu-pricing/naive-date-only-and-offset-window.yaml
+  - tools/oracle/cases/helpers/ptu-pricing/invalid-end-does-not-open-the-window.yaml
+  - tools/oracle/cases/helpers/ptu-pricing/missing-and-duplicate-stable-identity.yaml
+  - tools/oracle/cases/helpers/ptu-pricing/count-coercion-rate-bounds-and-zero-hourly-rate.yaml
+  - tools/oracle/cases/helpers/ptu-pricing/provider-headers-before-prefixed-additional-headers.yaml
+deviations:
+  - what: PTU hourly rates retain exact decimal input rather than binary-float rounding; unrepresentable rates cannot produce chargeable terms.
+    why: Reservation charges must obey the repository's finite checked Decimal money rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/ptu_pricing.py#L181-L208
+out_of_scope:
+  - B068's flat-cost rollup parts decide daily overlap and persistence; valid terms alone do not check whether the reservation is active at the current instant.
+  - B833 owns model-management PTU validation/projection callers, and the router's registration tasks own their configuration-source checks.
+pitfalls:
+  - ptu_config_error can accept incomplete numeric values that ptu_terms refuses, because it validates update shape rather than chargeability.
+  - search_context_cost_per_query needs an explicit zero table even when the deployment did not declare one.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

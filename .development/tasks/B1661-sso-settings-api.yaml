@@ -1,0 +1,96 @@
+id: B1661
+title: Read masked SSO settings and replace their encrypted stored configuration
+description: >-
+  Add sso_settings_routes for authenticated GET /get/sso_settings and PATCH
+  /update/sso_settings. Reuse B052's route policy without an extra handler role check, B1608's
+  SSOConfig record, B120's resolve_sso_config/descriptor mappings and B1656's schema metadata.
+  GET requires DB and reads row sso_config through B726. Resolve scalar fields from decrypted
+  stored values, environment and descriptor defaults, including generic_scope="openid email profile";
+  use B120's structured role/team mappings and source labels. Apply B244's masking to the three
+  client-secret fields only after resolution. GET must not mutate the runtime environment.
+  Its schema uses each raw field's type or string fallback without the generic optional-union
+  projection, and provenance is exactly the resolver's map, not invented labels for structured
+  fields. Preserve the GET path's mapping-row requirement rather than silently accepting every
+  legacy string shape handled by PATCH's before-snapshot reader.
+  PATCH requires DB then effective store_model_in_db=true. Reuse decode_sso_record for the
+  request and add decode_stored_sso_settings(bytes) for JSON-string before/cleanup rows.
+  Capture an existing truthy row, parse it when it is a string, and decrypt dictionary values
+  through B124/B1600 for the audit before-image. Load current config before publishing the
+  full model dump, including null/default fields. For each of B120's sixteen SSO_FIELD_ENV_VARS,
+  truthy values replace the live value and falsey values clear it. Publish this through B1646's
+  runtime environment overlay, consumed by the SSO composition's per-request snapshot.
+  Encrypt string values with B1600 through B124's _encrypt_env_variables contract, preserving
+  non-string nulls and structured mappings, and upsert the JSON-string row. Submit config audit
+  with action updated and the SSO table name after the upsert; audit redaction stays B124's.
+  Finally read the environment_variables config row, parse string storage when needed, remove
+  only the sixteen mapped environment names, update its JSON representation and invalidate
+  that parameter. A missing row needs no cleanup. Cleanup failure returns the source's 500
+  detail.error after the SSO row and runtime values have already changed; it does not roll back
+  them or the submitted audit. Success echoes the full submitted SSO settings, including the
+  client secrets, as the source does; use explicit secret exposure only for this authorized
+  response and never put those values in diagnostics.
+  Native tests cover partial writes and untouched unrelated environment variables. HTTP
+  sequences compare masked GET, plaintext PATCH echo, full replacement clearing omitted fields,
+  structured mappings, DB/storage failures and auth errors. Fuzz stored_sso_settings and replay
+  replays_the_stored_sso_settings_corpus; extend B1608's sso_record corpus for route bodies.
+  The 137 handler lines budget 220 route/persistence work, 230 tests and 230 oracle/fuzz material,
+  with a 750-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_settings_routes.rs
+    - crates/betterlite-server/src/sso_settings_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/stored_sso_settings.rs
+    - crates/betterlite-server/fuzz/corpus/stored_sso_settings/**
+    - crates/betterlite-auth/fuzz/corpus/sso_record/settings-api-*
+    - tools/oracle/cases/management/sso-settings/**
+    - tools/oracle/fuzz/corpus/http_case/sso-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1130-L1322
+    why: Both route decorators, masking, full replacement and cleanup after the SSO write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/sso.py#L26-L99
+    why: Dependency-owned sixteen-field environment mapping and structured mapping resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L126-L148
+    why: Encryption preserves non-string mappings and nulls instead of stringifying them.
+dod:
+  - text: SSO reads report resolved provenance and masked secrets without changing runtime values.
+    proof: [sso-settings-tests, oracle, sso-settings-corpora]
+  - text: Replacement writes encrypt scalar strings, preserve structured values and clear omitted mapped fields.
+    proof: [sso-settings-tests, oracle, sso-settings-corpora]
+  - text: Audit and legacy-environment cleanup retain their post-upsert order and visible partial failure behavior.
+    proof: [sso-settings-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: sso-settings-tests
+      why: SSO settings expose secrets on reads or lose the source's replacement and cleanup ordering.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_settings_routes::/) - test(replays_the_stored_sso_settings_corpus)'
+    - id: sso-settings-corpora
+      why: Stored SSO JSON and reused SSO request records lack route-specific regression inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/stored_sso_settings)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-auth/fuzz/corpus/sso_record/settings-api-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-auth --no-tests=fail -E 'test(replays_the_stored_sso_settings_corpus) | test(replays_the_sso_record_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/sso-settings/environment-defaults-and-masked-secret.yaml
+  - tools/oracle/cases/management/sso-settings/patch-secret-echo-then-masked-get.yaml
+  - tools/oracle/cases/management/sso-settings/omitted-fields-clear-on-replacement.yaml
+  - tools/oracle/cases/management/sso-settings/role-and-team-mappings-stay-structured.yaml
+  - tools/oracle/cases/management/sso-settings/cleanup-keeps-unrelated-environment-values.yaml
+  - tools/oracle/cases/management/sso-settings/database-storage-and-auth-errors.yaml
+deviations:
+  - what: SSO updates change betterlite's native runtime environment overlay; an embedded Python callback reading os.environ directly continues to see the process's boot values.
+    why: B1646's overlay avoids unsafe process-environment mutation after asynchronous workers start.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1247-L1255
+  - what: Audit-queue overload can omit a successful SSO configuration audit with a warning and counter.
+    why: B065 owns bounded submission instead of a detached audit task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1274-L1283
+out_of_scope:
+  - "For proxy_setting_endpoints.py outside SSO, B1656 owns L88-L127, L723-L783, L800-L849 and L1001-L1072; B1657 owns L858-L998 and L1080-L1127; B1658 owns L591-L720; B1659 owns L379-L399, L453-L470, L786-L797 and L1671-L1742; B1660 owns L1750-L1961; B1662 owns L141-L167, L1330-L1463 and L1969-L2024; B1663 owns L548-L582 and L1472-L1664."
+  - register_extra_ui_setting L439-L450 has no caller at the pin; login exchanges and browser-session issuance remain B063's route parts.
+pitfalls:
+  - PATCH's successful response includes submitted client secrets, while GET masks resolved secrets; using one serializer for both changes the wire contract.
+  - Legacy environment cleanup runs after the SSO upsert and audit submission, so its 500 can accompany a completed configuration replacement.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

@@ -1,56 +1,83 @@
 id: B945
 title: Responses ws managed
 description: >-
-  Run managed response.create WebSocket turns over responses-create-call with responses-ws-history and frame policy,
-  serializing incremental chunks and committing history only after each turn. Implement the native stream service
-  seam B370 will later wrap, without depending on that downstream task.
+  Implement the four whole callables in litellm/responses/streaming_iterator.py that service a
+  managed Responses WebSocket turn over LiteLLM's asynchronous HTTP Responses call:
+  _stream_and_forward L2862-L2890, _save_turn_history L2892-L2911, _process_response_create
+  L2917-L2990, and run L2996-L3016. The caller supplies raw WebSocket text and this service
+  has no route, HTTP status, query parameter, environment variable, config key, or database
+  write. Its only persistence is the connection-local _session_history map. B944 owns the
+  map and preparation helpers, B942 owns the quota callback, B932 owns litellm.aresponses,
+  and B901 owns the transcript driver. Put the Rust service and typed injected test records
+  in the listed core and oracle paths; add no decoder or fuzz target.
 
+  For raw not-json, B944's parser results in exactly one JSON error frame with type error,
+  nested error.type invalid_request_error, and nested error.message Invalid JSON in
+  response.create event. For {"type":"ping"} and every parsed object whose exact type is
+  not response.create, send no frame and perform no quota callback, provider call, or history
+  write. B944 owns valid non-object JSON behavior and the response-create allowlist; B945
+  passes the parsed request through without adding fields.
 
-  B901 transcripts use the service driver managed_responses_turns with typed arguments and scripted client frames.
-  Python calls responses.streaming_iterator managed response.create turn service directly with injected transport/clock/logging
-  interfaces; Rust calls this production service. No FastAPI route/global proxy state is recreated. Route authentication
-  and alias parity are exclusively B941/B1125 gateway-driver transcripts.
+  A response-create whose selected source has generate: false is a local warmup. B944 selects
+  the nonempty nested response object, otherwise the top-level fields except type. B945 sends
+  no quota request or provider call and drives two acknowledgements in order: response.created
+  with response status in_progress, then response.completed with response status completed.
+  Each response has object response, output [], usage input_tokens 0, output_tokens 0 and
+  total_tokens 0, an integer created_at Unix second, and an id matching
+  resp_warmup_[0-9a-f]{32}. The model is truthy source model, otherwise model_group,
+  otherwise the connection model. Thus nested {"generate":false} on connection model
+  openai/gpt-4o-mini with model group router-model acknowledges router-model, while the
+  same frame with no model group acknowledges openai/gpt-4o-mini. If either acknowledgement
+  send_text raises, the boundary logs ManagedResponsesWS: error sending warmup ack: %s,
+  returns normally, sends no error frame, and does not call a provider or write history.
 
+  For non-warmup response-create, call B942's quota gate first with the raw frame and
+  model_group or connection model. A callback raising RateLimitError("quota exceeded")
+  sends exactly {"type":"error","error":{"type":"rate_limit_exceeded","message":"quota exceeded"}}
+  and makes no provider request. Otherwise obtain non-null fields from B925's response-create
+  allowlist, set stream to true, pop model and previous_response_id for local routing, and
+  resolve a missing model or a requested model equal to the connection model_group to the
+  connection model. A requested model that differs from both remains the provider-call model.
+  Copy non-None connection api_key, api_base and timeout, and copy custom_llm_provider only
+  when B944's same-provider check is true. For connection vertex_ai/gemini-2.0-flash, model
+  group router-model, custom provider vertex_ai, and requested model openai/gpt-4o-mini,
+  the provider call uses exactly openai/gpt-4o-mini and omits custom_llm_provider. For the
+  same-provider alias case with connection openai/gpt-4o-mini, model group router-model,
+  and custom provider openai, the call uses openai/gpt-4o-mini and includes
+  custom_llm_provider: openai. Copy nonempty litellm_metadata, update the proxy request,
+  and apply constructor extra_kwargs last, so an extra stream: false replaces stream: true.
+  The proxy body receives input, store, and exactly requested_model or model_group or
+  resolved connection model, then non-null tools, tool_choice, instructions and metadata
+  in that order.
 
-  Implement crates/betterlite-core/src/api/responses_ws_managed.rs. Use ResponsesWsManagedInput and ResponsesWsManagedResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Decode previous_response_id before the history lookup. A decoded id beginning resp_warmup_
+  is ignored; found history changes provider input to prior_history plus current_messages;
+  absent history leaves the exact previous id for B932's database reconstruction. After the
+  provider stream, a usable completed id writes exactly once to the connection map with
+  prior_history plus current_messages plus extracted output in that order. Missing completion,
+  missing/non-string/empty completion id, and provider or stream exceptions write nothing.
+  A completion with response.id absent, numeric 7, or empty string therefore produces no map
+  write. B944 owns response-id decoding and output extraction; this lifecycle preserves the first
+  completion and the ordered map write.
 
+  _stream_and_forward drops None chunks and chunks whose B944 serializer returns None; the
+  latter produces debug ManagedResponsesWS: failed to serialize chunk: %s. It captures only
+  the first response.completed before sending it, forwards serialized chunks in provider order,
+  and on a client send_text exception logs ManagedResponsesWS: error sending chunk to client: %s,
+  stops forwarding, returns the captured completion, and permits the history write. A
+  provider-call or async-stream exception logs ManagedResponsesWS: error processing response.create: %s,
+  sends B944's default error frame with error.type server_error and error.message equal to the
+  exception string, and skips history. run processes non-None first_message before receive_text,
+  awaits each turn sequentially, logs ManagedResponsesWS: client disconnected: %s and ends
+  silently when receive raises, and for an exception escaping the loop logs
+  ManagedResponsesWS: unexpected error: %s before sending error.type server_error with message
+  Internal server error: <exception>.
 
-  Write adjacent tests.rs behavior functions managed_two_turn_history, warmup_then_create, failed_turn_no_history,
-  cancel_during_stream under api::responses_ws_managed::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  Provider-backed WebSocket transcripts use the mock HTTP provider through B932 and compare
+  client frames, provider-call kwargs and body, diagnostics, quota ordering, and ordered
+  connection-local history. They exercise both warmup model fallbacks and both credential
+  injection branches.
 
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Use B901 kind: websocket transcripts with the typed managed_responses_turns service driver, comparing upstream
-  handshake status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases
-  also compare pre-accept HTTP status. No helper calls a WebSocket route function.
-
-
-  Callable ownership: litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._stream_and_forward
-  (L2862-L2890); litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._save_turn_history (L2892-L2911);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler._process_response_create (L2917-L2990);
-  litellm/responses/streaming_iterator.py: ManagedResponsesWebSocketHandler.run (L2996-L3016). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 91 owned nonblank/non-comment/non-docstring Python lines (119 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 111 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 343 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B932 (Responses create call), B942
-  (Responses ws frame policy), B944 (Responses ws history), B1087 (Api boundaries), B925 (Responses stream events),
-  B901 (Websocket oracle). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -69,140 +96,133 @@ scope:
   - tools/oracle/fixtures/responses-ws-managed/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2862-L3016
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2484-L2499
+  why: This fixes the exact response-create parameter universe, the five managed kwargs removed before the lifecycle receives them, and the literal synthetic-id prefix used by warmup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2713-L2751
+  why: The lifecycle observes these helper-produced warmup fields, source-model precedence, two event/status pairs, and the send point whose exception _process_response_create catches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2816-L2860
+  why: These helpers decide whether a requested model inherits connection credentials and which requested model value is placed in proxy_server_request.body before streaming.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2862-L2890
+  why: This complete stream boundary invokes litellm.aresponses, drops unusable chunks, captures the first completion, and returns on the first client-send failure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2892-L2911
+  why: This is the sole history-save transition, including completion/id guards, prior/current/output concatenation, map write, and stored-message diagnostic.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2917-L2990
+  why: These lines establish per-frame ordering from parse and warmup through quota, model routing, history, credentials, proxy projection, extra kwargs, provider failure, and history save.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2996-L3016
+  why: The entry loop defines first-message precedence, sequential receive processing, silent receive disconnect, and the outer diagnostic/error fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/dispatch.py#L104-L112
+  why: The mock-provider transcript must enter the asynchronous public aresponses dispatch awaited by _stream_and_forward rather than a synchronous or native substitute.
 dod:
-- text: 'managed two turn history: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-managed-two-turn-history
-  - oracle
-- text: 'warmup then create: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-warmup-then-create
-  - oracle
-- text: 'failed turn no history: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-failed-turn-no-history
-  - oracle
-- text: 'cancel during stream: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-during-stream
-  - oracle
-- text: The registered WebSocket service driver runs independent production services before downstream routes exist.
-  proof:
-  - service-python
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: 'invalid_and_ignored sends one frame for raw not-json with error.type invalid_request_error and message Invalid JSON in response.create event, while {"type":"ping"} sends no frame and makes no quota callback, provider call, or history write.'
+  proof: [case-invalid-and-ignored, behavior-tests, oracle]
+- text: 'warmup sends no quota/provider request for nested {"type":"response.create","response":{"generate":false,"model":"gpt-4o-mini"}}; it sends response.created/in_progress then response.completed/completed, with model gpt-4o-mini, output [], usage counts 0, integer created_at, and resp_warmup_[0-9a-f]{32}.'
+  proof: [case-warmup, behavior-tests, oracle]
+- text: 'warmup_model_fallback sends {"type":"response.create","response":{"generate":false}} on connection model openai/gpt-4o-mini with model group router-model and both ack models are router-model; with the model group absent, both ack models are openai/gpt-4o-mini, with no provider or history effect in either variant.'
+  proof: [case-warmup-model-fallback, behavior-tests, oracle]
+- text: 'warmup_send_failure makes the first warmup send_text raise warmup send failed; the service logs ManagedResponsesWS: error sending warmup ack: %s, emits no error frame, returns normally, and makes no provider request.'
+  proof: [case-warmup-send-failure, behavior-tests, oracle]
+- text: 'rate_limit runs before provider preparation: RateLimitError("quota exceeded") produces exactly error.type rate_limit_exceeded and message quota exceeded, with zero provider requests.'
+  proof: [case-rate-limit, behavior-tests, oracle]
+- text: 'routing_and_metadata uses connection openai/gpt-4o-mini, group router-model, and requested router-model to call the provider with model openai/gpt-4o-mini and custom_llm_provider openai; proxy_server_request.body.model remains router-model, its fields are input, store, tools, tool_choice, instructions, metadata in that order, and an extra stream:false replaces stream:true.'
+  proof: [case-routing-and-metadata, behavior-tests, oracle]
+- text: 'different_provider_model uses connection vertex_ai/gemini-2.0-flash, group router-model, custom provider vertex_ai, and requested openai/gpt-4o-mini; aresponses receives exactly openai/gpt-4o-mini and no custom_llm_provider key, while the proxy body model is openai/gpt-4o-mini.'
+  proof: [case-different-provider-model, behavior-tests, oracle]
+- text: 'stream_forwarding gives the mock HTTP 200 stream None, serializable chunks, one serializer failure, and two response.completed events; only serializable chunks are sent in source order, ManagedResponsesWS: failed to serialize chunk: %s is logged, and the first completion supplies history.'
+  proof: [case-stream-forwarding, behavior-tests, oracle]
+- text: 'stream_send_failure yields completion id r-send and then makes send_text raise client send failed; forwarding stops after the failure, ManagedResponsesWS: error sending chunk to client: %s is logged, and decoded id r-send still receives completed turn messages in the map.'
+  proof: [case-stream-send-failure, behavior-tests, oracle]
+- text: 'two_turn_history stores first completed id r1, then for previous_response_id:r1 sends prior messages before new input, omits the field when history exists, and writes the second turn as prior history plus current messages plus extracted output; a successful write logs ManagedResponsesWS: stored %d messages for response_id=%s.'
+  proof: [case-two-turn-history, behavior-tests, oracle]
+- text: 'history_fallback_and_failure keeps unknown id missing as previous_response_id:missing in the provider call without a map write; provider exception upstream boom logs ManagedResponsesWS: error processing response.create: %s, sends server_error message upstream boom, and writes no history.'
+  proof: [case-history-fallback-and-failure, behavior-tests, oracle]
+- text: 'history_guards sends a stream with no response.completed, then completions with response.id absent, numeric 7, and empty string; every variant emits its provider chunks but performs no connection-map write.'
+  proof: [case-history-guards, behavior-tests, oracle]
+- text: 'run_lifecycle processes first_message before queued frames without overlap, treats receive exception client disconnected as debug ManagedResponsesWS: client disconnected: %s plus silent exit, and turns escaping unexpected boom into debug ManagedResponsesWS: unexpected error: %s plus server_error message Internal server error: unexpected boom.'
+  proof: [case-run-lifecycle, behavior-tests, oracle]
+- text: 'The managed adapter runs the thirteen named transcripts against the same scripted mock HTTP provider and compares frames, kwargs, diagnostics, and ordered map effects, including both warmup fallback variants and same-provider/different-provider credential injection.'
+  proof: [service-python, oracle, new-oracle-cases]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::/)
-      - test(/::replays_corpus$/)'
-  - id: case-managed-two-turn-history
-    why: the managed-two-turn-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::managed_two_turn_history($|::)/)'
-  - id: case-warmup-then-create
-    why: the warmup-then-create behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::warmup_then_create($|::)/)'
-  - id: case-failed-turn-no-history
-    why: the failed-turn-no-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::failed_turn_no_history($|::)/)'
-  - id: case-cancel-during-stream
-    why: the cancel-during-stream behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::cancel_during_stream($|::)/)'
+    why: The managed WebSocket module or one of its named lifecycle assertions is absent, incomplete, or only corpus replay.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::/) - test(/::replays_corpus$/)'
+  - id: case-invalid-and-ignored
+    why: The exact invalid-json frame or silent non-response.create path is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::invalid_and_ignored($|::)/)'
+  - id: case-warmup
+    why: The nested model warmup acknowledgement, statuses, zero usage, or no-provider effect is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::warmup($|::)/)'
+  - id: case-warmup-model-fallback
+    why: The model_group and connection-model warmup fallback branches are not both asserted.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::warmup_model_fallback($|::)/)'
+  - id: case-warmup-send-failure
+    why: The swallowed warmup send exception, diagnostic, and no-error outcome is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::warmup_send_failure($|::)/)'
+  - id: case-rate-limit
+    why: The rate_limit_exceeded frame or quota-before-provider ordering is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::rate_limit($|::)/)'
+  - id: case-routing-and-metadata
+    why: Same-provider alias routing, proxy-body field order, credentials, and last-write extra kwargs are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::routing_and_metadata($|::)/)'
+  - id: case-different-provider-model
+    why: A requested model distinct from both connection model and model_group does not prove exact provider routing and custom-provider omission.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::different_provider_model($|::)/)'
+  - id: case-stream-forwarding
+    why: None/serializer drops, first-completion capture, ordered sends, or its diagnostic is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::stream_forwarding($|::)/)'
+  - id: case-stream-send-failure
+    why: A client send failure does not stop forwarding while preserving the captured completion for history.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::stream_send_failure($|::)/)'
+  - id: case-two-turn-history
+    why: Prior/current/output ordering, previous-id removal, and the successful map-write diagnostic are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::two_turn_history($|::)/)'
+  - id: case-history-fallback-and-failure
+    why: Unknown-id provider fallback or provider-failure no-write behavior is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::history_fallback_and_failure($|::)/)'
+  - id: case-history-guards
+    why: A missing, numeric, or empty completion id, or a stream without completion, incorrectly writes connection history.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::history_guards($|::)/)'
+  - id: case-run-lifecycle
+    why: First-message precedence, sequential turns, receive disconnect, and outer unexpected-error handling are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::run_lifecycle($|::)/)'
   - id: service-python
-    why: the native WebSocket service adapter is absent or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_ws_managed.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The managed WebSocket transcript adapter is absent or fails the locked strict Python checks.
+    run: test -f tools/oracle/helpers/responses_ws_managed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The branch adds no managed WebSocket transcript, including the two required model-routing transcripts.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/responses-ws-managed)"
 oracle_cases:
-- tools/oracle/cases/websocket/responses-ws-managed/managed-two-turn-history.yaml
-- tools/oracle/cases/websocket/responses-ws-managed/warmup-then-create.yaml
-- tools/oracle/cases/websocket/responses-ws-managed/failed-turn-no-history.yaml
-- tools/oracle/cases/websocket/responses-ws-managed/cancel-during-stream.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/invalid-and-ignored.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/warmup.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/warmup-model-fallback.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/warmup-send-failure.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/rate-limit.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/routing-and-metadata.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/different-provider-model.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/stream-forwarding.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/stream-send-failure.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/two-turn-history.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/history-fallback-and-failure.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/history-guards.yaml
+- tools/oracle/cases/websocket/responses-ws-managed/run-lifecycle.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  L64-L70, _get_openai_response_types L74-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90,
-  _json_array_or_empty L93-L95, _is_str_mapping L98-L99, _MutableJsonObject.get L104-L104, _MutableJsonObject.get
-  L106-L106, _MutableJsonObject.__getitem__ L107-L107, _MutableJsonObject.__setitem__ L108-L108, _MutableJsonObject.__contains__
-  L109-L109, _MutableJsonObject.items L110-L110, _GetsLitellmParams.__call__ L114-L114, _UnmasksPiiText.__call__
-  L118-L118, _ShouldStoreResultInCache.__call__ L122-L122, _PostStreamingDeploymentHook.__call__ L126-L132, _typed_gets_litellm_params
-  L140-L141, _load_json_object L148-L150, _load_json_value L153-L155, _model_id_from_metadata L158-L161, _log_background_task_failure
-  L164-L169, _running_loop L175-L179, _spawn_logging_task L182-L189, _error_event_fields L221-L237, _status_code_for_error_field
-  L240-L243, _status_code_for_error_fields L246-L250, stream_error_status_and_message L253-L255, _map_stream_error_to_exception
-  L258-L278, _mid_stream_fallback_eligible L281-L285, BaseResponsesAPIStreamingIterator.__init__ L300-L349, BaseResponsesAPIStreamingIterator._check_max_streaming_duration
-  L351-L361, BaseResponsesAPIStreamingIterator._process_chunk L363-L532.'
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L363-L532,
-  BaseResponsesAPIStreamingIterator._note_yielded_event L954-L957, BaseResponsesAPIStreamingIterator._fallback_error
-  L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event
-  L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error L988-L992, call_post_streaming_hooks_for_testing
-  L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035, ResponsesAPIStreamingIterator.__aiter__ L1037-L1038,
-  ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1094-L1096, SyncResponsesAPIStreamingIterator.__init__ L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__
-  L1127-L1128, SyncResponsesAPIStreamingIterator.__next__ L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1177-L1179, MockResponsesAPIStreamingIterator.__init__ L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response
-  L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__ L1233-L1234, MockResponsesAPIStreamingIterator.__anext__
-  L1236-L1245, MockResponsesAPIStreamingIterator.__iter__ L1247-L1248, MockResponsesAPIStreamingIterator.__next__
-  L1250-L1259, CachedResponsesAPIStreamingIterator.__init__ L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response
-  L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__ L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__
-  L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__ L1314-L1315, CachedResponsesAPIStreamingIterator.__next__
-  L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B926 owns BaseResponsesAPIStreamingIterator._log_completed_response
-  L534-L576, BaseResponsesAPIStreamingIterator._restore_provider_response_headers L578-L606, BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  L608-L609, BaseResponsesAPIStreamingIterator._handle_logging_failed_response L611-L625, BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  L627-L645, BaseResponsesAPIStreamingIterator._map_error_event_exception L647-L648, BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  L650-L671, BaseResponsesAPIStreamingIterator._get_completed_response_object L673-L683, BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  L685-L757, BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook L759-L799, BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  L801-L807, BaseResponsesAPIStreamingIterator._run_post_success_hooks L809-L884, BaseResponsesAPIStreamingIterator._handle_failure
-  L886-L918, BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order L920-L931, BaseResponsesAPIStreamingIterator._submit_sync_failure_handler
-  L933-L943, BaseResponsesAPIStreamingIterator._record_pending_logging_task L945-L946, BaseResponsesAPIStreamingIterator._await_pending_logging
-  L948-L952.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B942 owns _extract_frame_quota_estimate_inputs L1752-L1784, _enforce_frame_project_quota
-  L1787-L1814, _ws_event_error L1832-L1836, _restore_input_item_ids L1839-L1840, _restored_container_fields L1843-L1854,
-  _restore_wrapped_ids_in_response_create L1857-L1866, _wrap_output_item_encrypted_content L1869-L1884, ResponsesWebSocketStreaming._enforce_authorized_model
-  L2101-L2126, ResponsesWebSocketStreaming._with_request_defaults L2128-L2134, ResponsesWebSocketStreaming._mask_response_create
-  L2136-L2238, ResponsesWebSocketStreaming._unmask_response_event L2265-L2328, ResponsesWebSocketStreaming._mask_response_completed
-  L2330-L2408, ResponsesWebSocketStreaming._enforce_or_reject_frame L2410-L2437.'
-- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming.__init__ L1900-L1932, ResponsesWebSocketStreaming._should_store_event
-  L1934-L1935, ResponsesWebSocketStreaming._store_event L1937-L1949, ResponsesWebSocketStreaming._collect_input_from_client_event
-  L1951-L1984, ResponsesWebSocketStreaming._store_input L1986-L1989, ResponsesWebSocketStreaming._failure_exception
-  L1991-L1999, ResponsesWebSocketStreaming._log_messages L2001-L2016, ResponsesWebSocketStreaming._record_usage_for_failure
-  L2018-L2031, ResponsesWebSocketStreaming._wrap_response_event L2033-L2049, ResponsesWebSocketStreaming.backend_to_client
-  L2051-L2099, ResponsesWebSocketStreaming.client_to_backend L2439-L2458, ResponsesWebSocketStreaming.bidirectional_forward
-  L2460-L2477.'
-- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler.__init__ L2519-L2556, ManagedResponsesWebSocketHandler._serialize_chunk
-  L2563-L2575, ManagedResponsesWebSocketHandler._send_error L2577-L2583, ManagedResponsesWebSocketHandler._get_history_messages
-  L2585-L2594, ManagedResponsesWebSocketHandler._store_history L2596-L2603, ManagedResponsesWebSocketHandler._extract_response_id
-  L2606-L2617, ManagedResponsesWebSocketHandler._extract_output_messages L2620-L2654, ManagedResponsesWebSocketHandler._input_to_messages
-  L2657-L2672, ManagedResponsesWebSocketHandler._parse_message L2678-L2688, ManagedResponsesWebSocketHandler._is_warmup_frame
-  L2691-L2695, ManagedResponsesWebSocketHandler._is_warmup_response_id L2698-L2704, ManagedResponsesWebSocketHandler._warmup_source_params
-  L2707-L2711, ManagedResponsesWebSocketHandler._build_warmup_response L2713-L2729, ManagedResponsesWebSocketHandler._send_warmup_ack
-  L2731-L2751, ManagedResponsesWebSocketHandler._build_base_call_kwargs L2754-L2768, ManagedResponsesWebSocketHandler._apply_history
-  L2770-L2801, ManagedResponsesWebSocketHandler._resolve_provider L2804-L2814, ManagedResponsesWebSocketHandler._same_provider
-  L2816-L2823, ManagedResponsesWebSocketHandler._inject_credentials L2825-L2841, ManagedResponsesWebSocketHandler._update_proxy_request
-  L2844-L2860.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'B944 owns the constructor and helpers L2519-L2860: __init__, _serialize_chunk, _send_error, _get_history_messages, _store_history, _extract_response_id, _extract_output_messages, _input_to_messages, _parse_message, _is_warmup_frame, _is_warmup_response_id, _warmup_source_params, _build_warmup_response, _send_warmup_ack, _build_base_call_kwargs, _apply_history, _resolve_provider, _same_provider, _inject_credentials, and _update_proxy_request; its managed-kwargs skip set is litellm_logging_obj, litellm_call_id, aresponses, _aresponses_websocket, and user_api_key_dict; B945 supplies inputs and observes ordered effects.'
+- 'B942 owns _enforce_frame_project_quota L1787-L1814; B945 supplies raw frame text, user key data, and model_group or connection model, and maps only RateLimitError to rate_limit_exceeded.'
+- 'B932 owns the asynchronous litellm.aresponses dispatch reached at L2871; B945 supplies the resolved model and kwargs, consumes its async stream, and handles stream failures.'
+- 'B925 owns _optional_str, _load_json_object, _is_json_object, _is_json_array, response-create parameter declarations, and shared error/event types consumed by the helper and lifecycle.'
+- 'B927, B926, B928, and B943 own the other streaming-iterator functions and native Responses WebSocket forwarding/state ranges; B945 does not duplicate them.'
+- 'B901 owns the bounded WebSocket transcript parser, scripted peers, service dispatch registration, and gateway driver; B945 only implements the managed service adapter and its cases.'
+- 'B941 and B1125 own gateway route registration, /v1/responses and /responses aliases, authentication, handshake statuses, and route-level failure frames; this task registers no route.'
+- 'Provider-specific HTTP transformations remain with their provider tasks; the mock exchange proves the managed request and stream boundary, not provider transformation internals.'
 pitfalls:
-- 'streaming_iterator.py:2907 emits the diagnostic ''ManagedResponsesWS: stored %d messages for response_id=%s'';
-  retain its level and fallback instead of turning it into a hard error.'
-- 'streaming_iterator.py:2888 emits the diagnostic ''ManagedResponsesWS: error sending chunk to client: %s''; retain
-  its level and fallback instead of turning it into a hard error.'
-review_level: security
+- 'The completion discriminator is read from chunk.type before serialization, or from a dict chunk["type"]; a serializer that only inspects emitted JSON can miss the first completion and lose the history write.'
+- 'The try around _stream_and_forward begins after quota, routing, history application, credential injection, proxy projection, and extra_kwargs.update; a non-RateLimit quota exception therefore reaches run as Internal server error: <exception>, while a provider exception uses the error processing response.create diagnostic.'
+- 'An unknown previous_response_id is popped from the allowlist and then deliberately reinserted by B944; removing it again before B932 prevents cross-connection database reconstruction even though no local map entry exists.'
+- 'The first completion is captured before its send, so a later completion cannot replace it; a client failure after that point is a successful history-save path, not the provider-failure path.'
+- 'The final call_kwargs.update(self.extra_kwargs) can overwrite model, credentials, proxy metadata, or stream; the explicit stream:false case must inspect the provider call rather than only the pre-update map.'
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 700
   max_new_expects: 0
+review_level: security

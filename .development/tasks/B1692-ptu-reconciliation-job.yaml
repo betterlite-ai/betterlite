@@ -1,0 +1,94 @@
+id: B1692
+title: Schedule PTU reconciliation and catch up missing reserved-capacity charges
+description: >-
+  Build betterlite-db::ptu::rollup and the betterlite-server::jobs::ptu adapter. Own the seven
+  orchestration functions left by B1691 plus proxy_server's PTU cron registration. A direct
+  daily run defaults to yesterday UTC, captures run_started, scans deployments once and
+  sequentially attempts each positive charge. Missing DB warns and returns a zero-count
+  result for that day. Report valid models processed, landed/failed rows and escaped lapsed
+  model names. Prune only after all writes succeed and may_prune is true; otherwise explain
+  the skipped prune in logs. A scan or prune error still propagates, and already-landed
+  writes stay committed. Do not wrap the run in a transaction.
+  Backfill defaults to ending yesterday, reads deployments once and obtains B1691's date
+  window and existing sentinel keys. Write only absent (team,deployment,date) charges in
+  oldest-day/model order. Never update, delete or reprice an existing sentinel, even after
+  a rename or rate change. Empty/missing DB windows report start=end and zero days; a full
+  existing window reports all days scanned and zero writes. Preserve failed row counts
+  while continuing other missing charges.
+  The scheduled entry first checks B1664's LITELLM_ENABLE_PTU_COST_ATTRIBUTION, default false,
+  and returns None without DB access when disabled. Use B1690's shared writer lock manager
+  with job ID ptu_flat_cost_rollup_job and a fixed 900-second lease. No cache runs unguarded
+  with may_prune=false. After a failed acquire, independently read the lock: a truthy holder
+  skips the run, while absent/unreadable lock warns and runs without pruning. Acquired locks
+  are released in finally; no lease renewal is introduced. An expired lease may permit
+  duplicate replacement upserts, but timestamp-based pruning remains B1691's responsibility.
+  After the daily result, alert on failed charges and then lapsed deployments, showing at
+  most ten escaped names while retaining the full count. The failed-charge alert says the
+  date must be rerun; the lapse alert explains attribution stopped although provider capacity
+  is still billed. Only a scheduled call with target_date=None runs catch-up afterward.
+  Backfill exceptions are logged and contained so the daily result survives. Alert-channel
+  exceptions are also logged and swallowed, including when no alert callback was supplied.
+  Register one owned UTC job at 00:15 in B124 startup when attribution is enabled, with
+  replace_existing semantics and the existing scheduler misfire grace setting. Supply an
+  immutable B844 deployment snapshot, current DB handle and the writer's B1690 lock object;
+  send High/failed_tracking_spend through the injected alerting interface. Startup must not
+  create another lock owner per tick. Install this adapter directly in proxy startup,
+  independently of B068's response-cost service; B070 later supplies the
+  shared spend-writer handle through the same typed startup resource, without either task
+  depending on the other's umbrella. Job cancellation/shutdown joins the active run and
+  retains the normal partial-write result rather than detaching its future.
+  Exercise real Postgres/Redis fixtures and a deterministic clock/sleeper. Tests must force
+  an upsert failure, a scan failure, locked and unreadable Redis, lease expiry, a rate change
+  after historical backfill, an unseen deployment, failing alert delivery and cancellation.
+  This is a background job with no new HTTP route or pure-function adapter: native fixture
+  tests execute production orchestration. The seven functions contain 241 nonblank lines;
+  cron registration adds 34, allowing 250 implementation and 450 tests/startup wiring in 750.
+scope:
+  paths:
+    - crates/betterlite-db/src/ptu.rs
+    - crates/betterlite-db/src/ptu/rollup.rs
+    - crates/betterlite-db/src/ptu/rollup/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/jobs.rs
+    - crates/betterlite-server/src/jobs/ptu.rs
+    - crates/betterlite-server/src/jobs/ptu/**
+    - crates/betterlite-server/tests/ptu_job.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L390-L467
+    why: One-day replacement writes, skip-prune conditions and result counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L539-L742
+    why: Missing-only catch-up, lease failure policy and contained operator alerts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10820-L10862
+    why: Daily UTC schedule and reuse of the spend writer's lock and alert channel.
+dod:
+  - text: Daily reconciliation preserves partial writes and skips pruning after any failed charge or unguarded run.
+    proof: [ptu-rollup-tests]
+  - text: Catch-up fills only missing historical sentinel keys and cannot replace an existing billed amount or suppress the daily result on failure.
+    proof: [ptu-rollup-tests]
+  - text: Startup installs exactly one enabled 00:15 UTC job with the shared lock owner, and lock/alert failures follow the pinned continuation policy.
+    proof: [ptu-job-tests, ptu-rollup-tests]
+checks:
+  optional: []
+  commands:
+    - id: ptu-rollup-tests
+      why: Production rollup and backfill no longer preserve sentinel history or write-failure boundaries.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^ptu::rollup::/)'
+    - id: ptu-job-tests
+      why: The scheduled PTU adapter is absent, duplicated, unowned or uses the wrong lease/alert behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^jobs::ptu::/) | binary(ptu_job)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1691 owns every other function and record in ptu_flat_cost_rollup.py, including all arithmetic, row statements, retry delays, name escaping and pruning predicates.
+  - B124 owns other proxy_server.py startup behavior; B070 owns spend-writer assembly and B1690 owns the shared PodLockManager implementation.
+pitfalls:
+  - False from acquire_lock alone cannot distinguish contention from a Redis outage; the second read determines whether to skip the day.
+  - Catch-up must not run when an operator explicitly requests a target date.
+  - A renamed or repriced deployment's existing historical sentinel row remains untouched during backfill.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

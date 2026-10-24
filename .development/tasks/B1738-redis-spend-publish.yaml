@@ -1,0 +1,70 @@
+id: B1738
+title: Publish drained spend aggregates and restore only the failed cohorts
+description: >-
+  Extend betterlite-db::redis_spend with transaction publication and recovery. The main
+  publisher returns before touching memory when no Redis client exists. Otherwise drain
+  entity, daily user/team/org/end-user/agent and optional window queues in that order,
+  build one RPUSH pipeline, and encode window tuples with B1734's wire conversion. Skip
+  empty outer collections; the eleven-field entity map remains nonempty even when every
+  inner map is empty. Encoding through B192 safe_dumps happens before the pipeline try
+  block, so an encoding failure does not enter the Redis-error restoration branch.
+  Any main pipeline exception restores every drained cohort to memory and returns after
+  logging. Restore entity increments through add_update; restore daily maps and window
+  tuples directly to their bounded queues, using owned retry staging where a full queue
+  would otherwise deadlock its own flusher. Do not claim exactly-once delivery: a partly
+  executed Redis pipeline followed by restoration can duplicate increments. After a
+  successful push, emit queue gauges only for the corresponding returned lengths; ignore
+  excess lengths and leave missing gauges unreported. Gauge errors occur outside that
+  pipeline recovery block.
+  Add restore_transactions_to_redis for a failed database drain, including the daily-tag
+  cohort absent from the main publisher. Skip falsey cohorts, serialize before attempting
+  Redis, and preserve the distinction between Redis errors, which log that updates were
+  lost and return, and other errors, which propagate. There is no second memory fallback
+  here. Daily-tag publication separately drains its queue even without a Redis client;
+  its single-push helper serializes first, then pushes and emits a gauge inside a broad
+  catch that logs failure without restoring the drained tag aggregate. Preserve this
+  observable loss behavior rather than silently giving tags the main publisher's retry
+  semantics. These five live functions own about 366 source lines. The 800-line budget
+  includes Redis integration and injected failure tests; this parsed-record orchestration
+  adds no decoder and uses B1737's bounded Redis codecs.
+scope:
+  paths:
+    - crates/betterlite-db/src/redis_spend.rs
+    - crates/betterlite-db/src/redis_spend/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L163-L544
+    why: Single push, memory drain, per-entity restoration and database-failure republishing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L770-L784
+    why: Daily tags use the lossy single-push path rather than the main pipeline.
+dod:
+  - text: Main publication restores drained memory on pipeline failure while preserving encoding and gauge failure boundaries.
+    proof: [publication-tests]
+  - text: Database-failure restoration includes tags and distinguishes Redis errors from other failures.
+    proof: [republication-tests]
+  - text: Daily-tag publication retains its separate drain and warning behavior.
+    proof: [tag-publication-tests]
+checks:
+  optional: []
+  commands:
+    - id: publication-tests
+      why: Main publisher ordering, partial pipeline recovery or bounded restoration is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^redis_spend::publication::/)'
+    - id: republication-tests
+      why: Failed database cohorts are not republished with the pinned error boundaries.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^redis_spend::republication::/)'
+    - id: tag-publication-tests
+      why: Daily-tag draining and its distinct failure path lack behavioral coverage.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^redis_spend::tag_publication::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1737 owns Redis buffer configuration, codecs, drains, log parking and gauge emission; its no-caller exclusions cover the unused getters in this file.
+  - B1690 owns bounded queue storage and B1733/B1734 own aggregation; this task only stages their drained values for restoration.
+pitfalls:
+  - A successful RPUSH followed by a gauge failure must not replay the already published cohort.
+  - restore_transactions_to_redis catches RedisError only, unlike the main pipeline's catch of every exception.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

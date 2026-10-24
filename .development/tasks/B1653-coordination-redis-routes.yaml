@@ -1,0 +1,100 @@
+id: B1653
+title: Save coordination Redis settings and probe disposable connections
+description: >-
+  Add coordination_redis_routes for GET/POST /coordination_redis/settings and POST
+  /coordination_redis/settings/test. Authenticate with B052; GET accepts B124's admin-view
+  predicate, while both POST handlers require the exact proxy_admin role and otherwise return
+  403 with detail.error. Use B1652's body decoder, field catalog, current-settings lookup,
+  marker restoration and validation. GET copies field metadata before attaching masked values,
+  so one request cannot contaminate another response. A save requires DB then effective
+  store_model_in_db is True, with the source's distinct 500 messages, before reading or
+  validating settings. After validation, call B124's reject_config_owned_writes for
+  general_settings/coordination_redis; read the persisted general_settings row, replace just
+  coordination_redis, write through B725 and invalidate the config parameter through B124.
+  Retain unrelated persisted general settings, but do not retain omitted Redis fields.
+  Do not replace any running cache/client: the 200 success message explicitly requires restart.
+  Determine audit action from the previous DB value being a dictionary, not from file fallback.
+  Submit the source audit record through B065's owned queue after invalidation, with object_id
+  coordination_redis, every before/after value masked, and the truthy litellm-changed-by header
+  taking precedence over caller user_id and the proxy admin name. This route does not consult
+  the general changed-by metadata opt-in. A failed save or invalidation must not submit that audit.
+  Connection tests need neither DB nor storage enabled. Build a disposable client through B124
+  and B126 from resolved validated params, await ping with a five-second deadline and always
+  attempt disconnect, suppressing disconnect errors. Return HTTP 200 with status healthy and
+  error=null on success, or unhealthy and a scrubbed error for connection failures; timeout text
+  is Connection timed out after 5.0s. Validation failures still return 400. No live client is swapped.
+  For HTTP oracle success cases, connect B1690's OracleRedis fixture alongside B860's DB fixture:
+  allocate independent instances/namespaces for the two
+  proxies, expose only typed redis_url substitution, and tear down on cancellation. Fixture
+  credentials never enter artifacts. Native tests inject write/invalidation/disconnect failures
+  and prove clients are disposed and runtime references remain unchanged. The 151 route/audit
+  function lines plus response models budget 210 service, 200 tests, 180 HTTP/Redis fixture and
+  100 corpus lines, capped at 775.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/coordination_redis_routes.rs
+    - crates/betterlite-server/src/coordination_redis_routes/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/fixtures/mod.rs
+    - tools/oracle/src/fixtures/redis.rs
+    - tools/oracle/src/lib.rs
+    - tools/oracle/src/http.rs
+    - tools/oracle/src/http/**
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/**
+    - tools/oracle/cases/management/coordination-redis/**
+    - tools/oracle/fuzz/corpus/http_case/coordination-redis-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L228-L441
+    why: Audit construction, all three decorators, restart-only saves and ping cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L68-L73
+    why: Mutating/probing endpoints require proxy_admin even though GET accepts viewers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4875-L4891
+    why: Use the existing Redis/cluster selector for disposable probes.
+dod:
+  - text: Redis mutations preserve DB field replacement, config ownership enforcement, invalidation and audit ordering without reconfiguring live clients.
+    proof: [coordination-routes-tests, oracle, coordination-routes-corpus]
+  - text: Admin/viewer checks and health verdicts match the booted proxy, including validation errors and credential-safe failures.
+    proof: [coordination-routes-tests, oracle, coordination-routes-corpus]
+  - text: Disposable probe clients and oracle Redis fixtures are released when work fails or is cancelled.
+    proof: [coordination-routes-tests, coordination-redis-fixture-tests, coordination-routes-corpus]
+checks:
+  optional: []
+  commands:
+    - id: coordination-routes-tests
+      why: Coordination saves change running Redis state or leak probe credentials.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^coordination_redis_routes::/)'
+    - id: coordination-redis-fixture-tests
+      why: Oracle Redis instances share credentials/state or survive their owner.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^fixtures::redis::/)'
+    - id: coordination-routes-corpus
+      why: The HTTP-case decoder does not replay the new Redis fixture requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/coordination-redis-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/coordination-redis/viewer-read-admin-write.yaml
+  - tools/oracle/cases/management/coordination-redis/saved-empty-block-and-source-fallback.yaml
+  - tools/oracle/cases/management/coordination-redis/redacted-password-survives-edit.yaml
+  - tools/oracle/cases/management/coordination-redis/replacement-preserves-other-general-settings.yaml
+  - tools/oracle/cases/management/coordination-redis/storage-guard-and-config-owned-rejection.yaml
+  - tools/oracle/cases/management/coordination-redis/healthy-disposable-connection.yaml
+  - tools/oracle/cases/management/coordination-redis/unhealthy-is-200-and-target-validation-is-400.yaml
+  - tools/oracle/cases/management/coordination-redis/changed-by-audit-hides-every-value.yaml
+deviations:
+  - what: A full audit submission queue drops this settings-change audit with a warning and counter while the already-saved settings still return success.
+    why: B065 replaces the source's unbounded detached audit task with an owned bounded queue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L254-L270
+out_of_scope:
+  - B1652 owns every settings helper L76-L225 and the coordination field/source definitions; its byte decoder is reused rather than duplicated.
+  - B124 owns runtime Redis startup, config ownership policy and config invalidation; B065 owns delivery after audit submission.
+pitfalls:
+  - The connection-test route returns unhealthy with HTTP 200 even when the Redis client constructor fails.
+  - Audit created versus updated depends on persisted settings, so editing a file-only configuration emits created.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

@@ -1,184 +1,101 @@
 id: B906
-title: Responses usage
+title: Responses usage normalization
 description: >-
-  Convert Responses usage into B004 chat usage, retaining cached, reasoning, audio and output token detail with
-  checked arithmetic and exact optional-field semantics. Expose a typed conversion used by logging and bridge tasks,
-  without adding prices or spend writes.
+  Convert Responses and image/realtime usage into chat Usage in betterlite-core::api::responses_usage.
+  Own _is_response_api_usage, _transform_response_api_usage_to_chat_usage and its sole-use
+  _output_token_detail helper, moved whole from B905. Use B1138's ResponseAPIUsage and B004's
+  Usage/detail wrappers and text_tokens_without_nested_reasoning. This transformation performs
+  no pricing or persistence. Preserve provider extension fields and Decimal cost; never mutate
+  the caller's mapping. An existing Usage object is returned without conversion.
 
-
-  Implement crates/betterlite-core/src/api/responses_usage.rs. Use ResponsesUsageInput and ResponsesUsageResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions cached_input_token_details, reasoning_output_token_details, audio_details,
-  missing_usage_detail, zero_tokens under api::responses_usage::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesUsage in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_usage: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/utils.py: ResponseAPILoggingUtils._is_response_api_usage (L1142-L1148);
-  litellm/responses/utils.py: ResponseAPILoggingUtils._transform_response_api_usage_to_chat_usage (L1151-L1263).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 104 owned nonblank/non-comment/non-docstring Python lines (114 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 124 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 374 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B1087 (Api
-  boundaries), B004 (OpenAI chat completions without streaming), B905 (Responses parameters). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Register responses_usage as a pure B171 operation. The Python projection must expose detail
+  fields, extension keys and cost, not just total_tokens. Tests use absent, null, object and
+  mapping inputs; no decoder/fuzz target is needed because B1138 parses wire records.
+  The three methods contain 117 nonblank, non-comment source lines. Reserve 145 production,
+  125 tests, 75 fixtures, 75 adapters and 20 wiring lines: 440 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_usage.rs
   - crates/betterlite-core/src/api/responses_usage/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_usage.rs
-  - tools/oracle/src/helpers/responses_usage/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_usage.py
-  - tools/oracle/helpers/responses_usage/**
   - tools/oracle/fuzz/corpus/helper_case/responses_usage-*
   - tools/oracle/cases/helpers/responses-usage/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1142-L1263
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L39-L41
+  why: Attribute token counts are accepted only when Python considers them integers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1141-L1263
+  why: Own usage classification, realtime alias fallback, detail projection and extension/cost preservation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1721-L1729
+  why: B004's text-token adjustment removes only reasoning counted inside reported text.
 dod:
-- text: 'cached input token details: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-cached-input-token-details
-  - oracle
-- text: 'reasoning output token details: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-reasoning-output-token-details
-  - oracle
-- text: 'audio details: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-audio-details
-  - oracle
-- text: 'missing usage detail: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-missing-usage-detail
-  - oracle
-- text: 'zero tokens: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-zero-tokens
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    usage_kinds maps null to prompt_tokens=0,completion_tokens=0,total_tokens=0. A Usage
+    {prompt_tokens:2,completion_tokens:3,total_tokens:99,custom:7} stays unchanged. A mapping
+    without both input_tokens and output_tokens follows ordinary Usage construction; a
+    ResponseAPIUsage or mapping with both is recognized as Responses usage.
+  proof: [usage-tests, oracle, usage-adapter]
+- text: >-
+    totals_and_aliases sends input_tokens=2,output_tokens=3,total_tokens=99; expect
+    prompt_tokens=2,completion_tokens=3,total_tokens=5. Missing/null total is filled before
+    validation. input_token_details={audio_tokens:2} and output_token_details={audio_tokens:3}
+    populate plural fields only when those are null/absent; plural values win otherwise.
+    Singular alias keys are not leaked as extension fields and the input map stays unchanged.
+  proof: [usage-tests, oracle, usage-adapter]
+- text: >-
+    input_details preserves cached_tokens=2,audio_tokens=3,text_tokens=4,image_tokens=5,
+    video_tokens=6,cache_write_tokens=7,web_search_requests=8,google_maps_grounding_requests=9
+    and cached_tokens_details={text_tokens:1}. Absent details remain null; a constructed empty
+    detail object retains its cached_tokens=0. Mapping and typed-object detail paths agree
+    on the named fields without inventing unsupported token counts.
+  proof: [usage-tests, oracle, usage-adapter]
+- text: >-
+    output_details sends completion_tokens=10 and details={text_tokens:10,reasoning_tokens:4,
+    audio_tokens:0,image_tokens:0}; expect text_tokens=6,reasoning_tokens=4. With text_tokens=6
+    expect 6, with completion=12,text=10,reasoning=4,audio=2 expect text=6,audio=2. Missing
+    text stays null. The private detail extractor accepts integer 0 and true (Python bool
+    is int) but returns null for string "2",decimal 2.5 or a mapping instead of an attribute object.
+  proof: [usage-tests, oracle, usage-adapter]
+- text: >-
+    usage_extensions preserves server_side_tool_usage_details={web_search:2},custom=7 and
+    cost=0.125. Extra prompt_tokens,completion_tokens,total_tokens,prompt_tokens_details and
+    completion_tokens_details cannot overwrite normalized values; input_token_details and
+    output_token_details aliases are excluded too. Cost null remains absent from the
+    explicit post-conversion cost assignment; converting the resulting Usage again loses no fields.
+  proof: [usage-tests, oracle, usage-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::/) - test(/::replays_corpus$/)'
-  - id: case-cached-input-token-details
-    why: the cached-input-token-details behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::tests::cached_input_token_details($|::)/)'
-  - id: case-reasoning-output-token-details
-    why: the reasoning-output-token-details behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::tests::reasoning_output_token_details($|::)/)'
-  - id: case-audio-details
-    why: the audio-details behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::tests::audio_details($|::)/)'
-  - id: case-missing-usage-detail
-    why: the missing-usage-detail behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::tests::missing_usage_detail($|::)/)'
-  - id: case-zero-tokens
-    why: the zero-tokens behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::tests::zero_tokens($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_usage.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_usage-*)"
-      && grep -qE "^[[:space:]]+responses_usage:" tools/oracle/fuzz/corpus/helper_case/responses_usage-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-usage)"
+  - id: usage-tests
+    why: usage conversion loses a modality, aliases a field incorrectly or trusts an inconsistent total
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_usage::/)'
+  - id: usage-adapter
+    why: the usage comparison cannot observe provider extras and cost independently
+    run: test -f tools/oracle/helpers/responses_usage.py && grep -qE '^[[:space:]]+responses_usage:' tools/oracle/fuzz/corpus/helper_case/responses_usage-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-usage/cached-input-token-details.yaml
-- tools/oracle/cases/helpers/responses-usage/reasoning-output-token-details.yaml
-- tools/oracle/cases/helpers/responses-usage/audio-details.yaml
-- tools/oracle/cases/helpers/responses-usage/missing-usage-detail.yaml
-- tools/oracle/cases/helpers/responses-usage/zero-tokens.yaml
+- tools/oracle/cases/helpers/responses-usage/usage-kinds.yaml
+- tools/oracle/cases/helpers/responses-usage/totals-and-aliases.yaml
+- tools/oracle/cases/helpers/responses-usage/input-details.yaml
+- tools/oracle/cases/helpers/responses-usage/output-details.yaml
+- tools/oracle/cases/helpers/responses-usage/usage-extensions.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/utils.py: B905 owns _apply_nested_drop_params L34-L36, _output_token_detail L39-L41, _is_object_sequence
-  L44-L45, _is_object_dict L48-L51, normalize_responses_api_stream_options L54-L62, _is_chat_text_part L65-L66,
-  _as_input_text_part L69-L72, ResponsesAPIRequestUtils.shape_prompt_managed_message_for_responses L82-L89, ResponsesAPIRequestUtils.responses_input_to_chat_messages
-  L92-L99, ResponsesAPIRequestUtils.merge_prompt_management_input L102-L151, ResponsesAPIRequestUtils.merge_client_forwarded_headers
-  L154-L173, ResponsesAPIRequestUtils._check_valid_arg L176-L196, ResponsesAPIRequestUtils.get_optional_params_responses_api
-  L199-L253, ResponsesAPIRequestUtils.get_requested_response_api_optional_param L256-L307, ResponsesAPIRequestUtils.convert_text_format_to_text_param
-  L1036-L1067, ResponsesAPIRequestUtils.extract_mcp_headers_from_request L1070-L1137.'
-- 'litellm/responses/utils.py: B904 owns ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
-  L312-L317, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id L321-L326, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
-  L331-L382, ResponsesAPIRequestUtils._update_encrypted_content_item_ids_in_response L467-L523, ResponsesAPIRequestUtils._restore_encrypted_content_item_ids_in_input
-  L526-L556, ResponsesAPIRequestUtils.strip_encrypted_reasoning_from_input L559-L578, ResponsesAPIRequestUtils._without_encrypted_reasoning
-  L581-L595, ResponsesAPIRequestUtils._has_readable_text L598-L608, ResponsesAPIRequestUtils._encode_container_ids_in_annotations
-  L800-L813, ResponsesAPIRequestUtils._encode_container_ids_in_message_content L816-L837, ResponsesAPIRequestUtils._encode_container_id_on_output_item
-  L840-L914, ResponsesAPIRequestUtils._collect_container_ids_from_annotations L917-L924, ResponsesAPIRequestUtils._collect_container_ids_from_message_content
-  L927-L944, ResponsesAPIRequestUtils._collect_container_ids_from_output_item L947-L983, ResponsesAPIRequestUtils.collect_container_ids_from_responses_response
-  L986-L1000, ResponsesAPIRequestUtils._update_container_ids_in_response L1003-L1033.'
-- 'litellm/responses/utils.py: B903 owns ResponsesAPIRequestUtils._build_encrypted_item_id L385-L392, ResponsesAPIRequestUtils._decode_encrypted_item_id
-  L395-L418, ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id L421-L431, ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id
-  L434-L464, ResponsesAPIRequestUtils._build_responses_api_response_id L611-L621, ResponsesAPIRequestUtils._decode_responses_api_response_id
-  L624-L674, ResponsesAPIRequestUtils._is_litellm_encoded_response_id L677-L682, ResponsesAPIRequestUtils.get_model_id_from_response_id
-  L685-L690, ResponsesAPIRequestUtils.decode_previous_response_id_to_original_previous_response_id L693-L710, ResponsesAPIRequestUtils._build_container_id
-  L713-L727, ResponsesAPIRequestUtils._decode_container_id L730-L787.'
-- 'litellm/responses/utils.py: ResponsesAPIRequestUtils.decode_container_id_to_original L790-L797 are out of scope:
-  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- In responses/utils.py B905 owns parameter/prompt/header methods and shape predicates, B903 owns codecs, and B904 owns traversal; decode_container_id_to_original has no caller at the pin.
+- B004 owns chat Usage construction and text_tokens_without_nested_reasoning; B1138 owns Responses usage validation.
 pitfalls:
-- Within ResponseAPILoggingUtils._is_response_api_usage\'s isinstance(usage, ResponseAPIUsage) branch, preserve
-  return True and its nested guards.
-- Within ResponseAPILoggingUtils._is_response_api_usage\'s 'input_tokens' in usage and 'output_tokens' in usage
-  branch, preserve return True and its nested guards.
-review_level: security
+- A supplied total_tokens=99 is recomputed to 5 for Responses usage but remains 99 for an existing Usage object.
+- Realtime singular detail names are fallback inputs, not additional serialized chat usage fields.
+- text_tokens may include reasoning; subtracting all reasoning unconditionally undercounts providers that already separated it.
+review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 440
   max_new_expects: 1

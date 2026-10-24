@@ -1,214 +1,120 @@
 id: B1030
-title: File content stream
+title: File content SDK dispatch and streaming selection
 description: >-
-  Implement file-content bytes/streaming with incremental forwarding, success/failure logging and deterministic
-  stream closure using B009/B012. Resolve authorized file/model parameters before opening the stream, preserve content-type/disposition
-  and do not aggregate large files merely for logs.
+  Implement whole _should_sdk_support_streaming, _file_content_logging_obj, afile_content,
+  file_content and file_content_streaming in betterlite-core::api::file_content_stream.
+  The provider registry always returns configs for Vertex and Bedrock, so their later legacy
+  handler branches never execute. Remove the former task's VERTEXAI_PROJECT, VERTEXAI_LOCATION
+  and VERTEXAI_CREDENTIALS loader work: those reads exist only in that unreachable fallback;
+  concrete Vertex configs retain their own live credential settings.
 
-
-  In file_binary_content, include a Bedrock provider-config case: utils.py L9425-L9428 always constructs BedrockFilesConfig,
-  so files/main.py L938-L957 delegates the generic HTTP content path using B645 request preparation and B646 binary
-  reply handling, then returns. The later BedrockFilesHandler boto3 branch L1009-L1018 is unreachable with the pinned
-  registry and has no live caller; do not port it or mock away the registry merely to exercise it.
-
-
-  Implement crates/betterlite-core/src/api/file_content_stream.rs. Use FileContentStreamInput and FileContentStreamResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions file_binary_content, file_stream_cancel, content_provider_error, stream_terminal_logging,
-  streaming_query_selection under api::file_content_stream::tests. Each named function drives production code and
-  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.vertex_project
-  defaults to None; env.VERTEXAI_PROJECT defaults to unset (None); litellm_settings.vertex_location defaults to
-  None; env.VERTEXAI_LOCATION defaults to unset (None); env.VERTEXAI_CREDENTIALS defaults to unset (None). No environment
-  reads occur outside betterlite-config. Test api::file_content_stream::tests::loads_settings uses the production
-  Config loader and an injected environment map, with a named rstest case for every key above, explicit override,
-  unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key
-  report; a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder
-  rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileContentStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_content_stream: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/files/main.py: _should_sdk_support_streaming (L83-L89); litellm/files/main.py: _file_content_logging_obj
-  (L92-L104); litellm/files/main.py: afile_content (L806-L849); litellm/files/main.py: file_content (L853-L1031);
-  litellm/files/main.py: file_content_streaming (L1034-L1138). Abstract/protocol declarations map to native types
-  and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 312 owned nonblank/non-comment/non-docstring Python lines (323 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 332 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 45 config tests/seeds and
-  30 wiring; 627 total within the 630-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B012
-  (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and URL path encoding), B1015
-  (File contracts), B1020 (File credentials), B1080 (File stream logging), B1087 (Api boundaries), B516 (OpenAI
-  file lifecycle and streaming content), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Use B2463 for generic binary/streamed HTTP, B516 compatible content, B694 Azure, B500/B2200
+  credentials, B174 model resolution, B176 trusted controls, B1080 stream logging and B012 logger
+  construction. B2464 owns file config and timeout selection. xAI batch-results detection/handling
+  stays with its existing B036 provider owner.
+  Register B2401 SDK HTTP operation file_content_stream for both SDK modes, actual bytes/headers,
+  error facts and close effects. No helper oracle, route authorization or new parser belongs here.
+  Tests are in api::file_content_stream::tests. Counted owned spans have 324 nonblank/non-comment
+  lines; 250 implementation, 170 tests, 140 fixtures, 100 adapters and 30 wiring lines total 690.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_content_stream.rs
   - crates/betterlite-core/src/api/file_content_stream/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/file_content_stream.rs
-  - crates/betterlite-config/src/api/file_content_stream/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/file-content-stream-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_content_stream.rs
-  - tools/oracle/src/helpers/file_content_stream/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/file_content_stream.py
-  - tools/oracle/helpers/file_content_stream/**
-  - tools/oracle/fuzz/corpus/helper_case/file_content_stream-*
-  - tools/oracle/cases/helpers/file-content-stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_content_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_content_stream.py
+  - tools/oracle/cases/sdk-http/file-content-stream/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-content-stream-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L299-L299
-  why: Setting litellm_settings.vertex_project and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L991-L991
-  why: Setting env.VERTEXAI_PROJECT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L300-L300
-  why: Setting litellm_settings.vertex_location and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L994-L994
-  why: Setting env.VERTEXAI_LOCATION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L996-L996
-  why: Setting env.VERTEXAI_CREDENTIALS and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L83-L104
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L806-L1138
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Exact supported-provider predicate and fallback logging identity.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L805-L1138
+  why: Whole buffered/streamed SDK functions and nested wrappers; no argument list is split.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9410-L9445
+  why: Vertex and Bedrock configs return before the obsolete credential/handler fallbacks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4185-L4193
+  why: The streaming set is exactly openai, hosted_vllm, litellm_proxy and vertex_ai.
 dod:
-- text: 'file binary content: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-binary-content
-  - oracle
-- text: 'file stream cancel: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-stream-cancel
-  - oracle
-- text: 'content provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-content-provider-error
-  - oracle
-- text: 'stream terminal logging: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-terminal-logging
-  - oracle
-- text: 'streaming query selection: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-streaming-query-selection
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    file_content_defaults calls afile_content(file_id=f): provider=openai,stream=false,
+    chunk_size=1048576,extra_headers/extra_body=null; returned bytes b"\x00\xff" remain binary.
+    Sync undecorated provider defaults None; only afile_content=true selects async internally.
+    Model resolution occurs when model is non-null, swallows resolution errors and retains the
+    previous provider. Trusted credentials are copied before api_key/api_base are assigned, including null.
+    timeout or request_timeout or 600 selects the deadline; numeric text is converted to float;
+    HTTP timeout objects survive openai/azure/bedrock and otherwise reduce to read or 600.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    buffered_content_dispatch tests openai,hosted_vllm,litellm_proxy via B516; azure via B694;
+    anthropic,bedrock,vertex_ai through B2463's config path. xai with its recognized batch-results
+    id uses B036 before config lookup, while an ordinary xai file uses its config. Generic clients
+    are accepted only as HTTPHandler/AsyncHTTPHandler; Azure gets the supplied client, compatible
+    buffered calls do not. extra_headers/extra_body stay in FileContentRequest and provider transforms
+    decide their use. Provider 404/429 statuses and error type/param/code/message survive unchanged.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    sdk_stream_selection sends stream=true: openai,hosted_vllm,litellm_proxy return streamed bytes
+    and headers; vertex_ai does so only asynchronously. azure,bedrock,anthropic still take their
+    buffered path without warning. Sync vertex_ai raises BadRequestError 400,type=null,param=null,
+    code=null,message="litellm.BadRequestError: Streaming 'file_content' for vertex_ai is only
+    supported through 'afile_content'.", model=n/a,response body="Unsupported provider",request
+    method=file_content. Explicit chunk_size=3 reaches the stream adapter; default is 1048576.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    streaming_logging_identity passes a real logging object unchanged; otherwise construct
+    model="",messages=[],stream=false,call_type=file_content/afile_content,clock start_time,
+    litellm_call_id=str(truthy supplied id or UUID),function_id=str(id or ""). Streaming then
+    writes logger.model and details.model=model or "", details.custom_llm_provider, and writes
+    details.litellm_params.api_base only if optional api_base is non-null (empty string is retained).
+    B1080 wraps the returned iterator and preserves headers, EOF/error/cancellation callbacks.
+    Compatible streaming accepts only OpenAI/AsyncOpenAI clients; Vertex accepts only AsyncHTTPHandler.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    unsupported_file_content uses enum-valid cohere, gets BadRequestError 400,type=null,param=null,
+    code=null,message="litellm.BadRequestError: LiteLLM doesn't support cohere for 'file_content'.
+    Supported providers are 'openai', 'azure', 'vertex_ai', 'bedrock', 'manus', 'anthropic'.",
+    model=n/a,response body="Unsupported provider",request method=create_thread and
+    URL=https://github.com/BerriAI/litellm. Unknown provider text fails enum conversion instead.
+    Neither failure fetches content. The unreachable streaming-helper unsupported-provider branch
+    is not made reachable by patching the supported-provider predicate.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Actual byte-stream captures and the SDK content operation seed are newly added.
+  proof: [new-cases, sdk-seeds, oracle, sdk-python]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_content_stream::/)
-      - test(/::replays_corpus$/)'
-  - id: case-file-binary-content
-    why: the file-binary-content behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::file_binary_content($|::)/)'
-  - id: case-file-stream-cancel
-    why: the file-stream-cancel behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::file_stream_cancel($|::)/)'
-  - id: case-content-provider-error
-    why: the content-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::content_provider_error($|::)/)'
-  - id: case-stream-terminal-logging
-    why: the stream-terminal-logging behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::stream_terminal_logging($|::)/)'
-  - id: case-streaming-query-selection
-    why: the streaming-query-selection behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::streaming_query_selection($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_content_stream::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-content-stream-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_content_stream.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_content_stream-*)"
-      && grep -qE "^[[:space:]]+file_content_stream:" tools/oracle/fuzz/corpus/helper_case/file_content_stream-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-content-stream)"
+    why: stream selection, credential projection and logger identity lack native coverage
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: content SDK adapter does not execute and type-check independently
+    run: test -f tools/oracle/sdk_http/file_content_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: SDK binary content operation has no new seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-content-stream-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: file content has no new SDK provider captures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-content-stream)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-content-stream/file-binary-content.yaml
-- tools/oracle/cases/helpers/file-content-stream/file-stream-cancel.yaml
-- tools/oracle/cases/helpers/file-content-stream/content-provider-error.yaml
-- tools/oracle/cases/helpers/file-content-stream/stream-terminal-logging.yaml
-- tools/oracle/cases/helpers/file-content-stream/streaming-query-selection.yaml
+- tools/oracle/cases/sdk-http/file-content-stream/file-content-defaults.yaml
+- tools/oracle/cases/sdk-http/file-content-stream/buffered-content-dispatch.yaml
+- tools/oracle/cases/sdk-http/file-content-stream/sdk-stream-selection.yaml
+- tools/oracle/cases/sdk-http/file-content-stream/streaming-logging-identity.yaml
+- tools/oracle/cases/sdk-http/file-content-stream/unsupported-file-content.yaml
 deviations: []
 out_of_scope:
-- 'litellm/files/main.py: B1028 owns acreate_file L116-L157, create_file L161-L295, afile_delete L468-L507, file_delete
-  L511-L639.'
-- 'litellm/files/main.py: B1029 owns afile_retrieve L299-L336, file_retrieve L340-L463, afile_list L644-L681, file_list
-  L685-L802.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1028 owns upload/delete, B1029 retrieve/list; B1080 owns FileContentStreamingResponse and B1033 the proxy stream pump/response constructor.
+- Legacy Vertex/Bedrock handler branches L988-L1018 and the unsupported streaming-provider branch have no reachable caller at the pin. Do not add fake registry fallthrough or duplicate their configuration.
+- B2464 supplies file config/timeout selection; provider transformations remain their existing owners. B2463 executes their content plans, while B036 owns xAI batch results.
 pitfalls:
-- Within _file_content_logging_obj\'s isinstance(logging_obj, LiteLLMLoggingObj) branch, preserve return logging_obj
-  and its nested guards.
-- _file_content_logging_obj uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field
-  spelling in the typed projection.
+- stream=true is silently ignored for providers outside the four-member streaming set.
+- Content fallback logging uses truthiness for litellm_call_id; retrieve/delete use a missing-key default instead.
+- Vertex's live config prevents every environment read in the later legacy Vertex branch.
 review_level: security
 budget:
-  max_changed_lines: 630
-  max_new_expects: 1
+  max_changed_lines: 690
+  max_new_expects: 0

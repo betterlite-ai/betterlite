@@ -1,0 +1,101 @@
+id: B1668
+title: Normalize transcription and Interactions usage for billing
+description: >-
+  Implement cost_usage in betterlite-models from all functions in usage_object_transformation.py.
+  Expose a CostUsage projection containing prompt/completion/total counters, optional prompt
+  and completion detail records, and the cache-read counter needed by billing. It is a billing
+  view of the caller's parsed response, not a second public provider response model. Public
+  Usage construction/serialization remains with existing response owners; callers transfer
+  this projection into that record without inventing token counts. Represent source integer
+  counters, including negative values, with checked signed arithmetic and typed overflow errors.
+  Transcription recognition accepts the typed duration/tokens variants, not a raw dictionary
+  merely carrying type=tokens. Duration usage transforms to None so the cost caller can retain
+  duration billing. Token usage copies input_tokens/output_tokens/total_tokens and the input
+  text/audio detail counters without recomputing totals or adding completion details.
+  Recognize Interactions only for a dictionary with total_input_tokens or total_output_tokens
+  and neither prompt_tokens nor input_tokens present, even if the disqualifying key is null.
+  Combine input_tokens_by_modality and tool_use_tokens_by_modality, lowercase stringified
+  modality names, map document to text_tokens and recognize text/audio/image/video. Unknown
+  modalities disappear. Only integer token/count values count, with Booleans behaving as
+  Python integers; numeric strings and floats contribute zero. Sum repeated modalities,
+  retaining a recognized field even when its sum is zero. Invalid non-mapping modality entries
+  return a typed transformation error rather than being silently skipped.
+  If cached modality sums are nonempty, subtract matching cache counts from each existing
+  input modality and clamp at zero. Otherwise, a truthy total_cached_tokens subtracts only
+  from an existing text_tokens field; do not create missing input modalities. A recognized
+  zero-valued cached modality still selects the per-modality branch. Reasoning uses the
+  integer total_reasoning_tokens when truthy, otherwise total_thought_tokens. Prompt total is
+  total_input_tokens+total_tool_use_tokens; completion total is total_output_tokens+reasoning.
+  A truthy integer total_tokens overrides their sum. Google search requests sum integer count
+  values only from mapping entries whose type is exactly google_search, skipping other entries.
+  Create prompt details only when input sums, total cache count or search count are truthy;
+  create completion details only for output sums or reasoning. Zero optional cache/search/
+  reasoning counters become None while explicit zero modality fields remain present. Preserve
+  total_cached_tokens separately for the source's cache_read_input_tokens bridge.
+  Register the pure cost_usage helper, constructing the pinned transcription classes when the
+  fixture names a typed transcription and otherwise passing the raw Interactions dictionary.
+  Compare the explicit billing projection of the returned Usage, including absence/null and
+  cache-read access, so unrelated SDK fields cannot hide missing cost dimensions. Native tests
+  add checked-overflow cases. These functions transform already-parsed records; add helper_case
+  seeds and use its existing parser instead of another fuzz target. The 142 source lines
+  budget 210 projections/records, 190 tests and 170 adapters/corpus cases within 625 changed lines.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/cost_usage.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/cost_usage.py
+    - tools/oracle/cases/helpers/cost-usage/**
+    - tools/oracle/fuzz/corpus/helper_case/cost-usage-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py#L1-L166
+    why: Typed transcription recognition and complete Interactions modality/cache/reasoning transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2726-L2741
+    why: Caller-owned duration and token transcription shapes used by the pure oracle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1931-L1987
+    why: Usage's existing cache-read bridge and optional-detail construction reflected in the billing projection.
+dod:
+  - text: Transcription duration stays distinct from token usage and supplied token totals are not recomputed.
+    proof: [cost-usage-tests, oracle, cost-usage-python, cost-usage-corpus]
+  - text: Interactions usage preserves modality aggregation, cache-branch selection, reasoning fallback and optional detail presence.
+    proof: [cost-usage-tests, oracle, cost-usage-python, cost-usage-corpus]
+  - text: Invalid modality shapes and counter overflow fail explicitly without manufacturing zero-cost usage.
+    proof: [cost-usage-tests, oracle, cost-usage-python, cost-usage-corpus]
+checks:
+  optional: []
+  commands:
+    - id: cost-usage-tests
+      why: Usage projection loses billable modalities or double-counts cached/reasoning tokens.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^cost_usage::/)'
+    - id: cost-usage-python
+      why: Billing usage cases lack the pinned typed-transcription/Interactions adapter.
+      run: test -f tools/oracle/helpers/cost_usage.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: cost-usage-corpus
+      why: The cost_usage operation is absent from shared helper decoder replay inputs.
+      run: grep -rlq 'cost_usage:' tools/oracle/fuzz/corpus/helper_case/cost-usage-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cost-usage/typed-duration-token-and-raw-map-recognition.yaml
+  - tools/oracle/cases/helpers/cost-usage/chat-key-presence-blocks-interactions-recognition.yaml
+  - tools/oracle/cases/helpers/cost-usage/document-text-and-tool-input-aggregation.yaml
+  - tools/oracle/cases/helpers/cost-usage/zero-cached-modality-blocks-total-cache-fallback.yaml
+  - tools/oracle/cases/helpers/cost-usage/reasoning-thought-and-explicit-total-precedence.yaml
+  - tools/oracle/cases/helpers/cost-usage/google-search-integer-counts-only.yaml
+  - tools/oracle/cases/helpers/cost-usage/zero-details-versus-absent-details.yaml
+  - tools/oracle/cases/helpers/cost-usage/malformed-modality-entry-is-an-error.yaml
+deviations:
+  - what: Counter sums outside the native signed range return a typed usage overflow error instead of producing an arbitrary-size Python integer.
+    why: Billing counters require checked bounded arithmetic and may not wrap or silently saturate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py#L129-L136
+out_of_scope:
+  - B068's calculator parts dispatch response variants and price durations; provider response decoders and public Usage serialization remain their existing owners.
+pitfalls:
+  - A cached_tokens_by_modality entry with tokens=0 still prevents subtracting total_cached_tokens from text.
+  - The presence of prompt_tokens=null disqualifies an Interactions object just as a nonzero prompt_tokens value does.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

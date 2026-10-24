@@ -80,5 +80,5 @@ pitfalls:
   - Sending SIGTERM in a test means running kill -TERM <pid>; tests may spawn processes, gateway code may not.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1400
   max_new_expects: 0

@@ -1,0 +1,84 @@
+id: B1722
+title: Expose exception charts, spend resets and end-user diagnostics
+description: >-
+  Implement server::spend::diagnostics with GET /global/activity/exceptions/deployment,
+  GET /global/activity/exceptions, POST /global/spend/reset, POST /global/spend/refresh,
+  GET /global/all_end_users and POST /global/spend/end_users. Keep their B052 route
+  authorization; these handlers add no internal-user query clamp. Exception charts require
+  model_group and both date strings, select only ErrorLogs.status_code='429', and use UTC
+  start inclusive/end-plus-one-day exclusive. Missing dates are 400, and date conversion
+  remains before the database catch boundary. Group deployment charts by api_base, keep
+  the ten highest exception totals, and sort English month/day labels lexicographically.
+  The ungrouped chart uses sum_num_rate_limit_exceptions. Caught errors are 500 for the
+  deployment chart and 400 for the ungrouped chart; a None query result returns [].
+  Reset updates all key spends to zero first, then all team spends, with no encompassing
+  transaction, user reset, log deletion or cache invalidation. Missing database is the
+  source's 401 internal_error/param None. A team update failure may leave keys reset.
+  Refresh checks pg_class for MonthlyGlobalSpend relkind=m; any probe error means false
+  and returns JSON null. Only a materialized view is refreshed, using a separately owned
+  B700 database connection resolved by B710 from DATABASE_URL with the source's 6000-second timeout.
+  Success/failure of that refresh returns HTTP 200 with status success/failure respectively;
+  no source pool mutation or leaked connection is needed to preserve this result.
+  The all-end-users query returns distinct values including null under end_users, or []
+  for a None database result. The spend POST accepts an optional GlobalEndUsersSpend body,
+  defaults startTime/endTime to now-minus-30-days/now independently, preserves the optional
+  api_key literally, and returns the top 100 end users by total_spend. Its end is exclusive,
+  unlike the day-based charts, and no supplied key hashing occurs. Missing database is 500.
+  decode_spend_diagnostics handles the raw chart query and optional end-user JSON body;
+  fuzz both tagged inputs and replay their corpus. Reuse the existing database settings
+  loader instead of reading DATABASE_URL inside a handler. Native database tests exercise
+  two-step reset failure and a materialized view refresh. HTTP oracle cases cover all six
+  paths, auth denials, exact error fields, nullable end users and response shapes. The
+  owned functions plus their small row/request records total roughly 395 source lines;
+  cap the implementation, integration tests and fuzz wiring at 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/diagnostics.rs
+    - crates/betterlite-server/src/spend/diagnostics/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/spend_diagnostics.rs
+    - crates/betterlite-server/fuzz/corpus/spend_diagnostics/**
+    - tools/oracle/cases/http/spend-diagnostics/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L944-L1196
+    why: Two exception charts, decorators and their differing catch statuses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3688-L3799
+    why: Ordered reset writes and conditional materialized-view refresh.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4158-L4240
+    why: End-user discovery and optional-body top-spend query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2213-L2216
+    why: Nullable key and timestamp fields of the end-user spend request.
+dod:
+  - text: Exception charts and end-user reports preserve their distinct dates, grouping, validation and response shapes.
+    proof: [diagnostic-tests, diagnostic-corpus, oracle]
+  - text: Reset and refresh retain partial-write and HTTP-200 failure behavior without leaking their dedicated connection.
+    proof: [diagnostic-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: diagnostic-tests
+      why: Spend diagnostics, reset sequencing or materialized-view lifecycle is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::diagnostics::/) - test(replays_the_spend_diagnostics_corpus)'
+    - id: diagnostic-corpus
+      why: Diagnostic request decoding lacks replayed malformed query/body inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_diagnostics)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_diagnostics_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-diagnostics/deployment-and-total-429-charts.yaml
+  - tools/oracle/cases/http/spend-diagnostics/chart-validation-and-missing-db.yaml
+  - tools/oracle/cases/http/spend-diagnostics/reset-role-and-retained-logs.yaml
+  - tools/oracle/cases/http/spend-diagnostics/refresh-nonmaterialized-null.yaml
+  - tools/oracle/cases/http/spend-diagnostics/end-user-null-key-and-exclusive-end.yaml
+deviations: []
+out_of_scope:
+  - B1721 owns successful activity/provider reports; B1723 tags and key/user tables, B1724 monthly totals and B1725 estimates/team/provider-budget reports.
+  - B1704 retains visibility; B1726/B1727 grouped reports and B069 with the spend-log leaves retain other endpoint functions.
+  - In _types.py only GlobalEndUsersSpend belongs here; B1227 retains surrounding team mutation records and B124 retains the other shared proxy records.
+pitfalls:
+  - Reset deliberately leaves user balances, cached counters and historical spend rows untouched.
+  - The end-user report's api_key body field is not normalized even when it begins with sk-.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

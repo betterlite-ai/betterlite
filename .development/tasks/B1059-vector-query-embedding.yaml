@@ -1,199 +1,113 @@
 id: B1059
-title: Vector query embedding
+title: Query embedding and direct vector-store contracts
 description: >-
-  Prepare vector query embeddings through B006/B014 with explicit operator-owned embedding model/config and provider-native/custom
-  search execution. Carry request metadata to internal embedding calls and expose typed prepared vector queries
-  to the search service.
+  Build BaseQueryEmbeddingVectorStoreConfig and BaseDirectVectorStoreConfig from transformation.py:256-432.
+  Provider-layer contracts take B1058's executor interface and B1131 records; core composes concrete
+  executors. A text query is unchanged and a sequence is joined by one space. The embedding model comes
+  only from nonempty string litellm_params.litellm_embedding_model. Configuration comes from the mapping
+  litellm_embedding_config, with keys converted to strings; other values select an empty map. These are
+  provider parameters, not global environment variables or new proxy config settings.
 
+  Explicit executor wins over router, and router wins over the direct executor. embed_query/aembed_query
+  resolve model/config/executor before their try block, wrap execution failures with "Failed to generate
+  embedding for query: ", then validate only response.data[0].embedding after the catch. Keep these
+  error boundaries distinct. Direct stores expose their own execution method, not a fake HTTP request;
+  their inherited HTTP transforms raise NotImplementedError as specified below.
 
-  Implement crates/betterlite-core/src/api/vector_query_embedding.rs, crates/betterlite-provider/src/api/vector_query_embedding.rs.
-  Use VectorQueryEmbeddingInput and VectorQueryEmbeddingResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions query_embedding_dispatch, configured_embedding_model, native_vector_search,
-  internal_embedding_metadata, caller_model_not_authority under api::vector_query_embedding::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorQueryEmbedding in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_query_embedding: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.transform_search_vector_store_request
-  (L262-L273); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.atransform_search_vector_store_request
-  (L275-L295); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.query_text
-  (L298-L299); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.query_embedding_model
-  (L302-L309); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.query_embedding_configuration
-  (L312-L316); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.query_embedding_executor
-  (L319-L328); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.embed_query
-  (L330-L343); litellm/llms/base_llm/vector_store/transformation.py: BaseQueryEmbeddingVectorStoreConfig.aembed_query
-  (L345-L358); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.execute_search_vector_store_request
-  (L369-L379); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.aexecute_search_vector_store_request
-  (L382-L392); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.transform_search_vector_store_request
-  (L394-L404); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.transform_search_vector_store_response
-  (L406-L409); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.transform_create_vector_store_request
-  (L411-L416); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.transform_create_vector_store_response
-  (L418-L419); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.get_complete_url
-  (L421-L426); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.get_auth_credentials
-  (L428-L429); litellm/llms/base_llm/vector_store/transformation.py: BaseDirectVectorStoreConfig.get_vector_store_endpoints_by_type
-  (L431-L432). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 148 owned nonblank/non-comment/non-docstring Python lines (153 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 168 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 426 total within the 430-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B006 (OpenAI embeddings), B014 (Call dispatch across providers and call types, shared
-  settings and helpers), B171 (Direct helper oracle and URL path encoding), B1058 (Vector store contracts), B1087
-  (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  Add helper vector_query_embedding for pure preparation/default methods and SDK HTTP vector_query_embedding
+  for embed_query/aembed_query using B1058's real executor. A tiny concrete provider fixture may expose
+  the base methods, but neither embedding function nor HTTP handler is mocked. Tests live in
+  api::vector_query_embedding in core/provider. No new byte decoder is introduced. Count 157 nonblank/
+  non-comment lines; budget 160 implementation, 160 tests, 130 adapters, 105 fixtures and 50 wiring/corpus,
+  605 total within 640.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_query_embedding.rs
   - crates/betterlite-core/src/api/vector_query_embedding/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/vector_query_embedding.rs
   - crates/betterlite-provider/src/api/vector_query_embedding/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/prepared.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/vector_query_embedding.rs
-  - tools/oracle/src/helpers/vector_query_embedding/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/vector_query_embedding.py
-  - tools/oracle/helpers/vector_query_embedding/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_query_embedding-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_query_embedding.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_query_embedding.py
   - tools/oracle/cases/helpers/vector-query-embedding/**
+  - tools/oracle/cases/sdk-http/vector-query-embedding/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_query_embedding-*
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-query-embedding-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L262-L432
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L256-L432
+  why: Complete query embedding methods separate model/config validation, provider execution and first-vector validation; direct stores reject HTTP transformation.
 dod:
-- text: 'query embedding dispatch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-query-embedding-dispatch
-  - oracle
-- text: 'configured embedding model: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-configured-embedding-model
-  - oracle
-- text: 'native vector search: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-vector-search
-  - oracle
-- text: 'internal embedding metadata: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-internal-embedding-metadata
-  - oracle
-- text: 'caller model not authority: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-caller-model-not-authority
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    query_preparation sends " a " unchanged, ["a","b"] to "a b", [] to "" and ["a","","b"] to "a  b".
+    litellm_embedding_model="openai/text-embedding-3-small" and " " are accepted; missing,null,"",1 fail
+    with ValueError("litellm_embedding_model is required in litellm_params for this vector store. Example: litellm_params['litellm_embedding_model'] = 'openai/text-embedding-3-small'").
+    litellm_embedding_config={dimensions:2} is preserved; null/list/missing gives {}; integer key 1 becomes "1".
+  proof: [embedding-tests, oracle, adapters]
+- text: >-
+    executor_precedence passes explicit executor plus router and expects the explicit executor; router
+    alone produces a router executor with supplied request metadata; neither produces a direct executor.
+    Omitted request metadata is {}. Async transform forwards vector_store_id,query,optional params,api_base,
+    logging,litellm_params,extra_body and embedding_executor unchanged to the sync override exactly once.
+  proof: [embedding-tests, oracle, adapters]
+- text: >-
+    first_embedding_vector calls embed_query/aembed_query with model=openai/text-embedding-3-small,
+    config={dimensions:2},query_text="a b". Expect POST /v1/embeddings with model=text-embedding-3-small,
+    input=["a b"],dimensions=2. Mock data with first embedding=[0.25,0.5] and second=[9,9] yields [0.25,0.5]
+    only. A first embedding=[] yields []. Numeric strings accepted by the pinned vector validation are
+    converted; a nonnumeric "bad" fails validation after execution, not as an embedding-execution error.
+  proof: [embedding-tests, oracle, adapters]
+- text: >-
+    embedding_failure_boundaries supplies mock 401 invalid_api_key and expects plain Exception whose
+    message begins "Failed to generate embedding for query: ", with no SDK status/type/param/code on that
+    outer exception. Missing litellm_embedding_model fails before HTTP without that prefix. A valid mock
+    embedding response with data=[] causes IndexError; data=[{}] causes KeyError("embedding"); those
+    errors occur outside the execution catch. Native errors preserve these categories without panicking.
+  proof: [embedding-tests, oracle, adapters]
+- text: >-
+    direct_store_defaults maps api_base=null or "" to "", and a supplied base to itself; credentials={}
+    and endpoints={read:[],write:[]}. Search request transformation raises NotImplementedError("Direct vector store providers execute the search themselves; no HTTP request shape");
+    response transformation raises NotImplementedError("Direct vector store providers execute the search themselves; no HTTP response shape").
+    Create request/response transformation raises NotImplementedError with empty message. None makes an
+    embedding or HTTP call. Concrete datastore execution belongs to the provider and is not simulated here.
+  proof: [embedding-tests, oracle, adapters]
+- text: New helper and SDK HTTP seeds replay through their existing typed case decoders.
+  proof: [case-corpora]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-provider --no-tests=fail -E 'test(/^api::vector_query_embedding::/)
-      - test(/::replays_corpus$/)'
-  - id: case-query-embedding-dispatch
-    why: the query-embedding-dispatch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_query_embedding::tests::query_embedding_dispatch($|::)/)'
-  - id: case-configured-embedding-model
-    why: the configured-embedding-model behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_query_embedding::tests::configured_embedding_model($|::)/)'
-  - id: case-native-vector-search
-    why: the native-vector-search behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_query_embedding::tests::native_vector_search($|::)/)'
-  - id: case-internal-embedding-metadata
-    why: the internal-embedding-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_query_embedding::tests::internal_embedding_metadata($|::)/)'
-  - id: case-caller-model-not-authority
-    why: the caller-model-not-authority behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_query_embedding::tests::caller_model_not_authority($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_query_embedding.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_query_embedding-*)"
-      && grep -qE "^[[:space:]]+vector_query_embedding:" tools/oracle/fuzz/corpus/helper_case/vector_query_embedding-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-query-embedding)"
+  - id: embedding-tests
+    why: query preparation, first-vector validation or the direct-store defaults change
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-provider --no-tests=fail -E 'test(/^api::vector_query_embedding::/) - test(/::replays_corpus$/)'
+  - id: adapters
+    why: embedding I/O is compared as a fabricated helper result
+    run: test -f tools/oracle/sdk_http/vector_query_embedding.py && test -f tools/oracle/helpers/vector_query_embedding.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: case-corpora
+    why: query-embedding variants have no new corpus inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_query_embedding-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-query-embedding-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-query-embedding/query-embedding-dispatch.yaml
-- tools/oracle/cases/helpers/vector-query-embedding/configured-embedding-model.yaml
-- tools/oracle/cases/helpers/vector-query-embedding/native-vector-search.yaml
-- tools/oracle/cases/helpers/vector-query-embedding/internal-embedding-metadata.yaml
-- tools/oracle/cases/helpers/vector-query-embedding/caller-model-not-authority.yaml
+- tools/oracle/cases/helpers/vector-query-embedding/query-preparation.yaml
+- tools/oracle/cases/helpers/vector-query-embedding/executor-precedence.yaml
+- tools/oracle/cases/helpers/vector-query-embedding/direct-store-defaults.yaml
+- tools/oracle/cases/sdk-http/vector-query-embedding/first-embedding-vector.yaml
+- tools/oracle/cases/sdk-http/vector-query-embedding/embedding-failure-boundaries.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/base_llm/vector_store/transformation.py: B1058 owns VectorStoreEmbeddingExecutor.embed L39-L39,
-  VectorStoreEmbeddingExecutor.aembed L41-L41, LiteLLMVectorStoreEmbeddingExecutor.embed L46-L53, LiteLLMVectorStoreEmbeddingExecutor.aembed
-  L55-L62, vector_store_request_metadata L68-L75, RouterVectorStoreEmbeddingExecutor._embedding_kwargs L83-L92,
-  RouterVectorStoreEmbeddingExecutor._router_serves L94-L100, RouterVectorStoreEmbeddingExecutor.embed L102-L110,
-  RouterVectorStoreEmbeddingExecutor.aembed L112-L120, BaseVectorStoreConfig.validate_create_vector_store L124-L125,
-  BaseVectorStoreConfig.get_supported_openai_params L127-L128, BaseVectorStoreConfig.map_openai_params L130-L136,
-  BaseVectorStoreConfig.get_auth_credentials L139-L140, BaseVectorStoreConfig.get_vector_store_endpoints_by_type
-  L143-L144, BaseVectorStoreConfig.transform_search_vector_store_request L147-L157, BaseVectorStoreConfig.atransform_search_vector_store_request
-  L159-L183, BaseVectorStoreConfig.transform_search_vector_store_response L186-L189, BaseVectorStoreConfig.transform_create_vector_store_request
-  L192-L197, BaseVectorStoreConfig.transform_create_vector_store_response L200-L201, BaseVectorStoreConfig.validate_environment
-  L204-L205, BaseVectorStoreConfig.get_complete_url L208-L222, BaseVectorStoreConfig.get_error_class L224-L231,
-  BaseVectorStoreConfig.sign_request L233-L247, BaseVectorStoreConfig.calculate_vector_store_cost L249-L253.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1058 owns transformation.py:37-253, including concrete embedding executors, request metadata and BaseVectorStoreConfig defaults.
+- B1131/B204 own wire records and exact numeric rejection; this task consumes the decoded embedding vector.
+- Provider-specific direct searches and query-to-provider body construction remain in their provider tasks; no datastore driver is added here.
 pitfalls:
-- Within BaseQueryEmbeddingVectorStoreConfig.query_embedding_model\'s isinstance(embedding_model, str) and embedding_model
-  branch, preserve return embedding_model and its nested guards.
-- BaseQueryEmbeddingVectorStoreConfig.query_embedding_model uses litellm_params.get('litellm_embedding_model');
-  retain its missing-value behavior and field spelling in the typed projection.
+- An explicit executor avoids router selection even when a router is available.
+- Only executor failure is wrapped; missing model and malformed returned vector keep their distinct errors.
+- A sequence query is joined with one literal space, preserving empty elements rather than trimming them.
 review_level: security
 budget:
-  max_changed_lines: 430
-  max_new_expects: 1
+  max_changed_lines: 640
+  max_new_expects: 0

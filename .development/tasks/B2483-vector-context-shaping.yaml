@@ -1,0 +1,102 @@
+id: B2483
+title: Shape retrieval queries, context messages and failure policy
+description: >-
+  Extract the seven whole pure helpers from vector_store_pre_call_hook.py into core::api::vector_context_shaping:
+  _scan_request, _extract_query_from_messages, _context_messages, _messages_with_context, _context_message,
+  _requested_vector_store_ids and _configured_failure_mode. B1077 calls these helpers before/after its
+  provider searches and guardrail scans. Do not move halves of methods or introduce a callback into B1077.
+
+  Load litellm_settings.vector_store_search_failure_mode with default annotate. Preserve invalid configured
+  values until policy selection can warn and fall back to annotate; accepting this known key is not an
+  unsupported-setting escape. Config tests use B002's loader and existing YAML fuzz corpus. Add the pure
+  HelperCall::VectorContextShaping to B171 with independent pinned calls. Core tests named below run in
+  api::vector_context_shaping; config has loads_failure_mode. The seven methods contain 81 nonblank/
+  non-comment lines; allow 100 implementation, 155 tests, 85 adapters, 80 fixtures and 50 config/corpus/
+  wiring lines, 470 total within 500. Inputs are decoded records, so no new byte parser is introduced.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_context_shaping.rs
+  - crates/betterlite-core/src/api/vector_context_shaping/**
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/vector_context_shaping.rs
+  - crates/betterlite-config/src/api/vector_context_shaping/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/vector-context-shaping-*
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/vector_context_shaping.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_context_shaping.py
+  - tools/oracle/cases/helpers/vector-context-shaping/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_context_shaping-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L55-L66
+  why: Request scanning merges a valid proxy body but strips four top-level guardrail keys only on that successful parse path.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L349-L413
+  why: Last-message query extraction and exact context prefix/newlines and insertion position.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L515-L532
+  why: Requested ids are stringified for diagnostics, and an invalid failure mode warns then returns annotate.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1519
+  why: The module setting defaults to annotate without an environment override.
+dod:
+- text: >-
+    query_uses_last_message passes [{role:user,content:first},{role:assistant,content:last}] and expects last.
+    Empty messages, last message without content, null content and [] content yield null. String "" stays
+    "". Multimodal content [{type:image_url,image_url:{url:u}},{type:text,text:a},{type:text,text:b}] yields a,
+    including an empty first text field; it never joins text parts or scans backward for a user role.
+  proof: [shaping-tests, oracle, helper-python]
+- text: >-
+    context_text_and_position uses search results with content text=a,empty text,text=b and expects
+    {role:user,content:"Context:\n\na\n\nb\n\n"}. Empty/null data, missing/null content and all falsey text
+    yield no context message. Content type is not checked when text is present. Results from two stores
+    produce two messages in store order. Insert them immediately before the final original message;
+    with no originals, return context alone; with no context, return an equal copy of the original list.
+  proof: [shaping-tests, oracle, helper-python]
+- text: >-
+    scan_request_merge passes model=argument,proxy_server_request.body={model:body,x:1,guardrails:[g]},
+    and non_default_params={x:2,policies:[p],guardrail_config:{a:b},include_guardrail_response:true,...}.
+    Expect model=body,x=2 and the proxy_server_request field retained, but no top-level guardrails,policies,
+    guardrail_config,include_guardrail_response. Non-default model wins over body model. Missing/non-map
+    proxy request/body uses the fallback with model=argument and retains all four guardrail keys.
+  proof: [shaping-tests, oracle, helper-python]
+- text: >-
+    requested_ids_for_diagnostics accepts vector_store_ids=["vs_a",2,null,true] and returns
+    ["vs_a","2","None","True"]. A tuple follows the same rule; string,map,null,missing return [].
+    It does not validate or authorize an id. failure_policy accepts annotate/error unchanged. Values
+    "bogus",null,1 warn "Unsupported vector_store_search_failure_mode=%r, falling back to %r. Supported modes: %s"
+    with fallback annotate and supported text "annotate, error", then return annotate. loads_failure_mode
+    loads absent=annotate,explicit error and invalid bogus through Config, preserving the fallback behavior.
+  proof: [shaping-tests, config-tests, oracle, helper-python, corpora]
+checks:
+  optional: [mutants]
+  commands:
+  - id: shaping-tests
+    why: retrieval query/context or the malformed-request fallback changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_context_shaping::tests::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: the declared failure-mode key is not loaded with its warn-and-fallback policy
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_context_shaping::tests::loads_failure_mode($|::)/)'
+  - id: helper-python
+    why: context-shaping parity lacks a checked pinned helper adapter
+    run: test -f tools/oracle/helpers/vector_context_shaping.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpora
+    why: shaping helper/config inputs have no newly committed parser coverage
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_context_shaping-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-context-shaping-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/vector-context-shaping/query-uses-last-message.yaml
+- tools/oracle/cases/helpers/vector-context-shaping/context-text-and-position.yaml
+- tools/oracle/cases/helpers/vector-context-shaping/scan-request-merge.yaml
+- tools/oracle/cases/helpers/vector-context-shaping/requested-ids-for-diagnostics.yaml
+- tools/oracle/cases/helpers/vector-context-shaping/failure-policy.yaml
+deviations: []
+out_of_scope:
+- B1077 owns ProxyRuntime/ProxyServerRuntime, augmentation and pre-call/guardrail execution in vector_store_pre_call_hook.py; B090 owns the two post-call methods.
+- B1063 performs actual store authorization/selection; diagnostic id stringification does not grant access.
+pitfalls:
+- The helper's docstring says last user message, but its implementation reads the last message without inspecting role.
+- Invalid proxy body parsing retains guardrail keys that the successful merge path removes.
+- Nonempty text is joined with two trailing newlines per item, with no citation labels or trimming.
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

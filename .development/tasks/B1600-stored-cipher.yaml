@@ -1,0 +1,139 @@
+id: B1600
+title: Read and write LiteLLM encrypted secrets
+description: >-
+  Add betterlite-secrets with StoredEncryption, CipherError and secret-bearing values, then implement
+  B700's StoredCipher port in betterlite-db using it. Own every function in encrypt_decrypt_utils.py
+  and AppCrypto in app_crypto.py. Reuse crypto_secretbox for NaCl-compatible XSalsa20-Poly1305 and
+  aes-gcm for AES-256-GCM; inspect their byte layouts before choosing detached versus attached tags.
+  SHA-256 of the UTF-8 signing key is the stored-value key. Legacy values contain a 24-byte nonce,
+  MAC and ciphertext inside URL-safe base64; v2:gcm: contains a 12-byte nonce followed by ciphertext
+  and the 16-byte tag. Reads detect the format independently of the current write setting.
+  Resolve LITELLM_SALT_KEY before general_settings.master_key in betterlite-config and load
+  general_settings.encryption_algorithm, default xsalsa20-poly1305; only case-insensitive
+  aes-256-gcm selects AES, including when a different string was supplied. Explicit nonempty
+  new_encryption_key overrides that key. Keep the helper's nonstring pass-through typed, its
+  debug/error and return_original_value fallbacks, and empty legacy bytes versus
+  decrypt_if_encrypted_with's refusal to classify an empty decoded value as ciphertext.
+  Bearer tokens always use AES and bind the caller's prefix as AAD, with unpadded base64url and
+  strict decoding. AppCrypto instead receives an exact 32-byte key and returns separate standard
+  base64 nonce/ciphertext/tag fields; its SQS caller does not use the stored-value key derivation.
+  Preserve empty secret maps as the literal JSON object string {}, quoted encrypted map strings,
+  old plaintext maps and SecretMapDecodeError on invalid field types. Decode through
+  decode_stored_secret(&[u8]) and decode_secret_map(&[u8]); fuzz both in one stored_secret target
+  with a tagged input and a bounded byte slice. Inject entropy so Python/Rust cross-decryption
+  fixtures can use known nonces without weakening production generation. HelperCall::stored_cipher
+  dispatches to production Rust and the actual pinned helpers, including AppCrypto, through B171.
+  Keep callback-secret handling beside the ciphers in betterlite-secrets::callback, below
+  callback registration and migration. Implement encrypt_callback_vars, decrypt_callback_vars,
+  _transform_callback_vars, is_sensitive_callback_key, _encrypt_if_plaintext and
+  _decrypt_or_passthrough: copy metadata, visit logging[*].callback_vars and
+  callback_settings.callback_vars, and encrypt only nonempty sensitive strings. Sensitivity
+  combines B244's detector, gcs_path_service_account and caller-supplied exact extra keys.
+  A litellm_enc:: marker blocks re-encryption even after a salt change; failed encryption
+  keeps plaintext, while failed decryption keeps the complete marked value. Only marked
+  strings are decrypted. Ordinary registration utilities remain B189's responsibility.
+  Put spend_tracking_utils._is_master_key in betterlite-secrets::master_key::matches_raw:
+  absent operands return false, compare raw strings in constant time, and reject non-ASCII
+  operands as the source does. A digest is never accepted instead of a raw master key.
+  Extend stored_cipher helper operations with callback transforms and raw comparison,
+  testing fresh encryption through cross-decryption rather than random-byte equality.
+  Total ownership is 275 nonblank source lines including 56 callback lines and eight
+  comparison lines; reserve 330 implementation/config, 250 tests and 220 adapters/fuzz/
+  manifests within 800 changed lines.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - deny.toml
+    - crates/betterlite-secrets/**
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/stored_cipher.rs
+    - crates/betterlite-db/src/stored_cipher/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/encryption.rs
+    - crates/betterlite-config/src/encryption/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/encryption-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/stored_cipher.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/stored_cipher.py
+    - tools/oracle/cases/helpers/stored-cipher/**
+    - tools/oracle/fuzz/corpus/helper_case/stored-cipher-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L15-L289
+    why: Stored-value and bearer formats, algorithm selection, failed-decryption behavior and secret-map compatibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/app_crypto.py#L9-L33
+    why: The distinct JSON envelope used by the SQS integration.
+  - url: https://docs.rs/crypto_secretbox/latest/crypto_secretbox/
+    why: RustCrypto's legacy NaCl primitive avoids implementing a cipher in gateway code.
+  - url: https://docs.rs/aes-gcm/latest/aes_gcm/
+    why: Authenticated encryption with associated data for versioned values and bearer tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L717-L793
+    why: Marker-aware metadata transforms shared by migration and callback configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L89-L96
+    why: Constant-time raw master-key comparison used outside spend tracking.
+dod:
+  - text: Callback metadata keeps its shape and marked-value failure behavior, and raw master comparison never substitutes a digest.
+    proof: [callback-cipher-tests, master-key-tests, oracle, helper-python, cipher-helper-corpus]
+  - text: Cross-language vectors decrypt in both directions, and corruption, wrong keys and AAD changes cannot reveal plaintext.
+    proof: [cipher-tests, oracle, helper-python]
+  - text: The config loader selects the pinned key/algorithm precedence and the database adapter uses that implementation.
+    proof: [encryption-config-tests, cipher-adapter-tests]
+  - text: Stored-secret, secret-map, config and helper input seeds run through their actual decoders.
+    proof: [cipher-corpus, encryption-config-corpus, cipher-helper-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: callback-cipher-tests
+      why: Selective metadata encryption or failure preservation is missing despite working scalar ciphers.
+      run: cargo nextest run --locked -p betterlite-secrets --no-tests=fail -E 'test(/^callback::/)'
+    - id: master-key-tests
+      why: Raw equality, absent operands or ASCII rejection has no independent comparison test.
+      run: cargo nextest run --locked -p betterlite-secrets --no-tests=fail -E 'test(/^master_key::/)'
+    - id: cipher-tests
+      why: Cryptographic interoperability or a typed helper fallback is missing.
+      run: cargo nextest run --locked -p betterlite-secrets --no-tests=fail -E 'test(/^stored_cipher::/) - test(replays_the_stored_secret_corpus)'
+    - id: encryption-config-tests
+      why: Encryption settings were named without being accepted by the production config loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^encryption::tests::loads_/)'
+    - id: cipher-adapter-tests
+      why: StoredCipher still has only a test implementation.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^stored_cipher::tests::/)'
+    - id: helper-python
+      why: The cipher adapter is absent or fails Python type/lint checks.
+      run: test -f tools/oracle/helpers/stored_cipher.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: cipher-corpus
+      why: Malformed secret encodings are not replayed by the production decoder.
+      run: test -f crates/betterlite-secrets/fuzz/fuzz_targets/stored_secret.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-secrets/fuzz/corpus/stored_secret)" && cargo nextest run --locked -p betterlite-secrets --no-tests=fail -E 'test(replays_the_stored_secret_corpus)'
+    - id: encryption-config-corpus
+      why: The config extension lacks a new replayed encryption seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/encryption-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: cipher-helper-corpus
+      why: The stored_cipher call tag is missing from the shared helper decoder corpus.
+      run: grep -rlq 'stored_cipher:' tools/oracle/fuzz/corpus/helper_case/stored-cipher-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/stored-cipher/legacy-and-v2-cross-decryption.yaml
+  - tools/oracle/cases/helpers/stored-cipher/algorithm-fallback.yaml
+  - tools/oracle/cases/helpers/stored-cipher/bearer-prefix-and-padding.yaml
+  - tools/oracle/cases/helpers/stored-cipher/empty-and-corrupt-values.yaml
+  - tools/oracle/cases/helpers/stored-cipher/secret-map-shapes.yaml
+  - tools/oracle/cases/helpers/stored-cipher/app-envelope-aad.yaml
+  - tools/oracle/cases/helpers/stored-cipher/raw-master-digest-and-unicode.yaml
+  - tools/oracle/cases/helpers/stored-cipher/callback-shapes-sensitivity-and-old-key-marker.yaml
+deviations: []
+out_of_scope:
+  - Credential list resolution and HTTP mutations belong to B1601; this library has no database or server globals.
+  - Migration scanners and walkers in credential_migration.py are B1602 and B061.
+  - callback_utils.py registration/configuration stays B189, guardrail metadata B106 and metadata sanitization B188; only the six secret transforms move into this library.
+  - spend_tracking_utils.py keeps sanitizers in B1713, body/classifier policy in B1714, identity metadata in B1715, payload construction in B1716, team queries in B1726 and customer-team queries in B1727.
+pitfalls:
+  - AppCrypto takes a raw 32-byte key, whereas encrypt_value_helper hashes an arbitrary string with SHA-256.
+  - decrypt_value_helper's key argument identifies a field for diagnostics and is never the signing key.
+  - The legacy empty-byte result is an empty string even though decrypt_if_encrypted_with must return None for it.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

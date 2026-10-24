@@ -1,0 +1,81 @@
+id: B1666
+title: Select whole-request price tiers and coerce their rates
+description: >-
+  Implement tiered_pricing in betterlite-models from the complete provider-neutral
+  llm_cost_calc/tiered_pricing.py. This leaf is shared by provider billing and budget
+  reservations, so neither caller imports the other. Use B204's exact Decimal rate values
+  and preserve the source's tolerant scalar conversion: null and invalid numeric strings
+  produce zero; valid decimal/scientific strings and numeric values produce the stated rate.
+  A Boolean follows Python numeric conversion. Unsupported nonnumeric shapes return a typed
+  conversion error; never panic or substitute a fallback rate after a conversion failure.
+  Select no tier when the input list is empty or input_tokens<=0. Otherwise stable-sort by
+  the first range endpoint, using zero for a missing range, then retain only ranges of length
+  two. Preserve errors from a malformed range that fails during sorting, including an empty
+  range, rather than filtering it before the sort. Compare lower<input_tokens<=upper and
+  take the first matching sorted tier. If none matches, choose the last retained tier even
+  when the request lies in a gap or below all lower bounds; the code's fallback is broader
+  than its above-highest-tier docstring. If no valid-length ranges remain, return None.
+  Return a borrowed selected tier, with all its price fields intact, instead of accumulating
+  graduated charges. tier_rate chooses a non-null primary field before the fallback: explicit
+  zero and an invalid string that converts to zero both suppress fallback. A null/missing
+  primary uses the fallback key, or zero when that key is absent. Cost field identities are
+  B204's typed enums, not unchecked strings interpolated into another API.
+  Add the pure pricing_tier helper operation calling the three pinned functions directly.
+  Cover stable overlap selection, endpoint equality, empty and malformed ranges, gap fallback,
+  scientific notation, invalid strings and primary-zero behavior. Use exactly representable
+  rate fixtures for ordinary parity and separate native Decimal precision/overflow tests.
+  Inputs are already parsed catalog/custom-price records, so no new byte parser is introduced;
+  replay B171's helper_case corpus with the added operation seeds. The 58 source lines budget
+  105 implementation, 155 tests, 100 helper adapters and 55 fixture/export lines, cap 450.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/tiered_pricing.rs
+    - crates/betterlite-models/src/tiered_pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/pricing_tier.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/pricing_tier.py
+    - tools/oracle/cases/helpers/pricing-tier/**
+    - tools/oracle/fuzz/corpus/helper_case/pricing-tier-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py#L1-L71
+    why: Complete scalar coercion, stable tier selection and primary-versus-fallback rate behavior.
+dod:
+  - text: Whole-request tier selection retains exclusive lower/inclusive upper bounds, stable ties and the unconditional last-tier fallback.
+    proof: [pricing-tier-tests, oracle, pricing-tier-python, pricing-tier-corpus]
+  - text: Rate coercion distinguishes explicit zero, invalid strings, null fallback and finite exact-money failures.
+    proof: [pricing-tier-tests, oracle, pricing-tier-python, pricing-tier-corpus]
+checks:
+  optional: []
+  commands:
+    - id: pricing-tier-tests
+      why: Tier boundaries or fallback rates change reserved and billed costs.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^tiered_pricing::/)'
+    - id: pricing-tier-python
+      why: Tier selection has no checked adapter to the independent pinned functions.
+      run: test -f tools/oracle/helpers/pricing_tier.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: pricing-tier-corpus
+      why: The pricing_tier operation is missing from helper decoder replay.
+      run: grep -rlq 'pricing_tier:' tools/oracle/fuzz/corpus/helper_case/pricing-tier-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/pricing-tier/exclusive-lower-inclusive-upper.yaml
+  - tools/oracle/cases/helpers/pricing-tier/gaps-and-below-all-ranges-use-last.yaml
+  - tools/oracle/cases/helpers/pricing-tier/stable-overlapping-and-equal-start-tiers.yaml
+  - tools/oracle/cases/helpers/pricing-tier/sort-errors-before-length-filter.yaml
+  - tools/oracle/cases/helpers/pricing-tier/null-fallback-versus-zero-and-invalid-string.yaml
+  - tools/oracle/cases/helpers/pricing-tier/scientific-string-and-boolean-rate.yaml
+deviations:
+  - what: Tier rates use exact Decimal arithmetic and nonfinite or unrepresentable numeric values return a typed pricing error instead of propagating a float infinity/NaN.
+    why: Money must stay finite and checked from input conversion onward.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py#L11-L25
+out_of_scope:
+  - B068's provider/calculator parts multiply selected rates by usage; budget reservation consumers apply their own request estimates.
+pitfalls:
+  - A gap between tiers selects the last valid tier, not the nearest preceding tier.
+  - Filtering malformed ranges before sorting would suppress the source's empty-range error.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

@@ -1,222 +1,154 @@
 id: B979
-title: Messages native stream
+title: Relay native Messages with bounded backpressure and detached billing
 description: >-
-  Relay native Messages SSE with the source bounded queue/drain behavior and B012 logging. Model upstream pumping,
-  cancellation, terminal failure and final billing as owned tasks; preserve native pings and source queue/timeout
-  defaults, and expose the iterator seam B312 wraps later. Resolve ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE=1024
-  and ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS=100 in config; zero detached drains disables draining, and source
-  integer parse failures remain configuration errors.
+  Own messages/streaming_iterator.py task sets L29-L30, drain-slot/queue helpers L167-L186 and the complete
+  async_sse_wrapper,_enqueue_for_client,_pump_upstream_to_queue,_handle_pump_upstream_error at
+  L468-L525,L579-L697. B2436 owns logging,formatting,constructor and teardown callbacks; B978 classifies raw
+  terminal chunks and closes streams. B102 owns schedule_stream_failure_logging and has no task file: inject
+  that explicit seam with request body,ANTHROPIC endpoint,original exception and partial raw bytes. The owner
+  remains a dependency, and its missing specification is an architect note, not an invented billing subsystem.
 
+  Resolve ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE (default1024) and
+  ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS (default100) through B002. The queue counts chunks, not bytes;
+  zero or negative queue sizes are rejected at startup as the documented bounded-input deviation. Zero or
+  negative drain limits disable detached draining, matching the source comparison. Parse integer text with
+  Python-compatible whitespace,plus and underscores; invalid text fails configuration. Config loader tests
+  must prove both keys load and influence execution; reuse B002's decoder/seeds.
 
-  Implement crates/betterlite-core/src/api/messages_native_stream.rs. Use MessagesNativeStreamInput and MessagesNativeStreamResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions slow_client_backpressure, disconnect_drain_limit, terminal_logging_once,
-  upstream_incomplete, native_ping_forwarded under api::messages_native_stream::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE
-  defaults to '1024'; env.ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS defaults to '100'. No environment reads
-  occur outside betterlite-config. Test api::messages_native_stream::tests::loads_settings uses the production Config
-  loader and an injected environment map, with a named rstest case for every key above, explicit override, unset/default
-  and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report;
-  a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
-  than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesNativeStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_native_stream: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: _try_claim_detached_drain_slot
-  (L167-L181); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: _exception_left_unconsumed (L184-L186);
-  litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator.__init__
-  (L388-L396); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._handle_streaming_logging
-  (L398-L429); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator.get_async_streaming_response_iterator
-  (L431-L451); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._convert_chunk_to_sse_format
-  (L453-L466); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator.async_sse_wrapper
-  (L468-L525); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._dispatch_pending_deferred_logging
-  (L527-L542); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._bill_collected_chunks
-  (L544-L560); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._abort_upstream
-  (L563-L576); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._enqueue_for_client
-  (L579-L608); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._pump_upstream_to_queue
-  (L610-L667); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._handle_pump_upstream_error
-  (L669-L697); litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: BaseAnthropicMessagesStreamingIterator._fire_detached_failure_hook
-  (L699-L710). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 234 owned nonblank/non-comment/non-docstring Python lines (303 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 254 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds and
-  30 wiring; 540 total within the 540-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B003 (HTTP server, health routes and
-  master key auth), B012 (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and URL
-  path encoding), B978 (Messages sse events), B1087 (Api boundaries). These are callable/type/config owners, not
-  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Keep one process-wide set of live pumps and another of detached drains, releasing entries on task completion.
+  Apply B1087's1MiB read bound plus a16MiB/65536-chunk checked aggregate bound to retained billing bytes. On an
+  aggregate overflow close upstream, preserve bounded partial failure logging and surface the deviation below;
+  never grow collected_chunks indefinitely. B009 supplies the upstream deadline; no new timeout env var exists.
+  Add only SdkHttpCall::MessagesNativeStream through B2401, using real HTTP streams, explicit provider/client
+  rendezvous barriers and one shared process for concurrent-drain cases. Compare output and invariants, not
+  scheduler timestamps or two runtimes' incidental interleaving. Own 188 nonblank/non-comment physical
+  lines including the env constants after B2436; budget 240 implementation,170 tests,180 fixtures,100 adapters,70 config and30 wiring,
+  790 total. Tests use api::messages_native_stream in core and config. No new byte parser is introduced.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_native_stream.rs
   - crates/betterlite-core/src/api/messages_native_stream/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/messages_native_stream.rs
   - crates/betterlite-config/src/api/messages_native_stream/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_native_stream.rs
-  - tools/oracle/src/helpers/messages_native_stream/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_native_stream.py
-  - tools/oracle/helpers/messages_native_stream/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_native_stream-*
-  - tools/oracle/cases/helpers/messages-native-stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_native_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_native_stream.py
+  - tools/oracle/cases/sdk-http/messages-native-stream/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-stream-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L623-L625
-  why: Setting env.ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L630-L632
-  why: Setting env.ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L167-L181
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L184-L186
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L388-L710
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L29-L30
+  why: Pumps and detached drains are rooted in process-wide sets shared across streams.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L167-L186
+  why: Slot claiming and identity-based exception consumption, including draining all remaining queue items.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L468-L525
+  why: Client relay creates a rooted pump and signals detach without cancelling the pump.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L579-L697
+  why: Complete enqueue race, pump loop and connected-versus-detached failure arbitration.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L618-L632
-  why: Shared dependency/call-site context; ownership is only the callable list above.
+  why: Literal env names/defaults and zero-drain semantics; queue zero is unbounded in asyncio and needs a deviation.
 dod:
-- text: 'slow client backpressure: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-slow-client-backpressure
-  - oracle
-- text: 'disconnect drain limit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-disconnect-drain-limit
-  - oracle
-- text: 'terminal logging once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-terminal-logging-once
-  - oracle
-- text: 'upstream incomplete: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-upstream-incomplete
-  - oracle
-- text: 'native ping forwarded: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-ping-forwarded
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    loads_relay_settings loads unset as1024/100, explicit " 2 "/"+1" as2/1 and "1_000" as1000. Noninteger
+    "bad" fails startup. Drain0/-1 allows no detached drains; queue0/-1 fails with diagnostic
+    "ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE must be greater than 0" and no HTTP listener. Native deviation
+    tests contrast LiteLLM's unbounded queue0 behavior without running an unbounded load test.
+  proof: [behavior-tests, config-tests, config-corpus]
+- text: >-
+    connected_backpressure uses queue2 and pauses client consumption at a rendezvous. At most two encoded chunks
+    are queued; a third enqueue waits while the pump stops further upstream pulls. Resuming drains them in order.
+    Disconnect while enqueue is blocked resolves without waiting for space; already-detached enqueue returns
+    false immediately. If put wins the race, it returns true even when detach is also ready. Pending competing
+    waiters are cancelled. No assertions depend on OS socket-buffer size or wall-clock sleeps.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    global_detached_drain_cap starts two real streams in one process with cap1. Detach A and hold its provider
+    open so it occupies the slot; detach B and deliver its next chunk. B bills collected partial bytes once,
+    closes upstream and warns "async_sse_wrapper: detached-drain cap (1) reached; billing <n> partial chunks and aborting the upstream stream to stop provider billing".
+    A drains without enqueueing client bytes, bills terminal usage and releases its slot; a later stream can claim
+    it. Cap0 takes the partial-bill/abort path for every disconnect. Claim happens only after the next chunk is
+    read and collected; a stream ending immediately after disconnect bills without requiring a slot.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    normal_terminal_and_incomplete streams forward ping/raw bytes unchanged and encode dicts through B2436,
+    including type-absent event:message. Stamp completion_start_time on the first upstream chunk, including a
+    ping, once. message_stop or a dict error body suppresses synthetic error. EOF without either emits B978's
+    exact incomplete api_error event before end sentinel; this synthetic event is not added to collected billing
+    bytes. Bill/park logging before enqueueing the sentinel; only consuming the sentinel marks reached_end=true.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    teardown_dispatches_parked_logging lets the pump park normal logging while the client still has queued bytes,
+    then disconnects before consuming sentinel. Relay finally signals detach and dispatches the parked callback
+    via B2436 exactly once. If enqueueing sentinel instead loses to detach, the pump performs that dispatch.
+    Normal sentinel consumption does not dispatch it here; the proxy owns normal deferred completion. A detached
+    completed pump bills with stream_teardown=true and never synthesizes an incomplete event for the departed client.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    upstream_exception_arbitration makes a provider raise status429/message=busy after two chunks. B102 receives
+    the original exception and both raw chunks for failure logging; connected relay rethrows that same exception,
+    not the incomplete-stream api_error. After relay detach, an exception consumed from the queue suppresses the
+    detached failure hook. Already-detached or queued-but-unconsumed exception invokes it once. The queue scan
+    removes all remaining items and matches exception identity, not equal text. Missing detached hook is harmless;
+    its failure warning remains B2436's. No success billing follows this failed pump.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    relay_retained_bytes_are_bounded accepts aggregate16777216 bytes and65536 chunks, rejects the first excess
+    without appending it, closes upstream and records partial failure once. SDK failure is status502,
+    type=bad_gateway,param=stream,code=stream_buffer_too_large,message="Messages stream exceeded its retained-output limit".
+    If the HTTP stream has started, the caller emits event:error with type=api_error and that message, no param/code
+    in the Anthropic envelope and no message_stop. These are native-only deviation cases; ordinary-size HTTP
+    fixtures remain differential equality cases. Live task sets return to their prior sizes after every exit.
+  proof: [behavior-tests]
+- text: HTTP cases and config/SDK seeds are new; slow-client and disconnect behavior is never compared as helper scheduling traces.
+  proof: [new-cases, sdk-corpus, oracle, python-adapter]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::/)
-      - test(/::replays_corpus$/)'
-  - id: case-slow-client-backpressure
-    why: the slow-client-backpressure behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_stream::tests::slow_client_backpressure($|::)/)'
-  - id: case-disconnect-drain-limit
-    why: the disconnect-drain-limit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_stream::tests::disconnect_drain_limit($|::)/)'
-  - id: case-terminal-logging-once
-    why: the terminal-logging-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_stream::tests::terminal_logging_once($|::)/)'
-  - id: case-upstream-incomplete
-    why: the upstream-incomplete behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_stream::tests::upstream_incomplete($|::)/)'
-  - id: case-native-ping-forwarded
-    why: the native-ping-forwarded behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_stream::tests::native_ping_forwarded($|::)/)'
+    why: relay state, resource bounds or process-wide drain behavior is absent
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::tests::loads_settings($|::)/)'
+    why: relay env settings have no loader test that changes runtime limits
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_stream::tests::loads_relay_settings/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_native_stream.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_native_stream-*)"
-      && grep -qE "^[[:space:]]+messages_native_stream:" tools/oracle/fuzz/corpus/helper_case/messages_native_stream-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-native-stream)"
+    why: no new relay settings reach the production config decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: python-adapter
+    why: concurrent HTTP relay comparison has no checked pinned driver
+    run: test -f tools/oracle/sdk_http/messages_native_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: relay scenarios cannot be decoded by sdk_http
+    run: grep -qE '^[[:space:]]+messages_native_stream:' tools/oracle/fuzz/corpus/sdk_http_case/messages-native-stream-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: no new live-relay provider cases were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-native-stream)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-native-stream/slow-client-backpressure.yaml
-- tools/oracle/cases/helpers/messages-native-stream/disconnect-drain-limit.yaml
-- tools/oracle/cases/helpers/messages-native-stream/terminal-logging-once.yaml
-- tools/oracle/cases/helpers/messages-native-stream/upstream-incomplete.yaml
-- tools/oracle/cases/helpers/messages-native-stream/native-ping-forwarded.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/messages-native-stream/connected-backpressure.yaml
+- tools/oracle/cases/sdk-http/messages-native-stream/global-detached-drain-cap.yaml
+- tools/oracle/cases/sdk-http/messages-native-stream/normal-terminal-and-incomplete.yaml
+- tools/oracle/cases/sdk-http/messages-native-stream/teardown-dispatches-parked-logging.yaml
+- tools/oracle/cases/sdk-http/messages-native-stream/upstream-exception-arbitration.yaml
+deviations:
+- what: Queue env values0 or less stop startup with "ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE must be greater than 0"; LiteLLM makes those queues unbounded.
+  why: The bounded-inputs rule forbids an unlimited relay; positive defaults and zero-drain behavior stay compatible.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L503-L505
+- what: Retained encoded billing output over16MiB or65536 chunks fails with502/bad_gateway/stream/stream_buffer_too_large; a started Anthropic stream emits api_error "Messages stream exceeded its retained-output limit" and closes.
+  why: A bounded queue does not bound the separate collected_chunks list; B1087 supplies finite byte/item limits.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L632-L643
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/messages/streaming_iterator.py: B978 owns _is_message_stop_chunk L33-L38,
-  is_anthropic_ping_chunk L41-L67, is_anthropic_content_delta_chunk L70-L82, _decoded_sse_data_line L85-L91, _anthropic_event_payload
-  L94-L107, _anthropic_error_event_payload L110-L111, parse_anthropic_refusal_stop_details L114-L126, _anthropic_error_body
-  L129-L133, _is_provider_error_chunk L136-L137, parse_anthropic_error_event L140-L160, _is_terminal_stream_chunk
-  L163-L164, _sse_event L189-L190, _incomplete_stream_error_sse_event L193-L197, _anthropic_content_block_start_and_deltas
-  L200-L248, anthropic_messages_response_as_sse_events L251-L298, _anthropic_content_block_events L301-L323, SupportsAclose.aclose
-  L332-L332, aclose_if_supported L335-L337, anthropic_messages_stream_hidden_params L343-L348, AnthropicMessagesStreamingResponse.__init__
-  L360-L366, AnthropicMessagesStreamingResponse.has_buffered_provider_output L369-L370, AnthropicMessagesStreamingResponse.__aiter__
-  L372-L373, AnthropicMessagesStreamingResponse.__anext__ L375-L376, AnthropicMessagesStreamingResponse.aclose L378-L379.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2436 owns complete logging/constructor/format/teardown helpers at L388-L466,L527-L576,L699-L710 and B102/B191 delegation.
+- B978 owns L33-L164,L189-L379 raw event parsing/rendering/response view. Its1MiB raw-read bound also applies before relay retention.
+- B102 owns failure billing internals and B191 rooted logging dispatch; B009 owns transport timeout/cancellation and B081 the HTTP error boundary.
 pitfalls:
-- 'streaming_iterator.py:555 emits the diagnostic ''async_sse_wrapper billing failed after %d chunks: %s(%s)'';
-  retain its level and fallback instead of turning it into a hard error.'
-- 'streaming_iterator.py:572 emits the diagnostic ''async_sse_wrapper failed to abort upstream stream: %s(%s)'';
-  retain its level and fallback instead of turning it into a hard error.'
+- Queue capacity counts chunks; collected billing bytes need a separate aggregate bound even while the client keeps up.
+- The detached cap is shared across all live streams, not reset for each request or provider.
+- Logging must be parked before the end sentinel becomes observable, or disconnect can lose the spend callback.
 review_level: security
 budget:
-  max_changed_lines: 540
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

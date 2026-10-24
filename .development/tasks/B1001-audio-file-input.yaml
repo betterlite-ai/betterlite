@@ -1,192 +1,125 @@
 id: B1001
-title: Audio file input
+title: Audio input bytes, identity and duration
 description: >-
-  Normalize supplied audio bytes, filename/MIME and health fixture data, produce SHA-256 content hashes and duration
-  facts, and normalize language codes. Reuse existing media metadata helpers; trusted SDK local Path handles may
-  read files but HTTP form strings must never become paths or URLs.
+  Implement ProcessedAudioFile, process_audio_file, language normalization, get_audio_file_name,
+  get_audio_file_content_hash, health-check audio access and calculate_request_duration. Put provider-consumable
+  records/helpers in betterlite-openai::api::audio_file_input so provider leaves never import core. B1128 owns
+  filename extension/MIME tables. Strings are metadata, not paths; SDK PathLike opening is B159's responsibility
+  through an injected authorized reader. The route cannot create that capability. Raw bytes/bytearray default
+  to audio.wav; tuple filename falls back to audio.wav, and its third MIME item is ignored. Process reads from
+  the current reader position then seeks to zero, whereas hashing and duration seek to zero then restore the
+  original position after successful reading. Preserve their distinct failure paths.
 
+  SHA-256 uses extracted bytes when available, else a truthy fallback filename, else str(file_obj). Bare strings
+  are hashed as strings without reading disk. The health probe returns the bundled audio_health_check.wav
+  content via an owned handle. Duration is decoded sample count/sample rate, independent of channel count;
+  missing soundfile, unsupported extraction and every read/decode error yield None silently. Keep a typed
+  unavailable-decoder capability for Python parity; native supported codecs must run the actual bounded
+  decode_audio_duration(bytes,limits), fuzzed and corpus-replayed. Compare durations as decimal/rational values.
 
-  Own the opaque get_audio_file_for_health_check WAV fixture under crates/betterlite-core/src/api/audio_file_input/fixtures/;
-  do not put this production health fixture in the oracle harness task.
-
-
-  Implement crates/betterlite-core/src/api/audio_file_input.rs. Use AudioFileInputInput and AudioFileInputResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions raw_bytes_default_wav, filename_mime_fallback, tuple_content_hash,
-  bare_string_rejected, language_bcp47, duration_boundary under api::audio_file_input::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-core::api::audio_file_input::decode_audio_metadata(bytes: &[u8],
-  limits: &ApiLimits), for bounded supplied WAV/MP3/etc bytes passed to the selected audio metadata library. Place
-  its implementation in crates/betterlite-core/src/api/audio_file_input.rs and call it from the actual boundary.
-  The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/audio_file_input.rs passes arbitrary bounded bytes
-  to that exact decoder; api::audio_file_input::tests::replays_corpus replays newly committed seeds through the
-  same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::AudioFileInput in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {audio_file_input: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/litellm_core_utils/audio_utils/utils.py: process_audio_file (L36-L129); litellm/litellm_core_utils/audio_utils/utils.py:
-  normalize_transcription_language_to_bcp47 (L148-L157); litellm/litellm_core_utils/audio_utils/utils.py: get_audio_file_name
-  (L160-L175); litellm/litellm_core_utils/audio_utils/utils.py: get_audio_file_content_hash (L178-L244); litellm/litellm_core_utils/audio_utils/utils.py:
-  get_audio_file_for_health_check (L247-L255); litellm/litellm_core_utils/audio_utils/utils.py: calculate_request_duration
-  (L258-L331). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 203 owned nonblank/non-comment/non-docstring Python lines (255 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 223 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 551 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B235 (Media metadata and MIME inference),
-  B1087 (Api boundaries), B1128 (File type and MIME records). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register helper operation audio_file_input with finite read/seek fixtures; authorized local-file fixtures are
+  harness-owned, never paths taken from a request. All seven functions have runtime callers in transcription,
+  caching or health code. Ownership comprises 226 function/type lines plus the 14-line language table, excluding
+  blanks/comments. Budget 230 implementation, 140 tests, 100 cases, 95 adapters, 75 fuzz/replay and 40 wiring,
+  680 total. MIME/speech-byte helpers at 337-403 remain B1003's.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/audio_file_input.rs
-  - crates/betterlite-core/src/api/audio_file_input/**
-  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/audio_file_input.rs
+  - crates/betterlite-openai/src/api/audio_file_input/**
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/audio_duration.rs
+  - crates/betterlite-openai/fuzz/corpus/audio_duration/**
   - Cargo.toml
   - Cargo.lock
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/audio_file_input.rs
-  - crates/betterlite-core/fuzz/corpus/audio_file_input/**
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/audio_file_input.rs
-  - tools/oracle/src/helpers/audio_file_input/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/audio_file_input.py
-  - tools/oracle/helpers/audio_file_input/**
-  - tools/oracle/fuzz/corpus/helper_case/audio_file_input-*
   - tools/oracle/cases/helpers/audio-file-input/**
+  - tools/oracle/fixtures/audio-file-input/**
+  - tools/oracle/fuzz/corpus/helper_case/audio_file_input-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L1-L331
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L20-L331
+  why: Own the audio-file contract, stream positions, hash fallbacks, language table and optional duration calculation.
 dod:
-- text: 'raw bytes default wav: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-raw-bytes-default-wav
-  - oracle
-- text: 'filename mime fallback: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-filename-mime-fallback
-  - oracle
-- text: 'tuple content hash: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tuple-content-hash
-  - oracle
-- text: 'bare string rejected: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-bare-string-rejected
-  - oracle
-- text: 'language bcp47: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-language-bcp47
-  - oracle
-- text: 'duration boundary: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-duration-boundary
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    audio_input_shapes processes bytes/bytearray abc as {filename:audio.wav,content:abc,content_type:audio/wav}.
+    Tuple (voice.MP3,abc,audio/custom) uses audio/mpeg, ignoring its third item; ("",abc) uses audio.wav/audio/wav.
+    Unknown/no extension falls back to audio/wav. A stream named voice.wav at offset 1 returns bc and is reset
+    to 0. Tuple-held streams follow the same rule. Authorized PathLike fixtures read the file and use its final
+    slash-separated component as filename. Empty bytes are valid content, not extraction failure.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    audio_input_rejections passes bare "voice.wav": ValueError with source message "process_audio_file does not
+    accept bare str inputs. Pass bytes, an open file handle, a (filename, content) tuple, or a pathlib.Path."
+    A tuple with string contents raises the corresponding "process_audio_file does not accept bare str tuple
+    contents. Pass bytes, an open file handle, or a pathlib.Path." A one-element tuple raises "Tuple must have
+    at least 2 elements: (filename, content)"; integer content and integer input raise "Unsupported content type
+    in tuple: <class 'int'>" and "Unsupported audio_file type: <class 'int'>". A reader returning None raises
+    "Could not extract file content from audio_file". Read/open/seek failures propagate; none are warnings.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    audio_hash_and_position gives bytes abc, tuple (different,abc) and a seekable abc stream at offset 2:
+    all hash to ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad. The stream returns to 2.
+    A bare string "abc" yields that same UTF-8 hash without opening a file. Failed read hashes the reader's
+    name; failed PathLike open hashes its path; a missing/empty tuple name falls back to str(tuple). A tuple
+    string content overrides its filename as the fallback. Record seek/read failures and do not invent restoration
+    after a failed read. get_audio_file_name prefers .name, then str, then repr; its result need not be a basename.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    transcription_language_codes maps en/es/de/fr/it/pt/ja/ko/zh/ru/hi/ar to en-US/es-ES/de-DE/fr-FR/it-IT/pt-BR/
+    ja-JP/ko-KR/zh-CN/ru-RU/hi-IN/ar-SA. Uppercase EN also becomes en-US. Already hyphenated en-gb remains
+    en-gb; unknown zz and whitespace-padded " en " remain unchanged. Do not trim or normalize qualified tags.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    audio_duration_and_health supplies 16000-frame,16000-Hz mono and stereo WAVs: duration=1 for either.
+    Bytes, raw bytearray, authorized PathLike and a seekable stream work; stream offsets are restored. Tuple
+    contents accept bytes or a reader but not bytearray or PathLike, returning None for the latter two. Bare
+    strings, malformed bytes, absent decoder, short tuple and reader/decode exceptions return None without
+    warnings. A zero-frame valid file gives 0. Health access returns the bundled WAV's exact bytes from the
+    resource, with an owned handle closed by the caller; missing resource propagates its file-open error.
+  proof: [behavior-tests, oracle, helper-python, parser-corpus]
+- text: The helper tag and audio decoder have new seeds, and every duration corpus input enters decode_audio_duration.
+  proof: [helper-corpus, parser-corpus, new-cases, oracle, helper-python]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::/) - test(/::replays_corpus$/)'
-  - id: case-raw-bytes-default-wav
-    why: the raw-bytes-default-wav behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::raw_bytes_default_wav($|::)/)'
-  - id: case-filename-mime-fallback
-    why: the filename-mime-fallback behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::filename_mime_fallback($|::)/)'
-  - id: case-tuple-content-hash
-    why: the tuple-content-hash behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::tuple_content_hash($|::)/)'
-  - id: case-bare-string-rejected
-    why: the bare-string-rejected behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::bare_string_rejected($|::)/)'
-  - id: case-language-bcp47
-    why: the language-bcp47 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::language_bcp47($|::)/)'
-  - id: case-duration-boundary
-    why: the duration-boundary behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_file_input::tests::duration_boundary($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/audio_file_input)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/audio_file_input.rs && grep -qF "decode_audio_metadata"
-      crates/betterlite-core/fuzz/fuzz_targets/audio_file_input.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::audio_file_input::tests::replays_corpus$/)'
+    why: Extraction, hashing and duration deliberately have different reader and failure semantics.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::audio_file_input::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/audio_file_input.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The source helper adapter must exist and use typed reader fixtures.
+    run: test -f tools/oracle/helpers/audio_file_input.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/audio_file_input-*)"
-      && grep -qE "^[[:space:]]+audio_file_input:" tools/oracle/fuzz/corpus/helper_case/audio_file_input-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: Audio helper input must select its own tagged operation.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/audio_file_input-*)" && grep -qE '^[[:space:]]+audio_file_input:' tools/oracle/fuzz/corpus/helper_case/audio_file_input-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: Untrusted audio frames must exercise the production bounded duration decoder.
+    run: test -f crates/betterlite-openai/fuzz/fuzz_targets/audio_duration.rs && grep -qF decode_audio_duration crates/betterlite-openai/fuzz/fuzz_targets/audio_duration.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/audio_duration)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::audio_file_input::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Audio identity and stream-position behavior need newly added fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/audio-file-input)"
 oracle_cases:
-- tools/oracle/cases/helpers/audio-file-input/raw-bytes-default-wav.yaml
-- tools/oracle/cases/helpers/audio-file-input/filename-mime-fallback.yaml
-- tools/oracle/cases/helpers/audio-file-input/tuple-content-hash.yaml
-- tools/oracle/cases/helpers/audio-file-input/bare-string-rejected.yaml
-- tools/oracle/cases/helpers/audio-file-input/language-bcp47.yaml
-- tools/oracle/cases/helpers/audio-file-input/duration-boundary.yaml
+- tools/oracle/cases/helpers/audio-file-input/audio-input-shapes.yaml
+- tools/oracle/cases/helpers/audio-file-input/audio-input-rejections.yaml
+- tools/oracle/cases/helpers/audio-file-input/audio-hash-and-position.yaml
+- tools/oracle/cases/helpers/audio-file-input/transcription-language-codes.yaml
+- tools/oracle/cases/helpers/audio-file-input/audio-duration-and-health.yaml
 deviations: []
 out_of_scope:
-- 'litellm/litellm_core_utils/audio_utils/utils.py: B1003 owns _speech_media_type_for_response_format L337-L344,
-  resolve_speech_media_type L347-L354, _adts_aac_frame_media_type L368-L370, _mpeg_audio_frame_media_type L373-L386,
-  speech_media_type_from_audio_bytes L389-L403.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1003 owns _speech_media_type_for_response_format,resolve_speech_media_type,_adts_aac_frame_media_type,_mpeg_audio_frame_media_type,speech_media_type_from_audio_bytes in the same file.
+- B1128 owns get_file_mime_type_from_extension and MIME tables. B159 owns Python PathLike/file capability creation; this task consumes an authorized reader rather than a request filename.
 pitfalls:
-- Within process_audio_file\'s isinstance(audio_file, (bytes, bytearray)) branch, preserve raise ValueError('process_audio_file
-  does not accept bare str inputs. Pass bytes, an open file handle, a (filename, content) tuple, or a pathlib.Path.')
-  and its nested guards.
-- Within process_audio_file\'s file_content is None branch, preserve raise ValueError('Could not extract file content
-  from audio_file') and its nested guards.
-review_level: standard
+- process_audio_file ignores a tuple's explicit MIME value and uses its filename extension instead.
+- Processing consumes from the current position and resets to zero; hashing and duration read from zero and restore.
+- Duration silently ignores PathLike and bytearray inside tuples even though it accepts either as a top-level input.
+review_level: security
 budget:
-  max_changed_lines: 560
+  max_changed_lines: 700
   max_new_expects: 1

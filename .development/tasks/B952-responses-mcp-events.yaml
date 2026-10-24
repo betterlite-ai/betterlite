@@ -1,51 +1,72 @@
 id: B952
-title: Responses mcp events
+title: Responses MCP event records
 description: >-
-  Produce typed mcp_list_tools and mcp_call lifecycle events with injected IDs and source output indexes. Share
-  these event records across native Responses and bridged chat MCP streams; this unit performs no discovery or remote
-  calls.
+  Implement the five complete pure event helpers at the top of
+  litellm/responses/mcp/mcp_streaming_iterator.py. They consume already decoded ResponsesAPIResponse, MCP tool
+  records, and call-result strings; they do not perform provider, database, filesystem, environment, config, or
+  HTTP work. Share the resulting records between native Responses streaming and the chat bridge; route and provider
+  behavior remains with the callers.
 
 
-  Implement crates/betterlite-core/src/api/responses_mcp_events.rs. Use ResponsesMcpEventsInput and ResponsesMcpEventsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Preserve these helper contracts exactly. _output_items(response) returns tuple(response.output), retaining order
+  and object values. _function_call_id(item) reads type from a dict via item.get or from an object via item.type;
+  anything other than the exact string "function_call" returns None. For that type it reads call_id first and uses
+  id only when call_id is falsy, then returns the chosen value only when it is a string. _set_event_field(event,
+  name, value) calls setattr, including for a new field, and returns None.
 
 
-  Write adjacent tests.rs behavior functions list_tools_start_done, mcp_call_arguments, mcp_call_failed, output_index_offset
-  under api::responses_mcp_events::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  create_mcp_list_tools_events returns three normal-path records in order. Record one is
+  MCPListToolsInProgressEvent with type "response.mcp_list_tools.in_progress", sequence_number 1, output_index 0,
+  and the supplied base_item_id. Record two is MCPListToolsCompletedEvent with type
+  "response.mcp_list_tools.completed", sequence_number 2, output_index 0, and that same item id. Record three is
+  OutputItemDoneEvent with type "response.output_item.done", output_index 0, its default sequence_number 1, and an
+  item with id=base_item_id, type="mcp_list_tools", server_label, and tools. The first mapping's server_label is
+  str(value), or "" when absent or None; later mappings cannot replace it. Each pre-processed tool stays in order
+  and has name default "unknown", description default "", annotations exactly {read_only: false}, and input_schema
+  only when the object has that attribute. user_api_key_auth is accepted but unused. The local server-name
+  extraction considers only string server_url values beginning "litellm_proxy/mcp/" and has no effect on output.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  If list-tools construction raises any Exception, preserve earlier records, log the exact error diagnostic
+  "Error creating MCP list tools events: %s" at error level, print the traceback, append
+  MCPListToolsFailedEvent with type "response.mcp_list_tools.failed", sequence_number 2, output_index 0, and the
+  supplied item id, then append OutputItemDoneEvent with type "response.output_item.done", output_index 0,
+  sequence_number 1, and item {id: base_item_id, type: "mcp_list_tools", server_label: "", tools: []}. Normal
+  success logs the exact debug message "Created %s MCP discovery events" with len(events)=3.
 
 
-  Register HelperCall::ResponsesMcpEvents in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_events: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+  create_mcp_call_events preserves result=None, base_item_id=None, sequence_start=1, and output_index=0 as its
+  defaults. It uses a truthy supplied base_item_id, otherwise an injected ID source produces "mcp_" plus eight
+  hexadecimal characters. tool_call_id is accepted but never appears in an event. It always emits, in order,
+  response.mcp_call.in_progress at sequence_start, response.mcp_call_arguments.delta at sequence_start+1 with the
+  exact arguments string as delta, and response.mcp_call_arguments.done at sequence_start+2 with that exact string
+  as arguments; all carry the chosen item id and output_index. For result not None, it then emits
+  response.mcp_call.completed at sequence_start+3 and response.output_item.done with default sequence_number 1.
+  That item's fields are id=item_id, type="mcp_call", approval_request_id="mcpr_" plus eight hexadecimal
+  characters, arguments, error=null, name=tool_name, output=result, and server_label="litellm". For result exactly
+  None, it emits only response.mcp_call.failed at sequence_start+3 and no output_item.done. Thus result "" is a
+  completion, while the default None is a failure. Inject ID generation through the construction boundary and use
+  deterministic IDs in tests and the oracle; do not use ambient UUID state.
 
 
-  Callable ownership: litellm/responses/mcp/mcp_streaming_iterator.py: _output_items (L38-L40); litellm/responses/mcp/mcp_streaming_iterator.py:
-  _function_call_id (L43-L53); litellm/responses/mcp/mcp_streaming_iterator.py: _set_event_field (L56-L58); litellm/responses/mcp/mcp_streaming_iterator.py:
-  create_mcp_list_tools_events (L61-L177); litellm/responses/mcp/mcp_streaming_iterator.py: create_mcp_call_events
-  (L180-L261). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
+  Implement crates/betterlite-core/src/api/responses_mcp_events.rs with typed input/result records and adjacent
+  tests. Use B198's injected ID/context boundary and B902's Responses event/object shapes. Do not recreate
+  credential resolution and do not add ApiLimits: this slice has no outside-byte decoder or size guard. Register
+  HelperCall::ResponsesMcpEvents in the B171 oracle. Each helper case runs Rust production code and the pinned MIT
+  Python helper independently with deterministic IDs and compares event order, literal fields, defaults, mutations,
+  and diagnostics. This is a pure helper task, so it has no HTTP route case or mock-provider call.
 
 
-  Sizing: 173 owned nonblank/non-comment/non-docstring Python lines (178 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 193 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 425 total within the 430-line cap. The estimate includes tests and adapters, not just production code.
+  Add behavior tests under api::responses_mcp_events::tests named
+  output_items_and_function_call_id, set_event_field, list_tools_success, list_tools_failure, mcp_call_success,
+  mcp_call_failure, and mcp_call_defaults_and_offsets. Use named rstest inputs for dict/object, missing/falsy field,
+  server-label, tool-format, and sequence variations. Keep corpus replay under the separate test name
+  replays_corpus; this task transforms typed values and adds no cargo-fuzz decoder target.
 
 
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B198 (Injected call context and shared
-  settings), B902 (Responses shapes), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  The owned Python lines are 38-261: _output_items L38-L40, _function_call_id L43-L53, _set_event_field L56-L58,
+  create_mcp_list_tools_events L61-L177, and create_mcp_call_events L180-L261. The iterator class beginning at
+  L264 belongs wholly to B953 and B954.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -69,93 +90,111 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L38-L261
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The five complete helpers whose exact inputs, outputs, defaults, fallback, and diagnostics are implemented here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1572
+  why: The literal Responses stream enum values used by all MCP records.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1654-L1659
+  why: OutputItemDoneEvent's default sequence_number and required output_index/item fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1801-L1859
+  why: The MCP list/call record fields and required sequence/output-index values.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L264-L294
+  why: The native caller supplies the discovery id, auth argument, and pre-processed tools without another event path.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
+  why: The gateway caller supplies call names, arguments, result text, item ids, sequence starts, and output indexes.
 dod:
-- text: 'list tools start done: the named production behavior test asserts the result and effects described above.'
+- text: 'For response.output=["first", {type: "function_call", call_id: "", id: "fallback-7"}], _output_items returns the two values in a tuple and _function_call_id returns "fallback-7"; for {type: "message", id: "ignored"}, an object with type "function_call" and call_id "object-8", and a function_call with id 9, it returns None for the message and non-string chosen id and "object-8" for the object.'
   proof:
-  - case-list-tools-start-done
+  - case-output-items-and-function-call-id
   - oracle
-- text: 'mcp call arguments: the named production behavior test asserts the result and effects described above.'
+- text: 'Given an event whose output_index is 1, name "output_index", and value 4, _set_event_field changes output_index to 4 and returns None; given name "custom_marker" and value "kept", it adds that field and serialization retains "kept".'
   proof:
-  - case-mcp-call-arguments
+  - case-set-event-field
   - oracle
-- text: 'mcp call failed: the named production behavior test asserts the result and effects described above.'
+- text: 'With user_api_key_auth null, base_item_id mcp_base01, mappings [{server_url: "litellm_proxy/mcp/weather", server_label: "weather"}, {server_url: "https://host.example/mcp/other", server_label: "ignored"}], and tools [{name: "search", description: "find", input_schema: {type: "object"}}, {}], list-tools returns exactly three ordered records with types response.mcp_list_tools.in_progress, response.mcp_list_tools.completed, and response.output_item.done, sequence numbers 1, 2, and default 1, output_index 0, server_label "weather", and tools [{name: "search", description: "find", annotations: {read_only: false}, input_schema: {type: "object"}}, {name: "unknown", description: "", annotations: {read_only: false}}]; the second URL does not alter the result and the debug count is 3.'
   proof:
-  - case-mcp-call-failed
+  - case-list-tools-success
   - oracle
-- text: 'output index offset: the named production behavior test asserts the result and effects described above.'
+- text: 'With base_item_id mcp_bad01 and a pre-processed tool whose name property raises RuntimeError("boom"), list-tools keeps its first two records, logs Error creating MCP list tools events: boom at error level, prints the traceback, and appends failed sequence 2 plus output_item.done sequence 1 with item {id: "mcp_bad01", type: "mcp_list_tools", server_label: "", tools: []}.'
   proof:
-  - case-output-index-offset
+  - case-list-tools-failure
   - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+- text: 'A successful call with tool_name weather, tool_call_id upstream-call-7, arguments "{\\"city\\":\\"Berlin\\"}", result "{\\"temp\\":7}", base_item_id mcp_call01, sequence_start 4, and output_index 3 produces five ordered records with sequences 4, 5, 6, and 7, exact argument/result strings, no tool_call_id field, server_label "litellm", error null, and deterministic IDs mcp_call01 and mcpr_22222222 when the injected approval-ID source returns 22222222.'
+  proof:
+  - case-mcp-call-success
+  - oracle
+- text: 'A failed call with tool_name weather, tool_call_id upstream-call-7, arguments "{}", result null, base_item_id mcp_call02, sequence_start 9, and output_index 5 produces in_progress/delta/done at sequences 9, 10, and 11, then only response.mcp_call.failed at sequence 12 with item_id mcp_call02 and output_index 5; it never emits response.output_item.done.'
+  proof:
+  - case-mcp-call-failure
+  - oracle
+- text: 'With tool_name "", tool_call_id null, arguments "", omitted result/base_item_id/sequence_start/output_index, and a fresh deterministic ID source returning 11111111 then 22222222, defaults produce failed at sequence 4 with item_id mcp_11111111 and output_index 0; with the same inputs and a fresh source, result "" produces completed plus output_item.done, whose item_id is mcp_11111111, approval_request_id is mcpr_22222222, server_label is "litellm", and output is "".'
+  proof:
+  - case-mcp-call-defaults-and-offsets
+  - oracle
+- text: 'The Rust and Python helper adapters execute independently through B171, replay the externally tagged responses_mcp_events seeds, and compare values plus ordered diagnostics.'
   proof:
   - oracle
   - helper-python
   - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
   - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::/)
-      - test(/::replays_corpus$/)'
-  - id: case-list-tools-start-done
-    why: the list-tools-start-done behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::list_tools_start_done($|::)/)'
-  - id: case-mcp-call-arguments
-    why: the mcp-call-arguments behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::mcp_call_arguments($|::)/)'
-  - id: case-mcp-call-failed
-    why: the mcp-call-failed behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::mcp_call_failed($|::)/)'
-  - id: case-output-index-offset
-    why: the output-index-offset behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::output_index_offset($|::)/)'
+    why: The production event service or a named behavior test is absent; corpus replay alone is insufficient.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::/) - test(/::replays_corpus$/)'
+  - id: case-output-items-and-function-call-id
+    why: Tuple conversion, dict/object lookup, falsy fallback, or non-function drop behavior is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::output_items_and_function_call_id($|::)/)'
+  - id: case-set-event-field
+    why: Generic event mutation or its None return contract is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::set_event_field($|::)/)'
+  - id: case-list-tools-success
+    why: The normal three-event list-tools sequence or a literal formatted field is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::list_tools_success($|::)/)'
+  - id: case-list-tools-failure
+    why: The caught list-tools exception fallback, diagnostic, or empty output item is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::list_tools_failure($|::)/)'
+  - id: case-mcp-call-success
+    why: The five-record successful call sequence, approval id, output fields, or sequence offset is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::mcp_call_success($|::)/)'
+  - id: case-mcp-call-failure
+    why: The None-result failed event or absence of output_item.done is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::mcp_call_failure($|::)/)'
+  - id: case-mcp-call-defaults-and-offsets
+    why: Defaults, empty-result distinction, generated ID format, or output-index default is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_events::tests::mcp_call_defaults_and_offsets($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_mcp_events.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The Python adapter or deterministic-ID setup fails strict lint or typing checks.
+    run: test -f tools/oracle/helpers/responses_mcp_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_events-*)"
-      && grep -qE "^[[:space:]]+responses_mcp_events:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_events-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: The helper parser has no new B952 seed or cannot replay responses_mcp_events.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_events-*)" && grep -qE "^[[:space:]]+responses_mcp_events:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_events-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: No new B952 helper case was added for the event contracts.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-events)"
 oracle_cases:
-- tools/oracle/cases/helpers/responses-mcp-events/list-tools-start-done.yaml
-- tools/oracle/cases/helpers/responses-mcp-events/mcp-call-arguments.yaml
-- tools/oracle/cases/helpers/responses-mcp-events/mcp-call-failed.yaml
-- tools/oracle/cases/helpers/responses-mcp-events/output-index-offset.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/output-items-and-function-call-id.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/set-event-field.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/list-tools-success.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/list-tools-failure.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/mcp-call-success.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/mcp-call-failure.yaml
+- tools/oracle/cases/helpers/responses-mcp-events/mcp-call-defaults-and-offsets.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/mcp/mcp_streaming_iterator.py: B953 owns MCPEnhancedStreamingIterator.__init__ L276-L352, MCPEnhancedStreamingIterator._extract_mcp_headers_from_params
-  L354-L409, MCPEnhancedStreamingIterator._should_auto_execute_tools L411-L417, MCPEnhancedStreamingIterator._make_stream_error_event
-  L419-L431, MCPEnhancedStreamingIterator.__aiter__ L433-L434, MCPEnhancedStreamingIterator._handle_initial_response_phase
-  L517-L577, MCPEnhancedStreamingIterator._is_response_completed L579-L584, MCPEnhancedStreamingIterator._follow_up_pending
-  L586-L588, MCPEnhancedStreamingIterator._round_output_width L590-L592, MCPEnhancedStreamingIterator._absorb_round
-  L594-L606, MCPEnhancedStreamingIterator._compose_round_chunk L608-L653, MCPEnhancedStreamingIterator._process_base_iterator_chunk
-  L655-L685, MCPEnhancedStreamingIterator._create_initial_response_iterator L687-L727.'
-- 'litellm/responses/mcp/mcp_streaming_iterator.py: B954 owns MCPEnhancedStreamingIterator.__anext__ L436-L445,
-  MCPEnhancedStreamingIterator._anext_impl L447-L515, MCPEnhancedStreamingIterator._generate_tool_execution_events
-  L731-L880, MCPEnhancedStreamingIterator._create_follow_up_iterator L882-L951, MCPEnhancedStreamingIterator.__iter__
-  L953-L954, MCPEnhancedStreamingIterator.__next__ L956-L974.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B953 owns MCPEnhancedStreamingIterator.__init__ L276-L352, _extract_mcp_headers_from_params L354-L409, _should_auto_execute_tools L411-L417, _make_stream_error_event L419-L431, __aiter__ L433-L434, _handle_initial_response_phase L517-L577, _is_response_completed L579-L584, _follow_up_pending L586-L588, _round_output_width L590-L592, _absorb_round L594-L606, _compose_round_chunk L608-L653, _process_base_iterator_chunk L655-L685, and _create_initial_response_iterator L687-L727.'
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B954 owns MCPEnhancedStreamingIterator.__anext__ L436-L445, _anext_impl L447-L515, _generate_tool_execution_events L731-L880, _create_follow_up_iterator L882-L951, __iter__ L953-L954, and __next__ L956-L974.'
+- 'litellm/responses/main.py: B955 owns the native/managed MCP dispatch caller; B952 supplies only its already constructed discovery records.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns tool execution and calls create_mcp_call_events; B952 does not select, authorize, execute, or send a provider request.'
+- 'litellm/responses/mcp/request_context.py and litellm/responses/mcp/litellm_proxy_mcp_handler.py: B948, B949, B950, and B951 own selection, discovery, execution, persistence, and follow-up values passed into these pure constructors.'
+- 'The Responses stream type and event model declarations belong to B902/B1113; B952 consumes them and does not add provider-specific transformations or route registration.'
+- 'No env var, config key, query parameter, HTTP error, database write, warning-and-drop branch, or outside-byte decoder exists in the five owned callables at the pinned commit.'
 pitfalls:
-- mcp_streaming_iterator.py:143 emits the diagnostic 'Created %s MCP discovery events'; retain its level and fallback
-  instead of turning it into a hard error.
-- Within _function_call_id\'s item_type != 'function_call' branch, preserve return None and its nested guards.
+- 'create_mcp_list_tools_events computes server names only for string server_url values beginning litellm_proxy/mcp/ and then never reads that list, so filtering or rewriting events from server_url changes LiteLLM behavior.'
+- 'create_mcp_call_events tests result is not None rather than truthiness, so result "" emits completed plus output_item.done while result None emits failed with no output item.'
+- 'tool_call_id is an input to create_mcp_call_events but is never copied into an event or output item; deriving the public item id or approval_request_id from it changes the contract.'
+- 'The successful list-tools path logs Created %s MCP discovery events with three events, while the caught exception path logs Error creating MCP list tools events: %s, prints a traceback, and still returns a failed event plus an empty output item.'
 review_level: standard
 budget:
-  max_changed_lines: 430
+  max_changed_lines: 480
   max_new_expects: 1

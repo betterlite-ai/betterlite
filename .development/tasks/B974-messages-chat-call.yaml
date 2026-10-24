@@ -1,200 +1,131 @@
 id: B974
-title: Messages chat call
+title: Execute Messages through the chat adapter
 description: >-
-  Build final completion arguments and execute Messages-to-chat through B014, preserving target model, metadata
-  and response/tool-name restoration. Expose typed streaming and nonstreaming results; sync SDK facade semantics
-  use the same native operation.
+  Implement api::messages_chat_call for adapters/handler.py _prepare_completion_kwargs and both complete
+  handler methods at L466-L824, plus ANTHROPIC_ONLY_REQUEST_KEYS and the adapter instance. Compose B967 input/
+  output translation, B973 context preparation, B2433 reasoning policy, B962 local-model/logging helpers and
+  B014 completion execution. Sync and async calls share native preparation but preserve their different proxy
+  router fallback behavior. stream defaults false; max_tokens is required here, with no DEFAULT_MAX_TOKENS lookup.
 
-
-  Implement crates/betterlite-core/src/api/messages_chat_call.rs. Use MessagesChatCallInput and MessagesChatCallResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions messages_to_chat_capture, tool_map_response, provider_error_normalization,
-  context_management_response, stream_adapter_result under api::messages_chat_call::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
-  defaults to 4096. No environment reads occur outside betterlite-config. Test api::messages_chat_call::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesChatCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_call: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler._prepare_completion_kwargs
-  (L467-L601); litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler.async_anthropic_messages_handler
-  (L604-L689); litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler.anthropic_messages_handler
-  (L692-L824). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 273 owned nonblank/non-comment/non-docstring Python lines (281 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 293 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 576 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B958 (Messages errors), B967 (Messages chat transform), B973 (Messages
-  chat prepare), B1087 (Api boundaries), B962 (Messages thinking), B002 (Load LiteLLM config.yaml into typed config).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  HelperCall::MessagesCompletionArguments tests only the pure kwargs builder with a typed adapter-result seam
+  for its otherwise unreachable null-result failure. SdkHttpCall::MessagesChatCall uses B2401 for both sync and
+  async executions, including actual streaming HTTP and summary requests. Return normalized decoded Anthropic
+  events while retaining raw frames as artifacts. Do not invoke a FastAPI function. B967/B977 own stream parsing
+  and emission; this task introduces no new byte decoder or config setting. Own 289 nonblank/non-comment physical
+  lines plus the two constant/instance assignments; budget 270 implementation, 175 tests, 180 fixtures,
+  130 adapters and 35 wiring, 790 total. Tests use api::messages_chat_call.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_call.rs
   - crates/betterlite-core/src/api/messages_chat_call/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_chat_call.rs
-  - crates/betterlite-config/src/api/messages_chat_call/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/messages-chat-call-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_chat_call.rs
-  - tools/oracle/src/helpers/messages_chat_call/**
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/messages_completion_arguments.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_chat_call.py
-  - tools/oracle/helpers/messages_chat_call/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_chat_call-*
-  - tools/oracle/cases/helpers/messages-chat-call/**
+  - tools/oracle/helpers/messages_completion_arguments.py
+  - tools/oracle/cases/helpers/messages-completion-arguments/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_chat_call.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_chat_call.py
+  - tools/oracle/cases/sdk-http/messages-chat-call/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-call-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
-  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L467-L824
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L39-L49
+  why: Own the exact output_config/safeguards exclusion set and completion kwargs shape.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L466-L601
+  why: Whole request assembly, non-null versus truthy parameters, extras precedence and reasoning-policy order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L603-L824
+  why: Both handlers retain complete call argument lists, distinct router fallback and all adapter-null errors.
 dod:
-- text: 'messages to chat capture: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-messages-to-chat-capture
-  - oracle
-- text: 'tool map response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-map-response
-  - oracle
-- text: 'provider error normalization: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-provider-error-normalization
-  - oracle
-- text: 'context management response: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-context-management-response
-  - oracle
-- text: 'stream adapter result: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-adapter-result
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    completion_argument_presence always translates model/messages/max_tokens. Empty metadata,stop_sequences,
+    system,thinking,tool_choice,tools,output_format are omitted before translation; temperature=0,top_k=0,top_p=0
+    remain. output_config is forwarded to the translator whenever its extra key exists, including null/{}.
+    Nonstring custom_llm_provider is passed to the translator as null. A null translated request raises
+    ValueError("Failed to translate request to OpenAI format") before completion; no HTTP status/param/code is invented.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    extras_and_logging_precedence excludes exactly output_config,safeguards,anthropic_messages from raw extras.
+    Other non-null extras fill only absent translated keys; translated temperature/max_tokens win conflicts.
+    Explicit non-null prompt_cache_key overrides even with ""; null does not override a derived key. stream=true
+    inserts stream=true,stream_options={include_usage:true}; false/null omits these unless an otherwise allowed
+    raw extra fills a missing key. A real litellm_logging_obj gets call_type=anthropic_messages and the current
+    stream_options (null if absent) before merge; an unrelated object is not mutated. Normalize effort, promote
+    OpenAI thinking, then recover plain-chat effort in that exact order through B2433.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    messages_chat_http sends max_tokens=32,model=openai/gpt-4o-mini,messages=[{role:user,content:Hi}],temperature=0
+    and api_key=sk-test. Both sync and async make one POST /v1/chat/completions with model=gpt-4o-mini, user Hi,
+    max_tokens=32,temperature=0 and Authorization="Bearer sk-test". Mock chat id=chat_a,assistant text=Hello,
+    finish_reason=stop,usage=5/2 yields B967's message response with text Hello,stop_reason=end_turn and usage5/2.
+    Raw output_config,safeguards and anthropic_messages never reach provider JSON; configured schema travels as response_format.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    sync_async_context_routing pops context_management and litellm_router before main completion. Async uses
+    explicit non-null router else the proxy fallback; sync uses only the explicit router and never borrows the
+    proxy's async clients. Sync skips context preparation only when context_management is null and no client
+    compaction block exists; explicit {} still enters preparation. Both pass extracted proxy metadata/principal
+    to B973 and use returned messages/system even when empty. A compact case captures summary then main HTTP;
+    a clear case shows cleared history in main HTTP, for both call modes. _is_async=true selects the async path.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    restored_tools_and_polyfill sends a 65-character tool name and a mock call using B1117's truncated name.
+    Output tool_use restores the original name. A successful summary adds its compaction block before the main
+    answer, with context_management.applied_edits and usage.iterations from the same PolyfillResult. Context-only
+    errors retain their literal status/message from B973 and prevent the main request.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    streamed_chat_result sends stream=true and expects stream_options.include_usage=true in the captured POST.
+    Mock text/finish/usage chunks produce message_start,content_block_start,content_block_delta,content_block_stop,
+    message_delta,message_stop through B967/B977 for sync and async. The stream's model is local_model_name of
+    the original requested model, not a responses/-rewritten target; tool map,polyfill result and actual logging
+    object are forwarded. B967-null output raises ValueError("Failed to transform streaming response") after
+    the provider call; null nonstream output raises ValueError("Failed to transform response to Anthropic format").
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    chat_provider_failure gives one mock 401 with retries disabled and expects B011 AuthenticationError status401,
+    type/param/code null, with its captured message subject only to B011 wording normalization. This handler
+    does not catch or remap it to a proxy envelope. A stream failure remains a B977 error event, not a second POST.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: Argument and HTTP variants are independently exercised by newly added fixtures and shared-decoder seeds.
+  proof: [new-cases, corpus, oracle, python-adapters]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_chat_call::/)
-      - test(/::replays_corpus$/)'
-  - id: case-messages-to-chat-capture
-    why: the messages-to-chat-capture behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::tests::messages_to_chat_capture($|::)/)'
-  - id: case-tool-map-response
-    why: the tool-map-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::tests::tool_map_response($|::)/)'
-  - id: case-provider-error-normalization
-    why: the provider-error-normalization behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::tests::provider_error_normalization($|::)/)'
-  - id: case-context-management-response
-    why: the context-management-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::tests::context_management_response($|::)/)'
-  - id: case-stream-adapter-result
-    why: the stream-adapter-result behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::tests::stream_adapter_result($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_chat_call::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-chat-call-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_chat_call.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_call-*)"
-      && grep -qE "^[[:space:]]+messages_chat_call:" tools/oracle/fuzz/corpus/helper_case/messages_chat_call-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-call)"
+    why: final kwargs or sync/async execution behavior is absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::/)'
+  - id: python-adapters
+    why: the argument or provider-execution adapter is not independently checked
+    run: test -f tools/oracle/helpers/messages_completion_arguments.py && test -f tools/oracle/sdk_http/messages_chat_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: a chat-call operation cannot be selected by the oracle
+    run: grep -qE '^[[:space:]]+messages_completion_arguments:' tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-* && grep -qE '^[[:space:]]+messages_chat_call:' tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-call-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: kwargs and provider traffic have no new comparison fixtures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-completion-arguments)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-chat-call)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-chat-call/messages-to-chat-capture.yaml
-- tools/oracle/cases/helpers/messages-chat-call/tool-map-response.yaml
-- tools/oracle/cases/helpers/messages-chat-call/provider-error-normalization.yaml
-- tools/oracle/cases/helpers/messages-chat-call/context-management-response.yaml
-- tools/oracle/cases/helpers/messages-chat-call/stream-adapter-result.yaml
+- tools/oracle/cases/helpers/messages-completion-arguments/completion-argument-presence.yaml
+- tools/oracle/cases/helpers/messages-completion-arguments/extras-and-logging-precedence.yaml
+- tools/oracle/cases/sdk-http/messages-chat-call/messages-chat-http.yaml
+- tools/oracle/cases/sdk-http/messages-chat-call/sync-async-context-routing.yaml
+- tools/oracle/cases/sdk-http/messages-chat-call/restored-tools-and-polyfill.yaml
+- tools/oracle/cases/sdk-http/messages-chat-call/streamed-chat-result.yaml
+- tools/oracle/cases/sdk-http/messages-chat-call/chat-provider-failure.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/handler.py: B973 owns _messages_have_compaction_block L51-L60, _proxy_router_fallback
-  L63-L68, _extract_proxy_litellm_metadata L71-L89, _prepare_context_managed_request L92-L159, _polyfill_will_run
-  L162-L186, _spec_has_non_compact_edits L189-L212, _context_management_explicitly_dropped L215-L224, _normalize_spec_edits
-  L227-L250, _run_polyfill_if_enabled L253-L312, LiteLLMMessagesToCompletionTransformationHandler._route_openai_thinking_to_responses_api_if_needed
-  L323-L385, LiteLLMMessagesToCompletionTransformationHandler._plain_effort_for_chat_target L388-L428, LiteLLMMessagesToCompletionTransformationHandler._normalize_reasoning_effort
-  L431-L464.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B973 owns adapters/handler.py L51-L312; B2433 owns L322-L464 reasoning policy. Shared type aliases have no extra behavior.
+- B967 owns translation/factory composition, B977 actual streaming, B962 model-name/logging helpers and B014 provider completion orchestration.
+- B081 owns auth, aliases and Messages HTTP error envelopes; this SDK handler never registers a route.
 pitfalls:
-- Within LiteLLMMessagesToCompletionTransformationHandler._prepare_completion_kwargs\'s openai_request is None branch,
-  preserve raise ValueError('Failed to translate request to OpenAI format') and its nested guards.
-- LiteLLMMessagesToCompletionTransformationHandler._prepare_completion_kwargs uses extra_kwargs.get('custom_llm_provider');
-  retain its missing-value behavior and field spelling in the typed projection.
-review_level: standard
+- Sync context management must not attach the proxy router implicitly because its clients belong to another event loop.
+- Explicit prompt_cache_key overrides a translated key even when it is the empty string.
+- Re-merging output_config after translation leaks an Anthropic-only parameter to chat providers.
+review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

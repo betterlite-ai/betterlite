@@ -1,0 +1,86 @@
+id: B1633
+title: Project stored users and team rosters into SCIM resources
+description: >-
+  Implement scim_projections in betterlite-server for all ScimTransformations methods,
+  the repository protocols/_table adapter, database/user/team existence checks,
+  _get_team_members_display, _get_team_member_user_ids_from_team and set_scim_content_type.
+  Use B722 key existence, B723/B724 repositories and B1632 records; missing database yields 500 with the
+  management error detail, and missing resources yield 404 with their requested identifier.
+  User groups are looked up sequentially from user.teams, omitting deleted teams. Names
+  prefer scim_metadata givenName/familyName, then user_alias, then Unknown User or
+  Unknown Family Name; userName and displayName instead prefer user_email and fall back
+  to Unknown Display Name. An address without @ is not emitted in emails, although it
+  still becomes userName. Absent/null scim_active means active=true; other metadata values
+  use Python truthiness. Invalid enterprise, entitlement or role metadata logs a warning
+  and drops only that block; malformed scim_metadata retains its validation failure.
+  Group conversion walks members_with_roles, including records no longer in the user
+  table; collection lookup resolves each roster id to a current user and omits missing
+  users. Member.value uses user_id or Unknown Member Value, display prefers email then id,
+  and type is User. Preserve None team_alias validation rather than silently substituting
+  team_id when the attribute exists. Dates use the stored timestamps' ISO rendering.
+  Factor pure naming, optional-directory parsing and member projections for the scim_projection
+  oracle; PostgreSQL tests cover lookup-dependent output and missing database behavior.
+  The covered 180 transformation lines plus 109 repository/lookup lines fit 300 implementation,
+  220 tests and 120 adapter lines with a 725 ceiling. Records enter through B1632's decoder,
+  so these transformations add no byte parser. The header helper is shared by route owners,
+  with its application/scim+json behavior verified through their booted HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_projections.rs
+    - crates/betterlite-server/src/scim_projections/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_projection.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_projection.py
+    - tools/oracle/cases/helpers/scim-projection/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-projection-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_transformations.py#L1-L215
+    why: Every resource projection, its name fallback and malformed-directory handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L81-L157
+    why: Typed repository access used by provisioning services.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L272-L302
+    why: Missing database and resource checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L952-L963
+    why: Collection member display performs user lookups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1145-L1168
+    why: Canonical roster ids and JSON response content type.
+dod:
+  - text: Name and directory-attribute projections agree with the pure Python methods, including corrupt metadata.
+    proof: [projection-tests, oracle, projection-python]
+  - text: Database-dependent projections preserve deleted-user and deleted-team asymmetry.
+    proof: [projection-tests]
+  - text: The helper envelope accepts the new projection operations under corpus replay.
+    proof: [projection-corpus]
+checks:
+  optional: []
+  commands:
+    - id: projection-tests
+      why: Stored directory values, missing references or SCIM response construction differ.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_projections::/)'
+    - id: projection-python
+      why: The metadata projection adapter is missing or uses an unchecked Python shape.
+      run: test -f tools/oracle/helpers/scim_projection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: projection-corpus
+      why: Pure projection calls were omitted from the shared helper decoder corpus.
+      run: grep -rlq 'scim_projection:' tools/oracle/fuzz/corpus/helper_case/scim-projection-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-projection/uuid-email-is-still-username.yaml
+  - tools/oracle/cases/helpers/scim-projection/broken-directory-block-is-omitted.yaml
+  - tools/oracle/cases/helpers/scim-projection/broken-name-block-is-an-error.yaml
+  - tools/oracle/cases/helpers/scim-projection/missing-member-id-placeholder.yaml
+deviations: []
+out_of_scope:
+  - "scim_v2.py function ranges outside this projection: B1635 L305-L484; B1634 L514-L753 and L790-L851; B1636 L764-L787, L854-L949 and L1097-L1142; B1637 L966-L1094, L2200-L2322 and L2819-L2864."
+  - "Route/function ownership in scim_v2.py: B1638 L164-L232 and L1661-L1879; B1639 L1965-L2197 and L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658 and L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816 and L2867-L2945."
+pitfalls:
+  - A missing team row is skipped for User.groups, but a missing user row is retained by single-group projection and omitted by group-list projection.
+  - Unknown Display Name applies to both userName and displayName even when user_alias is populated.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

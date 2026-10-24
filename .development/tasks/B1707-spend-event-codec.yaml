@@ -1,0 +1,88 @@
+id: B1707
+title: Carry compact versioned spend events across the collector boundary
+description: >-
+  Add betterlite-logging::spend_event for the complete spend_event.py projection and codec.
+  SpendEvent is immutable version 1, rejects unknown top-level fields and preserves the
+  source's required nullable fields. decode_spend_event consumes one JSON line and returns
+  a typed decode error; build_spend_event validates the selected callback kwargs, emits
+  one newline-terminated JSON record and returns its distinct build-error result when
+  callback projection validation fails. Keep response_cost Decimal and usage counts checked.
+  Preserve the distinction between missing standard_logging_object and a present object
+  with no response_cost: the latter suppresses the top-level fallback. Only numeric cost
+  values qualify, with Python booleans treated as numeric at this projection boundary.
+  Parameters retain api_base/provider/call IDs/end-user ID, the two metadata buckets,
+  conditional proxy_server_request and preset_cache_key. Extract reservation from
+  litellm_metadata before metadata, preferring its direct mapping even when empty, then
+  typed user_api_key_auth.budget_reservation or that mapping's field. Remove auth objects
+  and litellm_parent_otel_span from each bucket and copy the chosen reservation into each
+  existing bucket. Do not manufacture a bucket that was absent.
+  Always remove model_parameters from standard logging. Remove messages/response and
+  proxy_server_request unless store_bodies is true. Compact the response to id/model/usage/
+  usage_info/status/background and synthetic function calls from B1706: one assistant
+  choice, null content/id, arguments "{}", finish_reason tool_calls. Drop original choices
+  and body content even when storing bodies; the standard logging payload carries them.
+  Collect request tool names from ordinary then passthrough tools, prefer a present
+  function mapping's name over top-level name, trim and skip empty names, and retain
+  duplicates. Reconstruct minimal function tool declarations on the consumer.
+  complete_streaming_response records key presence even when its value is null, and
+  reconstruction restores that key to the compact response. Preserve combined Usage
+  and realtime tool fields. Batch and Interactions concrete responses remain in-process;
+  typed versus mapping classification must not be guessed from arbitrary JSON keys.
+  Resolve cache presence through the caller's snapshot: no cache means literal Cache OFF,
+  otherwise use only preset_cache_key, never hash a request body again.
+  Register spend_event_projection pure cases over explicit typed callback inputs and
+  cache-presence context, calling the source builder/decoder without proxy globals.
+  Fuzz the production decode_spend_event in betterlite-logging and replay new seeds for
+  unknown versions, malformed dates, omitted required nullable fields and trailing data.
+  The source has 334 nonblank lines; reserve 330 types/projection, 220 tests and 230
+  oracle/fuzz integration, with an 800-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/spend_event.rs
+    - crates/betterlite-logging/src/spend_event/**
+    - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/spend_event.rs,corpus/spend_event/**}
+    - tools/oracle/src/helpers/{mod.rs,spend_event_projection.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_event_projection.py}
+    - tools/oracle/cases/helpers/spend-event/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-event-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event.py#L31-L418
+    why: Event contracts, reservation/body projection, codec and callback reconstruction.
+dod:
+  - text: Event construction/reconstruction preserves billing identity, stream key presence and reservation precedence while excluding the source's dropped bodies and objects.
+    proof: [event-tests, oracle, event-python, event-helper-corpus]
+  - text: The versioned line decoder rejects malformed external events and faithfully restores valid nullable fields and Usage records.
+    proof: [event-tests, event-byte-corpus, oracle, event-python]
+checks:
+  optional: []
+  commands:
+    - id: event-tests
+      why: Event round trips lose a billing field or retain excluded body/auth data.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^spend_event::/) - test(replays_the_spend_event_corpus)'
+    - id: event-python
+      why: The compact-event adapter cannot type-check its pinned builder/decoder calls.
+      run: test -f tools/oracle/helpers/spend_event_projection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: event-helper-corpus
+      why: Compact-event projections have no tagged shared-parser seed.
+      run: grep -rlq 'spend_event_projection:' tools/oracle/fuzz/corpus/helper_case/spend-event-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: event-byte-corpus
+      why: External collector event bytes are not fuzzed and replayed through their production decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/spend_event)" && test -f crates/betterlite-logging/fuzz/fuzz_targets/spend_event.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_spend_event_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-event/reservation-precedence-and-absent-buckets.yaml
+  - tools/oracle/cases/helpers/spend-event/body-policy-and-model-parameters.yaml
+  - tools/oracle/cases/helpers/spend-event/null-stream-key-and-missing-standard-cost.yaml
+  - tools/oracle/cases/helpers/spend-event/multiple-choice-tools-and-passthrough-names.yaml
+  - tools/oracle/cases/helpers/spend-event/cache-off-versus-preset-and-version-errors.yaml
+deviations: []
+out_of_scope:
+  - B069's callback coordinator decides when to offload; the producer owns socket delivery, and B1706 owns normalized response tool names.
+pitfalls:
+  - A present empty standard logging object blocks fallback to kwargs.response_cost.
+  - Request tools retain duplicates while synthetic response tools use the extractor's invocation order.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,209 +1,142 @@
 id: B966
-title: Messages chat output
+title: Chat results and chunk records in Messages format
 description: >-
-  Translate chat content, stop reasons, token/cache/web-search usage and streamed deltas into native Anthropic records.
-  Separate usage-delta conversion from whole-response construction and retain source positive-value fallback ordering.
+  Implement every output/usage/chunk method in adapters/transformation.py L1345-L1766 in
+  betterlite-core::api::messages_chat_output. B1117 supplies signature and compaction projections, B571 filters
+  empty unsigned thinking and normalizes tool ids, B216 parses/repairs tool JSON, B963 extracts refusals, B968
+  supplies PolyfillResult and B068 owns get_web_search_requests_from_usage/get_web_search_requests. Inject that
+  last read-only usage accessor until B068 is implemented; never reconstruct cost calculation in the adapter.
 
+  Content conversion visits every choice, but the final stop reason comes from the first choice. Usage picks
+  the first positive integral candidate, excluding booleans, and subtracts cache read/write counts from prompt
+  tokens with a floor at zero. Reuse parsed decimal numeric values instead of introducing floats. Stream
+  chunk translation is a pure record operation here; B977 owns driving the live stream.
 
-  Implement crates/betterlite-core/src/api/messages_chat_output.rs. Use MessagesChatOutputInput and MessagesChatOutputResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions tool_use_stop_reason, cache_creation_token_prec_7df2, reasoning_signature_output,
-  web_search_count, refusal_content, stream_tool_input_delta under api::messages_chat_output::tests. Each named
-  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
-  replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesChatOutput in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_output: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic
-  (L1345-L1430); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_openai_finish_reason_to_anthropic
-  (L1432-L1441); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._positive_int
-  (L1444-L1451); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._first_positive_usage_value
-  (L1454-L1459); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._first_positive_prompt_tokens_detail_value
-  (L1462-L1474); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._get_cache_read_input_tokens
-  (L1477-L1481); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._get_cache_creation_input_tokens
-  (L1484-L1490); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._get_web_search_request_count
-  (L1493-L1501); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage_delta
-  (L1504-L1526); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage
-  (L1529-L1533); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_openai_response_to_anthropic
-  (L1535-L1616); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic_content_block
-  (L1618-L1676); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic
-  (L1678-L1727); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_streaming_openai_response_to_anthropic
-  (L1729-L1766). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 359 owned nonblank/non-comment/non-docstring Python lines (368 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 379 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 647 total within the 650-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
-  encoding), B958 (Messages errors), B1087 (Api boundaries), B1117 (Messages content primitives), B963 (Messages
-  options). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
-  ownership on the provider and keys/data branches.
+  HelperCall::MessagesChatOutput invokes the pinned methods with actual ModelResponse/StreamingChoices objects.
+  Capture warning/error effects from B216 and use B198's deterministic UUID seam for missing tool ids. Preserve
+  absent versus null fields and compare generated content, usage and terminal deltas. Tool arguments use B216's
+  existing bounded decoder and fuzz corpus; these methods introduce no byte parser. Count 368 nonblank/non-comment
+  lines; budget 305 implementation, 190 tests, 170 fixtures, 90 adapters and 35 wiring, 790 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_output.rs
   - crates/betterlite-core/src/api/messages_chat_output/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_chat_output.rs
-  - tools/oracle/src/helpers/messages_chat_output/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_chat_output.py
-  - tools/oracle/helpers/messages_chat_output/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_output-*
   - tools/oracle/cases/helpers/messages-chat-output/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1345-L1766
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1345-L1616
+  why: Own complete response content, finish-reason, usage precedence and polyfill aggregation methods.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1618-L1766
+  why: Own block selection and delta projection as complete methods; the iterator remains with B977.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L126-L153
+  why: B068's direct callee reads server_tool_use from mapping or attribute shape without calculating a price.
 dod:
-- text: 'tool use stop reason: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-use-stop-reason
-  - oracle
-- text: 'cache creation token precedence: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-cache-creation-token-precedence
-  - oracle
-- text: 'reasoning signature output: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-reasoning-signature-output
-  - oracle
-- text: 'web search count: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-web-search-count
-  - oracle
-- text: 'refusal content: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-refusal-content
-  - oracle
-- text: 'stream tool input delta: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-tool-input-delta
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    ordered_response_content emits per choice compaction blocks, thinking/redacted blocks, text, refusal text,
+    then tool_use. Empty unsigned thinking drops; signed empty thinking remains; null thinking becomes "" and
+    null signature remains null. Redacted null data becomes "". Nonempty thinking_blocks suppress reasoning_content
+    fallback, even if all those blocks later drop; otherwise reasoning_content=why becomes thinking with signature=null.
+    Empty text is emitted without compaction, but suppressed alongside compaction; null text is omitted.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    tool_output_recovery restores a mapped long function name and converts id=functions.Bash:0__thought__sig
+    to functions_Bash_0. Nonstream signature comes only from provider_specific_fields.thought_signature, becoming
+    provider_specific_fields.signature; the id suffix alone does not populate it. Missing id normalizes to tool_use_id.
+    Arguments {"x":1} decode to an object; empty/null becomes {}; truncated {"x":1 repairs with a warning naming
+    the tool and context="Anthropic pass-through adapter". Arguments={"x": nope} cannot be repaired and raise
+    ValueError with no status/type/param/code; the diagnostic starts "Failed to parse tool call arguments",
+    names the tool and context, and ends "Arguments: {\"x\": nope}".
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    finish_and_refusal_precedence maps stop,length,tool_calls,content_filter,refusal,unknown to
+    end_turn,max_tokens,tool_use,refusal,refusal,end_turn. Refusal text forces refusal unless first finish=length.
+    Exactly one compaction content block wins over all stop reasons. Empty choices yield content=[]/end_turn;
+    missing or empty model becomes unknown-model. Preserve response.id, type=message, role=assistant,
+    stop_sequence=null and stop_details=null unless refusal, which adds {type:refusal,category:null,explanation:text-or-null}.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    cache_creation_token_precedence selects cache_read_input_tokens then _cache_read_input_tokens then
+    prompt_tokens_details.cached_tokens; cache creation selects cache_creation_input_tokens then
+    _cache_creation_input_tokens then prompt_tokens_details.cache_creation_tokens then cache_write_tokens.
+    Zero,negative,true,"3",1.5 are skipped; integral 3.0 counts as 3. With prompt_tokens=100,read=20,creation=30,
+    completion_tokens=7, emit input_tokens=50,output_tokens=7 and both cache counters. Counts exceeding prompt
+    tokens floor input_tokens at 0; absent/zero cache fields are omitted, not emitted as zero. Null token totals become 0.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    web_search_and_iterations takes positive server_tool_use.web_search_requests=2 before prompt detail count=9;
+    zero/invalid server count falls back to positive detail count. Missing/nonpositive counts omit server_tool_use.
+    Polyfill iterations=[] still adds a final {type:message,input_tokens:50,output_tokens:7} iteration; null iterations
+    omits the field. Existing summary iterations precede that final record; polyfill compaction is inserted first,
+    and nonempty applied_edits becomes context_management.applied_edits while an empty list is omitted.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    stream_block_selection prioritizes a first tool call with function over text/refusal, then nonempty text/refusal,
+    then typed thinking blocks, then reasoning_content only when thinking_blocks is absent. Tool start has input={},
+    missing name="", and missing id uses the injected UUID. id=t__thought__sig yields id=t and signature=sig.
+    Empty choices return an empty text block; a present empty thinking_blocks attribute suppresses reasoning fallback.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    stream_delta_precedence combines tool arguments within a choice into input_json_delta, choosing that over
+    signatures, then thinking, then text plus refusal. A later choice's tool_calls resets accumulated partial_json;
+    tool calls with no arguments still emit partial_json="". Thinking and signature together produce signature_delta
+    only, leaving splitting to B975. Texts a,b and refusals x,y become text_delta text=abxy. Nonstring thinking
+    or signature fails with a typed validation error corresponding to the pinned assertion, never a Rust panic.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    terminal_chunk_projection uses finish_reason=stop to emit message_delta with stop_reason=end_turn and usage
+    from response.usage first, then _hidden_params.usage, then input_tokens=0/output_tokens=0. Truthy applied_edits
+    is attached only to the terminal record. Nonterminal input with index=4 emits content_block_delta index=4.
+    A direct zero-choice call fails as an internal error matching the source IndexError; B977 handles choiceless
+    usage before calling it, so do not synthesize a terminal delta here.
+  proof: [behavior-tests, oracle, helper-python]
+- text: The result helper and new fixtures compare all projections independently, including generated-id normalization.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::/)
-      - test(/::replays_corpus$/)'
-  - id: case-tool-use-stop-reason
-    why: the tool-use-stop-reason behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::tool_use_stop_reason($|::)/)'
-  - id: case-cache-creation-token-precedence
-    why: the cache-creation-token-precedence behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::cache_creation_token_prec_7df2($|::)/)'
-  - id: case-reasoning-signature-output
-    why: the reasoning-signature-output behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::reasoning_signature_output($|::)/)'
-  - id: case-web-search-count
-    why: the web-search-count behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::web_search_count($|::)/)'
-  - id: case-refusal-content
-    why: the refusal-content behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::refusal_content($|::)/)'
-  - id: case-stream-tool-input-delta
-    why: the stream-tool-input-delta behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::tests::stream_tool_input_delta($|::)/)'
+    why: output content, usage or terminal chunk rules lack tests beside production code
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_output::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_chat_output.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: output comparison cannot run typed pinned response methods
+    run: test -f tools/oracle/helpers/messages_chat_output.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_output-*)"
-      && grep -qE "^[[:space:]]+messages_chat_output:" tools/oracle/fuzz/corpus/helper_case/messages_chat_output-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: result projection has no helper decoder coverage
+    run: grep -qE '^[[:space:]]+messages_chat_output:' tools/oracle/fuzz/corpus/helper_case/messages_chat_output-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new result or chunk cases exist
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-output)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-chat-output/tool-use-stop-reason.yaml
+- tools/oracle/cases/helpers/messages-chat-output/ordered-response-content.yaml
+- tools/oracle/cases/helpers/messages-chat-output/tool-output-recovery.yaml
+- tools/oracle/cases/helpers/messages-chat-output/finish-and-refusal-precedence.yaml
 - tools/oracle/cases/helpers/messages-chat-output/cache-creation-token-precedence.yaml
-- tools/oracle/cases/helpers/messages-chat-output/reasoning-signature-output.yaml
-- tools/oracle/cases/helpers/messages-chat-output/web-search-count.yaml
-- tools/oracle/cases/helpers/messages-chat-output/refusal-content.yaml
-- tools/oracle/cases/helpers/messages-chat-output/stream-tool-input-delta.yaml
+- tools/oracle/cases/helpers/messages-chat-output/web-search-and-iterations.yaml
+- tools/oracle/cases/helpers/messages-chat-output/stream-block-selection.yaml
+- tools/oracle/cases/helpers/messages-chat-output/stream-delta-precedence.yaml
+- tools/oracle/cases/helpers/messages-chat-output/terminal-chunk-projection.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B1117 owns _optional_attr L25-L26, _as_string_mapping
-  L29-L32, _thought_signature L35-L40, _compaction_blocks L43-L54, _is_openai_function_tool L62-L63, is_provider_native_tool_dict
-  L66-L70, truncate_tool_name L73-L91, target_supports_mid_conversation_system L213-L216, _chat_tool_param L219-L225,
-  LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_call L357-L370, LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_use_content
-  L372-L380, LiteLLMAnthropicMessagesAdapter._add_cache_control_if_applicable L382-L412, LiteLLMAnthropicMessagesAdapter._add_prompt_cache_breakpoint_if_present
-  L415-L418, LiteLLMAnthropicMessagesAdapter.translatable_anthropic_params L420-L434, LiteLLMAnthropicMessagesAdapter._is_web_search_tool
-  L436-L454, LiteLLMAnthropicMessagesAdapter.is_anthropic_claude_model L672-L682, LiteLLMAnthropicMessagesAdapter.is_bedrock_arn_model
-  L685-L696, LiteLLMAnthropicMessagesAdapter.target_consumes_cache_control L699-L700, LiteLLMAnthropicMessagesAdapter._translate_anthropic_image_to_openai
-  L1290-L1302, LiteLLMAnthropicMessagesAdapter._tool_result_content L1304-L1317, LiteLLMAnthropicMessagesAdapter._tool_result_part
-  L1319-L1335, LiteLLMAnthropicMessagesAdapter._tool_result_image_part L1337-L1343.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: create_tool_name_mapping L94-L114, LiteLLMAnthropicMessagesAdapter.translate_thinking_for_model
-  L703-L737 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B967 owns AnthropicAdapter.__init__ L229-L230,
-  AnthropicAdapter.translate_completion_input_params L232-L243, AnthropicAdapter.translate_completion_input_params_with_tool_mapping
-  L245-L282, AnthropicAdapter.translate_completion_output_params L284-L304, AnthropicAdapter.translate_completion_output_params_streaming
-  L306-L345, LiteLLMAnthropicMessagesAdapter.translate_anthropic_to_openai L1214-L1288.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B964 owns LiteLLMAnthropicMessagesAdapter.__init__
-  L352-L353, LiteLLMAnthropicMessagesAdapter.translate_anthropic_messages_to_openai L456-L639.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B965 owns LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort
-  L642-L669, LiteLLMAnthropicMessagesAdapter._apply_reasoning_summary_wrapping L740-L761, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tool_choice_to_openai
-  L763-L779, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tools_to_openai L781-L848, LiteLLMAnthropicMessagesAdapter.translate_anthropic_output_format_to_openai
-  L850-L887, LiteLLMAnthropicMessagesAdapter._add_additional_properties_false L890-L921, LiteLLMAnthropicMessagesAdapter._translate_midturn_system_message_to_openai
-  L923-L944, LiteLLMAnthropicMessagesAdapter._add_system_message_to_messages L946-L979, LiteLLMAnthropicMessagesAdapter._supports_prompt_cache_key
-  L982-L990, LiteLLMAnthropicMessagesAdapter._target_declares_reasoning_effort L993-L1015, LiteLLMAnthropicMessagesAdapter._translate_metadata_to_openai
-  L1017-L1037, LiteLLMAnthropicMessagesAdapter._translate_tool_choice_to_openai L1039-L1052, LiteLLMAnthropicMessagesAdapter._translate_stop_sequences_to_openai
-  L1054-L1064, LiteLLMAnthropicMessagesAdapter._translate_tools_to_openai L1066-L1099, LiteLLMAnthropicMessagesAdapter._translate_thinking_to_openai
-  L1101-L1173, LiteLLMAnthropicMessagesAdapter._translate_output_format_to_openai L1175-L1201, LiteLLMAnthropicMessagesAdapter._copy_untranslated_anthropic_params
-  L1203-L1212.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1117 owns primitives L25-L93,L213-L225,L357-L454,L672-L700,L1290-L1343; B964 owns L352-L353,L456-L639 message translation.
+- B965 owns system/metadata/thinking options and B2431 tools/schema in L642-L1212; B967 owns adapter/request composition L229-L345,L1214-L1288.
+- create_tool_name_mapping and translate_thinking_for_model have no caller at the pin; B977 owns network-backed stream iteration.
+- B216 owns argument JSON decoding/repair; B068 owns the two server_tool_use accessor functions in llm_cost_calc/utils.py.
 pitfalls:
-- LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic uses thinking_block.get('type'); retain
-  its missing-value behavior and field spelling in the typed projection.
-- LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic uses thinking_block.get('thinking', '');
-  retain its missing-value behavior and field spelling in the typed projection.
+- A present empty thinking_blocks attribute prevents the reasoning_content fallback in streaming block selection.
+- A second choice with tool calls resets partial_json instead of appending to the prior choice's arguments.
+- Cache counters are selected independently, then both subtracted; selecting only one changes billed input tokens.
 review_level: standard
 budget:
-  max_changed_lines: 650
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

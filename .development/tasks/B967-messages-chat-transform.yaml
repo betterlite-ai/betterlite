@@ -1,192 +1,117 @@
 id: B967
-title: Messages chat transform
+title: Compose Messages and Chat transformations
 description: >-
-  Compose the input/output stages into MessagesChatTransform with its tool-name map retained for response restoration.
-  This unit owns the public transformation entrypoints only; bridge execution and stream state remain separate services.
+  Implement AnthropicAdapter and translate_anthropic_to_openai as the public composition layer in
+  betterlite-core::api::messages_chat_transform. Delegate conversation content to B964, system/metadata/thinking
+  to B965, tools/schema to B2431, result records to B966 and stream iteration to B977. Preserve the tool-name map
+  across the call boundary and pass B968 polyfill applied edits, compaction block and iteration usage to both
+  output paths. The stateless constructor adds no singleton or registry.
 
+  Input composition converts messages, inserts top-level system, translates metadata, tool choice, tools, thinking,
+  stops and output format, then copies untouched parameters last. The public kwargs wrapper pops model and messages
+  before checking either for truthiness. The convenience wrapper discards only the name map, not options.
+  Default is_async=true returns an async AnthropicSSEStream; false returns the synchronous SSE iterator.
 
-  Implement crates/betterlite-core/src/api/messages_chat_transform.rs. Use MessagesChatTransformInput and MessagesChatTransformResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions roundtrip_long_tool_name, messages_request_chat_shape, chat_response_messages_shape,
-  stream_delta_tool_name_restore under api::messages_chat_transform::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesChatTransform in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_transform: <typed input>};
-  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
-  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/transformation.py: AnthropicAdapter.__init__
-  (L229-L230); litellm/llms/anthropic/pass_through/adapters/transformation.py: AnthropicAdapter.translate_completion_input_params
-  (L232-L243); litellm/llms/anthropic/pass_through/adapters/transformation.py: AnthropicAdapter.translate_completion_input_params_with_tool_mapping
-  (L245-L282); litellm/llms/anthropic/pass_through/adapters/transformation.py: AnthropicAdapter.translate_completion_output_params
-  (L284-L304); litellm/llms/anthropic/pass_through/adapters/transformation.py: AnthropicAdapter.translate_completion_output_params_streaming
-  (L306-L345); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_anthropic_to_openai
-  (L1214-L1288). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 113 owned nonblank/non-comment/non-docstring Python lines (158 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 133 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 365 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B964 (Messages chat content), B965
-  (Messages chat options), B966 (Messages chat output), B1087 (Api boundaries). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Keep input/output record cases in HelperCall::MessagesChatTransform. The messages_chat_transform_stream
+  B2401 variant calls B004 against the mock Chat provider, then the production output wrapper, capturing actual
+  HTTP and events. No later B974 execution handler is needed. There is no new byte parser: B004/B005 decode
+  provider data. Count 158 nonblank/non-comment source lines; budget 145 implementation, 140 tests, 130 fixtures,
+  120 dual adapters and 40 wiring, 575 lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_transform.rs
   - crates/betterlite-core/src/api/messages_chat_transform/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_chat_transform.rs
-  - tools/oracle/src/helpers/messages_chat_transform/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_chat_transform.py
-  - tools/oracle/helpers/messages_chat_transform/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_chat_transform_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_chat_transform_stream.py
   - tools/oracle/cases/helpers/messages-chat-transform/**
+  - tools/oracle/cases/sdk-http/messages-chat-transform/**
+  - Cargo.lock
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L229-L345
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own complete public input/output wrappers and the sync/async stream-factory choice.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1214-L1288
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own request composition order and the retained truncated-name map.
 dod:
-- text: 'roundtrip long tool name: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-roundtrip-long-tool-name
-  - oracle
-- text: 'messages request chat shape: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-messages-request-chat-shape
-  - oracle
-- text: 'chat response messages shape: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-chat-response-messages-shape
-  - oracle
-- text: 'stream delta tool name restore: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-stream-delta-tool-name-restore
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    required_request_fields calls the public wrapper with missing model or messages and gets KeyError for that
+    missing key. model="" with messages=[{role:user,content:hi}] raises ValueError "Bad Request: model is required
+    for Anthropic Messages Request"; model=gpt-4o with messages=[] raises the equivalent messages-required error.
+    Both keys have been popped before the falsey-value checks; a missing messages key still consumes model.
+    The helper failure projection has no HTTP status/type/param/code, and generated wording is the only ignored field.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    composed_chat_request sends model=gpt-4o,messages=[{role:user,content:hello}],system=guide,max_tokens=12,
+    metadata={user_id:alice},litellm_metadata={tag:t},stop_sequences=[END],tool_choice={type:any} and no tools.
+    Expect model=gpt-4o,messages=[{role:system,content:guide},{role:user,content:hello}],max_tokens=12,user=alice,
+    metadata={tag:t},stop=[END],tool_choice=required and an empty name map. litellm_metadata disappears from the
+    request record. An explicit stop=[LAST] overwrites the translated stop in the last-copy phase.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    long_tool_name_roundtrip declares a 65-character a name and selects it with tool_choice. Both outgoing names
+    are 55 a characters followed by _635361c4; the returned map restores the full 65-character name in a mock
+    tool-call response. The convenience input wrapper returns the same request without exposing the map.
+    preserve_midturn_system=true on direct request composition reaches B964 unchanged.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    composed_message_response wraps id=chat_a,model=gpt-4o,assistant content=hello,finish=stop,usage=10/2 into
+    id=chat_a,type=message,role=assistant,model=gpt-4o,content=[{type:text,text:hello}],stop_reason=end_turn,
+    stop_sequence=null,stop_details=null,usage={input_tokens:10,output_tokens:2}. A supplied PolyfillResult prepends
+    its compaction block, includes nonempty applied_edits and preserves its summary iterations before the message iteration.
+  proof: [behavior-tests, oracle, adapters]
+- text: >-
+    stream_factory_modes sends a real Chat stream from the mock with text=hello, stop and usage=10/2. Default
+    is_async and explicit false both emit message_start, text block start/delta/stop, message_delta and message_stop
+    with model=gpt-4o and the same usage. The async result exposes chunks/messages/model and supports aclose;
+    the sync result is directly iterable. A long-name tool chunk uses the saved map, and polyfill compaction/
+    applied_edits/iterations reach B977 in both modes. Logging context identity is retained.
+  proof: [behavior-tests, oracle, adapters]
+- text: The helper and HTTP factory drivers have separate newly committed fixtures and a registered pure-record seed.
+  proof: [new-cases, helper-corpus, oracle, adapters]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::/)
-      - test(/::replays_corpus$/)'
-  - id: case-roundtrip-long-tool-name
-    why: the roundtrip-long-tool-name behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::tests::roundtrip_long_tool_name($|::)/)'
-  - id: case-messages-request-chat-shape
-    why: the messages-request-chat-shape behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::tests::messages_request_chat_shape($|::)/)'
-  - id: case-chat-response-messages-shape
-    why: the chat-response-messages-shape behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::tests::chat_response_messages_shape($|::)/)'
-  - id: case-stream-delta-tool-name-restore
-    why: the stream-delta-tool-name-restore behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::tests::stream_delta_tool_name_restore($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_chat_transform.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: composition and stream-mode selection lack behavior tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::/)'
+  - id: adapters
+    why: either record or HTTP stream comparison lacks a strict Python implementation
+    run: test -f tools/oracle/helpers/messages_chat_transform.py && test -f tools/oracle/sdk_http/messages_chat_transform_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-*)"
-      && grep -qE "^[[:space:]]+messages_chat_transform:" tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-transform)"
+    why: the pure composition call has no parser seed
+    run: grep -qE '^[[:space:]]+messages_chat_transform:' tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new record and stream factory parity cases were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-transform)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-chat-transform)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-chat-transform/roundtrip-long-tool-name.yaml
-- tools/oracle/cases/helpers/messages-chat-transform/messages-request-chat-shape.yaml
-- tools/oracle/cases/helpers/messages-chat-transform/chat-response-messages-shape.yaml
-- tools/oracle/cases/helpers/messages-chat-transform/stream-delta-tool-name-restore.yaml
+- tools/oracle/cases/helpers/messages-chat-transform/required-request-fields.yaml
+- tools/oracle/cases/helpers/messages-chat-transform/composed-chat-request.yaml
+- tools/oracle/cases/helpers/messages-chat-transform/long-tool-name-roundtrip.yaml
+- tools/oracle/cases/helpers/messages-chat-transform/composed-message-response.yaml
+- tools/oracle/cases/sdk-http/messages-chat-transform/stream-factory-modes.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B1117 owns _optional_attr L25-L26, _as_string_mapping
-  L29-L32, _thought_signature L35-L40, _compaction_blocks L43-L54, _is_openai_function_tool L62-L63, is_provider_native_tool_dict
-  L66-L70, truncate_tool_name L73-L91, target_supports_mid_conversation_system L213-L216, _chat_tool_param L219-L225,
-  LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_call L357-L370, LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_use_content
-  L372-L380, LiteLLMAnthropicMessagesAdapter._add_cache_control_if_applicable L382-L412, LiteLLMAnthropicMessagesAdapter._add_prompt_cache_breakpoint_if_present
-  L415-L418, LiteLLMAnthropicMessagesAdapter.translatable_anthropic_params L420-L434, LiteLLMAnthropicMessagesAdapter._is_web_search_tool
-  L436-L454, LiteLLMAnthropicMessagesAdapter.is_anthropic_claude_model L672-L682, LiteLLMAnthropicMessagesAdapter.is_bedrock_arn_model
-  L685-L696, LiteLLMAnthropicMessagesAdapter.target_consumes_cache_control L699-L700, LiteLLMAnthropicMessagesAdapter._translate_anthropic_image_to_openai
-  L1290-L1302, LiteLLMAnthropicMessagesAdapter._tool_result_content L1304-L1317, LiteLLMAnthropicMessagesAdapter._tool_result_part
-  L1319-L1335, LiteLLMAnthropicMessagesAdapter._tool_result_image_part L1337-L1343.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: create_tool_name_mapping L94-L114, LiteLLMAnthropicMessagesAdapter.translate_thinking_for_model
-  L703-L737 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B964 owns LiteLLMAnthropicMessagesAdapter.__init__
-  L352-L353, LiteLLMAnthropicMessagesAdapter.translate_anthropic_messages_to_openai L456-L639.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B965 owns LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort
-  L642-L669, LiteLLMAnthropicMessagesAdapter._apply_reasoning_summary_wrapping L740-L761, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tool_choice_to_openai
-  L763-L779, LiteLLMAnthropicMessagesAdapter.translate_anthropic_tools_to_openai L781-L848, LiteLLMAnthropicMessagesAdapter.translate_anthropic_output_format_to_openai
-  L850-L887, LiteLLMAnthropicMessagesAdapter._add_additional_properties_false L890-L921, LiteLLMAnthropicMessagesAdapter._translate_midturn_system_message_to_openai
-  L923-L944, LiteLLMAnthropicMessagesAdapter._add_system_message_to_messages L946-L979, LiteLLMAnthropicMessagesAdapter._supports_prompt_cache_key
-  L982-L990, LiteLLMAnthropicMessagesAdapter._target_declares_reasoning_effort L993-L1015, LiteLLMAnthropicMessagesAdapter._translate_metadata_to_openai
-  L1017-L1037, LiteLLMAnthropicMessagesAdapter._translate_tool_choice_to_openai L1039-L1052, LiteLLMAnthropicMessagesAdapter._translate_stop_sequences_to_openai
-  L1054-L1064, LiteLLMAnthropicMessagesAdapter._translate_tools_to_openai L1066-L1099, LiteLLMAnthropicMessagesAdapter._translate_thinking_to_openai
-  L1101-L1173, LiteLLMAnthropicMessagesAdapter._translate_output_format_to_openai L1175-L1201, LiteLLMAnthropicMessagesAdapter._copy_untranslated_anthropic_params
-  L1203-L1212.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B966 owns LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic
-  L1345-L1430, LiteLLMAnthropicMessagesAdapter._translate_openai_finish_reason_to_anthropic L1432-L1441, LiteLLMAnthropicMessagesAdapter._positive_int
-  L1444-L1451, LiteLLMAnthropicMessagesAdapter._first_positive_usage_value L1454-L1459, LiteLLMAnthropicMessagesAdapter._first_positive_prompt_tokens_detail_value
-  L1462-L1474, LiteLLMAnthropicMessagesAdapter._get_cache_read_input_tokens L1477-L1481, LiteLLMAnthropicMessagesAdapter._get_cache_creation_input_tokens
-  L1484-L1490, LiteLLMAnthropicMessagesAdapter._get_web_search_request_count L1493-L1501, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage_delta
-  L1504-L1526, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage L1529-L1533, LiteLLMAnthropicMessagesAdapter.translate_openai_response_to_anthropic
-  L1535-L1616, LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic_content_block L1618-L1676,
-  LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic L1678-L1727, LiteLLMAnthropicMessagesAdapter.translate_streaming_openai_response_to_anthropic
-  L1729-L1766.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1117 owns primitives L25-L93,L213-L225,L357-L454,L672-L700,L1290-L1343; B964 owns L352-L353,L456-L639 conversation conversion.
+- B965 and B2431 divide the option methods L642-L1212; B966 owns all output methods L1345-L1766.
+- create_tool_name_mapping L94-L114 and translate_thinking_for_model L703-L737 have no caller at the pin.
+- B974 owns completion execution and B977 the stream state machine; this task owns only composing their value transformations.
 pitfalls:
-- 'Within AnthropicAdapter.translate_completion_input_params_with_tool_mapping\''s not model branch, preserve raise
-  ValueError(''Bad Request: model is required for Anthropic Messages Request'') and its nested guards.'
-- 'Within AnthropicAdapter.translate_completion_input_params_with_tool_mapping\''s not messages branch, preserve
-  raise ValueError(''Bad Request: messages is required for Anthropic Messages Request'') and its nested guards.'
+- The public wrapper consumes both required keys before it reports an empty model.
+- is_async defaults true; returning an async iterator to a synchronous caller breaks iteration even if its events are correct.
+- The tool-name map is part of the input transformation result and must survive until response conversion.
 review_level: standard
 budget:
-  max_changed_lines: 400
-  max_new_expects: 1
+  max_changed_lines: 620
+  max_new_expects: 0

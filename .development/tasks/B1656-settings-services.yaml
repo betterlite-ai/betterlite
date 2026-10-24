@@ -1,0 +1,91 @@
+id: B1656
+title: Project settings schemas and preserve shared settings-save ordering
+description: >-
+  Add settings_services in betterlite-server for the common schema projections and
+  _update_litellm_setting service used by the UI settings routes. Represent the schema nodes,
+  SettingsResponse family, root metadata and repository row contracts as typed records;
+  use B725/B726 repository views directly instead of reproducing Python cast-only wrappers.
+  Callers supply their validated settings record and its pinned schema descriptor through a
+  SettingsRecord trait, keeping this service independent of route modules and their concrete
+  request models. Port _resolve_non_null_variant, _schema_items_entry, _schema_property_entry,
+  _root_schema, _model_field_default and _get_settings_with_schema. Optional unions select the
+  first variant whose type is not null, falling back to the original node when none exists.
+  Property descriptions come from the outer field, not the selected variant; absent type is
+  string. Preserve direct items metadata, but resolve a $ref only to its final path segment
+  and expose only the referenced enum, omitting items when the definition or enum is missing.
+  Top-level properties resolve against $defs when present, otherwise definitions. Nested
+  description sections use only definitions, retaining the source's Pydantic-v2 asymmetry.
+  Treat missing/null/empty litellm_settings and selected settings blocks as empty before record
+  defaults; retain each caller record's own validation and extra-field policy.
+  The shared update first requires effective store_model_in_db=true, returning the pinned
+  500 detail.error otherwise. Serialize the validated record in JSON mode excluding nulls,
+  load current config, capture the prior selected block, then publish the in-memory litellm
+  setting. This publication must occur after get_config because that read can restore stale
+  persisted overrides. Replace the selected litellm_settings block, save through B124 and
+  submit B124's config-audit record to B065's bounded audit service only after success. Return
+  the caller's success message, status=success and serialized settings. A failed save does
+  not undo the already-published runtime value. Expose typed SettingKey variants for the five
+  source consumers, not an arbitrary runtime attribute setter.
+  Use native fault-injected tests for load/publication/save/audit ordering. The pure
+  settings_schema helper compares union, items and legacy-definition projection with Python;
+  caller-owned HTTP cases compare complete response schemas and persistence behavior. Add
+  helper_case seeds for this operation and replay the existing decoder, since these services
+  transform parsed records and introduce no byte parser. Approximately 197 source lines of
+  models, adapters and shared functions budget 240 service, 170 tests and 180 helper/fixtures,
+  with a 650-line limit.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/settings_services.rs
+    - crates/betterlite-server/src/settings_services/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/settings_schema.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/settings_schema.py
+    - tools/oracle/cases/helpers/settings-schema/**
+    - tools/oracle/fuzz/corpus/helper_case/settings-schema-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L66-L127
+    why: Schema-node and database row/access contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L198-L229
+    why: Common values/field_schema and SSO provenance response shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L723-L849
+    why: Schema projection helpers; _ui_setting_source is assigned separately to B1659.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1001-L1072
+    why: Config read before runtime mutation, followed by save and asynchronous audit.
+dod:
+  - text: Schema projection keeps optional-field, referenced-enum and legacy-definition behavior visible to settings callers.
+    proof: [settings-services-tests, oracle, settings-schema-python, settings-schema-corpus]
+  - text: Shared settings updates publish after loading but before saving, and enqueue audit records only for successful saves.
+    proof: [settings-services-tests]
+checks:
+  optional: []
+  commands:
+    - id: settings-services-tests
+      why: Shared settings projections or publication order diverge from their callers' source contract.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^settings_services::/)'
+    - id: settings-schema-python
+      why: Schema projection comparison has no validated Python adapter.
+      run: test -f tools/oracle/helpers/settings_schema.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: settings-schema-corpus
+      why: The settings_schema operation is not read by the shared helper-case parser.
+      run: grep -rlq 'settings_schema:' tools/oracle/fuzz/corpus/helper_case/settings-schema-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/settings-schema/optional-outer-description-and-first-non-null.yaml
+  - tools/oracle/cases/helpers/settings-schema/reference-enum-versus-missing-definition.yaml
+  - tools/oracle/cases/helpers/settings-schema/defs-do-not-create-legacy-nested-sections.yaml
+deviations:
+  - what: Settings writes can succeed without an audit row when the bounded audit queue is full; the omission is warned and counted.
+    why: The source's detached audit task is submitted through B065's owned bounded delivery service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1057-L1066
+out_of_scope:
+  - "Other proxy_setting_endpoints.py functions belong to B1657 (default-user/team routes and validators L852-L998, L1075-L1127), B1658 (allowed-IP L585-L720), B1659 (UI flags L379-L399, L453-L470, L786-L797, L1671-L1742), B1660 (UI GET/PATCH L1745-L1961), B1661 (SSO L1130-L1322), B1662 (theme helpers L141-L167 and routes L1325-L1463, L1964-L2024), and B1663 (search helpers L548-L582 and routes L1466-L1664)."
+  - register_extra_ui_setting L439-L450 has no caller at the pin outside the absent enterprise extension and is not implemented.
+pitfalls:
+  - Saving failure leaves the new runtime setting in place because _update_litellm_setting assigns before save_config.
+  - Referenced array definitions contribute enum only; copying their full schema changes the UI response.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

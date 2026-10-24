@@ -1,0 +1,97 @@
+id: B1629
+title: Provide the non-PKCE OAuth client and Google identity conversion
+description: >-
+  Implement oauth_client in betterlite-auth and google_sso in betterlite-server, owning
+  GoogleSSOHandler.get_google_callback_response and the adapter behavior it delegates to
+  fastapi-sso 0.19.0, pinned by LiteLLM's lockfile. Expose a per-login OAuthClient with typed
+  discovery, authorization and exchange inputs for Microsoft and generic callers as well.
+  Reuse oauth2's request construction and B173 transport, adapting defaults to the pinned
+  library rather than inheriting Rust-library defaults accidentally. Non-PKCE callbacks
+  require code (400 when absent); state is optional, but a supplied sso_state cookie must
+  equal a supplied query state or return 401. Do not apply B1623's stronger PKCE cookie rule
+  to this path. Tokens and refresh/ID tokens belong to the login instance, never a shared
+  mutable OAuth client. The token request uses Basic authentication and the supplied include_client_id
+  option; additional headers overlay generated headers, including Authorization when
+  explicitly supplied by trusted provider configuration. Fetch userinfo with the
+  access token and retain separate token fields for the caller. Preserve OAuth error classes
+  and their mapping at the enclosing handler. Parse discovery/token/userinfo JSON through
+  decode_oauth_provider_document, fuzzed by oauth_provider_document, with B173 body limits.
+  Google uses discovery at https://accounts.google.com/.well-known/openid-configuration,
+  scopes openid/email/profile and GOOGLE_CLIENT_SECRET=None; absent secret is 500 auth_error
+  with that variable as param. Normal conversion requires truthy email_verified, otherwise
+  401; raw-debug mode bypasses conversion. Map sub, email, given_name, family_name, name and
+  picture to B1608's OpenID. Test loads_google_client_secret in config. A google_identity
+  helper calls the locked dependency's pure converter; local HTTP tests verify discovery,
+  Basic auth, state-cookie errors and isolation of overlapping login attempts. Owned LiteLLM
+  logic is 40 lines plus the library boundary; allow 280 client/adapter, 180 tests, 80 helper
+  and 110 decoder/config lines within 750.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/oauth_client.rs
+    - crates/betterlite-auth/src/oauth_client/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/oauth_provider_document.rs
+    - crates/betterlite-auth/fuzz/corpus/oauth_provider_document/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/google_sso.rs
+    - crates/betterlite-server/src/google_sso/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/google_sso.rs
+    - crates/betterlite-config/src/google_sso/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/google-sso-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/google_identity.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/google_identity.py
+    - tools/oracle/cases/helpers/google-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/google-identity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4630-L4676
+    why: Google callback construction, missing-secret error and raw-response branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L1909-L1923
+    why: Exact fastapi-sso version and immutable package source for inherited OAuth behavior.
+  - url: https://docs.rs/oauth2/latest/oauth2/
+    why: Existing OAuth protocol types with a custom async HTTP client.
+dod:
+  - text: Concurrent OAuth attempts keep credentials isolated and preserve non-PKCE state and request-authentication semantics.
+    proof: [oauth-client-tests]
+  - text: Google identity conversion and secret validation retain the configured provider's behavior.
+    proof: [oauth-client-tests, google-config, oracle, google-python]
+  - text: Discovery and token/userinfo bytes use the same tested decoder in production and fuzz replay.
+    proof: [oauth-document-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: oauth-client-tests
+      why: The shared OAuth adapter or Google wrapper has missing behavior tests or exchanges the wrong credentials.
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E '(test(/^oauth_client::/) | test(/^google_sso::/)) - test(replays_the_oauth_provider_document_corpus)'
+    - id: google-config
+      why: GOOGLE_CLIENT_SECRET cannot be loaded as an optional secret with empty-versus-absent semantics.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^google_sso::tests::loads_google_client_secret/)'
+    - id: google-python
+      why: The Google converter comparison is missing or the dependency adapter fails strict typing.
+      run: test -f tools/oracle/helpers/google_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: oauth-document-corpora
+      why: OAuth document, Google config or helper-envelope coverage was not added.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/oauth_provider_document.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/oauth_provider_document)" && grep -rlq 'google_identity:' tools/oracle/fuzz/corpus/helper_case/google-identity-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/google-sso-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_oauth_provider_document_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/google-identity/verified-user-fields.yaml
+  - tools/oracle/cases/helpers/google-identity/unverified-email.yaml
+  - tools/oracle/cases/helpers/google-identity/missing-profile-fields.yaml
+deviations: []
+out_of_scope:
+  - B1622 owns Microsoft-specific claims and B1623 owns generic callback orchestration; B1620's direct PKCE exchange retains its separate authentication/fallback rules.
+  - Route dispatch and all remaining ui_sso.py definitions follow the B063 ownership inventory.
+pitfalls:
+  - Fastapi-sso 0.19.0 requires neither state nor a state cookie by default, but rejects a mismatching cookie when both values exist.
+  - Google's raw debug response can contain an unverified email even though ordinary identity conversion rejects it.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

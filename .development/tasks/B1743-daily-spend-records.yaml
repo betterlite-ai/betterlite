@@ -1,0 +1,105 @@
+id: B1743
+title: Derive daily spend records and baseline targets from request evidence
+description: >-
+  Implement betterlite-db::daily_records, owning _timed_request_duration_ms,
+  _common_add_spend_log_transaction_to_daily_transaction, all six add_spend_log_transaction_
+  to_daily_* callers and _baseline_daily_attribution in db_spend_update_writer.py. Extract
+  PrismaClient.get_request_status from proxy/utils.py into this lower projection layer:
+  metadata status exactly failure means failure; absent/malformed JSON or a nonmapping
+  value defaults to success. This differs deliberately from checking payload.status.
+  The daily builder first checks B1697 entity identities, then presence of startTime and
+  api_key, then presence of model or mcp_namespaced_tool_name. Presence of the MCP key,
+  even null, bypasses the provider/model-group presence requirement. Preserve these key
+  presence tests separately from truthiness. Parse serialized metadata before deriving
+  fields; invalid metadata here propagates even though the status classifier defaults.
+  Define decode_daily_metadata(bytes) as a bounded JSON-object decoder and fuzz its
+  strict builder and permissive status modes. Use the existing 64 MiB spend-record bound.
+  Date is the timestamp's own ISO prefix before T, without timezone conversion. Invalid
+  startTime type yields no record. Resolve endpoint through B004's call-type map injected
+  as a read-only lookup, retaining its singular /image/generations spelling and None for
+  unmapped calls. Reuse B1693 token/compression evidence and B1694 savings pricing with an
+  explicit optional catalog snapshot. Internal-call metadata keeps spend/tokens and other
+  savings, but zeroes request/success/failure counts and auto-router savings. Only a
+  successful external call with nonnegative integer request_duration_ms contributes one
+  timed request; bool follows Python's integer test. Preserve a zero duration as timed.
+  Daily queue keys concatenate identity, date, key, model, provider and endpoint with
+  underscores, using Python-compatible None text and empty endpoint; do not silently
+  replace this pre-aggregation identity with the database conflict key. Each concrete
+  caller requires a DB attachment. Org takes its explicit non-None org_id override;
+  end-user normalizes nonempty payload.end_user to end_user_id; agent rejects only None;
+  tags use B1697's identity expansion and retain request_id. Build independent records
+  without mutating the log row. The baseline target builder normalizes end_user, builds
+  all six bases in table order, selects the first available base for common dimensions
+  and lists every (entity,identity) target. It returns None if all bases are absent.
+  Cover each caller with native queue tests and use pure daily_records oracle operations
+  for status, common fields and baseline targets with injected prices and endpoint map.
+  The owned projection cohort is approximately 316 source lines; budget 800 including
+  adapters, savings fixtures and metadata parser tests.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/daily_records.rs
+    - crates/betterlite-db/src/daily_records/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/daily_metadata.rs
+    - crates/betterlite-db/fuzz/corpus/daily_metadata/**
+    - tools/oracle/src/helpers/{mod.rs,daily_records.rs}
+    - tools/oracle/helpers/{dispatch.py,daily_records.py}
+    - tools/oracle/cases/helpers/daily-records/**
+    - tools/oracle/fuzz/corpus/helper_case/daily-records-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L262-L272
+    why: Duration qualification includes zero and excludes failed/internal calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L848-L888
+    why: Ordered daily baseline target derivation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2681-L2965
+    why: Shared daily fields and six queue adapters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4592-L4615
+    why: Metadata-derived request status, now below writer coordination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L73-L148
+    why: Existing endpoint lookup contract consumed through an injected map.
+dod:
+  - text: Daily records preserve metadata status, internal-call exclusions, timing and identity/key semantics.
+    proof: [daily-record-tests, daily-metadata-corpus, oracle, daily-record-python, daily-record-corpus]
+  - text: Baseline targets cover every eligible entity without modifying caller payloads.
+    proof: [baseline-target-tests, oracle, daily-record-python, daily-record-corpus]
+checks:
+  optional: []
+  commands:
+    - id: daily-record-tests
+      why: Daily projections or any of the six queue adapters is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_records::projection::/) - test(replays_the_daily_metadata_corpus)'
+    - id: baseline-target-tests
+      why: Daily baseline target ordering and end-user normalization are untested.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_records::baseline_targets::/)'
+    - id: daily-metadata-corpus
+      why: Metadata status and builder decoding have no replayed byte corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/daily_metadata)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_daily_metadata_corpus)'
+    - id: daily-record-python
+      why: Daily projection adapters fail to import or type-check.
+      run: test -f tools/oracle/helpers/daily_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: daily-record-corpus
+      why: Daily helper variant is not seeded in the shared corpus.
+      run: grep -rlq 'daily_records:' tools/oracle/fuzz/corpus/helper_case/daily-records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-records/metadata-status-versus-payload-status.yaml
+  - tools/oracle/cases/helpers/daily-records/mcp-key-presence-and-own-calendar-day.yaml
+  - tools/oracle/cases/helpers/daily-records/internal-spend-zero-counts-and-zero-duration.yaml
+  - tools/oracle/cases/helpers/daily-records/six-baseline-targets-and-missing-identities.yaml
+deviations:
+  - what: Oversized serialized daily metadata fails with the same typed spend-record limit used by the Redis decoder.
+    why: The daily path must not allocate without a bound when it receives serialized records from storage or a collector.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2721-L2724
+out_of_scope:
+  - The writer's entry point, user/key enqueues and batch scheduling remain B070; entity attribution is B1742 and ancillary usage enqueue is B1744.
+  - B1745 handles balance SQL/retries; B1746 handles daily commit chunks and auto-router drains; B1747/B1748 handle memory/Redis flush coordination.
+  - Request-log insertion and batch-charge claims are B1749, which also owns extracted queue utilities; other proxy/utils.py functions remain B124 or their existing narrower owners.
+  - B004 owns route_llm_request.py dispatch and its endpoint map; this task neither registers routes nor expands that mapping.
+pitfalls:
+  - An mcp_namespaced_tool_name key containing null still satisfies the builder's presence branch.
+  - Daily status uses metadata.status while model-usage rollups use the top-level status field.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

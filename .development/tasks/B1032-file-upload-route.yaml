@@ -1,115 +1,64 @@
 id: B1032
 title: File upload route
 description: >-
-  Register file upload aliases and execute the MIT upload-routing plan, retaining the absent managed_files hook
-  behavior and native/storage paths. Do not create a substitute managed hook or publish enterprise mappings.
+  Own the complete create_file handler at files_endpoints.py:545-927, with its decorators at 530-544.
+  Register POST /{provider}/v1/files, /v1/files and /files in betterlite-server::api::file_upload_route.
+  Implement its upload lifecycle in betterlite-core::api::file_upload_route, using B1031 for routing and
+  scanning, B1024 for rewritten JSONL, B1022 for validation and B1021 for target/model/storage extraction.
+  B206 owns get_or_create_metadata_bucket; B2400 owns the known-model predicate used by the load-balancing branch.
+  B900 sends multipart requests through both running proxies; it records provider uploads rather than
+  invoking the FastAPI function. B1139/B856 supply keys and team metadata. Configure master key sk-test
+  for every authenticated case. B003 supplies FastAPI-compatible required-field errors and final error
+  serialization; B004 supplies response headers; B012 supplies observable pre/success/failure hooks.
 
+  purpose and file are required multipart fields. Defaults are target_model_names="", target_storage=default,
+  custom_llm_provider=openai and passthrough=false. Provider resolution uses path, custom-llm-provider header,
+  custom_llm_provider query, body, then openai, with empty values falling through. B2400 owns those accessors.
+  The declared plain litellm_metadata form value is unused; only litellm_metadata[...] fields are extracted by
+  B1101. Preserve B1100's cached body and B1103's authenticated request data. No second multipart parser is added.
 
-  POST /{provider}/v1/files, /v1/files and /files accept purpose, target_model_names, target_storage, custom_llm_provider
-  (openai), litellm_metadata, passthrough and expires_after[anchor|seconds]. Invalid purpose is 400 param purpose;
-  each expires_after validation failure is 400; malformed team enforced_file_expires_after is 500; missing create
-  result is 500. Preserve litellm_batch_guardrail in the successful result. managed-multi-model-upload reaches the
-  absent-hook 500 internal_server_error, param null, code 500 unless an earlier validation fails. Use B900 multipart
-  HTTP captures.
+  Reject an unsafe filename before reading the upload. Batch uploads retain their seekable source; other
+  purposes read at most max_file_size_mb*1048576+1 bytes when that setting is positive. Then resolve targets,
+  enforce require_managed_files, validate purpose, apply size/extension rules, validate passthrough and check
+  batch JSONL, in that order. Supported purposes are assistants, assistants_output, batch, batch_output,
+  fine-tune, fine-tune-results, vision, user_data, evals and messages. Keep scan work off the async executor.
 
+  Parse expires_after[anchor] and expires_after[seconds] together. Seconds uses Python integer semantics,
+  including whitespace, signs and underscores; this handler does not enforce a positive range. Team metadata
+  enforced_file_expires_after, when non-null, replaces the client expiry after validation and batch scanning.
+  Its anchor must be created_at and it must have seconds; malformed team settings are server errors.
 
-  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
-  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
-  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
-  out of scope.
+  Pass purpose and UploadedFileInfo{filename,content_type,size} to the acreate_file pre-call hook, then remove
+  those temporary fields. A null hook return retains data. Scan metadata chooses truthy metadata before
+  litellm_metadata, otherwise an empty mapping. Record changed-line batch_guardrail metadata and its warning
+  before calling the provider. Own and close only the redaction/rewrite spools in finally, on success or failure.
+  Keep the original UploadFile lifetime with B1101. If load balancing is exactly true, extract the first JSON
+  object's model and ask the injected known-model lookup before B1031 selects the upload path.
 
+  On a non-null response, enqueue update_request_status with status=success and litellm_call_id default ""
+  before the success hook. Replace the response only if that hook returns an OpenAIFileObject; attach the
+  guardrail report afterward. B004 headers use hidden model_id/cache_key/api_base or "", version and the
+  principal's allowed_model_region. The failure hook runs before error conversion. Preserve ProxyException;
+  map HTTPException with B003's status-sensitive mapper, not B2400's internal_server_error-only mapper.
+  HTTP 400 here has type invalid_request_error, param null, code "400"; 500 has internal_server_error,
+  null, "500". Validation failures carrying param=file or purpose retain it. Compare error messages too.
 
-  Implement crates/betterlite-server/src/api/file_upload_route.rs, crates/betterlite-core/src/api/file_upload_route.rs.
-  Use FileUploadRouteInput and FileUploadRouteResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
+  Consume B1022's loader-tested omitted/null/positive/zero/negative max_file_size_mb and
+  max_batch_file_size_mb, absent/empty/[.jsonl] allowed_file_extensions and absent/empty/[.exe]
+  blocked_file_extensions. B1031 owns loader cases for enable_loadbalancing_on_batch_endpoints.
+  Defaults for all five are null. Reject bool/string general upload-size values and non-string extension lists
+  via B1022. This handler's int-or-null batch-size adapter accepts "1" and true as 1, but rejects 1.5.
+  B1021 owns require_managed_files (default false).
+  Route cases below load those settings through the existing Config fixture setup; no duplicate config
+  module or YAML decoder is added here. The native B1087 cap still applies when no source cap is set.
 
-
-  Register exactly these routes in this task: POST /{provider}/v1/files; POST /v1/files; POST /files. Each alias
-  is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its child
-  factories without re-registering their methods/paths.
-
-
-  Route input projections: data.purpose (absent None); data.file (absent None); data.metadata (absent None); data.litellm_metadata
-  (absent None); data.litellm_call_id (absent '').
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): files_endpoints.py:635 type='invalid_request_error', param='purpose', code=400; files_endpoints.py:867
-  status_code=500, exception_detail=FastAPI detail object; files_endpoints.py:697 status_code=400, exception_detail=FastAPI
-  detail object; files_endpoints.py:706 status_code=400, exception_detail=FastAPI detail object; files_endpoints.py:716
-  status_code=400, exception_detail=FastAPI detail object; files_endpoints.py:727 status_code=400, exception_detail=FastAPI
-  detail object; files_endpoints.py:825 status_code=500, exception_detail=FastAPI detail object; files_endpoints.py:832
-  status_code=500, exception_detail=FastAPI detail object; files_endpoints.py:911 type=openai_error_type(e, error_status_code(e,
-  status.HTTP_400_BAD_REQUEST)), param=openai_error_param(e), code=error_status_code(e, status.HTTP_400_BAD_REQUEST);
-  files_endpoints.py:919 type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e), code=error_status_code(e,
-  500); files_endpoints.py:738 status_code=400, exception_detail=FastAPI detail object. Compare the actual source
-  status, error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions file_upload_route, managed_multi_model_upload, storage_upload_route,
-  upload_partial_failure, batch_validation_before_f_239a, invalid_purpose_400, expiry_anchor_invalid, expiry_seconds_invalid,
-  team_expiry_malformed_500, create_file_empty_500, batch_guardrail_summary, route_aliases, auth_missing, auth_invalid
-  under api::file_upload_route::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.max_file_size_mb
-  defaults to None; general_settings.allowed_file_extensions defaults to None; general_settings.blocked_file_extensions
-  defaults to None; litellm_settings.enable_loadbalancing_on_batch_endpoints defaults to None; general_settings.max_batch_file_size_mb
-  defaults to None. No environment reads occur outside betterlite-config. Test api::file_upload_route::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/files_endpoints.py: create_file (L545-L927). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 316 owned nonblank/non-comment/non-docstring Python lines (330 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 336 implementation,
-  124 behavior tests, 168 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 45 config tests/seeds
-  and 38 wiring; 711 total within the 720-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B900 (Multipart oracle), B1018 (MIT
-  resource owner compatibility), B1027 (File storage service), B1028 (File provider write), B1031 (File upload routing),
-  B1087 (Api boundaries), B1100 (Shared request body decoding), B1103 (Authenticated request preparation), B1139
-  (Stateful HTTP oracle scenarios), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
-  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B1022 (File upload
-  validation), B1021 (File upload options), B1101 (Shared multipart and form extraction), B003 (HTTP server, health
-  routes and master key auth), B856 (Management oracle namespaces and Postgres test fixture), B002 (Load LiteLLM
-  config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Tests below live in api::file_upload_route::tests, with each named case exercising production code. Callback
+  return-type, empty-result and spool-lifetime branches use injected native services; all provider-reaching cases
+  use HTTP with the mock provider. No helper oracle is needed. Counted source is 330 nonblank/non-comment lines,
+  316 excluding docstrings; budget 790 lines comprises 325 implementation, 220 behavior tests, 205 fixtures
+  and 40 wiring. Reusing the dependency-owned config tests leaves room for coercion edge cases.
+  Typed services and shared multipart fixtures keep the complete function
+  together instead of dividing its control flow across tasks.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -128,109 +77,181 @@ scope:
   - crates/betterlite-core/src/api.rs
   - Cargo.toml
   - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/file_upload_route.rs
-  - crates/betterlite-config/src/api/file_upload_route/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-route-*
   - tools/oracle/cases/api/file-upload-route/**
-  - tools/oracle/fixtures/file-upload-route/**
+  - tools/oracle/fixtures/http-scenarios/file-upload-route/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L593-L593
-  why: Setting general_settings.max_file_size_mb and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L648-L648
-  why: Setting general_settings.allowed_file_extensions and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L653-L653
-  why: Setting general_settings.blocked_file_extensions and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
-  why: Setting litellm_settings.enable_loadbalancing_on_batch_endpoints and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L673-L673
-  why: Setting general_settings.max_batch_file_size_mb and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L927
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Upload decorators, required form fields, validation order, expiry overrides, hooks and spool cleanup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
+  why: The deprecated batch-upload load-balancing switch starts at null, not true.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2045
+  why: Missing multipart fields produce a 422 detail array before the upload handler runs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1022-L1059
+  why: The managed-file requirement rejects missing targets or a direct model before purpose validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L78-L185
+  why: B1022 supplies size, extension and traversal failures; upload orchestration must preserve their order and file param.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L307-L318
+  why: All ten purpose literals are accepted, including output purposes and messages.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: The upload catch block wraps HTTPException; clients receive a string status code inside error, not its detail object.
 dod:
-- text: 'file upload route: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    file_upload_route posts note.txt containing hello with purpose=assistants; the mock receives those bytes,
+    filename and purpose and returns id=file_a,object=file,bytes=5,created_at=1,filename=note.txt,purpose=assistants.
+    Client status is 200 with those fields. Repeat for every accepted non-batch purpose. With plain
+    litellm_metadata='{"tag":"ignored"}' and litellm_metadata[tag]=kept, the pre-call capture contains tag=kept.
+    With only the plain field it contains no tag. Native hook variants return null, a replacement data record,
+    an OpenAIFileObject id=file_b and an unrelated scalar; only the file object replaces the successful response.
+    Hidden model_id=dep_a,cache_key=cache_a,api_base=https://mock.test/v1?secret=x produce x-litellm-model-id=dep_a,
+    x-litellm-cache-key=cache_a and x-litellm-model-api-base=https://mock.test/v1; absent hidden fields omit these
+    headers. x-litellm-version is present; allowed_model_region=eu yields x-litellm-model-region=eu.
   proof:
   - case-file-upload-route
   - oracle
-- text: 'managed multi model upload: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    managed_multi_model_upload sends purpose=assistants,file=note.txt,target_model_names=model_a,model_b.
+    Without enterprise, status is 500, type=internal_server_error,param=null,code="500",message="Managed files
+    hook not found" and neither model receives an upload. No managed-file row is published.
   proof:
   - case-managed-multi-model-upload
   - oracle
-- text: 'storage upload route: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    storage_upload_route posts purpose=assistants,file=note.txt,target_storage=azure_storage to a configured mock storage
+    backend through B1031. Expect 200 with its file id and bytes=5, B1026's create/append/flush sequence containing hello and zero
+    model-provider calls. With target_storage=default and no targets/model, the default OpenAI mock receives one
+    upload instead. B1027 owns storage id formatting and credentials; compare its full returned record unchanged.
   proof:
   - case-storage-upload-route
   - oracle
-- text: 'upload partial failure: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    upload_partial_failure makes the provider reject a valid upload with status=429,type=rate_limit_error,
+    message=slow down,param=null. Expect 429,rate_limit_error,null,code="429" and one failure-hook call, with no
+    success status or success hook. Native variants fail the pre-hook, route service and success hook in turn;
+    all owned redaction/rewrite spools close exactly once. A success-hook failure occurs after success status was
+    enqueued and after the remote file was created: the route returns 500/internal_server_error/null/"500",
+    runs the failure hook and does not issue compensating deletion. No transaction is implied.
   proof:
   - case-upload-partial-failure
   - oracle
-- text: 'batch validation before forward: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    batch_validation_before_forward posts purpose=batch and an empty input.jsonl; expect 400,invalid_request_error,
+    param=file,code="400",message="Batch input file has no request lines. The file was not forwarded to the provider."
+    Valid JSONL {custom_id:r1,method:POST,url:/v1/chat/completions,body:{model:model_a,messages:[]}} reaches the mock
+    unchanged. Under max_file_size_mb=1, 1048576 bytes pass and 1048577 bytes yield 413,invalid_request_error,file,"413";
+    positive non-batch limits stop reading after limit+1. Test allowed_file_extensions=[.jsonl] with report.txt
+    and blocked_file_extensions=[.exe] with report.EXE: both fail 400,invalid_request_error,file,"400" before a
+    provider call, with the corresponding not-in-allowed or blocked message from B1022. Batch size and native
+    Vertex passthrough row-shape errors reuse B1022's fixtures through this route. Enabling load balancing sends
+    the valid row's model_a to its configured deployment; null/false use the default provider path.
   proof:
   - case-batch-validation-before-forward
   - oracle
-- text: 'invalid purpose 400: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    invalid_purpose_400 sends purpose=unknown with note.txt and receives 400,invalid_request_error,purpose,"400",
+    message="Invalid purpose: unknown. Must be one of: ('assistants', 'assistants_output', 'batch', 'batch_output',
+    'fine-tune', 'fine-tune-results', 'vision', 'user_data', 'evals', 'messages')". For the same purpose with
+    filename=../note.txt, the filename error wins with param=file. With a safe filename and require_managed_files=true,
+    missing targets produces 400,invalid_request_error,null,"400" with the target_model_names-required message,
+    before purpose validation. With targets=model_a and model=model_a, the model-not-allowed requirement wins.
   proof:
   - case-invalid-purpose-400
   - oracle
-- text: 'expiry anchor invalid: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    expiry_anchor_invalid sends created_at without seconds, and seconds=60 without anchor; each returns
+    400,invalid_request_error,null,"400" and the detail-error text "Both expires_after[anchor] and expires_after[seconds]
+    must be provided if expires_after is specified". anchor=updated_at,seconds=60 yields "expires_after[anchor]
+    must be 'created_at', got 'updated_at'". Sending a file part as the anchor yields "expires_after[anchor] must
+    be a string, not a file upload". Each message retains this handler's stringified detail mapping wrapper.
   proof:
   - case-expiry-anchor-invalid
   - oracle
-- text: 'expiry seconds invalid: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    expiry_seconds_invalid uses anchor=created_at and seconds=abc; expect 400,invalid_request_error,null,"400"
+    and the stringified detail error "expires_after[seconds] must be a valid integer, got 'abc': invalid literal
+    for int() with base 10: 'abc'". A file-valued seconds yields "expires_after[seconds] must be a string, not a
+    file upload" at the same status. Values " 7 ", "+3", "1_000", "0" and "-1" reach the provider as 7,3,1000,0,-1
+    with anchor=created_at. The mock accepts them with 200; no new positive-expiry validator is added here.
   proof:
   - case-expiry-seconds-invalid
   - oracle
-- text: 'team expiry malformed 500: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    team_expiry_malformed_500 authenticates a team whose enforced_file_expires_after is {anchor:created_at},
+    then {seconds:60}, then {anchor:updated_at,seconds:60}. Each yields 500,internal_server_error,null,"500";
+    missing fields say "Server configuration error: team metadata field 'enforced_file_expires_after' is malformed
+    - must contain 'anchor' and 'seconds' keys. Contact your team or proxy admin to fix this setting." The last
+    says "Server configuration error: team metadata field 'enforced_file_expires_after' has invalid anchor
+    'updated_at' - must be 'created_at'. Contact your team or proxy admin to fix this setting." Messages retain
+    the detail mapping wrapper. Team {anchor:created_at,seconds:"120"} overrides client seconds=60 upstream;
+    null leaves 60 unchanged. Team seconds=abc gives 500/internal_server_error/null/"500" with Python's int error.
   proof:
   - case-team-expiry-malformed-500
   - oracle
-- text: 'create file empty 500: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    create_file_empty_500 supplies a valid typed upload to the native route with an injected route_create_file
+    service returning no file. Expect 500,internal_server_error,null,"500", message="{'error': 'Failed to create
+    file. Please try again.'}", one failure hook and no success status/hook. This defensive callback-result
+    branch is a native test; the HTTP oracle does not monkeypatch a FastAPI handler.
   proof:
   - case-create-file-empty-500
-  - oracle
-- text: 'batch guardrail summary: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    batch_guardrail_summary sends two valid batch rows r1/r2; B1023's configured mock guardrail changes only r2.
+    The provider receives the rewritten r2 and unchanged r1; client 200 includes litellm_batch_guardrail equal to
+    the scanner's two-record report. Captured success-hook metadata already has batch_guardrail; warning logging
+    reports one changed record out of two before that hook. A scan with no changes leaves bytes unchanged and
+    omits the response report and warning. Passthrough=true uses the native Vertex shape and B1031's scan policy.
   proof:
   - case-batch-guardrail-summary
   - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    route_aliases posts the valid five-byte file to /files, /v1/files and /openai/v1/files and gets 200,file_a
+    from one mock upload each. Configure OpenAI and Azure mock credentials, then prove path=openai beats
+    header=azure, header=openai beats query/body=azure, query=openai beats body=azure, body=openai is used alone,
+    and no hint defaults to openai. Every selected OpenAI mock returns file_a and the Azure mock sees zero calls;
+    repeat with an empty higher-priority hint to prove fallthrough. Header spelling is custom-llm-provider,
+    query/form spelling custom_llm_provider. None of these aliases mounts the route twice.
   proof:
   - case-route-aliases
   - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    auth_missing sends the otherwise valid multipart upload without Authorization while master key sk-test is
+    configured. Expect 401,type=auth_error,param="None",code="401" and zero upload or storage calls.
   proof:
   - case-auth-missing
   - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    auth_invalid sends Authorization: Bearer sk-wrong with that same valid upload and receives
+    401,type=auth_error,param="None",code="401". No validation or provider-side upload runs.
   proof:
   - case-auth-invalid
   - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: >-
+    required_upload_fields omits purpose, then file, then both. Authenticated requests receive 422 with a detail
+    array whose missing-field items have type=missing,loc=[body,purpose] or [body,file],msg="Field required".
+    The public_validation_errors projection removes input and ctx entirely, even when validation supplied them.
+    There is no OpenAI error envelope and no provider call. Supplying both fields exits this validation path.
+  proof: [required-fields, oracle]
+- text: >-
+    upload_form_and_configuration_edges posts passthrough=on/yes/1 and false/off/0: FastAPI recognizes
+    the corresponding booleans; an unrecognized value gives 422 detail with type=bool_parsing,
+    loc=[body,passthrough],msg="Input should be a valid boolean, unable to interpret input" before
+    orchestration. general_settings.max_batch_file_size_mb="1" or true is coerced to 1 by this route's
+    adapter; 1.5 fails with 500/internal_server_error/null/"500" and the adapter's int_from_float error,
+    without provider upload. Team enforced_file_expires_after={anchor:created_at,seconds:true} sends 1;
+    seconds=1.9 truncates to 1. These are not client-positive-range validations. All route exceptions
+    invoke the failure hook before EXCEPTION "litellm.proxy.proxy_server.create_file(): Exception
+    occured - <error>"; successful expiry selection emits DEBUG "create_file expires_after: <value>".
+  proof: [form-config-edges, oracle]
+- text: New multipart fixtures capture both the client envelope and the provider's received bytes through B900.
   proof:
   - new-oracle-cases
   - oracle
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail
       -E 'test(/^api::file_upload_route::/) - test(/::replays_corpus$/)'
   - id: case-file-upload-route
     why: the file-upload-route behavior or its assertions are absent
@@ -245,8 +266,8 @@ checks:
     why: the upload-partial-failure behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::upload_partial_failure($|::)/)'
   - id: case-batch-validation-before-forward
-    why: the batch-validation-before-forward behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::batch_validation_before_f_239a($|::)/)'
+    why: an invalid upload reaches the provider or the size boundary changes
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::batch_validation_before_forward($|::)/)'
   - id: case-invalid-purpose-400
     why: the invalid-purpose-400 behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::invalid_purpose_400($|::)/)'
@@ -274,13 +295,12 @@ checks:
   - id: case-auth-invalid
     why: the auth-invalid behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::auth_invalid($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_route::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-route-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: form-config-edges
+    why: FastAPI boolean parsing or batch-size coercion was replaced with the general-size policy
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::upload_form_and_configuration_edges($|::)/)'
+  - id: required-fields
+    why: missing multipart fields incorrectly enter upload orchestration
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::required_upload_fields($|::)/)'
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/file-upload-route)"
@@ -294,12 +314,24 @@ oracle_cases:
 - tools/oracle/cases/api/file-upload-route/expiry-anchor-invalid.yaml
 - tools/oracle/cases/api/file-upload-route/expiry-seconds-invalid.yaml
 - tools/oracle/cases/api/file-upload-route/team-expiry-malformed-500.yaml
-- tools/oracle/cases/api/file-upload-route/create-file-empty-500.yaml
 - tools/oracle/cases/api/file-upload-route/batch-guardrail-summary.yaml
 - tools/oracle/cases/api/file-upload-route/route-aliases.yaml
 - tools/oracle/cases/api/file-upload-route/auth-missing.yaml
 - tools/oracle/cases/api/file-upload-route/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/file-upload-route/required-upload-fields.yaml
+- tools/oracle/cases/api/file-upload-route/upload-form-and-configuration-edges.yaml
+deviations:
+- what: >-
+    Managed multi-model uploads currently return 500/internal_server_error/param=null/code="500" with "Managed files
+    hook not found" and make no provider calls. Whether betterlite should implement managed files/batches remains
+    Max's decision; this task does not create an enterprise replacement.
+  why: The pinned open-source installation has no managed_files hook. Max's managed files and batches choice is still open; keep MIT behavior without adding a license check.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L471-L480
+- what: >-
+    The B1101 native multipart cap rejects a request over 16 MiB with 413/invalid_request_error/param=file/code=request_too_large,
+    even when general_settings.max_file_size_mb is null. The source handler has no equivalent default upload cap.
+  why: Preserve the existing bounded-input decision; configured source limits retain their own string status codes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L593-L606
 out_of_scope:
 - 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1031 owns _names_a_litellm_executed_provider L111-L113,
   _litellm_executed_batch_input_model L116-L165, set_files_config L181-L195, get_files_provider_config L198-L209,
@@ -313,11 +345,10 @@ out_of_scope:
 - Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
   operations. Python package export/event-loop facades remain B158-B161.
 pitfalls:
-- 'files_endpoints.py:843 emits the diagnostic ''create_file expires_after: %s''; retain its level and fallback
-  instead of turning it into a hard error.'
-- 'files_endpoints.py:791 emits the diagnostic ''batch guardrails changed %s of %s records in %s: %s''; retain its
-  level and fallback instead of turning it into a hard error.'
+- Plain litellm_metadata is ignored even though it appears in the FastAPI signature; bracketed fields populate the metadata bucket.
+- A team expiry override does not rescue malformed client expiry, because client validation happens first.
+- Successful remote creation and an enqueued success status survive a later success-hook failure; closing local spools is not rollback.
 review_level: security
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 790
   max_new_expects: 0

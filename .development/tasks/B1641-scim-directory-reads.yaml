@@ -1,0 +1,89 @@
+id: B1641
+title: Serve paginated SCIM directories with their distinct user and group filters
+description: >-
+  Add scim_directory_reads for GET /scim/v2/Users, /Users/{user_id}, /Groups and
+  /Groups/{group_id}, including _parse_scim_eq_filter and _TeamWhereConditions. Reuse
+  authenticated management extraction, B1633's lookup/projection helpers and the pinned
+  error mapper. Decode query bytes in decode_scim_list_query: startIndex defaults 1 and
+  must be at least 1, count defaults 10 and must be nonnegative, effective count is capped
+  at SCIM_MAX_PAGE_SIZE=100, and filter defaults absent. Fetch rows newest-created first,
+  skip startIndex-1, count with the same predicate, and return itemsPerPage equal to the
+  number of actual resources, including zero. Pagination applies before projection.
+  User equality filters permit case-insensitive attribute/operator spelling, optional
+  matching single/double quotes and surrounding whitespace. userName targets exact
+  user_email OR user_id; emails.value targets exact user_email. Malformed expressions and
+  unsupported attributes are ignored, yielding the unfiltered directory. Group filtering
+  instead searches for the case-sensitive substring displayName eq and splits specifically
+  on displayName eq followed by a space, stripping only surrounding quote characters.
+  Preserve its malformed-split server error and its lack of whitespace normalization;
+  do not substitute the user filter parser. Group collections obtain canonical ids from
+  members_with_roles, resolve users for their email/id display and skip deleted users.
+  Single-group reads use the direct roster projection, so stale user references remain.
+  Compare pagination, filters, SCIM content type and error/auth envelopes through eligible
+  HTTP cases with real Postgres rows. A scim_eq_filter pure helper checks the user regex
+  and a scim_list_query fuzz target covers the request decoder; name its replay test
+  replays_the_scim_list_query_corpus. The 142 owned function lines plus the team predicate
+  type budget 210 implementation, 180 tests and 230 query/HTTP/oracle fixtures, capped 700.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_directory_reads.rs
+    - crates/betterlite-server/src/scim_directory_reads/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/scim_list_query.rs
+    - crates/betterlite-server/fuzz/corpus/scim_list_query/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_eq_filter.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_eq_filter.py
+    - tools/oracle/cases/helpers/scim-eq-filter/**
+    - tools/oracle/cases/management/scim-directory/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-eq-filter-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1556-L1658
+    why: Equality parsing and decorated user directory/resource reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2400-L2508
+    why: Group-list filtering, canonical roster display lookups and single-resource projection.
+dod:
+  - text: User and group collections honor their separate filter grammars and capped pagination against real rows.
+    proof: [directory-read-tests, oracle, eq-filter-python]
+  - text: Single-resource errors and group-list versus group-resource projections preserve status, headers and dangling-member behavior.
+    proof: [directory-read-tests, oracle]
+  - text: Query decoding and equality-filter helper inputs replay their committed malformed cases.
+    proof: [directory-read-tests, directory-query-corpus]
+checks:
+  optional: []
+  commands:
+    - id: directory-read-tests
+      why: SCIM directory filters, pagination or member projection differ from the route contract.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_directory_reads::/) - test(replays_the_scim_list_query_corpus)'
+    - id: eq-filter-python
+      why: The user filter comparison lacks its pure, type-checked Python adapter.
+      run: test -f tools/oracle/helpers/scim_eq_filter.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: directory-query-corpus
+      why: SCIM list-query and filter-helper decoders have no committed regression coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/scim_list_query)" && grep -rlq 'scim_eq_filter:' tools/oracle/fuzz/corpus/helper_case/scim-eq-filter-* && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_list_query_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-eq-filter/quoted-case-preserved-value.yaml
+  - tools/oracle/cases/helpers/scim-eq-filter/unquoted-and-unsupported-expression.yaml
+  - tools/oracle/cases/management/scim-directory/username-matches-email-or-legacy-id.yaml
+  - tools/oracle/cases/management/scim-directory/zero-count-keeps-total.yaml
+  - tools/oracle/cases/management/scim-directory/count-capped-at-one-hundred.yaml
+  - tools/oracle/cases/management/scim-directory/group-filter-case-and-missing-space.yaml
+  - tools/oracle/cases/management/scim-directory/dangling-user-list-versus-single.yaml
+  - tools/oracle/cases/management/scim-directory/missing-resource-invalid-page-and-auth.yaml
+deviations: []
+out_of_scope:
+  - "Discovery resources and schemas are B1642; these reads return stored users and teams only."
+  - "scim_v2.py foundational ranges: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "scim_v2.py mutations and discovery: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - Unsupported user filters return the whole directory rather than a SCIM invalidFilter error.
+  - Group displayName filtering is case-sensitive and uses a different parser, so normalizing it to the user grammar changes results and failures.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security
