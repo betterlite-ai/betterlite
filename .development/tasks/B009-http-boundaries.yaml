@@ -11,7 +11,8 @@ description: >-
   chains cannot leak credentials. Implement the URL policy parser's fuzz target and replay corpus. The user-URL
   download wrappers in url_utils.py are deliberately unavailable under the bounded-inputs rule, and callers receive
   a typed error rather than an attempted fetch. Budget 280 URL policy lines, 150 integration lines and 300 test/fuzz
-  lines.
+  lines. Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
+  parser.
 scope:
   paths:
   - Cargo.toml
@@ -22,6 +23,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/url-origin/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L151-L247
@@ -47,6 +49,9 @@ dod:
   proof:
   - url-policy-corpus
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -70,6 +75,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/url-origin/default-port.yaml
 - tools/oracle/cases/helpers/url-origin/host-case.yaml
