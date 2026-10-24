@@ -1,22 +1,58 @@
 id: B699
 title: Azure hosted managed-identity protocols
 description: >-
-  Implement App Service, Azure ML, Cloud Shell, Service Fabric and Azure Arc managed-identity HTTP protocol variants
-  over B173; B676 owns selection and IMDS. Mirror the installed azure-identity request factories through captured
-  SDK transport fixtures. App Service uses GET api-version=2019-08-01 and X-IDENTITY-HEADER; Azure ML uses GET 2017-09-01
-  and secret with clientid; Cloud Shell uses POST resource with Metadata=true and rejects client_id. Service Fabric
-  uses GET 2019-07-01-preview with Secret header and the pinned connection_verify=false behavior. Azure Arc uses
-  GET 2020-06-01 and its operator-host challenge secret through an injected restricted reader, never an arbitrary
-  request path.
+  Implement the four hosted managed-identity protocols reached through azure-identity 1.25.2/MSAL 1.37.0 from LiteLLM
+  uv.lock. B676 owns outer selection/IMDS and B2213 owns Arc challenge/file handling; call those lower helpers directly.
+  Do not port the unused legacy SDK _get_client_args factories.
 
 
   This slice adds native composition or ports the SDK protocol called by the parent; it owns no additional LiteLLM
   function body. The references and concrete operations below bound that work.
 
 
-  The pinned Service Fabric SDK requires IDENTITY_SERVER_THUMBPRINT to select the environment but does not validate
-  it; it uses connection_verify=false and rejects a supplied client_id. The oracle fixture must preserve that behavior
-  through the trusted provider HTTP policy, not invent thumbprint validation.
+  Named case contracts: app_service_header: GET IDENTITY_ENDPOINT with api-version=2019-08-01, resource, optional
+  client_id and headers X-IDENTITY-HEADER: {IDENTITY_HEADER}, Metadata: true. Truthy access_token/expires_on convert
+  expiry epoch with int; missing fields yield invalid_scope and {statusCode}, {message}; SDK failure uses App Service
+  managed identity configuration not found in environment. Token request error: ({error}) {description}. cloud_shell_no_client_id:
+  POST MSI_ENDPOINT as application/x-www-form-urlencoded resource with Metadata: true, no api-version. A truthy
+  client_id raises ValueError client_id should not be set for cloud shell managed identity. directly; inside DefaultAzureCredential
+  the SDK skips this guard. Preserve that distinction and reject object/resource identity config only when actually
+  supplied. service_fabric_thumbprint: GET IDENTITY_ENDPOINT with api-version=2019-07-01-preview, resource and Secret:
+  {IDENTITY_HEADER}. IDENTITY_SERVER_THUMBPRINT selects the host but the active MSAL transport ignores its value.
+  Preserve normal TLS verification; the unused legacy connection_verify=False path is not called. token_sha256_to_refresh/xms_cc
+  are omitted for the ordinary no-challenge request. service_fabric_client_id_rejected: The public ServiceFabricCredential
+  rejects truthy client_id or identity_config with ClientAuthenticationError and exact SERVICE_FABRIC_ERROR_MESSAGE
+  before MSAL. Do not copy the inner MSAL behavior that ignores identity. azure_ml_numeric_expiry: GET MSI_ENDPOINT
+  with api-version=2017-09-01, resource, optional clientid (not client_id), secret: {MSI_SECRET}. The active MSAL
+  path converts expires_on with int; integer/numeric string work, Linux/Windows date strings fail. Missing token/expiry
+  yields invalid_scope and the payload string, then Azure ML managed identity configuration not found in environment.
+  prefix. cloud_shell_reply: The non-MSAL ManagedIdentityClient requires a mapping with access_token and either
+  expiry field. Empty mapping raises No token received.; missing fields raises Unexpected response "{content}" with
+  token redacted as ****. Truthy expires_on wins, otherwise request_time+int(expires_in); token_type defaults Bearer.
+  Duration>=7200 supplies refresh_in=duration//2 only when absent; explicit refresh_in controls refresh_on. Final
+  cache insertion indexes content["resource"]: missing resource raises KeyError after token validation, not a successful
+  token; no inferred replacement resource. service_fabric_reply: Truthy access_token/expires_on require token_type
+  (no Bearer default in MSAL), with expiry numeric-string allowed. Map SecretHeaderNotFound to unauthorized_client,
+  ManagedIdentityNotFound to invalid_client, ArgumentNullOrEmpty to invalid_scope, other/missing codes to invalid_request;
+  description is raw response text and outer unavailable prefix identifies Service Fabric. hosted_errors: Malformed
+  JSON raises in App Service/Azure ML/Service Fabric; Arc uses B2213 invalid_request fallback. SDK wraps MSAL ManagedIdentityError
+  as ClientAuthenticationError, while returned OAuth error records become CredentialUnavailableError. Do not flatten
+  these categories or convert every HTTP400 into IMDS unavailable. hosted_inner_selection: Once a MSAL-backed credential
+  is selected, inspect environment key presence in order Service Fabric, App Service, Azure ML, Arc, VM. This may
+  differ from the truthy outer B676 selector when variables are present but empty; use the selected live path in
+  captured fixtures.
+
+
+  SERVICE_FABRIC_ERROR_MESSAGE is Specifying a client_id or identity_config is not supported by the Service Fabric
+  managed identity environment. The managed identity configuration is determined by the Service Fabric cluster resource
+  configuration. See https://aka.ms/servicefabricmi for more information. Read hosted environment settings from
+  the lower betterlite-config records (all absent by default), without depending on upper B676 selector. B2213 supplies
+  Arc and B673 shared token grant/error records; reuse B187 redaction for secret-bearing failures.
+
+
+  Cloud Shell JSON parse failure becomes ClientAuthenticationError Failed to deserialize JSON from response when
+  Content-Type starts application/json; otherwise CredentialUnavailableError Unexpected content type "{content_type}".
+  Include both rows in cloud_shell_reply.
 
 
   Implement crates/betterlite-azure/src/azure_hosted_identity.rs with adjacent tests under azure_hosted_identity/.
@@ -33,10 +69,10 @@ description: >-
 
 
   Write rstest function azure_hosted_identity_cases in betterlite-azure with these exact named cases (one per oracle
-  file): app_service_header, azure_ml_date_expiry, cloud_shell_no_client_id, service_fabric_thumbprint, azure_arc_challenge,
-  service_fabric_client_id_rejected. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): app_service_header, cloud_shell_no_client_id, service_fabric_thumbprint, service_fabric_client_id_rejected,
+  azure_ml_numeric_expiry, cloud_shell_reply, service_fabric_reply, hosted_errors, hosted_inner_selection. Each
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_hosted_identity* using HelperCase: kind:
@@ -69,9 +105,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 345 production lines, 129 behavior/config-test lines, 99 combined
-  Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 668 planned, 675 maximum changed lines. The production allowance includes 310 lines for the referenced
+  SDK overloads share an async implementation): 285 production lines, 265 behavior/config-test lines, 115 combined
+  Rust/Python adapter lines, 60 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 760 planned, 775 maximum changed lines. The production allowance includes 310 lines for the referenced
   SDK protocol that LiteLLM delegates.
 scope:
   paths:
@@ -95,51 +131,44 @@ scope:
   - crates/betterlite-azure/fuzz/corpus/azure_hosted_identity/**
   lint_tables: false
 references:
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/azure_arc.py#L22-L149
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/service_fabric.py#L76-L113
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/app_service.py#L15-L42
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/azure_ml.py#L20-L91
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/cloud_shell.py#L14-L59
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L86-L127
+  why: LiteLLM public managed identity construction.
+- url: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L412-L635
+  why: Actual environment dispatch, hosted requests and reply normalization.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/service_fabric.py#L17-L43
+  why: Public user-assigned identity rejection before MSAL.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/cloud_shell.py#L18-L59
+  why: Active Cloud Shell credential path.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/managed_identity_client.py#L46-L91
+  why: Cloud Shell reply/refresh handling.
 dod:
-- text: 'app service header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/app-service-header.yaml.'
+- text: 'app_service_header: GET IDENTITY_ENDPOINT with api-version=2019-08-01, resource, optional client_id and
+    headers X-IDENTITY-HEADER: {IDENTITY_HEADER}, Metadata: true. Truthy access_token/expires_on convert expiry
+    epoch with int; missing fields yield invalid_scope and {statusCode}, {message}; SDK failure uses App Service
+    managed identity configuration not found in environment. Token request error: ({error}) {description}.'
   proof:
   - case-app-service-header
   - oracle
   - helper-python
-- text: 'azure ml date expiry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/azure-ml-date-expiry.yaml.'
-  proof:
-  - case-azure-ml-date-expiry
-  - oracle
-  - helper-python
-- text: >-
-    cloud shell no client id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/cloud-shell-no-client-id.yaml.
+- text: 'cloud_shell_no_client_id: POST MSI_ENDPOINT as application/x-www-form-urlencoded resource with Metadata:
+    true, no api-version. A truthy client_id raises ValueError client_id should not be set for cloud shell managed
+    identity. directly; inside DefaultAzureCredential the SDK skips this guard. Preserve that distinction and reject
+    object/resource identity config only when actually supplied.'
   proof:
   - case-cloud-shell-no-client-id
   - oracle
   - helper-python
-- text: >-
-    service fabric thumbprint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/service-fabric-thumbprint.yaml.
+- text: 'service_fabric_thumbprint: GET IDENTITY_ENDPOINT with api-version=2019-07-01-preview, resource and Secret:
+    {IDENTITY_HEADER}. IDENTITY_SERVER_THUMBPRINT selects the host but the active MSAL transport ignores its value.
+    Preserve normal TLS verification; the unused legacy connection_verify=False path is not called. token_sha256_to_refresh/xms_cc
+    are omitted for the ordinary no-challenge request.'
   proof:
   - case-service-fabric-thumbprint
   - oracle
   - helper-python
-- text: 'azure arc challenge: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/azure-arc-challenge.yaml.'
-  proof:
-  - case-azure-arc-challenge
-  - oracle
-  - helper-python
-- text: >-
-    service fabric client id rejected: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-hosted-identity/service-fabric-client-id-rejected.yaml.
+- text: 'service_fabric_client_id_rejected: The public ServiceFabricCredential rejects truthy client_id or identity_config
+    with ClientAuthenticationError and exact SERVICE_FABRIC_ERROR_MESSAGE before MSAL. Do not copy the inner MSAL
+    behavior that ignores identity.'
   proof:
   - case-service-fabric-client-id-rejected
   - oracle
@@ -158,45 +187,86 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'azure_ml_numeric_expiry: GET MSI_ENDPOINT with api-version=2017-09-01, resource, optional clientid (not
+    client_id), secret: {MSI_SECRET}. The active MSAL path converts expires_on with int; integer/numeric string
+    work, Linux/Windows date strings fail. Missing token/expiry yields invalid_scope and the payload string, then
+    Azure ML managed identity configuration not found in environment. prefix.'
+  proof:
+  - case-azure-ml-numeric-expiry
+  - oracle
+  - helper-python
+- text: 'cloud_shell_reply: The non-MSAL ManagedIdentityClient requires a mapping with access_token and either expiry
+    field. Empty mapping raises No token received.; missing fields raises Unexpected response "{content}" with token
+    redacted as ****. Truthy expires_on wins, otherwise request_time+int(expires_in); token_type defaults Bearer.
+    Duration>=7200 supplies refresh_in=duration//2 only when absent; explicit refresh_in controls refresh_on. Final
+    cache insertion indexes content["resource"]: missing resource raises KeyError after token validation, not a
+    successful token; no inferred replacement resource.'
+  proof:
+  - case-cloud-shell-reply
+  - oracle
+  - helper-python
+- text: 'service_fabric_reply: Truthy access_token/expires_on require token_type (no Bearer default in MSAL), with
+    expiry numeric-string allowed. Map SecretHeaderNotFound to unauthorized_client, ManagedIdentityNotFound to invalid_client,
+    ArgumentNullOrEmpty to invalid_scope, other/missing codes to invalid_request; description is raw response text
+    and outer unavailable prefix identifies Service Fabric.'
+  proof:
+  - case-service-fabric-reply
+  - oracle
+  - helper-python
+- text: 'hosted_errors: Malformed JSON raises in App Service/Azure ML/Service Fabric; Arc uses B2213 invalid_request
+    fallback. SDK wraps MSAL ManagedIdentityError as ClientAuthenticationError, while returned OAuth error records
+    become CredentialUnavailableError. Do not flatten these categories or convert every HTTP400 into IMDS unavailable.'
+  proof:
+  - case-hosted-errors
+  - oracle
+  - helper-python
+- text: 'hosted_inner_selection: Once a MSAL-backed credential is selected, inspect environment key presence in
+    order Service Fabric, App Service, Azure ML, Arc, VM. This may differ from the truthy outer B676 selector when
+    variables are present but empty; use the selected live path in captured fixtures.'
+  proof:
+  - case-hosted-inner-selection
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-app-service-header
-    why: The app-service-header behavior is missing or differs from its pinned fixture.
+    why: 'GET IDENTITY_ENDPOINT with api-version=2019-08-01, resource, optional client_id and headers X-IDENTITY-HEADER:
+      {IDENTITY_HEADER}, Metadata: true. Truthy access_token/expires_on convert expiry epoch with int; missing fields
+      yield invalid_scope and {statusCode}, {message}; SDK failure uses App Service managed identity configuration
+      not found in environment. Token request error: ({error}) {description}.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_app_service_header$/)'
-  - id: case-azure-ml-date-expiry
-    why: The azure-ml-date-expiry behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_azure_ml_date_expiry$/)'
   - id: case-cloud-shell-no-client-id
-    why: The cloud-shell-no-client-id behavior is missing or differs from its pinned fixture.
+    why: 'POST MSI_ENDPOINT as application/x-www-form-urlencoded resource with Metadata: true, no api-version. A
+      truthy client_id raises ValueError client_id should not be set for cloud shell managed identity. directly;
+      inside DefaultAzureCredential the SDK skips this guard. Preserve that distinction and reject object/resource
+      identity config only when actually supplied.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_cloud_shell_no_client_id$/)'
   - id: case-service-fabric-thumbprint
-    why: The service-fabric-thumbprint behavior is missing or differs from its pinned fixture.
+    why: 'GET IDENTITY_ENDPOINT with api-version=2019-07-01-preview, resource and Secret: {IDENTITY_HEADER}. IDENTITY_SERVER_THUMBPRINT
+      selects the host but the active MSAL transport ignores its value. Preserve normal TLS verification; the unused
+      legacy connection_verify=False path is not called. token_sha256_to_refresh/xms_cc are omitted for the ordinary
+      no-challenge request.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_service_fabric_thumbprint$/)'
-  - id: case-azure-arc-challenge
-    why: The azure-arc-challenge behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_azure_arc_challenge$/)'
   - id: case-service-fabric-client-id-rejected
-    why: The service-fabric-client-id-rejected behavior is missing or differs from its pinned fixture.
+    why: The public ServiceFabricCredential rejects truthy client_id or identity_config with ClientAuthenticationError
+      and exact SERVICE_FABRIC_ERROR_MESSAGE before MSAL. Do not copy the inner MSAL behavior that ignores identity.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_service_fabric_client_id_rejected$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_hosted_identity.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_hosted_identity.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_hosted_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_hosted_identity*")"
       && grep -lq 'azure_hosted_identity' tools/oracle/fuzz/corpus/helper_case/azure_hosted_identity* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_hosted_identity$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_hosted_identity)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_hosted_identity)"
       && grep -q 'decode_hosted_identity_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_hosted_identity.rs
       && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_hosted_identity_corpus$/)'
   - id: credential-identity-isolation
@@ -205,18 +275,53 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_secret_safe_failure$/)'
+  - id: case-azure-ml-numeric-expiry
+    why: 'GET MSI_ENDPOINT with api-version=2017-09-01, resource, optional clientid (not client_id), secret: {MSI_SECRET}.
+      The active MSAL path converts expires_on with int; integer/numeric string work, Linux/Windows date strings
+      fail. Missing token/expiry yields invalid_scope and the payload string, then Azure ML managed identity configuration
+      not found in environment. prefix.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_azure_ml_numeric_expiry$/)'
+  - id: case-cloud-shell-reply
+    why: 'The non-MSAL ManagedIdentityClient requires a mapping with access_token and either expiry field. Empty
+      mapping raises No token received.; missing fields raises Unexpected response "{content}" with token redacted
+      as ****. Truthy expires_on wins, otherwise request_time+int(expires_in); token_type defaults Bearer. Duration>=7200
+      supplies refresh_in=duration//2 only when absent; explicit refresh_in controls refresh_on. Final cache insertion
+      indexes content["resource"]: missing resource raises KeyError after token validation, not a successful token;
+      no inferred replacement resource.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_cloud_shell_reply$/)'
+  - id: case-service-fabric-reply
+    why: Truthy access_token/expires_on require token_type (no Bearer default in MSAL), with expiry numeric-string
+      allowed. Map SecretHeaderNotFound to unauthorized_client, ManagedIdentityNotFound to invalid_client, ArgumentNullOrEmpty
+      to invalid_scope, other/missing codes to invalid_request; description is raw response text and outer unavailable
+      prefix identifies Service Fabric.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_service_fabric_reply$/)'
+  - id: case-hosted-errors
+    why: Malformed JSON raises in App Service/Azure ML/Service Fabric; Arc uses B2213 invalid_request fallback.
+      SDK wraps MSAL ManagedIdentityError as ClientAuthenticationError, while returned OAuth error records become
+      CredentialUnavailableError. Do not flatten these categories or convert every HTTP400 into IMDS unavailable.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_hosted_errors$/)'
+  - id: case-hosted-inner-selection
+    why: Once a MSAL-backed credential is selected, inspect environment key presence in order Service Fabric, App
+      Service, Azure ML, Arc, VM. This may differ from the truthy outer B676 selector when variables are present
+      but empty; use the selected live path in captured fixtures.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_hosted_identity_cases::case_[0-9]+_hosted_inner_selection$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-hosted-identity/app-service-header.yaml
-- tools/oracle/cases/helpers/providers/azure-hosted-identity/azure-ml-date-expiry.yaml
 - tools/oracle/cases/helpers/providers/azure-hosted-identity/cloud-shell-no-client-id.yaml
 - tools/oracle/cases/helpers/providers/azure-hosted-identity/service-fabric-thumbprint.yaml
-- tools/oracle/cases/helpers/providers/azure-hosted-identity/azure-arc-challenge.yaml
 - tools/oracle/cases/helpers/providers/azure-hosted-identity/service-fabric-client-id-rejected.yaml
+- tools/oracle/cases/helpers/providers/azure-hosted-identity/azure-ml-numeric-expiry.yaml
+- tools/oracle/cases/helpers/providers/azure-hosted-identity/cloud-shell-reply.yaml
+- tools/oracle/cases/helpers/providers/azure-hosted-identity/service-fabric-reply.yaml
+- tools/oracle/cases/helpers/providers/azure-hosted-identity/hosted-errors.yaml
+- tools/oracle/cases/helpers/providers/azure-hosted-identity/hosted-inner-selection.yaml
 deviations: []
 out_of_scope: []
 pitfalls:
-- Azure ML expires_on can be an integer or either Linux/Windows UTC date spelling.
+- The retained Azure ML _parse_expires_on helper has no caller in this SDK path; date-string success fixtures would
+  test dead code.
+- The live Service Fabric request has neither thumbprint pinning nor the old TLS verification bypass.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

@@ -6,6 +6,12 @@ description: >-
   and do not aggregate large files merely for logs.
 
 
+  In file_binary_content, include a Bedrock provider-config case: utils.py L9425-L9428 always constructs BedrockFilesConfig,
+  so files/main.py L938-L957 delegates the generic HTTP content path using B645 request preparation and B646 binary
+  reply handling, then returns. The later BedrockFilesHandler boto3 branch L1009-L1018 is unreachable with the pinned
+  registry and has no live caller; do not port it or mock away the registry merely to exercise it.
+
+
   Implement crates/betterlite-core/src/api/file_content_stream.rs. Use FileContentStreamInput and FileContentStreamResult
   with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
   through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential

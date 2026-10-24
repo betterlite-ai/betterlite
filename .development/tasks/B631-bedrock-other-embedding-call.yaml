@@ -1,10 +1,10 @@
 id: B631
-title: Bedrock embedding request fanout and replies
+title: Bedrock embedding request ordering and replies
 description: >-
-  Execute prepared embedding batches with ordered outputs, one typed async send path and shared signing. Preserve
-  family request fanout and source input validation; bound concurrent work to the existing configured deployment
-  concurrency and cancel owned requests on failure/disconnect. Async invocation status retrieval is embedding_jobs,
-  not inline polling here.
+  Execute prepared embedding inputs sequentially with ordered outputs, one typed async send path and shared signing.
+  Preserve family selection and caller-option mutations; do not parallelize the per-input loop, because source failure
+  order and partial upstream effects are observable. Async invocation status retrieval is embedding_jobs, not inline
+  polling here.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/embed/embedding.py:
@@ -12,7 +12,53 @@ description: >-
   BedrockEmbedding.embeddings L393-L585.
 
 
-  B693 owns HTTP response parsing and individual embedding calls; this slice owns fanout and result ordering.
+  B693 owns HTTP response parsing and individual embedding calls; this slice owns sequential batching and result
+  ordering.
+
+
+  Named case contracts: embedding_family_selection: First load credentials through B693 using B590 bedrock_bearer_token(api_key),
+  then pop model_id and use its truthy value or model; percent-encode every non-unreserved character with B171 quote
+  safe empty. Resolve B591 region from the already chosen credential region plus original model and unencoded model
+  ID. Detect async_invoke/ anywhere in model and remove only its first occurrence before B591 provider selection.
+  If no provider is found raise generic Exception Unable to determine bedrock embedding provider for model: {model}.
+  Supported providers: ['cohere', 'amazon', 'twelvelabs', 'nova']. Deep-copy the remaining options, remove authentication
+  keys case-insensitively using B590 catalog, and remove user only by exact key. Do not mutate unrelated original
+  options. ordered_multi_input_result: Both sync and async per-input loops sign and send one request at a time in
+  input order, append each parsed reply, and transform only after every call succeeds. A failure stops later calls;
+  no rollback or concurrent fanout is added. Empty batch still calls B693 result transformation. Pass only a matching
+  sync/async handler, otherwise None, and preserve timeout. The async path runs each signature through B595 run_aws_signing;
+  sync signs directly. cohere_batched_input: Cohere sends all inputs in one B627 transformed body. Merge default
+  Content-Type=application/json with extra_headers, where an exact key overrides the default, then B595 get_request_headers
+  signs json.dumps(data). Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native
+  B037 cohere_embedding with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding
+  and the mutated original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.
+  titan_per_item_input: Only exact amazon.titan-embed-image-v1, amazon.titan-embed-text-v1, amazon.titan-embed-text-v2:0
+  and amazon.titan-embed-g1-text-02 are accepted under provider amazon. Build one B627 request per input in order.
+  The inner Unmapped model branch is unreachable under this exact outer list and needs no fabricated case; another
+  amazon model reaches Unable to map Bedrock request to provider. Response model is the async-prefix-stripped model,
+  not the optional model_id. nova_async_invoke_start: TwelveLabs and Nova build one B629/B628 request per input,
+  receiving has_async_invoke, the percent-encoded model ID and inference_params.output_s3_uri. TwelveLabs also receives
+  B629 drop_params_enabled(litellm_params). Resolve B591 runtime endpoint after body construction by popping aws_bedrock_runtime_endpoint
+  from original options; use endpoint_url and ignore proxy_endpoint_url. Append /async-invoke for any detected async
+  marker, otherwise /model/{encoded_model_id}/invoke, without trimming an existing trailing slash. The encoded model
+  ID was computed before removing the async marker from model. signing_auth_isolation: For every per-input request,
+  start Content-Type=application/json, merge extra headers, sign exact JSON bytes through B595, and forward the
+  prepared URL and plain header map. Emit B249 pre_call with input=data, api_key empty and complete_input_dict/api_base/headers;
+  post_call uses parsed reply and complete_input_dict. Preserve custom headers and the shared B595 bearer/non-AWS
+  Authorization precedence cases without cross-request credential reuse. embedding_transport_error: B693 HTTP, timeout
+  and decode failures stop the sequential loop unchanged. After a sync batch result, None causes generic Exception
+  Unable to map Bedrock request to provider; async returns its delegated result without that extra check. A nonbatch
+  branch with data=None raises the same message. Reuse exact B693 status/header/error cases and assert later requests
+  were not sent.
+
+
+  Write standalone Rust test embedding_call_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test embedding_call_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/embedding_call.rs with adjacent tests under embedding_call/. Keep each
@@ -31,9 +77,8 @@ description: >-
   Write rstest function embedding_call_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): embedding_family_selection, ordered_multi_input_result, cohere_batched_input, titan_per_item_input, nova_async_invoke_start,
   signing_auth_isolation, embedding_transport_error. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call* using HelperCase:
@@ -49,9 +94,9 @@ description: >-
 
 
   Budget from 302 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 320 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 536 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 285 production lines, 275 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 700 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -70,48 +115,71 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L254-L585
-  why: >-
-    Own BedrockEmbedding._single_func_embeddings, BedrockEmbedding._async_single_func_embeddings, BedrockEmbedding.embeddings.
+  why: Own BedrockEmbedding._single_func_embeddings, BedrockEmbedding._async_single_func_embeddings, BedrockEmbedding.embeddings.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    embedding family selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/embedding-family-selection.yaml.
+- text: 'embedding_family_selection: First load credentials through B693 using B590 bedrock_bearer_token(api_key),
+    then pop model_id and use its truthy value or model; percent-encode every non-unreserved character with B171
+    quote safe empty. Resolve B591 region from the already chosen credential region plus original model and unencoded
+    model ID. Detect async_invoke/ anywhere in model and remove only its first occurrence before B591 provider selection.
+    If no provider is found raise generic Exception Unable to determine bedrock embedding provider for model: {model}.
+    Supported providers: [''cohere'', ''amazon'', ''twelvelabs'', ''nova'']. Deep-copy the remaining options, remove
+    authentication keys case-insensitively using B590 catalog, and remove user only by exact key. Do not mutate
+    unrelated original options.'
   proof:
   - case-embedding-family-selection
   - oracle
   - helper-python
-- text: >-
-    ordered multi input result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/ordered-multi-input-result.yaml.
+- text: 'ordered_multi_input_result: Both sync and async per-input loops sign and send one request at a time in
+    input order, append each parsed reply, and transform only after every call succeeds. A failure stops later calls;
+    no rollback or concurrent fanout is added. Empty batch still calls B693 result transformation. Pass only a matching
+    sync/async handler, otherwise None, and preserve timeout. The async path runs each signature through B595 run_aws_signing;
+    sync signs directly.'
   proof:
   - case-ordered-multi-input-result
   - oracle
   - helper-python
-- text: >-
-    cohere batched input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/cohere-batched-input.yaml.
+- text: 'cohere_batched_input: Cohere sends all inputs in one B627 transformed body. Merge default Content-Type=application/json
+    with extra_headers, where an exact key overrides the default, then B595 get_request_headers signs json.dumps(data).
+    Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B037 cohere_embedding
+    with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding and the mutated
+    original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.'
   proof:
   - case-cohere-batched-input
   - oracle
   - helper-python
-- text: >-
-    titan per item input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/titan-per-item-input.yaml.
+- text: 'titan_per_item_input: Only exact amazon.titan-embed-image-v1, amazon.titan-embed-text-v1, amazon.titan-embed-text-v2:0
+    and amazon.titan-embed-g1-text-02 are accepted under provider amazon. Build one B627 request per input in order.
+    The inner Unmapped model branch is unreachable under this exact outer list and needs no fabricated case; another
+    amazon model reaches Unable to map Bedrock request to provider. Response model is the async-prefix-stripped
+    model, not the optional model_id.'
   proof:
   - case-titan-per-item-input
   - oracle
   - helper-python
-- text: >-
-    nova async invoke start: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/nova-async-invoke-start.yaml.
+- text: 'nova_async_invoke_start: TwelveLabs and Nova build one B629/B628 request per input, receiving has_async_invoke,
+    the percent-encoded model ID and inference_params.output_s3_uri. TwelveLabs also receives B629 drop_params_enabled(litellm_params).
+    Resolve B591 runtime endpoint after body construction by popping aws_bedrock_runtime_endpoint from original
+    options; use endpoint_url and ignore proxy_endpoint_url. Append /async-invoke for any detected async marker,
+    otherwise /model/{encoded_model_id}/invoke, without trimming an existing trailing slash. The encoded model ID
+    was computed before removing the async marker from model.'
   proof:
   - case-nova-async-invoke-start
   - oracle
   - helper-python
-- text: >-
-    signing auth isolation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/signing-auth-isolation.yaml.
+- text: 'signing_auth_isolation: For every per-input request, start Content-Type=application/json, merge extra headers,
+    sign exact JSON bytes through B595, and forward the prepared URL and plain header map. Emit B249 pre_call with
+    input=data, api_key empty and complete_input_dict/api_base/headers; post_call uses parsed reply and complete_input_dict.
+    Preserve custom headers and the shared B595 bearer/non-AWS Authorization precedence cases without cross-request
+    credential reuse.'
   proof:
   - case-signing-auth-isolation
   - oracle
   - helper-python
-- text: >-
-    embedding transport error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/embedding-transport-error.yaml.
+- text: 'embedding_transport_error: B693 HTTP, timeout and decode failures stop the sequential loop unchanged. After
+    a sync batch result, None causes generic Exception Unable to map Bedrock request to provider; async returns
+    its delegated result without that extra check. A nonbatch branch with data=None raises the same message. Reuse
+    exact B693 status/header/error cases and assert later requests were not sent.'
   proof:
   - case-embedding-transport-error
   - oracle
@@ -120,44 +188,84 @@ dod:
     production parser.
   proof:
   - helper-case-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-embedding-family-selection
-    why: The embedding-family-selection behavior is missing or differs from its pinned fixture.
+    why: 'First load credentials through B693 using B590 bedrock_bearer_token(api_key), then pop model_id and use
+      its truthy value or model; percent-encode every non-unreserved character with B171 quote safe empty. Resolve
+      B591 region from the already chosen credential region plus original model and unencoded model ID. Detect async_invoke/
+      anywhere in model and remove only its first occurrence before B591 provider selection. If no provider is found
+      raise generic Exception Unable to determine bedrock embedding provider for model: {model}. Supported providers:
+      [''cohere'', ''amazon'', ''twelvelabs'', ''nova'']. Deep-copy the remaining options, remove authentication
+      keys case-insensitively using B590 catalog, and remove user only by exact key. Do not mutate unrelated original
+      options.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_embedding_family_selection$/)'
   - id: case-ordered-multi-input-result
-    why: The ordered-multi-input-result behavior is missing or differs from its pinned fixture.
+    why: Both sync and async per-input loops sign and send one request at a time in input order, append each parsed
+      reply, and transform only after every call succeeds. A failure stops later calls; no rollback or concurrent
+      fanout is added. Empty batch still calls B693 result transformation. Pass only a matching sync/async handler,
+      otherwise None, and preserve timeout. The async path runs each signature through B595 run_aws_signing; sync
+      signs directly.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_ordered_multi_input_result$/)'
   - id: case-cohere-batched-input
-    why: The cohere-batched-input behavior is missing or differs from its pinned fixture.
+    why: Cohere sends all inputs in one B627 transformed body. Merge default Content-Type=application/json with
+      extra_headers, where an exact key overrides the default, then B595 get_request_headers signs json.dumps(data).
+      Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B037 cohere_embedding
+      with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding and the
+      mutated original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_cohere_batched_input$/)'
   - id: case-titan-per-item-input
-    why: The titan-per-item-input behavior is missing or differs from its pinned fixture.
+    why: Only exact amazon.titan-embed-image-v1, amazon.titan-embed-text-v1, amazon.titan-embed-text-v2:0 and amazon.titan-embed-g1-text-02
+      are accepted under provider amazon. Build one B627 request per input in order. The inner Unmapped model branch
+      is unreachable under this exact outer list and needs no fabricated case; another amazon model reaches Unable
+      to map Bedrock request to provider. Response model is the async-prefix-stripped model, not the optional model_id.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_titan_per_item_input$/)'
   - id: case-nova-async-invoke-start
-    why: The nova-async-invoke-start behavior is missing or differs from its pinned fixture.
+    why: TwelveLabs and Nova build one B629/B628 request per input, receiving has_async_invoke, the percent-encoded
+      model ID and inference_params.output_s3_uri. TwelveLabs also receives B629 drop_params_enabled(litellm_params).
+      Resolve B591 runtime endpoint after body construction by popping aws_bedrock_runtime_endpoint from original
+      options; use endpoint_url and ignore proxy_endpoint_url. Append /async-invoke for any detected async marker,
+      otherwise /model/{encoded_model_id}/invoke, without trimming an existing trailing slash. The encoded model
+      ID was computed before removing the async marker from model.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_nova_async_invoke_start$/)'
   - id: case-signing-auth-isolation
-    why: The signing-auth-isolation behavior is missing or differs from its pinned fixture.
+    why: For every per-input request, start Content-Type=application/json, merge extra headers, sign exact JSON
+      bytes through B595, and forward the prepared URL and plain header map. Emit B249 pre_call with input=data,
+      api_key empty and complete_input_dict/api_base/headers; post_call uses parsed reply and complete_input_dict.
+      Preserve custom headers and the shared B595 bearer/non-AWS Authorization precedence cases without cross-request
+      credential reuse.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_signing_auth_isolation$/)'
   - id: case-embedding-transport-error
-    why: The embedding-transport-error behavior is missing or differs from its pinned fixture.
+    why: B693 HTTP, timeout and decode failures stop the sequential loop unchanged. After a sync batch result, None
+      causes generic Exception Unable to map Bedrock request to provider; async returns its delegated result without
+      that extra check. A nonbatch branch with data=None raises the same message. Reuse exact B693 status/header/error
+      cases and assert later requests were not sent.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_embedding_transport_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_call.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_call.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call*")"
       && grep -lq 'bedrock_other_embedding_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_embedding_call$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/embedding-family-selection.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-embedding-call/ordered-multi-input-result.yaml
@@ -172,19 +280,18 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._get_async_invoke_status L587-L667 belong to B632; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/embed/embedding.py: _sign_get_request L51-L62; BedrockEmbedding._load_credentials L67-L71;
-  BedrockEmbedding._load_credentials L74-L78; BedrockEmbedding._load_credentials L80-L106; BedrockEmbedding._make_sync_call
-  L111-L142; BedrockEmbedding._make_async_call L144-L176; BedrockEmbedding._transform_response L178-L252 belong
-  to B693; reuse that implementation or its injected typed boundary.
 - 'litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding.async_embeddings L108-L109 have no caller at the pin;
   do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._get_async_invoke_status
+  L587-L667 belong to B632.'
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: _sign_get_request L51-L62; BedrockEmbedding._load_credentials
+  L66-L71; BedrockEmbedding._load_credentials L73-L78; BedrockEmbedding._load_credentials L80-L106; BedrockEmbedding.async_embeddings
+  L108-L109; BedrockEmbedding._make_sync_call L111-L142; BedrockEmbedding._make_async_call L144-L176; BedrockEmbedding._transform_response
+  L178-L252 belong to B693.'
 pitfalls:
-- Cohere batches inputs while Titan sends per-input calls; preserving order requires indexing results before fanout.
+- The async marker is removed after modelId is encoded, so the URL and provider-selection model intentionally differ.
+- AWS_REGION overrides AWS_REGION_NAME in embedding credential loading, unlike the general region resolver.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 700
   max_new_expects: 0
-review_level: standard
+review_level: security

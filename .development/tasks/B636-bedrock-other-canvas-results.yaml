@@ -1,17 +1,39 @@
 id: B636
 title: Bedrock Nova Canvas edit results
 description: >-
-  Add CanvasEditReply normalization, preserving images/errors, usage, size and creation metadata. Reuse exact typed
-  image response models and keep multiple image results ordered; tests include provider filter/error variants and
-  optional field absence.
+  Add CanvasEditReply normalization, preserving images/errors and the shared ImageResponse defaults. Reuse exact
+  typed image response models and keep multiple image results ordered; tests include provider filter/error variants
+  and optional field absence.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py:
-  BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response L387-L466.
+  BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response pre-cost branch L387-L455 and return L466-L466.
 
 
-  The output_cost_per_image response metadata calculation is B068; pass its exact decimal result into the image
-  reply projection.
+  B068 owns the catalog cost lookup/multiplication at L456-L464, including swallowing lookup and conversion errors;
+  call that helper and retain its optional response-cost metadata without reconstructing the algorithm here.
+
+
+  Named case contracts: canvas_images_array: Parse JSON before checking HTTP status. At status exactly 200, use
+  response_data.get(images) or []; truthy image entries become ordered ImageObject(b64_json=value,url=None,revised_prompt=None),
+  while falsey entries are skipped. Construct a fresh ImageResponse, retaining shared default creation/object/usage
+  fields; no upstream size, usage, created or model metadata is copied. Ensure hidden_params.additional_headers
+  exists. canvas_error_object: After parsing, every status other than 200 raises B635/B682 error with that status,
+  original headers and Nova Canvas image edit error: {response_data}. At 200, presence of errors plus falsey images
+  raises the same prefix with response_data[errors], including empty errors or None. Otherwise choose truthy message
+  then error; when truthy and images falsey, stringify nonstrings and raise the same prefix. A truthy images container
+  suppresses both error branches even if all entries will be skipped. Do not inspect finish_reasons. canvas_empty_images:
+  After removing falsey entries, an empty data list raises B635/B682 error with original HTTP status and headers
+  and exact message Nova Canvas image edit returned no images. This can be an error with status200. Error priority
+  is non-200 body, errors-key, message/error, then empty filtered image list. canvas_malformed_reply: decode_canvas_reply
+  failure raises B635/B682 with original status/headers and Error parsing Nova Canvas image edit response: {decoder_error}.
+  Only raw JSON decoding is caught: parsed null/array/other malformed shapes fail at their later field accesses
+  without this wrapper. Preserve this distinction from the B638 outer decoder, which may reject malformed JSON/null
+  before the provider transform. canvas_response_cost: B068 looks up get_model_info(model,custom_llm_provider=bedrock),
+  defaults absent output_cost_per_image to 0, skips None, and sets llm_provider-x-litellm-response-cost to the price
+  times the retained image count. Lookup/conversion exceptions are swallowed; successful images remain. Test omitted
+  price, None, nonnumeric price and multiple retained images through the shared cost helper; no size-based price
+  or usage is invented.
 
 
   Implement crates/betterlite-bedrock/src/canvas_results.rs with adjacent tests under canvas_results/. Keep each
@@ -28,10 +50,9 @@ description: >-
 
 
   Write rstest function canvas_results_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): canvas_images_array, canvas_error_object, canvas_response_usage, canvas_result_size, canvas_empty_images,
-  canvas_malformed_reply. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): canvas_images_array, canvas_error_object, canvas_empty_images, canvas_malformed_reply, canvas_response_cost.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results* using HelperCase:
@@ -48,10 +69,10 @@ description: >-
   success/failure categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 69 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 100 production lines, 99 behavior/config-test lines, 79 combined
+  Budget from 60 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 100 production lines, 185 behavior/config-test lines, 85 combined
   Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 358 planned, 400 maximum changed lines.
+  wiring lines; 450 planned, 450 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -72,43 +93,38 @@ scope:
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L387-L466
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L387-L466
   why: Own BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response. Other functions in this file remain
     with the owners listed below.
 dod:
-- text: >-
-    canvas images array: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-images-array.yaml.
+- text: 'canvas_images_array: Parse JSON before checking HTTP status. At status exactly 200, use response_data.get(images)
+    or []; truthy image entries become ordered ImageObject(b64_json=value,url=None,revised_prompt=None), while falsey
+    entries are skipped. Construct a fresh ImageResponse, retaining shared default creation/object/usage fields;
+    no upstream size, usage, created or model metadata is copied. Ensure hidden_params.additional_headers exists.'
   proof:
   - case-canvas-images-array
   - oracle
   - helper-python
-- text: >-
-    canvas error object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-error-object.yaml.
+- text: 'canvas_error_object: After parsing, every status other than 200 raises B635/B682 error with that status,
+    original headers and Nova Canvas image edit error: {response_data}. At 200, presence of errors plus falsey images
+    raises the same prefix with response_data[errors], including empty errors or None. Otherwise choose truthy message
+    then error; when truthy and images falsey, stringify nonstrings and raise the same prefix. A truthy images container
+    suppresses both error branches even if all entries will be skipped. Do not inspect finish_reasons.'
   proof:
   - case-canvas-error-object
   - oracle
   - helper-python
-- text: >-
-    canvas response usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-response-usage.yaml.
-  proof:
-  - case-canvas-response-usage
-  - oracle
-  - helper-python
-- text: >-
-    canvas result size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-result-size.yaml.
-  proof:
-  - case-canvas-result-size
-  - oracle
-  - helper-python
-- text: >-
-    canvas empty images: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-empty-images.yaml.
+- text: 'canvas_empty_images: After removing falsey entries, an empty data list raises B635/B682 error with original
+    HTTP status and headers and exact message Nova Canvas image edit returned no images. This can be an error with
+    status200. Error priority is non-200 body, errors-key, message/error, then empty filtered image list.'
   proof:
   - case-canvas-empty-images
   - oracle
   - helper-python
-- text: >-
-    canvas malformed reply: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-malformed-reply.yaml.
+- text: 'canvas_malformed_reply: decode_canvas_reply failure raises B635/B682 with original status/headers and Error
+    parsing Nova Canvas image edit response: {decoder_error}. Only raw JSON decoding is caught: parsed null/array/other
+    malformed shapes fail at their later field accesses without this wrapper. Preserve this distinction from the
+    B638 outer decoder, which may reject malformed JSON/null before the provider transform.'
   proof:
   - case-canvas-malformed-reply
   - oracle
@@ -120,73 +136,88 @@ dod:
 - text: decode_canvas_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'canvas_response_cost: B068 looks up get_model_info(model,custom_llm_provider=bedrock), defaults absent
+    output_cost_per_image to 0, skips None, and sets llm_provider-x-litellm-response-cost to the price times the
+    retained image count. Lookup/conversion exceptions are swallowed; successful images remain. Test omitted price,
+    None, nonnumeric price and multiple retained images through the shared cost helper; no size-based price or usage
+    is invented.'
+  proof:
+  - case-canvas-response-cost
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-canvas-images-array
-    why: The canvas-images-array behavior is missing or differs from its pinned fixture.
+    why: Parse JSON before checking HTTP status. At status exactly 200, use response_data.get(images) or []; truthy
+      image entries become ordered ImageObject(b64_json=value,url=None,revised_prompt=None), while falsey entries
+      are skipped. Construct a fresh ImageResponse, retaining shared default creation/object/usage fields; no upstream
+      size, usage, created or model metadata is copied. Ensure hidden_params.additional_headers exists.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_images_array$/)'
   - id: case-canvas-error-object
-    why: The canvas-error-object behavior is missing or differs from its pinned fixture.
+    why: 'After parsing, every status other than 200 raises B635/B682 error with that status, original headers and
+      Nova Canvas image edit error: {response_data}. At 200, presence of errors plus falsey images raises the same
+      prefix with response_data[errors], including empty errors or None. Otherwise choose truthy message then error;
+      when truthy and images falsey, stringify nonstrings and raise the same prefix. A truthy images container suppresses
+      both error branches even if all entries will be skipped. Do not inspect finish_reasons.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_error_object$/)'
-  - id: case-canvas-response-usage
-    why: The canvas-response-usage behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_response_usage$/)'
-  - id: case-canvas-result-size
-    why: The canvas-result-size behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_result_size$/)'
   - id: case-canvas-empty-images
-    why: The canvas-empty-images behavior is missing or differs from its pinned fixture.
+    why: After removing falsey entries, an empty data list raises B635/B682 error with original HTTP status and
+      headers and exact message Nova Canvas image edit returned no images. This can be an error with status200.
+      Error priority is non-200 body, errors-key, message/error, then empty filtered image list.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_empty_images$/)'
   - id: case-canvas-malformed-reply
-    why: The canvas-malformed-reply behavior is missing or differs from its pinned fixture.
+    why: 'decode_canvas_reply failure raises B635/B682 with original status/headers and Error parsing Nova Canvas
+      image edit response: {decoder_error}. Only raw JSON decoding is caught: parsed null/array/other malformed
+      shapes fail at their later field accesses without this wrapper. Preserve this distinction from the B638 outer
+      decoder, which may reject malformed JSON/null before the provider transform.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_malformed_reply$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_results.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_results.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*")"
       && grep -lq 'bedrock_other_canvas_results' tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_canvas_results$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results)"
       && grep -q 'decode_canvas_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_canvas_results.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_canvas_results_corpus$/)'
+  - id: case-canvas-response-cost
+    why: B068 looks up get_model_info(model,custom_llm_provider=bedrock), defaults absent output_cost_per_image
+      to 0, skips None, and sets llm_provider-x-litellm-response-cost to the price times the retained image count.
+      Lookup/conversion exceptions are swallowed; successful images remain. Test omitted price, None, nonnumeric
+      price and multiple retained images through the shared cost helper; no size-based price or usage is invented.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_response_cost$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-images-array.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-error-object.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-response-usage.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-result-size.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-empty-images.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-malformed-reply.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-response-cost.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py: _nova_canvas_task_body L41-L129;
-  _file_types_to_b64 L132-L153; _supports_nova_canvas_image_edit_from_model_cost L156-L215; BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model
-  L224-L230; BedrockAmazonNovaCanvasImageEditConfig.get_error_class L232-L238; BedrockAmazonNovaCanvasImageEditConfig.get_supported_openai_params
-  L240-L255; BedrockAmazonNovaCanvasImageEditConfig.map_openai_params L257-L305; BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_request
-  L307-L385; BedrockAmazonNovaCanvasImageEditConfig.use_multipart_form_data L468-L469; BedrockAmazonNovaCanvasImageEditConfig.get_complete_url
-  L471-L481; BedrockAmazonNovaCanvasImageEditConfig.validate_environment L483-L495; get_bedrock_image_edit_config_for_model
-  L498-L519 belong to B635; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py:
+  _nova_canvas_task_body L41-L129; _file_types_to_b64 L132-L153; _supports_nova_canvas_image_edit_from_model_cost
+  L156-L215; BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model L223-L230; BedrockAmazonNovaCanvasImageEditConfig.get_error_class
+  L232-L238; BedrockAmazonNovaCanvasImageEditConfig.get_supported_openai_params L240-L255; BedrockAmazonNovaCanvasImageEditConfig.map_openai_params
+  L257-L305; BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_request L307-L385; BedrockAmazonNovaCanvasImageEditConfig.use_multipart_form_data
+  L468-L469; BedrockAmazonNovaCanvasImageEditConfig.get_complete_url L471-L481; BedrockAmazonNovaCanvasImageEditConfig.validate_environment
+  L483-L495; get_bedrock_image_edit_config_for_model L498-L519 belong to B635.'
 pitfalls:
-- >-
-  The BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response branch must retain the literal defaults
-  and omissions in the linked range; use the named fixtures to distinguish them.
+- A truthy images list suppresses provider error fields before falsey image entries are filtered.
+- The provider decoder wraps errors using the upstream status even when that status is 200.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: standard

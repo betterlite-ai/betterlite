@@ -20,7 +20,50 @@ description: >-
   L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
   L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
   L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940. litellm/types/llms/anthropic_tool_search.py:
-  get_tool_search_beta_header L32-L36.
+  get_tool_search_beta_header L32-L36. litellm/integrations/websearch_interception/tools.py: is_anthropic_native_web_search_tool
+  L207-L225.
+
+
+  Named case contracts: one_shot_subagent_billing: Require case-sensitive claude-cli/ or claude-code/ user-agent
+  prefix, exactly one dict-like user message, falsey tools, and a billing-only system. String system is one text;
+  list system accepts only dict text blocks with string text, ignores whitespace-only texts, requires at least one
+  meaningful text and exactly one cc_is_subagent=true across all parsed fields. malformed_billing_text: Trim outer
+  whitespace; require x-anthropic-billing-header: prefix and reject embedded CR/LF. Split nonempty semicolon fields,
+  each must contain = with nonempty trimmed key/value; split only at first =. Other fields allowed; duplicate cc_is_subagent,
+  false/True values, missing billing text, nontext blocks and malformed mappings fail. native_compaction_signature:
+  Only provider exactly anthropic: compaction option is non-None (including false/empty) or a mapping content block
+  in list/tuple content has type=compaction with nonempty string signature. Other providers, missing/empty/nonstring
+  signature fail. cache_control_support: Provider is explicit non-None or B174 resolver; resolver exceptions return
+  false. Require provider anthropic/bedrock/vertex_ai/azure_ai, case-insensitive claude in model, and B174 supports_prompt_caching.
+  Cache-control presence detector treats message-level non-None as true but list content dict key presence as true
+  even when value=None. file_and_pdf_flags: File-id detection delegates B234 and is true iff any ids. PDF detector
+  is intentionally broad: any dict list-content item with a type key unequal text counts, including image/tool/None
+  types; missing type does not count. tool_search_and_examples: Only exact tool_search_tool_regex_20251119 or tool_search_tool_bm25_20251119
+  types count. Programmatic calling needs a nonempty list allowed_callers containing code_execution_20250825 at
+  top level or dict function; examples need nonempty list input_examples at either level. Similar strings/empty/nonlists
+  fail. eager_input_boolean: Validate top-level and optional function eager_input_streaming as strict bool-or-None,
+  ignoring unknown fields. Top-level non-None including false wins over nested; malformed Mapping raises UnsupportedParamsError
+  eager_input_streaming must be a boolean; malformed nonmapping returns None. any detection short-circuits at first
+  true, so later malformed entries are not evaluated. computer_tool_beta: First type beginning computer_ wins; computer_20250124
+  -> computer-use-2025-01-24, computer_20241022 and unknown -> computer-use-2024-10-22. Web search recognizes a
+  type starting web_search, not only a single exact version. skills_code_execution_beta: Code execution is exactly
+  code_execution_20250825; skills need a truthy dict container with nonempty list skills. User beta parsing returns
+  None for None, else raw comma split preserving spaces/empty entries. Tool-search beta is tool-search-tool-2025-10-19
+  for vertex_ai,vertex_ai_beta,bedrock; advanced-tool-use-2025-11-20 for anthropic,azure,azure_ai and unknown providers.
+  conversation_feature_flags: Thinking display needs a dict with type enabled/adaptive and display updates. Mid-conversation
+  tool changes require role=system plus B221 parts containing tool_addition/tool_removal whose nested tool.type=tool_reference.
+  Any message output_config key counts even None; MCP servers use truthiness. common_beta_set: Use B688 effort detection
+  then union effort-2025-11-24, selected computer beta, files-api-2025-04-14 plus code-execution-2025-05-22 for
+  file ids, mcp-client-2025-04-04, mid-conversation-output-config-2026-07-01, thinking-display-updates-2026-08-18
+  and mid-conversation-tool-changes-2026-07-01 for corresponding flags. prompt_caching_set has no beta effect. Compare
+  sets, since list(set(...)) has no stable order. native_web_search_type: is_anthropic_native_web_search_tool returns
+  true only for a string type beginning with web_search_. Missing/None/nonstring type returns false; names are ignored.
+  Bare web_search,WebSearch,litellm_web_search and OpenAI function records do not match; an otherwise unknown web_search_
+  suffix does.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
 
 
   Implement crates/betterlite-anthropic/src/feature_flags.rs with adjacent tests under feature_flags/. Keep each
@@ -38,10 +81,10 @@ description: >-
 
   Write rstest function feature_flags_cases in betterlite-anthropic with these exact named cases (one per oracle
   file): one_shot_subagent_billing, malformed_billing_text, native_compaction_signature, cache_control_support,
-  file_and_pdf_flags, tool_search_and_examples, eager_input_boolean, computer_tool_beta, skills_code_execution_beta.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file_and_pdf_flags, tool_search_and_examples, eager_input_boolean, computer_tool_beta, skills_code_execution_beta,
+  conversation_feature_flags, common_beta_set, native_web_search_type. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags* using HelperCase: kind:
@@ -56,10 +99,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 335 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 350 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 592 planned, 600 maximum changed lines.
+  Budget from 352 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 358 production lines, 292 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 800 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -78,73 +121,90 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L88-L210
-  why: >-
-    Own requires_native_compaction_beta, supports_anthropic_cache_control, is_claude_code_user_agent, _validated_claude_code_mapping,
+  why: Own requires_native_compaction_beta, supports_anthropic_cache_control, is_claude_code_user_agent, _validated_claude_code_mapping,
     _validated_claude_code_list, _claude_code_billing_fields, _claude_code_billing_texts, _is_claude_code_subagent_billing_system,
     is_claude_code_one_shot_subagent_request. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L297-L475
-  why: >-
-    Own eager_input_streaming_flag, AnthropicModelInfo.is_cache_control_set, AnthropicModelInfo.is_file_id_used,
+  why: Own eager_input_streaming_flag, AnthropicModelInfo.is_cache_control_set, AnthropicModelInfo.is_file_id_used,
     AnthropicModelInfo.is_thinking_display_updates_used, AnthropicModelInfo.is_mid_conversation_tool_change_used,
     AnthropicModelInfo.is_mid_conversation_output_config_used, AnthropicModelInfo.is_mcp_server_used, AnthropicModelInfo.is_computer_tool_used,
     AnthropicModelInfo.is_web_search_tool_used, AnthropicModelInfo.is_pdf_used, AnthropicModelInfo.is_tool_search_used,
     AnthropicModelInfo.is_programmatic_tool_calling_used, AnthropicModelInfo.is_input_examples_used, AnthropicModelInfo.is_eager_input_streaming_used.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L831-L940
-  why: >-
-    Own AnthropicModelInfo.is_code_execution_tool_used, AnthropicModelInfo.is_container_with_skills_used, AnthropicModelInfo._get_user_anthropic_beta_headers,
+  why: Own AnthropicModelInfo.is_code_execution_tool_used, AnthropicModelInfo.is_container_with_skills_used, AnthropicModelInfo._get_user_anthropic_beta_headers,
     AnthropicModelInfo.get_computer_tool_beta_header, AnthropicModelInfo.get_anthropic_beta_list. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_tool_search.py#L32-L36
   why: Own get_tool_search_beta_header. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L207-L225
+  why: Shared native-tool predicate below interception and provider rejection.
 dod:
-- text: >-
-    one shot subagent billing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/one-shot-subagent-billing.yaml.
+- text: 'one_shot_subagent_billing: Require case-sensitive claude-cli/ or claude-code/ user-agent prefix, exactly
+    one dict-like user message, falsey tools, and a billing-only system. String system is one text; list system
+    accepts only dict text blocks with string text, ignores whitespace-only texts, requires at least one meaningful
+    text and exactly one cc_is_subagent=true across all parsed fields.'
   proof:
   - case-one-shot-subagent-billing
   - oracle
   - helper-python
-- text: >-
-    malformed billing text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/malformed-billing-text.yaml.
+- text: 'malformed_billing_text: Trim outer whitespace; require x-anthropic-billing-header: prefix and reject embedded
+    CR/LF. Split nonempty semicolon fields, each must contain = with nonempty trimmed key/value; split only at first
+    =. Other fields allowed; duplicate cc_is_subagent, false/True values, missing billing text, nontext blocks and
+    malformed mappings fail.'
   proof:
   - case-malformed-billing-text
   - oracle
   - helper-python
-- text: >-
-    native compaction signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/native-compaction-signature.yaml.
+- text: 'native_compaction_signature: Only provider exactly anthropic: compaction option is non-None (including
+    false/empty) or a mapping content block in list/tuple content has type=compaction with nonempty string signature.
+    Other providers, missing/empty/nonstring signature fail.'
   proof:
   - case-native-compaction-signature
   - oracle
   - helper-python
-- text: >-
-    cache control support: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/cache-control-support.yaml.
+- text: 'cache_control_support: Provider is explicit non-None or B174 resolver; resolver exceptions return false.
+    Require provider anthropic/bedrock/vertex_ai/azure_ai, case-insensitive claude in model, and B174 supports_prompt_caching.
+    Cache-control presence detector treats message-level non-None as true but list content dict key presence as
+    true even when value=None.'
   proof:
   - case-cache-control-support
   - oracle
   - helper-python
-- text: 'file and pdf flags: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/file-and-pdf-flags.yaml.'
+- text: 'file_and_pdf_flags: File-id detection delegates B234 and is true iff any ids. PDF detector is intentionally
+    broad: any dict list-content item with a type key unequal text counts, including image/tool/None types; missing
+    type does not count.'
   proof:
   - case-file-and-pdf-flags
   - oracle
   - helper-python
-- text: >-
-    tool search and examples: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/tool-search-and-examples.yaml.
+- text: 'tool_search_and_examples: Only exact tool_search_tool_regex_20251119 or tool_search_tool_bm25_20251119
+    types count. Programmatic calling needs a nonempty list allowed_callers containing code_execution_20250825 at
+    top level or dict function; examples need nonempty list input_examples at either level. Similar strings/empty/nonlists
+    fail.'
   proof:
   - case-tool-search-and-examples
   - oracle
   - helper-python
-- text: 'eager input boolean: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/eager-input-boolean.yaml.'
+- text: 'eager_input_boolean: Validate top-level and optional function eager_input_streaming as strict bool-or-None,
+    ignoring unknown fields. Top-level non-None including false wins over nested; malformed Mapping raises UnsupportedParamsError
+    eager_input_streaming must be a boolean; malformed nonmapping returns None. any detection short-circuits at
+    first true, so later malformed entries are not evaluated.'
   proof:
   - case-eager-input-boolean
   - oracle
   - helper-python
-- text: 'computer tool beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/computer-tool-beta.yaml.'
+- text: 'computer_tool_beta: First type beginning computer_ wins; computer_20250124 -> computer-use-2025-01-24,
+    computer_20241022 and unknown -> computer-use-2024-10-22. Web search recognizes a type starting web_search,
+    not only a single exact version.'
   proof:
   - case-computer-tool-beta
   - oracle
   - helper-python
-- text: >-
-    skills code execution beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-feature-flags/skills-code-execution-beta.yaml.
+- text: 'skills_code_execution_beta: Code execution is exactly code_execution_20250825; skills need a truthy dict
+    container with nonempty list skills. User beta parsing returns None for None, else raw comma split preserving
+    spaces/empty entries. Tool-search beta is tool-search-tool-2025-10-19 for vertex_ai,vertex_ai_beta,bedrock;
+    advanced-tool-use-2025-11-20 for anthropic,azure,azure_ai and unknown providers.'
   proof:
   - case-skills-code-execution-beta
   - oracle
@@ -153,50 +213,108 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'conversation_feature_flags: Thinking display needs a dict with type enabled/adaptive and display updates.
+    Mid-conversation tool changes require role=system plus B221 parts containing tool_addition/tool_removal whose
+    nested tool.type=tool_reference. Any message output_config key counts even None; MCP servers use truthiness.'
+  proof:
+  - case-conversation-feature-flags
+  - oracle
+  - helper-python
+- text: 'common_beta_set: Use B688 effort detection then union effort-2025-11-24, selected computer beta, files-api-2025-04-14
+    plus code-execution-2025-05-22 for file ids, mcp-client-2025-04-04, mid-conversation-output-config-2026-07-01,
+    thinking-display-updates-2026-08-18 and mid-conversation-tool-changes-2026-07-01 for corresponding flags. prompt_caching_set
+    has no beta effect. Compare sets, since list(set(...)) has no stable order.'
+  proof:
+  - case-common-beta-set
+  - oracle
+  - helper-python
+- text: 'native_web_search_type: is_anthropic_native_web_search_tool returns true only for a string type beginning
+    with web_search_. Missing/None/nonstring type returns false; names are ignored. Bare web_search,WebSearch,litellm_web_search
+    and OpenAI function records do not match; an otherwise unknown web_search_ suffix does.'
+  proof:
+  - case-native-web-search-type
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-one-shot-subagent-billing
-    why: The one-shot-subagent-billing behavior is missing or differs from its pinned fixture.
+    why: Require case-sensitive claude-cli/ or claude-code/ user-agent prefix, exactly one dict-like user message,
+      falsey tools, and a billing-only system. String system is one text; list system accepts only dict text blocks
+      with string text, ignores whitespace-only texts, requires at least one meaningful text and exactly one cc_is_subagent=true
+      across all parsed fields.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_one_shot_subagent_billing$/)'
   - id: case-malformed-billing-text
-    why: The malformed-billing-text behavior is missing or differs from its pinned fixture.
+    why: 'Trim outer whitespace; require x-anthropic-billing-header: prefix and reject embedded CR/LF. Split nonempty
+      semicolon fields, each must contain = with nonempty trimmed key/value; split only at first =. Other fields
+      allowed; duplicate cc_is_subagent, false/True values, missing billing text, nontext blocks and malformed mappings
+      fail.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_malformed_billing_text$/)'
   - id: case-native-compaction-signature
-    why: The native-compaction-signature behavior is missing or differs from its pinned fixture.
+    why: 'Only provider exactly anthropic: compaction option is non-None (including false/empty) or a mapping content
+      block in list/tuple content has type=compaction with nonempty string signature. Other providers, missing/empty/nonstring
+      signature fail.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_native_compaction_signature$/)'
   - id: case-cache-control-support
-    why: The cache-control-support behavior is missing or differs from its pinned fixture.
+    why: Provider is explicit non-None or B174 resolver; resolver exceptions return false. Require provider anthropic/bedrock/vertex_ai/azure_ai,
+      case-insensitive claude in model, and B174 supports_prompt_caching. Cache-control presence detector treats
+      message-level non-None as true but list content dict key presence as true even when value=None.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_cache_control_support$/)'
   - id: case-file-and-pdf-flags
-    why: The file-and-pdf-flags behavior is missing or differs from its pinned fixture.
+    why: 'File-id detection delegates B234 and is true iff any ids. PDF detector is intentionally broad: any dict
+      list-content item with a type key unequal text counts, including image/tool/None types; missing type does
+      not count.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_file_and_pdf_flags$/)'
   - id: case-tool-search-and-examples
-    why: The tool-search-and-examples behavior is missing or differs from its pinned fixture.
+    why: Only exact tool_search_tool_regex_20251119 or tool_search_tool_bm25_20251119 types count. Programmatic
+      calling needs a nonempty list allowed_callers containing code_execution_20250825 at top level or dict function;
+      examples need nonempty list input_examples at either level. Similar strings/empty/nonlists fail.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_tool_search_and_examples$/)'
   - id: case-eager-input-boolean
-    why: The eager-input-boolean behavior is missing or differs from its pinned fixture.
+    why: Validate top-level and optional function eager_input_streaming as strict bool-or-None, ignoring unknown
+      fields. Top-level non-None including false wins over nested; malformed Mapping raises UnsupportedParamsError
+      eager_input_streaming must be a boolean; malformed nonmapping returns None. any detection short-circuits at
+      first true, so later malformed entries are not evaluated.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_eager_input_boolean$/)'
   - id: case-computer-tool-beta
-    why: The computer-tool-beta behavior is missing or differs from its pinned fixture.
+    why: First type beginning computer_ wins; computer_20250124 -> computer-use-2025-01-24, computer_20241022 and
+      unknown -> computer-use-2024-10-22. Web search recognizes a type starting web_search, not only a single exact
+      version.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_computer_tool_beta$/)'
   - id: case-skills-code-execution-beta
-    why: The skills-code-execution-beta behavior is missing or differs from its pinned fixture.
+    why: Code execution is exactly code_execution_20250825; skills need a truthy dict container with nonempty list
+      skills. User beta parsing returns None for None, else raw comma split preserving spaces/empty entries. Tool-search
+      beta is tool-search-tool-2025-10-19 for vertex_ai,vertex_ai_beta,bedrock; advanced-tool-use-2025-11-20 for
+      anthropic,azure,azure_ai and unknown providers.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_skills_code_execution_beta$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_feature_flags.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_feature_flags.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags*")"
       && grep -lq 'anthropic_feature_flags' tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_feature_flags$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-conversation-feature-flags
+    why: Thinking display needs a dict with type enabled/adaptive and display updates. Mid-conversation tool changes
+      require role=system plus B221 parts containing tool_addition/tool_removal whose nested tool.type=tool_reference.
+      Any message output_config key counts even None; MCP servers use truthiness.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_conversation_feature_flags$/)'
+  - id: case-common-beta-set
+    why: Use B688 effort detection then union effort-2025-11-24, selected computer beta, files-api-2025-04-14 plus
+      code-execution-2025-05-22 for file ids, mcp-client-2025-04-04, mid-conversation-output-config-2026-07-01,
+      thinking-display-updates-2026-08-18 and mid-conversation-tool-changes-2026-07-01 for corresponding flags.
+      prompt_caching_set has no beta effect. Compare sets, since list(set(...)) has no stable order.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_common_beta_set$/)'
+  - id: case-native-web-search-type
+    why: is_anthropic_native_web_search_tool returns true only for a string type beginning with web_search_. Missing/None/nonstring
+      type returns false; names are ignored. Bare web_search,WebSearch,litellm_web_search and OpenAI function records
+      do not match; an otherwise unknown web_search_ suffix does.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_native_web_search_type$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-feature-flags/one-shot-subagent-billing.yaml
 - tools/oracle/cases/helpers/providers/anthropic-feature-flags/malformed-billing-text.yaml
@@ -207,59 +325,63 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-feature-flags/eager-input-boolean.yaml
 - tools/oracle/cases/helpers/providers/anthropic-feature-flags/computer-tool-beta.yaml
 - tools/oracle/cases/helpers/providers/anthropic-feature-flags/skills-code-execution-beta.yaml
+- tools/oracle/cases/helpers/providers/anthropic-feature-flags/conversation-feature-flags.yaml
+- tools/oracle/cases/helpers/providers/anthropic-feature-flags/common-beta-set.yaml
+- tools/oracle/cases/helpers/providers/anthropic-feature-flags/native-web-search-type.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params L478-L503; AnthropicModelInfo._apply_sampling_param
-  L506-L528; AnthropicModelInfo.forced_tool_use_unsupported L531-L532; AnthropicModelInfo.forced_tool_use_downgraded
-  L535-L552; AnthropicModelInfo._apply_forced_tool_choice L555-L567; AnthropicModelInfo._strip_version_suffix L570-L574;
-  AnthropicModelInfo._model_map_lookup_candidates L577-L614; AnthropicModelInfo._get_model_capability L617-L631;
-  AnthropicModelInfo._get_exact_model_capability L634-L641; AnthropicModelInfo.supports_fast_mode L644-L648; AnthropicModelInfo._get_provider_resolved_capability
-  L651-L668; AnthropicModelInfo._supports_model_capability L671-L693; AnthropicModelInfo._is_adaptive_thinking_model
-  L696-L705; AnthropicModelInfo._is_always_on_thinking_model L708-L714; AnthropicModelInfo._supports_legacy_thinking
-  L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model
-  L747-L781; AnthropicModelInfo._legacy_budget_to_effort L784-L793; AnthropicModelInfo.is_effort_used L795-L829
-  belong to B688; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers L951-L1046; AnthropicModelInfo.validate_environment
-  L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry L1800-L1815; create_anthropic_model_list_response
-  L1818-L1844 belong to B570; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299; is_anthropic_invalid_thinking_block_error
-  L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346; _without_encrypted_reasoning_blocks L1349-L1360;
-  strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372; strip_thinking_blocks_from_anthropic_messages_request_dict
-  L1375-L1385; strip_empty_content_blocks_from_anthropic_messages L1388-L1428; _is_empty_text_block L1431-L1435;
-  is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block L1453-L1469; normalize_anthropic_tool_use_id
-  L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages L1504-L1526;
-  _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691; strip_provider_specific_fields_from_anthropic_messages
-  L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control L1707-L1712; _with_portable_cache_control_in_blocks
-  L1715-L1718; _with_portable_cache_control_in_content_block L1721-L1730; _with_portable_cache_control_in_message
-  L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748; _with_portable_cache_control_in_scoped_value
-  L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780 belong to B571; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _ReplayedSearchQuery L1529-L1532; _ReplayedWebSearchResult L1535-L1542;
-  _ReplayedWebSearchToolResultError L1545-L1549; _ReplayedWebSearchToolResult L1552-L1557; _ReplayedServerToolUse
-  L1560-L1565; _TextBlock L1568-L1570; _flattenable_web_search_tool_result L1577-L1588; _replayed_server_tool_use
-  L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block L1621-L1634; _flatten_web_search_results_in_message
-  L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages L1663-L1678 belong to B572; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; is_anthropic_oauth_key L225-L231;
-  resolve_used_client_oauth_token L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285;
-  AnthropicError.__init__ L310-L316; AnthropicModelInfo._make_api_key_auth_header L943-L949; AnthropicModelInfo.get_api_base
-  L1123-L1131; AnthropicModelInfo.get_api_key L1134-L1137; AnthropicModelInfo.get_auth_token L1140-L1148; AnthropicModelInfo.get_auth_header
-  L1151-L1170; AnthropicModelInfo.get_base_model L1173-L1174; AnthropicModelInfo.get_models L1176-L1200; AnthropicModelInfo.get_token_counter
-  L1202-L1213 belong to B567; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/integrations/websearch_interception/tools.py: _web_search_input_schema L20-L56;
+  get_litellm_web_search_tool L59-L82; get_litellm_web_search_tool_openai L85-L103; get_litellm_web_search_tool_responses
+  L106-L123; is_web_search_tool_responses L126-L160; is_web_search_tool_chat_completion L163-L204; is_web_search_tool
+  L228-L301 belong to B119.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
+  L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
+  L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
+  belong to B2216.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers
+  L951-L1046; AnthropicModelInfo.validate_environment L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry
+  L1800-L1815; create_anthropic_model_list_response L1818-L1844 belong to B570.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299;
+  is_anthropic_invalid_thinking_block_error L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346;
+  _without_encrypted_reasoning_blocks L1349-L1360; strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372;
+  strip_thinking_blocks_from_anthropic_messages_request_dict L1375-L1385; strip_empty_content_blocks_from_anthropic_messages
+  L1388-L1428; _is_empty_text_block L1431-L1435; is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block
+  L1453-L1469; normalize_anthropic_tool_use_id L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages
+  L1504-L1526; _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691;
+  strip_provider_specific_fields_from_anthropic_messages L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control
+  L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
+  L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
+  _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780
+  belong to B571.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
+  belong to B585.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params
+  L477-L503; AnthropicModelInfo._apply_sampling_param L505-L528; AnthropicModelInfo.forced_tool_use_unsupported
+  L530-L532; AnthropicModelInfo.forced_tool_use_downgraded L534-L552; AnthropicModelInfo._apply_forced_tool_choice
+  L554-L567; AnthropicModelInfo._get_provider_resolved_capability L650-L668; AnthropicModelInfo._supports_model_capability
+  L670-L693; AnthropicModelInfo._is_adaptive_thinking_model L695-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L707-L714; AnthropicModelInfo._supports_legacy_thinking L716-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
-- >-
-  Preserve native compaction, cache controls, OAuth caller attribution, Claude Code one-shot billing metadata, eager-input-streaming
-  validation, files/PDFs, tool search, examples, computer tools, code execution and skills detection.
+- The PDF flag fires for any typed non-text content, including tool blocks.
+- Top-level eager_input_streaming=false overrides nested true, and detection short-circuits before later invalid
+  tools.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

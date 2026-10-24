@@ -1,7 +1,7 @@
 id: B175
 title: Provider parameter capabilities and mapping
 description: >-
-  Add typed parameter classification and capability dispatch under betterlite-provider/params, reusing B004/B006's
+  Add typed parameter classification and capability dispatch under betterlite-models/params, reusing B004/B006's
   chat/embedding wire fields and B174's identity. Expose supported OpenAI parameter queries for implemented adapters
   and a common mapping result separating standard parameters, provider passthrough fields and explicit drop outcomes.
   Keep omission distinct from an explicit value where provider defaults matter; numeric wire parameters use exact
@@ -19,14 +19,19 @@ description: >-
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations provider_params in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
+
+
+  These pure policies live in betterlite-models below the executable provider dispatcher. Use catalog/wire DTOs
+  and closed config tags or caller-supplied policy projections, never an executable provider client. B010 reexports
+  ProviderId and composes the provider enum; do not import betterlite-provider or betterlite-core here.
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
-  - crates/betterlite-provider/src/params.rs
-  - crates/betterlite-provider/src/params/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/params.rs
+  - crates/betterlite-models/src/params/**
   - crates/betterlite-openai/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
@@ -36,32 +41,25 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_supported_openai_params.py#L9-L135
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_supported_openai_params.py#L9-L135
   why: Call-type/provider capability dispatch.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py#L25-L185
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py#L25-L185
   why: Standard API parameters and excluded content/metadata fields.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/reasoning_effort_utils.py#L12-L26
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/reasoning_effort_utils.py#L12-L26
   why: Thinking budget thresholds.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L70
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L70
   why: Served, requested and logging service-tier selection.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L99-L164
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L99-L164
   why: Shared thinking, token and developer-role hooks.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4535-L4560
   why: allowed_openai_params extends supported names.
 dod:
-- text: >-
-    Parameter defaults, explicit values, supported names, reasoning boundaries, served tier and content-free projections
-    match listed helper cases.
+- text: Parameter defaults, explicit values, supported names, reasoning boundaries, served tier and content-free
+    projections match listed helper cases.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Unsupported fields fail by name unless an explicit drop policy applies, and each intentional drop is returned
+- text: Unsupported fields fail by name unless an explicit drop policy applies, and each intentional drop is returned
     as a field name without its value.
   proof:
   - provider-params-tests
@@ -72,8 +70,7 @@ dod:
   proof:
   - chat-request-corpus
   - config-yaml-corpus
-- text: >-
-    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -82,33 +79,28 @@ checks:
   commands:
   - id: provider-params-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-provider -p betterlite-openai -p betterlite-config --no-tests=fail
+    run: cargo nextest run --locked -p betterlite-models -p betterlite-openai -p betterlite-config --no-tests=fail
       -E 'test(/::b175_provider_params_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
       && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
       && grep -rlq 'drop_params' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'additional_drop_params'
       crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
       && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'provider_params' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'provider_params' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -126,15 +118,13 @@ deviations: []
 out_of_scope:
 - Provider-specific mapping tables are extended by the corresponding provider tasks.
 - Actual routing, spend calculations and execution are outside this part.
-- >-
-  ModelParamHelper, service-tier and reasoning-budget helpers are B212; get_supported_openai_params branches for
+- ModelParamHelper, service-tier and reasoning-budget helpers are B212; get_supported_openai_params branches for
   other providers are implemented by B024-B050.
 pitfalls:
 - Do not confuse an absent capability result with an empty supported-parameter list.
 - A JSON passthrough field is an explicit narrow exception, not permission to make the whole request untyped.
 - An opt-in drop policy is observable; a silently ignored field still violates the rules.
-- >-
-  OpenAI chat capability selection uses ProviderConfigManager and varies for o-series and gpt-5; request_type=embeddings
+- OpenAI chat capability selection uses ProviderConfigManager and varies for o-series and gpt-5; request_type=embeddings
   returns OpenAI chat parameter names at the pin.
 - B190 calls service-tier helpers with plain fields; do not introduce a payload-type dependency back to logging.
 review_level: standard

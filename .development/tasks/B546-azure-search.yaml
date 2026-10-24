@@ -20,6 +20,56 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: search_request_web_tool: With truthy BING_GROUNDING_CONNECTION_ID send type=bing_grounding
+  and bing_grounding.search_configurations=[{project_connection_id,count:<positive integer max_results when valid>}];
+  otherwise type=web_search with user_location={type:approximate,country:<uppercase>} only for string country, including
+  empty. Exclude None fields. Drop search_domain_filter/max_tokens_per_page; connection mode ignores country. scope_token_header:
+  Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server credential resolution uses
+  BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope https://ai.azure.com/.default.
+  Mint failures become ValueError with the no-credential advice, all token/env names and underlying error. Return
+  copied headers overlaid with auth and Content-Type=application/json; a preexisting opposite auth header is not
+  removed. citation_snippets: Only output type=message, content type=output_text, annotations type=url_citation
+  with truthy URL produce results. First URL occurrence wins in first-seen order, title defaults empty, date/last_updated=None.
+  Snippet is the stripped current-line text before a valid start_index (else end of text), taking its last300 characters;
+  empty claim falls back to the first300 text characters. max_results_invalid_default: Accept positive int max_results,
+  rejecting bool, non-int and <=0; invalid/missing means no server count hint and no response cap. Built-in web_search
+  never sends count; response cap reads optional_params only when it is Mapping. empty_search_response: Require
+  output in the parsed envelope; ignore extra fields, default nested type/text to empty and content/annotations
+  to empty tuples. Failed status always raises502 with error.message or the grounded search failed. Incomplete with
+  no cited results raises502 the grounded search was incomplete: <reason-or-unknown reason>; incomplete with results
+  succeeds. Other empty outputs succeed. nested_upstream_error: Unwrap outer error.message JSON and then optional
+  inner message JSON; invalid layers retain their original text. Strip trailing periods/spaces and form Grounding
+  with Bing Search: <detail>. See https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/bing-grounding
+  for details. Preserve supplied status/headers; schema failure uses raw status and response does not match the
+  Foundry Responses API schema: <validation error>. search_settings: Require truthy BING_GROUNDING_PROJECT_ENDPOINT
+  unless explicit api_base resolves; trim trailing slashes and append /openai/v1/responses only when that suffix
+  is absent. Missing endpoint raises ValueError with its name and https://<account>.services.ai.azure.com/api/projects/<project>
+  example. Require BING_GROUNDING_MODEL for request transformation or ValueError naming it and example gpt-4.1.
+  Join query lists with one space. search_response_price: Return object=search and capped results. Without truthy
+  BING_GROUNDING_CONNECTION_ID set _hidden_params.additional_headers.llm_provider-x-litellm-response-cost=0.0; connection
+  mode leaves cost-map ownership to B068.
+
+
+  Load BING_GROUNDING_PROJECT_ENDPOINT, BING_GROUNDING_MODEL, BING_GROUNDING_CONNECTION_ID, BING_GROUNDING_TOKEN
+  through betterlite-config, with injected environment lookup and the defaults/precedence stated here. Deployment
+  inputs use litellm_params and global inputs use litellm_settings. Add config rstest azure_search_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Write standalone Rust test azure_search_credential_identity_isolation in betterlite-azure: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test azure_search_secret_safe_failure in betterlite-azure: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2202. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-azure/src/search.rs with adjacent tests under search/. Keep each Rust module at most
   300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -34,10 +84,10 @@ description: >-
 
 
   Write rstest function search_cases in betterlite-azure with these exact named cases (one per oracle file): search_request_web_tool,
-  scope_token_header, citation_snippets, max_results_invalid_default, max_results_cap, empty_search_response, nested_upstream_error.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  scope_token_header, citation_snippets, max_results_invalid_default, max_results_cap, empty_search_response, nested_upstream_error,
+  search_settings, search_response_price. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_search* using HelperCase: kind: helper
@@ -54,9 +104,9 @@ description: >-
 
 
   Budget from 241 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 265 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 536 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 270 production lines, 245 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 50 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 760 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -75,37 +125,63 @@ scope:
   - crates/betterlite-azure/fuzz/Cargo.toml
   - crates/betterlite-azure/fuzz/fuzz_targets/azure_search.rs
   - crates/betterlite-azure/fuzz/corpus/azure_search/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/azure_search.rs
+  - crates/betterlite-config/src/providers/azure/azure_search/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_search_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_search*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L122-L205
-  why: >-
-    Own _unwrap_error_detail, _snippet, _citation_results, _valid_max_results, _requested_max_results, _capped.
+  why: Own _unwrap_error_detail, _snippet, _citation_results, _valid_max_results, _requested_max_results, _capped.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L250-L438
-  why: >-
-    Own _search_tool, _default_entra_token_minter, BingGroundingSearchConfig.__init__, BingGroundingSearchConfig.ui_friendly_name,
+  why: Own _search_tool, _default_entra_token_minter, BingGroundingSearchConfig.__init__, BingGroundingSearchConfig.ui_friendly_name,
     BingGroundingSearchConfig.validate_environment, BingGroundingSearchConfig._auth_header, BingGroundingSearchConfig._mint_entra_token,
     BingGroundingSearchConfig.get_complete_url, BingGroundingSearchConfig.transform_search_request, BingGroundingSearchConfig.transform_search_response,
     BingGroundingSearchConfig._upstream_error, BingGroundingSearchConfig._priced, BingGroundingSearchConfig.get_error_class.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L49-L119
+  why: Exact env names, endpoint/status/snippet constants and response schema defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/search/transformation.py#L208-L247
+  why: Tool discriminants and request-field defaults.
 dod:
-- text: 'search request web tool: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/search-request-web-tool.yaml.'
+- text: 'search_request_web_tool: With truthy BING_GROUNDING_CONNECTION_ID send type=bing_grounding and bing_grounding.search_configurations=[{project_connection_id,count:<positive
+    integer max_results when valid>}]; otherwise type=web_search with user_location={type:approximate,country:<uppercase>}
+    only for string country, including empty. Exclude None fields. Drop search_domain_filter/max_tokens_per_page;
+    connection mode ignores country.'
   proof:
   - case-search-request-web-tool
   - oracle
   - helper-python
-- text: 'scope token header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/scope-token-header.yaml.'
+- text: 'scope_token_header: Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server
+    credential resolution uses BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope
+    https://ai.azure.com/.default. Mint failures become ValueError with the no-credential advice, all token/env
+    names and underlying error. Return copied headers overlaid with auth and Content-Type=application/json; a preexisting
+    opposite auth header is not removed.'
   proof:
   - case-scope-token-header
   - oracle
   - helper-python
-- text: 'citation snippets: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/citation-snippets.yaml.'
+- text: 'citation_snippets: Only output type=message, content type=output_text, annotations type=url_citation with
+    truthy URL produce results. First URL occurrence wins in first-seen order, title defaults empty, date/last_updated=None.
+    Snippet is the stripped current-line text before a valid start_index (else end of text), taking its last300
+    characters; empty claim falls back to the first300 text characters.'
   proof:
   - case-citation-snippets
   - oracle
   - helper-python
-- text: >-
-    max results invalid default: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/max-results-invalid-default.yaml.
+- text: 'max_results_invalid_default: Accept positive int max_results, rejecting bool, non-int and <=0; invalid/missing
+    means no server count hint and no response cap. Built-in web_search never sends count; response cap reads optional_params
+    only when it is Mapping.'
   proof:
   - case-max-results-invalid-default
   - oracle
@@ -115,12 +191,19 @@ dod:
   - case-max-results-cap
   - oracle
   - helper-python
-- text: 'empty search response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/empty-search-response.yaml.'
+- text: 'empty_search_response: Require output in the parsed envelope; ignore extra fields, default nested type/text
+    to empty and content/annotations to empty tuples. Failed status always raises502 with error.message or the grounded
+    search failed. Incomplete with no cited results raises502 the grounded search was incomplete: <reason-or-unknown
+    reason>; incomplete with results succeeds. Other empty outputs succeed.'
   proof:
   - case-empty-search-response
   - oracle
   - helper-python
-- text: 'nested upstream error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/nested-upstream-error.yaml.'
+- text: 'nested_upstream_error: Unwrap outer error.message JSON and then optional inner message JSON; invalid layers
+    retain their original text. Strip trailing periods/spaces and form Grounding with Bing Search: <detail>. See
+    https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/bing-grounding for details. Preserve
+    supplied status/headers; schema failure uses raw status and response does not match the Foundry Responses API
+    schema: <validation error>.'
   proof:
   - case-nested-upstream-error
   - oracle
@@ -131,50 +214,126 @@ dod:
 - text: decode_grounding_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'search_settings: Require truthy BING_GROUNDING_PROJECT_ENDPOINT unless explicit api_base resolves; trim
+    trailing slashes and append /openai/v1/responses only when that suffix is absent. Missing endpoint raises ValueError
+    with its name and https://<account>.services.ai.azure.com/api/projects/<project> example. Require BING_GROUNDING_MODEL
+    for request transformation or ValueError naming it and example gpt-4.1. Join query lists with one space.'
+  proof:
+  - case-search-settings
+  - oracle
+  - helper-python
+- text: 'search_response_price: Return object=search and capped results. Without truthy BING_GROUNDING_CONNECTION_ID
+    set _hidden_params.additional_headers.llm_provider-x-litellm-response-cost=0.0; connection mode leaves cost-map
+    ownership to B068.'
+  proof:
+  - case-search-response-price
+  - oracle
+  - helper-python
+- text: The real config loader resolves BING_GROUNDING_PROJECT_ENDPOINT, including its default and precedence.
+  proof:
+  - config-bing-grounding-project-endpoint
+- text: The real config loader resolves BING_GROUNDING_MODEL, including its default and precedence.
+  proof:
+  - config-bing-grounding-model
+- text: The real config loader resolves BING_GROUNDING_CONNECTION_ID, including its default and precedence.
+  proof:
+  - config-bing-grounding-connection-id
+- text: The real config loader resolves BING_GROUNDING_TOKEN, including its default and precedence.
+  proof:
+  - config-bing-grounding-token
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-search-request-web-tool
-    why: The search-request-web-tool behavior is missing or differs from its pinned fixture.
+    why: With truthy BING_GROUNDING_CONNECTION_ID send type=bing_grounding and bing_grounding.search_configurations=[{project_connection_id,count:<positive
+      integer max_results when valid>}]; otherwise type=web_search with user_location={type:approximate,country:<uppercase>}
+      only for string country, including empty. Exclude None fields. Drop search_domain_filter/max_tokens_per_page;
+      connection mode ignores country.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_search_request_web_tool$/)'
   - id: case-scope-token-header
-    why: The scope-token-header behavior is missing or differs from its pinned fixture.
+    why: Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server credential resolution
+      uses BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope https://ai.azure.com/.default.
+      Mint failures become ValueError with the no-credential advice, all token/env names and underlying error. Return
+      copied headers overlaid with auth and Content-Type=application/json; a preexisting opposite auth header is
+      not removed.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_scope_token_header$/)'
   - id: case-citation-snippets
-    why: The citation-snippets behavior is missing or differs from its pinned fixture.
+    why: Only output type=message, content type=output_text, annotations type=url_citation with truthy URL produce
+      results. First URL occurrence wins in first-seen order, title defaults empty, date/last_updated=None. Snippet
+      is the stripped current-line text before a valid start_index (else end of text), taking its last300 characters;
+      empty claim falls back to the first300 text characters.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_citation_snippets$/)'
   - id: case-max-results-invalid-default
-    why: The max-results-invalid-default behavior is missing or differs from its pinned fixture.
+    why: Accept positive int max_results, rejecting bool, non-int and <=0; invalid/missing means no server count
+      hint and no response cap. Built-in web_search never sends count; response cap reads optional_params only when
+      it is Mapping.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_max_results_invalid_default$/)'
   - id: case-max-results-cap
-    why: The max-results-cap behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-search/max-results-cap.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_max_results_cap$/)'
   - id: case-empty-search-response
-    why: The empty-search-response behavior is missing or differs from its pinned fixture.
+    why: 'Require output in the parsed envelope; ignore extra fields, default nested type/text to empty and content/annotations
+      to empty tuples. Failed status always raises502 with error.message or the grounded search failed. Incomplete
+      with no cited results raises502 the grounded search was incomplete: <reason-or-unknown reason>; incomplete
+      with results succeeds. Other empty outputs succeed.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_empty_search_response$/)'
   - id: case-nested-upstream-error
-    why: The nested-upstream-error behavior is missing or differs from its pinned fixture.
+    why: 'Unwrap outer error.message JSON and then optional inner message JSON; invalid layers retain their original
+      text. Strip trailing periods/spaces and form Grounding with Bing Search: <detail>. See https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/bing-grounding
+      for details. Preserve supplied status/headers; schema failure uses raw status and response does not match
+      the Foundry Responses API schema: <validation error>.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_nested_upstream_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_search.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_search.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_search*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_search*")"
       && grep -lq 'azure_search' tools/oracle/fuzz/corpus/helper_case/azure_search* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_search$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_search)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_search)"
       && grep -q 'decode_grounding_reply' crates/betterlite-azure/fuzz/fuzz_targets/azure_search.rs && cargo nextest
       run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_search_corpus$/)'
+  - id: case-search-settings
+    why: Require truthy BING_GROUNDING_PROJECT_ENDPOINT unless explicit api_base resolves; trim trailing slashes
+      and append /openai/v1/responses only when that suffix is absent. Missing endpoint raises ValueError with its
+      name and https://<account>.services.ai.azure.com/api/projects/<project> example. Require BING_GROUNDING_MODEL
+      for request transformation or ValueError naming it and example gpt-4.1. Join query lists with one space.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_search_settings$/)'
+  - id: case-search-response-price
+    why: Return object=search and capped results. Without truthy BING_GROUNDING_CONNECTION_ID set _hidden_params.additional_headers.llm_provider-x-litellm-response-cost=0.0;
+      connection mode leaves cost-map ownership to B068.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_search_response_price$/)'
+  - id: config-bing-grounding-project-endpoint
+    why: BING_GROUNDING_PROJECT_ENDPOINT lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_search_config_cases::case_[0-9]+_loads_bing_grounding_project_endpoint$/)'
+  - id: config-bing-grounding-model
+    why: BING_GROUNDING_MODEL lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_search_config_cases::case_[0-9]+_loads_bing_grounding_model$/)'
+  - id: config-bing-grounding-connection-id
+    why: BING_GROUNDING_CONNECTION_ID lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_search_config_cases::case_[0-9]+_loads_bing_grounding_connection_id$/)'
+  - id: config-bing-grounding-token
+    why: BING_GROUNDING_TOKEN lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_search_config_cases::case_[0-9]+_loads_bing_grounding_token$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_search_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_search_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-search/search-request-web-tool.yaml
 - tools/oracle/cases/helpers/providers/azure-search/scope-token-header.yaml
@@ -183,6 +342,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-search/max-results-cap.yaml
 - tools/oracle/cases/helpers/providers/azure-search/empty-search-response.yaml
 - tools/oracle/cases/helpers/providers/azure-search/nested-upstream-error.yaml
+- tools/oracle/cases/helpers/providers/azure-search/search-settings.yaml
+- tools/oracle/cases/helpers/providers/azure-search/search-response-price.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -190,9 +351,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- The _unwrap_error_detail branch must retain the literal defaults and omissions in the linked range; use the named
-  fixtures to distinguish them.
+- Citation deduplication retains the first result, not the last, despite building a dictionary from reversed citations.
+- Response pricing rereads the connection setting, so the fixture must keep the same configured mode during request
+  and reply.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
-review_level: standard
+review_level: security

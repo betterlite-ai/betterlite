@@ -23,6 +23,44 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: marengo_text_input: Construction detects B630 marker marengo-embed-3- anywhere, case-sensitively.
+  Supported params are encoding_format,embeddingOption,startSec,input_type,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources,
+  with textTruncate,lengthSec,useFixedLengthSec,minClipSec appended for 2.7 only. Map encoding_format=float to embeddingOption=[visual-text,visual-image]
+  only for 2.7; other encodings are ignored. Map input_type to inputType, and pass through textTruncate,embeddingOption,startSec,lengthSec,useFixedLengthSec,minClipSec,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources.
+  Mapping preserves order, so a later embeddingOption overrides the synthesized value. Choose truthy inputType then
+  input_type then text; 2.7 text emits inputText and default textTruncate=end only when absent. marengo_s3_video_owner:
+  Video/audio require async_invoke_route or raise ValueError Input type '{input_type}' requires async_invoke route.
+  Use model format: 'bedrock/async_invoke/model_id'. This guard precedes the Marengo 3 builder. For 2.7 image/video/audio,
+  exact s3:// input produces mediaSource.s3Location.uri; add bucketOwner only when truthy, with absent default empty
+  string. Despite the docstring, S3 images are allowed on the synchronous route. Unknown 2.7 input types pass through
+  without a core input payload. marengo_image_input: For non-S3 2.7 media, data: strings containing a comma retain
+  everything after the first comma; data: without a comma passes unchanged. Other strings call B183 get_base64_str,
+  which keeps only the second component when commas occur. Emit mediaSource.base64String without decoding or URL
+  downloads. Copy all inference fields except inputType,input_type,inputText,mediaSource,bucketOwner, so core fields
+  cannot be overridden; output_s3_uri is not filtered here. Marengo 3 delegates B630 building before optional wrapping.
+  marengo_async_output_wrapper: Wrap only when both async_invoke_route and model_id are truthy. Percent-decode model,
+  then if it starts async_invoke/ remove every occurrence of that substring. Missing, empty or whitespace-only output_s3_uri
+  raises ValueError output_s3_uri cannot be empty for async invoke requests. Keep a nonempty URI exactly, including
+  surrounding whitespace, without scheme validation. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri.
+  Async response mirrors B628: one empty index-0 object=embedding, zero prompt/total tokens, unchanged model and
+  HiddenParams._invocation_arn from invocationArn default empty string, with None preserved. marengo_segments_vector_list:
+  Validate response_list as a tuple of frozen extra-ignore MarengoInvokeResponse records: data and embeddings default
+  empty tuples; embedding defaults None; nested items default embedding None. Coerce numeric vector items as source
+  Pydantic float validation does and preserve validation failures. For each response, nonempty data wins even if
+  every item embedding is None; otherwise direct embedding wins when not None, including an empty vector; otherwise
+  use embeddings. Filter only None vectors, flatten in order, assign contiguous indices/object=embedding and preserve
+  model. marengo_billed_units: Validate batch_data or empty tuple as extra-ignore records with inputType optional
+  enum text,image,video,audio,text_image,multi_input and optional multi_input record; its inputText defaults None
+  and mediaSources empty. text contributes (query=1,image=0), image (0,1), text_image (1,1); multi_input contributes
+  one query only for truthy inputText and len(mediaSources) images; video/audio/None contribute zero. Invalid enums
+  or nested shapes preserve Pydantic errors. Usage prompt/completion/total tokens are zero; details are None if
+  both sums are zero, otherwise query_count and image_count each use None for zero. Counts do not depend on vector
+  count. drop_unsupported_param: drop_params_enabled is true only when global litellm.drop_params is literally True
+  or the deployment mapping drop_params is literally True; truthy strings and integer 1 are not enough. Reuse B2201/B176
+  configuration ownership. This helper chooses a flag; B630 owns the rejection/drop outcomes and does not warn on
+  a drop.
+
+
   Implement crates/betterlite-bedrock/src/marengo_embeddings.rs with adjacent tests under marengo_embeddings/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -39,9 +77,8 @@ description: >-
   Write rstest function marengo_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): marengo_text_input, marengo_s3_video_owner, marengo_image_input, marengo_async_output_wrapper, marengo_segments_vector_list,
   marengo_billed_units, drop_unsupported_param. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_embeddings* using HelperCase:
@@ -57,9 +94,9 @@ description: >-
 
 
   Budget from 221 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 245 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 461 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 250 production lines, 270 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 655 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -80,51 +117,76 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L48-L53
   why: Own MarengoInvokeResponse.vectors. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L74-L367
-  why: >-
-    Own _billed_units, _billed_usage, drop_params_enabled, TwelveLabsMarengoEmbeddingConfig.__init__, TwelveLabsMarengoEmbeddingConfig.get_supported_openai_params,
+  why: Own _billed_units, _billed_usage, drop_params_enabled, TwelveLabsMarengoEmbeddingConfig.__init__, TwelveLabsMarengoEmbeddingConfig.get_supported_openai_params,
     TwelveLabsMarengoEmbeddingConfig.map_openai_params, TwelveLabsMarengoEmbeddingConfig._extract_bucket_owner_from_params,
     TwelveLabsMarengoEmbeddingConfig._is_s3_url, TwelveLabsMarengoEmbeddingConfig._transform_request, TwelveLabsMarengoEmbeddingConfig._wrap_async_invoke_request,
     TwelveLabsMarengoEmbeddingConfig._transform_response, TwelveLabsMarengoEmbeddingConfig._transform_async_invoke_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    marengo text input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-text-input.yaml.
+- text: 'marengo_text_input: Construction detects B630 marker marengo-embed-3- anywhere, case-sensitively. Supported
+    params are encoding_format,embeddingOption,startSec,input_type,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources,
+    with textTruncate,lengthSec,useFixedLengthSec,minClipSec appended for 2.7 only. Map encoding_format=float to
+    embeddingOption=[visual-text,visual-image] only for 2.7; other encodings are ignored. Map input_type to inputType,
+    and pass through textTruncate,embeddingOption,startSec,lengthSec,useFixedLengthSec,minClipSec,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources.
+    Mapping preserves order, so a later embeddingOption overrides the synthesized value. Choose truthy inputType
+    then input_type then text; 2.7 text emits inputText and default textTruncate=end only when absent.'
   proof:
   - case-marengo-text-input
   - oracle
   - helper-python
-- text: >-
-    marengo s3 video owner: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-s3-video-owner.yaml.
+- text: 'marengo_s3_video_owner: Video/audio require async_invoke_route or raise ValueError Input type ''{input_type}''
+    requires async_invoke route. Use model format: ''bedrock/async_invoke/model_id''. This guard precedes the Marengo
+    3 builder. For 2.7 image/video/audio, exact s3:// input produces mediaSource.s3Location.uri; add bucketOwner
+    only when truthy, with absent default empty string. Despite the docstring, S3 images are allowed on the synchronous
+    route. Unknown 2.7 input types pass through without a core input payload.'
   proof:
   - case-marengo-s3-video-owner
   - oracle
   - helper-python
-- text: >-
-    marengo image input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-image-input.yaml.
+- text: 'marengo_image_input: For non-S3 2.7 media, data: strings containing a comma retain everything after the
+    first comma; data: without a comma passes unchanged. Other strings call B183 get_base64_str, which keeps only
+    the second component when commas occur. Emit mediaSource.base64String without decoding or URL downloads. Copy
+    all inference fields except inputType,input_type,inputText,mediaSource,bucketOwner, so core fields cannot be
+    overridden; output_s3_uri is not filtered here. Marengo 3 delegates B630 building before optional wrapping.'
   proof:
   - case-marengo-image-input
   - oracle
   - helper-python
-- text: >-
-    marengo async output wrapper: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-async-output-wrapper.yaml.
+- text: 'marengo_async_output_wrapper: Wrap only when both async_invoke_route and model_id are truthy. Percent-decode
+    model, then if it starts async_invoke/ remove every occurrence of that substring. Missing, empty or whitespace-only
+    output_s3_uri raises ValueError output_s3_uri cannot be empty for async invoke requests. Keep a nonempty URI
+    exactly, including surrounding whitespace, without scheme validation. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri.
+    Async response mirrors B628: one empty index-0 object=embedding, zero prompt/total tokens, unchanged model and
+    HiddenParams._invocation_arn from invocationArn default empty string, with None preserved.'
   proof:
   - case-marengo-async-output-wrapper
   - oracle
   - helper-python
-- text: >-
-    marengo segments vector list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-segments-vector-list.yaml.
+- text: 'marengo_segments_vector_list: Validate response_list as a tuple of frozen extra-ignore MarengoInvokeResponse
+    records: data and embeddings default empty tuples; embedding defaults None; nested items default embedding None.
+    Coerce numeric vector items as source Pydantic float validation does and preserve validation failures. For each
+    response, nonempty data wins even if every item embedding is None; otherwise direct embedding wins when not
+    None, including an empty vector; otherwise use embeddings. Filter only None vectors, flatten in order, assign
+    contiguous indices/object=embedding and preserve model.'
   proof:
   - case-marengo-segments-vector-list
   - oracle
   - helper-python
-- text: >-
-    marengo billed units: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/marengo-billed-units.yaml.
+- text: 'marengo_billed_units: Validate batch_data or empty tuple as extra-ignore records with inputType optional
+    enum text,image,video,audio,text_image,multi_input and optional multi_input record; its inputText defaults None
+    and mediaSources empty. text contributes (query=1,image=0), image (0,1), text_image (1,1); multi_input contributes
+    one query only for truthy inputText and len(mediaSources) images; video/audio/None contribute zero. Invalid
+    enums or nested shapes preserve Pydantic errors. Usage prompt/completion/total tokens are zero; details are
+    None if both sums are zero, otherwise query_count and image_count each use None for zero. Counts do not depend
+    on vector count.'
   proof:
   - case-marengo-billed-units
   - oracle
   - helper-python
-- text: >-
-    drop unsupported param: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-embeddings/drop-unsupported-param.yaml.
+- text: 'drop_unsupported_param: drop_params_enabled is true only when global litellm.drop_params is literally True
+    or the deployment mapping drop_params is literally True; truthy strings and integer 1 are not enough. Reuse
+    B2201/B176 configuration ownership. This helper chooses a flag; B630 owns the rejection/drop outcomes and does
+    not warn on a drop.'
   proof:
   - case-drop-unsupported-param
   - oracle
@@ -138,36 +200,64 @@ checks:
   - mutants
   commands:
   - id: case-marengo-text-input
-    why: The marengo-text-input behavior is missing or differs from its pinned fixture.
+    why: Construction detects B630 marker marengo-embed-3- anywhere, case-sensitively. Supported params are encoding_format,embeddingOption,startSec,input_type,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources,
+      with textTruncate,lengthSec,useFixedLengthSec,minClipSec appended for 2.7 only. Map encoding_format=float
+      to embeddingOption=[visual-text,visual-image] only for 2.7; other encodings are ignored. Map input_type to
+      inputType, and pass through textTruncate,embeddingOption,startSec,lengthSec,useFixedLengthSec,minClipSec,endSec,segmentation,embeddingType,embeddingScope,inferenceId,media_source,media_sources.
+      Mapping preserves order, so a later embeddingOption overrides the synthesized value. Choose truthy inputType
+      then input_type then text; 2.7 text emits inputText and default textTruncate=end only when absent.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_text_input$/)'
   - id: case-marengo-s3-video-owner
-    why: The marengo-s3-video-owner behavior is missing or differs from its pinned fixture.
+    why: 'Video/audio require async_invoke_route or raise ValueError Input type ''{input_type}'' requires async_invoke
+      route. Use model format: ''bedrock/async_invoke/model_id''. This guard precedes the Marengo 3 builder. For
+      2.7 image/video/audio, exact s3:// input produces mediaSource.s3Location.uri; add bucketOwner only when truthy,
+      with absent default empty string. Despite the docstring, S3 images are allowed on the synchronous route. Unknown
+      2.7 input types pass through without a core input payload.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_s3_video_owner$/)'
   - id: case-marengo-image-input
-    why: The marengo-image-input behavior is missing or differs from its pinned fixture.
+    why: 'For non-S3 2.7 media, data: strings containing a comma retain everything after the first comma; data:
+      without a comma passes unchanged. Other strings call B183 get_base64_str, which keeps only the second component
+      when commas occur. Emit mediaSource.base64String without decoding or URL downloads. Copy all inference fields
+      except inputType,input_type,inputText,mediaSource,bucketOwner, so core fields cannot be overridden; output_s3_uri
+      is not filtered here. Marengo 3 delegates B630 building before optional wrapping.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_image_input$/)'
   - id: case-marengo-async-output-wrapper
-    why: The marengo-async-output-wrapper behavior is missing or differs from its pinned fixture.
+    why: 'Wrap only when both async_invoke_route and model_id are truthy. Percent-decode model, then if it starts
+      async_invoke/ remove every occurrence of that substring. Missing, empty or whitespace-only output_s3_uri raises
+      ValueError output_s3_uri cannot be empty for async invoke requests. Keep a nonempty URI exactly, including
+      surrounding whitespace, without scheme validation. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri.
+      Async response mirrors B628: one empty index-0 object=embedding, zero prompt/total tokens, unchanged model
+      and HiddenParams._invocation_arn from invocationArn default empty string, with None preserved.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_async_output_wrapper$/)'
   - id: case-marengo-segments-vector-list
-    why: The marengo-segments-vector-list behavior is missing or differs from its pinned fixture.
+    why: 'Validate response_list as a tuple of frozen extra-ignore MarengoInvokeResponse records: data and embeddings
+      default empty tuples; embedding defaults None; nested items default embedding None. Coerce numeric vector
+      items as source Pydantic float validation does and preserve validation failures. For each response, nonempty
+      data wins even if every item embedding is None; otherwise direct embedding wins when not None, including an
+      empty vector; otherwise use embeddings. Filter only None vectors, flatten in order, assign contiguous indices/object=embedding
+      and preserve model.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_segments_vector_list$/)'
   - id: case-marengo-billed-units
-    why: The marengo-billed-units behavior is missing or differs from its pinned fixture.
+    why: Validate batch_data or empty tuple as extra-ignore records with inputType optional enum text,image,video,audio,text_image,multi_input
+      and optional multi_input record; its inputText defaults None and mediaSources empty. text contributes (query=1,image=0),
+      image (0,1), text_image (1,1); multi_input contributes one query only for truthy inputText and len(mediaSources)
+      images; video/audio/None contribute zero. Invalid enums or nested shapes preserve Pydantic errors. Usage prompt/completion/total
+      tokens are zero; details are None if both sums are zero, otherwise query_count and image_count each use None
+      for zero. Counts do not depend on vector count.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_marengo_billed_units$/)'
   - id: case-drop-unsupported-param
-    why: The drop-unsupported-param behavior is missing or differs from its pinned fixture.
+    why: drop_params_enabled is true only when global litellm.drop_params is literally True or the deployment mapping
+      drop_params is literally True; truthy strings and integer 1 are not enough. Reuse B2201/B176 configuration
+      ownership. This helper chooses a flag; B630 owns the rejection/drop outcomes and does not warn on a drop.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_embeddings_cases::case_[0-9]+_drop_unsupported_param$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_marengo_embeddings.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_marengo_embeddings.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_embeddings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_embeddings*")"
       && grep -lq 'bedrock_other_marengo_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_embeddings*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_marengo_embeddings$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -186,9 +276,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- The MarengoInvokeResponse.vectors branch must retain the literal defaults and omissions in the linked range; use
-  the named fixtures to distinguish them.
+- The Marengo async response docstring mentions embedding_job_id, but the returned object is the ordinary embedding
+  literal.
+- A nonempty data array containing no vectors suppresses both direct embedding and embeddings fallbacks.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

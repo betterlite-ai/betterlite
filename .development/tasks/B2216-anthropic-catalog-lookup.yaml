@@ -1,0 +1,222 @@
+id: B2216
+title: Anthropic raw catalog capability lookup
+description: >-
+  Provide deterministic candidate and raw boolean lookup below Anthropic and Bedrock capability callers. Read the
+  injected runtime and packaged catalogs; provider-aware resolution stays B688.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/common_utils.py:
+  _strip_bedrock_id_suffixes L213-L222; _strip_version_suffix L569-L574; _model_map_lookup_candidates L576-L614;
+  _get_model_capability L616-L631; _get_exact_model_capability L633-L641; supports_fast_mode L643-L648.
+
+
+  Named case contracts: candidate_order: Start with the original model, every matching prefix removed in order bedrock/converse/,
+  bedrock/invoke/, bedrock/, vertex_ai/, then a truthy B2203 base and bedrock/base. A base-resolution exception
+  adds neither. For each primary append, in order, trailing -vN(:revision) removal, trailing :revision removal,
+  trailing -YYYYMMDD removal, every digit.digit changed to digit-digit, the composite dotted/version/date normalization,
+  and removal from the last @ only when its index exceeds zero. Deduplicate preserving first occurrence; preserve
+  case. catalog_precedence: Search all candidates in the runtime catalog before any candidate in the B193 packaged
+  backup. The first actual boolean, including False, wins; strings, numbers and None do not. Any exception in candidate
+  generation or an entry aborts the entire search and returns None, without warning. exact_capability: Exact lookup
+  reads only the runtime key with no normalization or packaged fallback and accepts only bool. Malformed entry exceptions
+  propagate here, unlike the broad lookup. fast_host_only: supports_fast_mode requires provider exactly anthropic
+  and exact-key supports_fast_mode is True; aliases, Bedrock, Vertex, boolean-like values and packaged-only flags
+  do not enable it.
+
+
+  Implement crates/betterlite-context/src/anthropic_catalog_lookup.rs with adjacent tests under anthropic_catalog_lookup/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation anthropic_catalog_lookup in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function anthropic_catalog_lookup_cases in betterlite-context with these exact named cases (one per
+  oracle file): candidate_order, catalog_precedence, exact_capability, fast_host_only. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup* using HelperCase: kind:
+  helper and the externally tagged anthropic_catalog_lookup variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_anthropic_catalog_lookup that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 83 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 145 production lines, 170 behavior/config-test lines, 90 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 440 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/anthropic_catalog_lookup.rs
+  - crates/betterlite-context/src/anthropic_catalog_lookup/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/anthropic_catalog_lookup.rs
+  - tools/oracle/src/helpers/anthropic_catalog_lookup/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/anthropic_catalog_lookup.py
+  - tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/**
+  - tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L213-L222
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L569-L574
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L576-L614
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L616-L631
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L633-L641
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L643-L648
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New anthropic_catalog_lookup seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'candidate_order: Start with the original model, every matching prefix removed in order bedrock/converse/,
+    bedrock/invoke/, bedrock/, vertex_ai/, then a truthy B2203 base and bedrock/base. A base-resolution exception
+    adds neither. For each primary append, in order, trailing -vN(:revision) removal, trailing :revision removal,
+    trailing -YYYYMMDD removal, every digit.digit changed to digit-digit, the composite dotted/version/date normalization,
+    and removal from the last @ only when its index exceeds zero. Deduplicate preserving first occurrence; preserve
+    case.'
+  proof:
+  - case-candidate-order
+  - oracle
+  - helper-python
+- text: 'catalog_precedence: Search all candidates in the runtime catalog before any candidate in the B193 packaged
+    backup. The first actual boolean, including False, wins; strings, numbers and None do not. Any exception in
+    candidate generation or an entry aborts the entire search and returns None, without warning.'
+  proof:
+  - case-catalog-precedence
+  - oracle
+  - helper-python
+- text: 'exact_capability: Exact lookup reads only the runtime key with no normalization or packaged fallback and
+    accepts only bool. Malformed entry exceptions propagate here, unlike the broad lookup.'
+  proof:
+  - case-exact-capability
+  - oracle
+  - helper-python
+- text: 'fast_host_only: supports_fast_mode requires provider exactly anthropic and exact-key supports_fast_mode
+    is True; aliases, Bedrock, Vertex, boolean-like values and packaged-only flags do not enable it.'
+  proof:
+  - case-fast-host-only
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_catalog_lookup.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup*")"
+      && grep -lq 'anthropic_catalog_lookup' tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_catalog_lookup$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-candidate-order
+    why: Start with the original model, every matching prefix removed in order bedrock/converse/, bedrock/invoke/,
+      bedrock/, vertex_ai/, then a truthy B2203 base and bedrock/base. A base-resolution exception adds neither.
+      For each primary append, in order, trailing -vN(:revision) removal, trailing :revision removal, trailing -YYYYMMDD
+      removal, every digit.digit changed to digit-digit, the composite dotted/version/date normalization, and removal
+      from the last @ only when its index exceeds zero. Deduplicate preserving first occurrence; preserve case.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::anthropic_catalog_lookup_cases::case_[0-9]+_candidate_order$/)'
+  - id: case-catalog-precedence
+    why: Search all candidates in the runtime catalog before any candidate in the B193 packaged backup. The first
+      actual boolean, including False, wins; strings, numbers and None do not. Any exception in candidate generation
+      or an entry aborts the entire search and returns None, without warning.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::anthropic_catalog_lookup_cases::case_[0-9]+_catalog_precedence$/)'
+  - id: case-exact-capability
+    why: Exact lookup reads only the runtime key with no normalization or packaged fallback and accepts only bool.
+      Malformed entry exceptions propagate here, unlike the broad lookup.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::anthropic_catalog_lookup_cases::case_[0-9]+_exact_capability$/)'
+  - id: case-fast-host-only
+    why: supports_fast_mode requires provider exactly anthropic and exact-key supports_fast_mode is True; aliases,
+      Bedrock, Vertex, boolean-like values and packaged-only flags do not enable it.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::anthropic_catalog_lookup_cases::case_[0-9]+_fast_host_only$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/candidate-order.yaml
+- tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/catalog-precedence.yaml
+- tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/exact-capability.yaml
+- tools/oracle/cases/helpers/providers/anthropic-catalog-lookup/fast-host-only.yaml
+deviations: []
+out_of_scope:
+- Other Anthropic common_utils functions keep their existing B567-B570, B568, B688 and B689 owners; this task moves
+  only the named lookup bodies from B688.
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106;
+  supports_anthropic_cache_control L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping
+  L130-L134; _validated_claude_code_list L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts
+  L163-L178; _is_claude_code_subagent_billing_system L181-L193; is_claude_code_one_shot_subagent_request L196-L210;
+  eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set L320-L335; AnthropicModelInfo.is_file_id_used
+  L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347; AnthropicModelInfo.is_mid_conversation_tool_change_used
+  L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used L361-L365; AnthropicModelInfo.is_mcp_server_used
+  L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381; AnthropicModelInfo.is_web_search_tool_used L383-L390;
+  AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used
+  L420-L444; AnthropicModelInfo.is_input_examples_used L446-L472; AnthropicModelInfo.is_eager_input_streaming_used
+  L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
+  L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
+  L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940 belong to B568.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers
+  L951-L1046; AnthropicModelInfo.validate_environment L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry
+  L1800-L1815; create_anthropic_model_list_response L1818-L1844 belong to B570.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299;
+  is_anthropic_invalid_thinking_block_error L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346;
+  _without_encrypted_reasoning_blocks L1349-L1360; strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372;
+  strip_thinking_blocks_from_anthropic_messages_request_dict L1375-L1385; strip_empty_content_blocks_from_anthropic_messages
+  L1388-L1428; _is_empty_text_block L1431-L1435; is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block
+  L1453-L1469; normalize_anthropic_tool_use_id L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages
+  L1504-L1526; _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691;
+  strip_provider_specific_fields_from_anthropic_messages L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control
+  L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
+  L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
+  _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780
+  belong to B571.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
+  belong to B585.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params
+  L477-L503; AnthropicModelInfo._apply_sampling_param L505-L528; AnthropicModelInfo.forced_tool_use_unsupported
+  L530-L532; AnthropicModelInfo.forced_tool_use_downgraded L534-L552; AnthropicModelInfo._apply_forced_tool_choice
+  L554-L567; AnthropicModelInfo._get_provider_resolved_capability L650-L668; AnthropicModelInfo._supports_model_capability
+  L670-L693; AnthropicModelInfo._is_adaptive_thinking_model L695-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L707-L714; AnthropicModelInfo._supports_legacy_thinking L716-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
+pitfalls:
+- The runtime map is exhausted before the bundled map, so a runtime alias can beat a bundled exact key.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

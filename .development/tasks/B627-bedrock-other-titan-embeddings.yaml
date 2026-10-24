@@ -19,6 +19,47 @@ description: >-
   BedrockCohereEmbeddingConfig.map_openai_params L20-L28; BedrockCohereEmbeddingConfig._transform_request L33-L43.
 
 
+  Named case contracts: titan_g1_request: G1 construction has no side effects, supported parameters are [], map_openai_params
+  returns the same optional record unchanged, and request construction emits only inputText, ignoring all inference
+  parameters. G1 get_config and V2 get_config inspect only own-class attributes, exclude dunder names, function/builtin/class/static
+  methods and None, but retain single-underscore attributes. titan_v2_dimensions_normalize: V2 normalize and dimensions
+  class settings default to None, not the AWS documentation defaults true/1024. Constructor non-None values persist
+  in class configuration; None never resets a prior setting. Supported parameters are dimensions,encoding_format
+  in that order. Mapping copies dimensions and maps float to embeddingTypes=[float], base64 to [binary], and every
+  other supplied encoding including None to [float]. Request emits inputText plus inference parameters verbatim;
+  duplicate inputText raises the source keyword-collision TypeError rather than overriding. titan_v2_binary_embedding:
+  For each V2 reply prefer embeddingsByType.binary by key presence, including an empty vector, then embeddingsByType.float,
+  then legacy embedding. The choice is independent of the requested encoding; binary remains an integer vector,
+  not a base64 string. If none exists raise ValueError with No embedding data found in response: {response}. Preserve
+  malformed nested-record failures and required inputTextTokenCount failures. titan_multimodal_image: The no-op
+  multimodal constructor supports only dimensions, mapped to embeddingConfig.outputEmbeddingLength. B183 is_base64_encoded
+  selects inputImage containing B183 get_base64_str; otherwise use inputText, including malformed data URLs and
+  raw base64 strings. Copy every inference key afterward so callers can overwrite inputImage/inputText or add both.
+  No URL is downloaded or treated specially. cohere_v3_input_type: The no-op Cohere constructor supports encoding_format,dimensions.
+  Map a list of encodings elementwise, otherwise treat the value as a singleton: only base64 becomes float, all
+  other values survive; dimensions becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request,
+  then require input_type and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop
+  model and other extra fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
+  image default image, and inference overrides; B037 owns that global loader. token_count_response: G1, V2 and multimodal
+  emit object=embedding and contiguous zero-based indices in response order; preserve model, sum required inputTextTokenCount
+  into prompt_tokens and total_tokens, and set completion_tokens=0. Empty responses produce empty data and zero
+  usage. TypedDict construction does not validate required keys or ignore extras: missing accessed fields fail at
+  access. Multimodal counts every batch_data record containing inputImage, including a None value, independently
+  of response count; set prompt_tokens_details.image_count only for a positive count and otherwise leave details
+  None.
+
+
+  Load normalize, dimensions through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest titan_embeddings_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  The normalize and dimensions loader cases target the AmazonTitanV2Config class configuration only; both default
+  to None and are distinct from request dimensions mapping. B037 owns the shared Cohere embedding input-type setting
+  and its loader; do not duplicate it here.
+
+
   Implement crates/betterlite-bedrock/src/titan_embeddings.rs with adjacent tests under titan_embeddings/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -35,8 +76,8 @@ description: >-
   Write rstest function titan_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): titan_g1_request, titan_v2_dimensions_normalize, titan_v2_binary_embedding, titan_multimodal_image, cohere_v3_input_type,
   token_count_response. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings* using HelperCase:
@@ -52,9 +93,9 @@ description: >-
 
 
   Budget from 189 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 215 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 418 planned, 425 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 235 production lines, 245 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 0 parser target/replay lines, 45 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -70,61 +111,90 @@ scope:
   - tools/oracle/helpers/bedrock_other_titan_embeddings.py
   - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/titan_embeddings.rs
+  - crates/betterlite-config/src/providers/bedrock/titan_embeddings/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/titan_embeddings_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/titan_embeddings*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py#L27-L82
-  why: >-
-    Own AmazonTitanG1Config.__init__, AmazonTitanG1Config.get_config, AmazonTitanG1Config.get_supported_openai_params,
+  why: Own AmazonTitanG1Config.__init__, AmazonTitanG1Config.get_config, AmazonTitanG1Config.get_supported_openai_params,
     AmazonTitanG1Config.map_openai_params, AmazonTitanG1Config._transform_request, AmazonTitanG1Config._transform_response.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py#L33-L117
-  why: >-
-    Own AmazonTitanV2Config.__init__, AmazonTitanV2Config.get_config, AmazonTitanV2Config.get_supported_openai_params,
+  why: Own AmazonTitanV2Config.__init__, AmazonTitanV2Config.get_config, AmazonTitanV2Config.get_supported_openai_params,
     AmazonTitanV2Config.map_openai_params, AmazonTitanV2Config._transform_request, AmazonTitanV2Config._transform_response.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_multimodal_transformation.py#L30-L93
-  why: >-
-    Own AmazonTitanMultimodalEmbeddingG1Config.__init__, AmazonTitanMultimodalEmbeddingG1Config.get_supported_openai_params,
+  why: Own AmazonTitanMultimodalEmbeddingG1Config.__init__, AmazonTitanMultimodalEmbeddingG1Config.get_supported_openai_params,
     AmazonTitanMultimodalEmbeddingG1Config.map_openai_params, AmazonTitanMultimodalEmbeddingG1Config._transform_request,
     AmazonTitanMultimodalEmbeddingG1Config._transform_response. Other functions in this file remain with the owners
     listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/cohere_transformation.py#L14-L43
-  why: >-
-    Own BedrockCohereEmbeddingConfig.__init__, BedrockCohereEmbeddingConfig.get_supported_openai_params, BedrockCohereEmbeddingConfig.map_openai_params,
+  why: Own BedrockCohereEmbeddingConfig.__init__, BedrockCohereEmbeddingConfig.get_supported_openai_params, BedrockCohereEmbeddingConfig.map_openai_params,
     BedrockCohereEmbeddingConfig._transform_request. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: 'titan g1 request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-g1-request.yaml.'
+- text: 'titan_g1_request: G1 construction has no side effects, supported parameters are [], map_openai_params returns
+    the same optional record unchanged, and request construction emits only inputText, ignoring all inference parameters.
+    G1 get_config and V2 get_config inspect only own-class attributes, exclude dunder names, function/builtin/class/static
+    methods and None, but retain single-underscore attributes.'
   proof:
   - case-titan-g1-request
   - oracle
   - helper-python
-- text: >-
-    titan v2 dimensions normalize: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-dimensions-normalize.yaml.
+- text: 'titan_v2_dimensions_normalize: V2 normalize and dimensions class settings default to None, not the AWS
+    documentation defaults true/1024. Constructor non-None values persist in class configuration; None never resets
+    a prior setting. Supported parameters are dimensions,encoding_format in that order. Mapping copies dimensions
+    and maps float to embeddingTypes=[float], base64 to [binary], and every other supplied encoding including None
+    to [float]. Request emits inputText plus inference parameters verbatim; duplicate inputText raises the source
+    keyword-collision TypeError rather than overriding.'
   proof:
   - case-titan-v2-dimensions-normalize
   - oracle
   - helper-python
-- text: >-
-    titan v2 binary embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-binary-embedding.yaml.
+- text: 'titan_v2_binary_embedding: For each V2 reply prefer embeddingsByType.binary by key presence, including
+    an empty vector, then embeddingsByType.float, then legacy embedding. The choice is independent of the requested
+    encoding; binary remains an integer vector, not a base64 string. If none exists raise ValueError with No embedding
+    data found in response: {response}. Preserve malformed nested-record failures and required inputTextTokenCount
+    failures.'
   proof:
   - case-titan-v2-binary-embedding
   - oracle
   - helper-python
-- text: >-
-    titan multimodal image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-multimodal-image.yaml.
+- text: 'titan_multimodal_image: The no-op multimodal constructor supports only dimensions, mapped to embeddingConfig.outputEmbeddingLength.
+    B183 is_base64_encoded selects inputImage containing B183 get_base64_str; otherwise use inputText, including
+    malformed data URLs and raw base64 strings. Copy every inference key afterward so callers can overwrite inputImage/inputText
+    or add both. No URL is downloaded or treated specially.'
   proof:
   - case-titan-multimodal-image
   - oracle
   - helper-python
-- text: >-
-    cohere v3 input type: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/cohere-v3-input-type.yaml.
+- text: 'cohere_v3_input_type: The no-op Cohere constructor supports encoding_format,dimensions. Map a list of encodings
+    elementwise, otherwise treat the value as a singleton: only base64 becomes float, all other values survive;
+    dimensions becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request, then require input_type
+    and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop model and other extra
+    fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
+    image default image, and inference overrides; B037 owns that global loader.'
   proof:
   - case-cohere-v3-input-type
   - oracle
   - helper-python
-- text: >-
-    token count response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/token-count-response.yaml.
+- text: 'token_count_response: G1, V2 and multimodal emit object=embedding and contiguous zero-based indices in
+    response order; preserve model, sum required inputTextTokenCount into prompt_tokens and total_tokens, and set
+    completion_tokens=0. Empty responses produce empty data and zero usage. TypedDict construction does not validate
+    required keys or ignore extras: missing accessed fields fail at access. Multimodal counts every batch_data record
+    containing inputImage, including a None value, independently of response count; set prompt_tokens_details.image_count
+    only for a positive count and otherwise leave details None.'
   proof:
   - case-token-count-response
   - oracle
@@ -133,41 +203,75 @@ dod:
     production parser.
   proof:
   - helper-case-corpus
+- text: The real config loader resolves normalize, including its default and precedence.
+  proof:
+  - config-normalize
+- text: The real config loader resolves dimensions, including its default and precedence.
+  proof:
+  - config-dimensions
 checks:
   optional:
   - mutants
   commands:
   - id: case-titan-g1-request
-    why: The titan-g1-request behavior is missing or differs from its pinned fixture.
+    why: G1 construction has no side effects, supported parameters are [], map_openai_params returns the same optional
+      record unchanged, and request construction emits only inputText, ignoring all inference parameters. G1 get_config
+      and V2 get_config inspect only own-class attributes, exclude dunder names, function/builtin/class/static methods
+      and None, but retain single-underscore attributes.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_g1_request$/)'
   - id: case-titan-v2-dimensions-normalize
-    why: The titan-v2-dimensions-normalize behavior is missing or differs from its pinned fixture.
+    why: V2 normalize and dimensions class settings default to None, not the AWS documentation defaults true/1024.
+      Constructor non-None values persist in class configuration; None never resets a prior setting. Supported parameters
+      are dimensions,encoding_format in that order. Mapping copies dimensions and maps float to embeddingTypes=[float],
+      base64 to [binary], and every other supplied encoding including None to [float]. Request emits inputText plus
+      inference parameters verbatim; duplicate inputText raises the source keyword-collision TypeError rather than
+      overriding.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_v2_dimensions_normalize$/)'
   - id: case-titan-v2-binary-embedding
-    why: The titan-v2-binary-embedding behavior is missing or differs from its pinned fixture.
+    why: 'For each V2 reply prefer embeddingsByType.binary by key presence, including an empty vector, then embeddingsByType.float,
+      then legacy embedding. The choice is independent of the requested encoding; binary remains an integer vector,
+      not a base64 string. If none exists raise ValueError with No embedding data found in response: {response}.
+      Preserve malformed nested-record failures and required inputTextTokenCount failures.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_v2_binary_embedding$/)'
   - id: case-titan-multimodal-image
-    why: The titan-multimodal-image behavior is missing or differs from its pinned fixture.
+    why: The no-op multimodal constructor supports only dimensions, mapped to embeddingConfig.outputEmbeddingLength.
+      B183 is_base64_encoded selects inputImage containing B183 get_base64_str; otherwise use inputText, including
+      malformed data URLs and raw base64 strings. Copy every inference key afterward so callers can overwrite inputImage/inputText
+      or add both. No URL is downloaded or treated specially.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_multimodal_image$/)'
   - id: case-cohere-v3-input-type
-    why: The cohere-v3-input-type behavior is missing or differs from its pinned fixture.
+    why: 'The no-op Cohere constructor supports encoding_format,dimensions. Map a list of encodings elementwise,
+      otherwise treat the value as a singleton: only base64 becomes float, all other values survive; dimensions
+      becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request, then require input_type
+      and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop model and other extra
+      fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
+      image default image, and inference overrides; B037 owns that global loader.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_cohere_v3_input_type$/)'
   - id: case-token-count-response
-    why: The token-count-response behavior is missing or differs from its pinned fixture.
+    why: 'G1, V2 and multimodal emit object=embedding and contiguous zero-based indices in response order; preserve
+      model, sum required inputTextTokenCount into prompt_tokens and total_tokens, and set completion_tokens=0.
+      Empty responses produce empty data and zero usage. TypedDict construction does not validate required keys
+      or ignore extras: missing accessed fields fail at access. Multimodal counts every batch_data record containing
+      inputImage, including a None value, independently of response count; set prompt_tokens_details.image_count
+      only for a positive count and otherwise leave details None.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_token_count_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_titan_embeddings.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_titan_embeddings.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*")"
       && grep -lq 'bedrock_other_titan_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_titan_embeddings$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-normalize
+    why: normalize lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::titan_embeddings_config_cases::case_[0-9]+_loads_normalize$/)'
+  - id: config-dimensions
+    why: dimensions lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::titan_embeddings_config_cases::case_[0-9]+_loads_dimensions$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-g1-request.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-dimensions-normalize.yaml
@@ -184,9 +288,9 @@ out_of_scope:
 - 'litellm/llms/bedrock/embed/cohere_transformation.py: BedrockCohereEmbeddingConfig._is_v3_model L30-L31 have no
   caller at the pin; do not port them.'
 pitfalls:
-- Preserve v1/v2 dimensions/normalize/binary embedding variants, multimodal image/text inputs and Cohere input_type/truncate
-  fields.
+- The AWS documentation defaults for Titan V2 are not LiteLLM constructor defaults; injecting them changes the request.
+- A nonempty mixed Cohere input list is classified by its last item by the delegated native implementation.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

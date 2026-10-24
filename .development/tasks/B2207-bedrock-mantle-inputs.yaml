@@ -1,0 +1,316 @@
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+checks:
+  commands:
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_inputs.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs*")"
+      && grep -lq 'bedrock_mantle_inputs' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_inputs$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: case-mantle-bearer-precedence
+    why: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY), then
+      B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+      unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
+      delegates identically.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_bearer_precedence$/)'
+  - id: case-mantle-region-prefix
+    why: Split only the first slash, and recognize the head only if it is an exact member of the B2203 full Bedrock
+      region catalog. A recognized prefix returns that region and the rest (including empty); unknown prefix or
+      no slash returns None and the entire model. Do not strip bedrock_mantle/ or dot cross-region prefixes here.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_region_prefix$/)'
+  - id: case-mantle-region-resolution
+    why: Use a nonempty string params.aws_region_name first, validating it through B591; ignore empty/nonstring
+      values. Otherwise choose a string params.api_base or resolved BEDROCK_MANTLE_API_BASE by truthiness. Match
+      its rstripped value against case-insensitive ^https?://bedrock-mantle\.([^/.]+)\.api\.aws(?=/|$); return the
+      captured region unchanged without validating it. Ports and an immediate query suffix do not match; path suffixes
+      do. Then use truthy resolved BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION, finally us-east-1; these fallback
+      values are not validated by this helper. The mixin _resolve_region delegates identically.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_region_resolution$/)'
+  - id: case-mantle-model-capabilities
+    why: For a truthy model, look up exactly bedrock_mantle/ plus its region-stripped model in the supplied model_cost
+      map; absent/falsey model uses {}. mantle_supports_responses returns true for /v1/responses membership in supported_endpoints
+      or [], else only mode==responses. mantle_base_segment returns openai/v1 only when use_openai_responses_path
+      is literal True, otherwise v1. Preserve Python membership behavior for malformed-but-accepted string endpoint
+      lists; do not infer support from gpt-oss,GPT or Gemma names. Missing entries are false/v1.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_model_capabilities$/)'
+  - id: case-mantle-chat-endpoint-inputs
+    why: 'The chat info helper has a distinct region order: truthy litellm_params.aws_region_name, recognized model
+      region prefix, BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION,us-east-1. Always validate that chosen region
+      through B591, even when explicit api_base wins, and do not derive region from the supplied hostname here.
+      Choose truthy explicit api_base, BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws/{mantle_base_segment(base_model,litellm.model_cost)}.
+      Preserve slash/path spelling of explicit bases. Return the bearer helper result with the base; do not construct
+      a client or emit headers.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_chat_endpoint_inputs$/)'
+  - id: config-bedrock-mantle-api-base
+    why: BEDROCK_MANTLE_API_BASE lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_inputs_config_cases::case_[0-9]+_loads_bedrock_mantle_api_base$/)'
+  - id: config-bedrock-mantle-api-key
+    why: BEDROCK_MANTLE_API_KEY lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_inputs_config_cases::case_[0-9]+_loads_bedrock_mantle_api_key$/)'
+  - id: config-bedrock-mantle-region
+    why: BEDROCK_MANTLE_REGION lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_inputs_config_cases::case_[0-9]+_loads_bedrock_mantle_region$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_secret_safe_failure$/)'
+  optional:
+  - mutants
+description: >-
+  Resolve Mantle credential, region, endpoint and model-capability inputs below provider resolution, cost calculation
+  and the transport adapters. Use the same production helpers from all callers; B625 owns signing and adapter composition
+  after these inputs are selected.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock_mantle/common_utils.py:
+  resolve_mantle_bearer_token L37-L38; split_mantle_region_prefix L41-L45; resolve_mantle_region L48-L64; BedrockMantleAuthMixin._resolve_bearer_token
+  L70-L72; BedrockMantleAuthMixin._resolve_region L74-L76; mantle_supports_responses L130-L145; mantle_base_segment
+  L148-L160. litellm/llms/bedrock_mantle/chat/transformation.py: BedrockMantleChatConfig._get_openai_compatible_provider_info
+  L58-L84.
+
+
+  Named case contracts: mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY),
+  then B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+  unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
+  delegates identically. mantle_region_prefix: Split only the first slash, and recognize the head only if it is
+  an exact member of the B2203 full Bedrock region catalog. A recognized prefix returns that region and the rest
+  (including empty); unknown prefix or no slash returns None and the entire model. Do not strip bedrock_mantle/
+  or dot cross-region prefixes here. mantle_region_resolution: Use a nonempty string params.aws_region_name first,
+  validating it through B591; ignore empty/nonstring values. Otherwise choose a string params.api_base or resolved
+  BEDROCK_MANTLE_API_BASE by truthiness. Match its rstripped value against case-insensitive ^https?://bedrock-mantle\.([^/.]+)\.api\.aws(?=/|$);
+  return the captured region unchanged without validating it. Ports and an immediate query suffix do not match;
+  path suffixes do. Then use truthy resolved BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION, finally us-east-1;
+  these fallback values are not validated by this helper. The mixin _resolve_region delegates identically. mantle_model_capabilities:
+  For a truthy model, look up exactly bedrock_mantle/ plus its region-stripped model in the supplied model_cost
+  map; absent/falsey model uses {}. mantle_supports_responses returns true for /v1/responses membership in supported_endpoints
+  or [], else only mode==responses. mantle_base_segment returns openai/v1 only when use_openai_responses_path is
+  literal True, otherwise v1. Preserve Python membership behavior for malformed-but-accepted string endpoint lists;
+  do not infer support from gpt-oss,GPT or Gemma names. Missing entries are false/v1. mantle_chat_endpoint_inputs:
+  The chat info helper has a distinct region order: truthy litellm_params.aws_region_name, recognized model region
+  prefix, BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION,us-east-1. Always validate that chosen region through
+  B591, even when explicit api_base wins, and do not derive region from the supplied hostname here. Choose truthy
+  explicit api_base, BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws/{mantle_base_segment(base_model,litellm.model_cost)}.
+  Preserve slash/path spelling of explicit bases. Return the bearer helper result with the base; do not construct
+  a client or emit headers.
+
+
+  Load BEDROCK_MANTLE_API_BASE, BEDROCK_MANTLE_API_KEY, BEDROCK_MANTLE_REGION through betterlite-config, with injected
+  environment lookup and the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs
+  use litellm_settings. Add config rstest bedrock_mantle_inputs_config_cases; each named loads_<key> case invokes
+  the real B002 loader, checks explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated
+  keys.
+
+
+  The three Mantle-specific environment/config values default to None; us-east-1 is a resolver fallback, not a replacement
+  for an absent configured value. B590/B591/B129 own existing api_key,aws_region_name,AWS_BEARER_TOKEN_BEDROCK,AWS_REGION_NAME,AWS_REGION
+  and secret-resolution fields. B193 supplies the model map, and B2203 supplies the full region catalog. Reuse those
+  actual loaders and direct helpers.
+
+
+  Write standalone Rust test mantle_inputs_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test mantle_inputs_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Implement crates/betterlite-bedrock/src/mantle_inputs.rs with adjacent tests under mantle_inputs/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_mantle_inputs in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function mantle_inputs_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  mantle_bearer_precedence, mantle_region_prefix, mantle_region_resolution, mantle_model_capabilities, mantle_chat_endpoint_inputs.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs* using HelperCase: kind:
+  helper and the externally tagged bedrock_mantle_inputs variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_mantle_inputs that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 81 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 170 production lines, 245 behavior/config-test lines, 110 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 65 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
+deviations: []
+dod:
+- proof:
+  - helper-case-corpus
+  text: New bedrock_mantle_inputs seeds parse as the intended call variant and replay through the shared production
+    parser.
+- text: 'mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY),
+    then B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+    unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
+    delegates identically.'
+  proof:
+  - case-mantle-bearer-precedence
+  - oracle
+  - helper-python
+- text: 'mantle_region_prefix: Split only the first slash, and recognize the head only if it is an exact member
+    of the B2203 full Bedrock region catalog. A recognized prefix returns that region and the rest (including empty);
+    unknown prefix or no slash returns None and the entire model. Do not strip bedrock_mantle/ or dot cross-region
+    prefixes here.'
+  proof:
+  - case-mantle-region-prefix
+  - oracle
+  - helper-python
+- text: 'mantle_region_resolution: Use a nonempty string params.aws_region_name first, validating it through B591;
+    ignore empty/nonstring values. Otherwise choose a string params.api_base or resolved BEDROCK_MANTLE_API_BASE
+    by truthiness. Match its rstripped value against case-insensitive ^https?://bedrock-mantle\.([^/.]+)\.api\.aws(?=/|$);
+    return the captured region unchanged without validating it. Ports and an immediate query suffix do not match;
+    path suffixes do. Then use truthy resolved BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION, finally us-east-1;
+    these fallback values are not validated by this helper. The mixin _resolve_region delegates identically.'
+  proof:
+  - case-mantle-region-resolution
+  - oracle
+  - helper-python
+- text: 'mantle_model_capabilities: For a truthy model, look up exactly bedrock_mantle/ plus its region-stripped
+    model in the supplied model_cost map; absent/falsey model uses {}. mantle_supports_responses returns true for
+    /v1/responses membership in supported_endpoints or [], else only mode==responses. mantle_base_segment returns
+    openai/v1 only when use_openai_responses_path is literal True, otherwise v1. Preserve Python membership behavior
+    for malformed-but-accepted string endpoint lists; do not infer support from gpt-oss,GPT or Gemma names. Missing
+    entries are false/v1.'
+  proof:
+  - case-mantle-model-capabilities
+  - oracle
+  - helper-python
+- text: 'mantle_chat_endpoint_inputs: The chat info helper has a distinct region order: truthy litellm_params.aws_region_name,
+    recognized model region prefix, BEDROCK_MANTLE_REGION,AWS_REGION_NAME,AWS_REGION,us-east-1. Always validate
+    that chosen region through B591, even when explicit api_base wins, and do not derive region from the supplied
+    hostname here. Choose truthy explicit api_base, BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws/{mantle_base_segment(base_model,litellm.model_cost)}.
+    Preserve slash/path spelling of explicit bases. Return the bearer helper result with the base; do not construct
+    a client or emit headers.'
+  proof:
+  - case-mantle-chat-endpoint-inputs
+  - oracle
+  - helper-python
+- text: The real config loader resolves BEDROCK_MANTLE_API_BASE, including its default and precedence.
+  proof:
+  - config-bedrock-mantle-api-base
+- text: The real config loader resolves BEDROCK_MANTLE_API_KEY, including its default and precedence.
+  proof:
+  - config-bedrock-mantle-api-key
+- text: The real config loader resolves BEDROCK_MANTLE_REGION, including its default and precedence.
+  proof:
+  - config-bedrock-mantle-region
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+id: B2207
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/mantle-bearer-precedence.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/mantle-region-prefix.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/mantle-region-resolution.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/mantle-model-capabilities.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/mantle-chat-endpoint-inputs.yaml
+out_of_scope:
+- 'litellm/litellm_core_utils/litellm_logging.py: _resolve_mantle_region_for_cost L525-L533 and its response-cost
+  callers belong to B068, whose covers and direct dependency include this source and B2207.'
+- 'Function ownership inventory litellm/llms/bedrock_mantle/chat/transformation.py: BedrockMantleChatConfig.__init__
+  L41-L43; BedrockMantleChatConfig.custom_llm_provider L45-L47; BedrockMantleChatConfig.get_config L49-L51; BedrockMantleChatConfig.get_error_class
+  L53-L56; BedrockMantleChatConfig.validate_environment L86-L108; BedrockMantleChatConfig.get_supported_openai_params
+  L110-L120; BedrockMantleChatConfig._supports_reasoning L122-L127; BedrockMantleChatConfig.get_model_response_iterator
+  L129-L143 belong to B625.'
+- 'Function ownership inventory litellm/llms/bedrock_mantle/common_utils.py: BedrockMantleAuthMixin.sign_request
+  L78-L127 belong to B625.'
+pitfalls:
+- Chat endpoint selection validates its region before honoring an explicit base; the standalone region resolver
+  validates only the explicit aws_region_name branch.
+- An empty explicit api_key falls through to Mantle environment keys instead of disabling bearer auth.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L38
+  why: Own resolve_mantle_bearer_token below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L41-L45
+  why: Own split_mantle_region_prefix below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L48-L64
+  why: Own resolve_mantle_region below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L71-L72
+  why: Own BedrockMantleAuthMixin._resolve_bearer_token below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L75-L76
+  why: Own BedrockMantleAuthMixin._resolve_region below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L130-L145
+  why: Own mantle_supports_responses below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L148-L160
+  why: Own mantle_base_segment below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L84
+  why: Own BedrockMantleChatConfig._get_openai_compatible_provider_info below direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L30-L34
+  why: Exact default region, full-region catalog and hostname regex.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L38
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L41-L45
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L48-L64
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L70-L72
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L74-L76
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L130-L145
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L148-L160
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L84
+  why: Owned function body checked against the pinned checkout.
+review_level: security
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/mantle_inputs.rs
+  - crates/betterlite-bedrock/src/mantle_inputs/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_mantle_inputs.rs
+  - tools/oracle/src/helpers/bedrock_mantle_inputs/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_mantle_inputs.py
+  - tools/oracle/cases/helpers/providers/bedrock-mantle-inputs/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_mantle_inputs.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_mantle_inputs/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_mantle_inputs_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_inputs*
+title: Bedrock Mantle input and model metadata policy

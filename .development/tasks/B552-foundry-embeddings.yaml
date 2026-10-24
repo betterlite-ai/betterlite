@@ -18,6 +18,26 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: foundry_models_embeddings_route: Only B549 recognized model-inference bases gain /models
+  unless their trimmed path already ends /models; preserve query/fragment. Image request URL then concatenates /images/embeddings
+  literally. Sync requires non-None base/key with ValueError naming AZURE_AI_API_BASE/AZURE_AI_API_KEY; async has
+  no corresponding guard and sends Authorization Bearer <key>. cohere_model_group: A truthy llm_provider-azureml-model-group
+  sets response.model; map offer-cohere-embed-multili-paygo to Cohere-embed-v3-multilingual and offer-cohere-embed-english-paygo
+  to Cohere-embed-v3-english, keeping all other names. text_input_type_truncate: Classify images using is_base64_encoded
+  only, preserving each original string in input:[{image:<string>}]; all options are copied to both projections.
+  The filtered text request is used only as a nonempty test: the actual inherited OpenAI embedding call receives
+  the original unfiltered input, including image strings. inline_image_embedding: Images run before the text call
+  in both modes. A suitable supplied HTTP client is reused; sync replacement uses timeout and concurrent_limit=1,
+  async uses B173 azure_ai client with timeout. JSON response is projected by B004 embedding conversion with response
+  headers; no request URL download occurs. response_model_index_usage: Interleave image/text data by recorded source
+  indices when both are non-None, otherwise assign the available list; preserve upstream entry indices without renumbering.
+  Read truthy llm_provider-num_tokens from hidden additional_headers and int-convert it into prompt_tokens, creating
+  Usage if absent; other token counts are not recomputed. embedding_error: A performed image call returning data=None
+  raises Exception /image/embeddings route returned None Embeddings.; text None raises /v1/embeddings route returned
+  None Embeddings. Preserve HTTP/JSON/int conversion failures and short result-list indexing failures without new
+  wrapping.
+
+
   Implement crates/betterlite-foundry/src/embeddings.rs with adjacent tests under embeddings/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -34,8 +54,7 @@ description: >-
   Write rstest function embeddings_cases in betterlite-foundry with these exact named cases (one per oracle file):
   foundry_models_embeddings_route, cohere_model_group, text_input_type_truncate, inline_image_embedding, response_model_index_usage,
   embedding_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  transports. Existing API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_embeddings* using HelperCase: kind: helper
@@ -52,9 +71,9 @@ description: >-
 
 
   Budget from 295 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 315 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 573 planned, 575 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 330 production lines, 215 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 680 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -76,45 +95,55 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L21-L294
-  why: >-
-    Own _foundry_models_route_base, AzureAIEmbedding._process_response, AzureAIEmbedding.async_image_embedding,
+  why: Own _foundry_models_route_base, AzureAIEmbedding._process_response, AzureAIEmbedding.async_image_embedding,
     AzureAIEmbedding.image_embedding, AzureAIEmbedding.async_embedding, AzureAIEmbedding.embedding. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/cohere_transformation.py#L21-L86
-  why: >-
-    Own AzureAICohereConfig.__init__, AzureAICohereConfig._map_azure_model_group, AzureAICohereConfig._transform_request_image_embeddings,
+  why: Own AzureAICohereConfig.__init__, AzureAICohereConfig._map_azure_model_group, AzureAICohereConfig._transform_request_image_embeddings,
     AzureAICohereConfig._transform_request, AzureAICohereConfig._transform_response. Other functions in this file
     remain with the owners listed below.
 dod:
-- text: >-
-    foundry models embeddings route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/foundry-models-embeddings-route.yaml.
+- text: 'foundry_models_embeddings_route: Only B549 recognized model-inference bases gain /models unless their trimmed
+    path already ends /models; preserve query/fragment. Image request URL then concatenates /images/embeddings literally.
+    Sync requires non-None base/key with ValueError naming AZURE_AI_API_BASE/AZURE_AI_API_KEY; async has no corresponding
+    guard and sends Authorization Bearer <key>.'
   proof:
   - case-foundry-models-embeddings-route
   - oracle
   - helper-python
-- text: 'cohere model group: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/cohere-model-group.yaml.'
+- text: 'cohere_model_group: A truthy llm_provider-azureml-model-group sets response.model; map offer-cohere-embed-multili-paygo
+    to Cohere-embed-v3-multilingual and offer-cohere-embed-english-paygo to Cohere-embed-v3-english, keeping all
+    other names.'
   proof:
   - case-cohere-model-group
   - oracle
   - helper-python
-- text: >-
-    text input type truncate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/text-input-type-truncate.yaml.
+- text: 'text_input_type_truncate: Classify images using is_base64_encoded only, preserving each original string
+    in input:[{image:<string>}]; all options are copied to both projections. The filtered text request is used only
+    as a nonempty test: the actual inherited OpenAI embedding call receives the original unfiltered input, including
+    image strings.'
   proof:
   - case-text-input-type-truncate
   - oracle
   - helper-python
-- text: 'inline image embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/inline-image-embedding.yaml.'
+- text: 'inline_image_embedding: Images run before the text call in both modes. A suitable supplied HTTP client
+    is reused; sync replacement uses timeout and concurrent_limit=1, async uses B173 azure_ai client with timeout.
+    JSON response is projected by B004 embedding conversion with response headers; no request URL download occurs.'
   proof:
   - case-inline-image-embedding
   - oracle
   - helper-python
-- text: >-
-    response model index usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/response-model-index-usage.yaml.
+- text: 'response_model_index_usage: Interleave image/text data by recorded source indices when both are non-None,
+    otherwise assign the available list; preserve upstream entry indices without renumbering. Read truthy llm_provider-num_tokens
+    from hidden additional_headers and int-convert it into prompt_tokens, creating Usage if absent; other token
+    counts are not recomputed.'
   proof:
   - case-response-model-index-usage
   - oracle
   - helper-python
-- text: 'embedding error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-embeddings/embedding-error.yaml.'
+- text: 'embedding_error: A performed image call returning data=None raises Exception /image/embeddings route returned
+    None Embeddings.; text None raises /v1/embeddings route returned None Embeddings. Preserve HTTP/JSON/int conversion
+    failures and short result-list indexing failures without new wrapping.'
   proof:
   - case-embedding-error
   - oracle
@@ -131,40 +160,51 @@ checks:
   - mutants
   commands:
   - id: case-foundry-models-embeddings-route
-    why: The foundry-models-embeddings-route behavior is missing or differs from its pinned fixture.
+    why: Only B549 recognized model-inference bases gain /models unless their trimmed path already ends /models;
+      preserve query/fragment. Image request URL then concatenates /images/embeddings literally. Sync requires non-None
+      base/key with ValueError naming AZURE_AI_API_BASE/AZURE_AI_API_KEY; async has no corresponding guard and sends
+      Authorization Bearer <key>.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_foundry_models_embeddings_route$/)'
   - id: case-cohere-model-group
-    why: The cohere-model-group behavior is missing or differs from its pinned fixture.
+    why: A truthy llm_provider-azureml-model-group sets response.model; map offer-cohere-embed-multili-paygo to
+      Cohere-embed-v3-multilingual and offer-cohere-embed-english-paygo to Cohere-embed-v3-english, keeping all
+      other names.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_cohere_model_group$/)'
   - id: case-text-input-type-truncate
-    why: The text-input-type-truncate behavior is missing or differs from its pinned fixture.
+    why: 'Classify images using is_base64_encoded only, preserving each original string in input:[{image:<string>}];
+      all options are copied to both projections. The filtered text request is used only as a nonempty test: the
+      actual inherited OpenAI embedding call receives the original unfiltered input, including image strings.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_text_input_type_truncate$/)'
   - id: case-inline-image-embedding
-    why: The inline-image-embedding behavior is missing or differs from its pinned fixture.
+    why: Images run before the text call in both modes. A suitable supplied HTTP client is reused; sync replacement
+      uses timeout and concurrent_limit=1, async uses B173 azure_ai client with timeout. JSON response is projected
+      by B004 embedding conversion with response headers; no request URL download occurs.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_inline_image_embedding$/)'
   - id: case-response-model-index-usage
-    why: The response-model-index-usage behavior is missing or differs from its pinned fixture.
+    why: Interleave image/text data by recorded source indices when both are non-None, otherwise assign the available
+      list; preserve upstream entry indices without renumbering. Read truthy llm_provider-num_tokens from hidden
+      additional_headers and int-convert it into prompt_tokens, creating Usage if absent; other token counts are
+      not recomputed.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_response_model_index_usage$/)'
   - id: case-embedding-error
-    why: The embedding-error behavior is missing or differs from its pinned fixture.
+    why: A performed image call returning data=None raises Exception /image/embeddings route returned None Embeddings.;
+      text None raises /v1/embeddings route returned None Embeddings. Preserve HTTP/JSON/int conversion failures
+      and short result-list indexing failures without new wrapping.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_embedding_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_embeddings.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_embeddings.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_embeddings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_embeddings*")"
       && grep -lq 'foundry_embeddings' tools/oracle/fuzz/corpus/helper_case/foundry_embeddings* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_embeddings$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_embeddings)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_embeddings)"
       && grep -q 'decode_foundry_embedding' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_embeddings.rs &&
       cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_embeddings_corpus$/)'
 oracle_cases:
@@ -181,10 +221,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- >-
-  Use configured model route and image descriptors, preserve input_type/truncate and response index/model/usage
-  normalization, and never fetch a request image URL to fill a byte field.
+- The source computes filtered text input but passes the full original input to the text embedding call.
+- The error says /image/embeddings while the actual image URL uses /images/embeddings.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: standard

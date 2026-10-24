@@ -19,6 +19,20 @@ description: >-
   request or reply; accept already normalized settings and reuse leaf errors.
 
 
+  Named case contracts: image_generation: Parameterize Azure DALL-E2 operation polling and DALL-E3/GPT image generation
+  through B535/B536; retain their API versions, body and retry/error behavior. image_edit: Dispatch B536 GPT-image
+  edits with B535 transport and multipart request. openai_speech: Dispatch B537 Azure OpenAI binary speech with
+  its endpoint/auth headers. native_ssml: Dispatch B538 native SSML speech with its XML/media headers. transcription:
+  Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content type and response
+  projection.
+
+
+  Each named composition case uses separate fixture rows for its operations, invokes the existing native dispatcher
+  and then the actual leaf prepare/send/project functions, and asserts captured upstream request and returned typed
+  result. Include a leaf failure per family to detect accidental error rewriting. This composition reads no new
+  config/env values and registers no HTTP route; defaults, headers, warnings and parsers remain with the named leaves.
+
+
   Implement crates/betterlite-provider/src/azure_media_dispatch.rs with adjacent tests under azure_media_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -34,9 +48,8 @@ description: >-
 
   Write rstest function azure_media_dispatch_cases in betterlite-provider with these exact named cases (one per
   oracle file): image_generation, image_edit, openai_speech, native_ssml, transcription. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_media_dispatch* using HelperCase: kind:
@@ -56,9 +69,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 105 behavior/config-test lines, 105 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 130 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 395 planned, 400 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 535 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -98,27 +111,29 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L44-L45
   why: Operation contract delegated to B539; only native dispatcher wiring is added here.
 dod:
-- text: 'image generation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-media-dispatch/image-generation.yaml.'
+- text: 'image_generation: Parameterize Azure DALL-E2 operation polling and DALL-E3/GPT image generation through
+    B535/B536; retain their API versions, body and retry/error behavior.'
   proof:
   - case-image-generation
   - oracle
   - helper-python
-- text: 'image edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-media-dispatch/image-edit.yaml.'
+- text: 'image_edit: Dispatch B536 GPT-image edits with B535 transport and multipart request.'
   proof:
   - case-image-edit
   - oracle
   - helper-python
-- text: 'openai speech: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-media-dispatch/openai-speech.yaml.'
+- text: 'openai_speech: Dispatch B537 Azure OpenAI binary speech with its endpoint/auth headers.'
   proof:
   - case-openai-speech
   - oracle
   - helper-python
-- text: 'native ssml: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-media-dispatch/native-ssml.yaml.'
+- text: 'native_ssml: Dispatch B538 native SSML speech with its XML/media headers.'
   proof:
   - case-native-ssml
   - oracle
   - helper-python
-- text: 'transcription: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-media-dispatch/transcription.yaml.'
+- text: 'transcription: Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content
+    type and response projection.'
   proof:
   - case-transcription
   - oracle
@@ -135,30 +150,30 @@ checks:
   - mutants
   commands:
   - id: case-image-generation
-    why: The image-generation behavior is missing or differs from its pinned fixture.
+    why: Parameterize Azure DALL-E2 operation polling and DALL-E3/GPT image generation through B535/B536; retain
+      their API versions, body and retry/error behavior.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_image_generation$/)'
   - id: case-image-edit
-    why: The image-edit behavior is missing or differs from its pinned fixture.
+    why: Dispatch B536 GPT-image edits with B535 transport and multipart request.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_image_edit$/)'
   - id: case-openai-speech
-    why: The openai-speech behavior is missing or differs from its pinned fixture.
+    why: Dispatch B537 Azure OpenAI binary speech with its endpoint/auth headers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_openai_speech$/)'
   - id: case-native-ssml
-    why: The native-ssml behavior is missing or differs from its pinned fixture.
+    why: Dispatch B538 native SSML speech with its XML/media headers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_native_ssml$/)'
   - id: case-transcription
-    why: The transcription behavior is missing or differs from its pinned fixture.
+    why: Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content type and response
+      projection.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_transcription$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_media_dispatch.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_media_dispatch.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_media_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_media_dispatch*")"
       && grep -lq 'azure_media_dispatch' tools/oracle/fuzz/corpus/helper_case/azure_media_dispatch* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_media_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -173,49 +188,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-media-dispatch/transcription.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
-  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
-  belong to B534; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
-  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
-  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
-  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
-  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
-  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
-  belong to B685; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig._convert_speed_to_azure_rate L145-L161;
-  AzureAVATextToSpeechConfig._build_express_as_element L163-L194; AzureAVATextToSpeechConfig._get_voice_language
-  L196-L223; AzureAVATextToSpeechConfig.map_openai_params L225-L280; AzureAVATextToSpeechConfig.validate_environment
-  L282-L311; AzureAVATextToSpeechConfig.get_complete_url L313-L349; AzureAVATextToSpeechConfig._is_cognitive_services_endpoint
-  L351-L353; AzureAVATextToSpeechConfig._is_tts_endpoint L355-L357; AzureAVATextToSpeechConfig._extract_region_from_hostname
-  L359-L369; AzureAVATextToSpeechConfig._build_tts_url L371-L375; AzureAVATextToSpeechConfig.is_ssml_input L377-L383;
-  AzureAVATextToSpeechConfig.transform_text_to_speech_request L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response
-  L480-L495 belong to B538; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech L62-L134;
-  AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/azure/audio_transcription/transformation.py: AzureSpeechAudioTranscriptionConfig.get_supported_openai_params
+- 'Function ownership inventory litellm/llms/azure/audio_transcription/transformation.py: AzureSpeechAudioTranscriptionConfig.get_supported_openai_params
   L44-L45; AzureSpeechAudioTranscriptionConfig.map_openai_params L47-L58; AzureSpeechAudioTranscriptionConfig.validate_environment
   L60-L81; AzureSpeechAudioTranscriptionConfig.get_complete_url L83-L109; AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_request
   L111-L123; AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_response L125-L141; AzureSpeechAudioTranscriptionConfig.get_error_class
@@ -223,10 +196,38 @@ out_of_scope:
   L173-L174; AzureSpeechAudioTranscriptionConfig._is_stt_endpoint L176-L177; AzureSpeechAudioTranscriptionConfig._is_azure_openai_endpoint
   L179-L180; AzureSpeechAudioTranscriptionConfig._extract_region_from_hostname L182-L185; AzureSpeechAudioTranscriptionConfig._build_stt_base_url
   L187-L190; AzureSpeechAudioTranscriptionConfig._get_azure_response_format L192-L195; AzureSpeechAudioTranscriptionConfig._extract_text
-  L197-L207 belong to B539; reuse that implementation or its injected typed boundary.
+  L197-L207 belong to B539.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194 belong to B505.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
+  L577-L652 belong to B685.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
+- 'Function ownership inventory litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech
+  L62-L134; AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig._convert_speed_to_azure_rate
+  L145-L161; AzureAVATextToSpeechConfig._build_express_as_element L163-L194; AzureAVATextToSpeechConfig._get_voice_language
+  L196-L223; AzureAVATextToSpeechConfig.map_openai_params L225-L280; AzureAVATextToSpeechConfig.validate_environment
+  L282-L311; AzureAVATextToSpeechConfig.get_complete_url L313-L349; AzureAVATextToSpeechConfig._is_cognitive_services_endpoint
+  L351-L353; AzureAVATextToSpeechConfig._is_tts_endpoint L355-L357; AzureAVATextToSpeechConfig._extract_region_from_hostname
+  L359-L369; AzureAVATextToSpeechConfig._build_tts_url L371-L375; AzureAVATextToSpeechConfig.is_ssml_input L377-L383;
+  AzureAVATextToSpeechConfig.transform_text_to_speech_request L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response
+  L480-L495 belong to B538.'
 pitfalls:
 - Native Azure SSML and OpenAI speech use different authentication and content-type headers.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

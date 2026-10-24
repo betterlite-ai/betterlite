@@ -2,8 +2,8 @@ id: B606
 title: Bedrock Converse tool content and citations
 description: >-
   Add ConverseContentReply projection for text/tool names, native citations, wrapped JSON properties and synthetic
-  JSON-mode tools. Preserve original tool names and citation index/text/source details using the per-request reverse
-  map.
+  JSON-mode tools. Preserve original tool names and citation index/text/source details using B598’s supplied reverse-map
+  view (the pinned producer is B231).
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/converse_transformation.py:
@@ -11,6 +11,46 @@ description: >-
   L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
   L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
   L2483-L2525.
+
+
+  Named case contracts: reverse_tool_names: get_tool_call_names collects unique string names from both non-None
+  toolSpec and function mappings, includingempty strings; toolsNone ->[]. Ordering is Pythonset order and not a
+  promised API contract; canonicalize only this helper collection in oracle comparison. _translate_message_content
+  uses B598 reverse-name lookup for every toolUse and original content-block index, not a dense tool index. json_mode_filter:
+  Falsey json_mode or no tools returns original tools orNone. Exact function.name=json_tool_call is synthetic; no
+  synthetic ->unchanged. All synthetic ->take first arguments whennon-None, B606 unwrap, replace messagecontent
+  (discard previous text), return None; only this allsynthetic path debug Processing JSON tool call response for
+  response_format. Mixed ->append first synthetic arguments to existingcontent-or-empty with no separator, keep
+  real tools in original order, discard other synthetic outputs. Missing arguments leaves content unchanged; do
+  not reindex real tools. wrapped_properties: Parse JSON; only dict with exactly one key properties unwraps its
+  value and json.dumps it, even scalar/None/list. Otherwise preserve the original string byte-for-byte including
+  whitespace; catch JSONDecodeError only. No schema interpretation or recursive properties unwrapping. text_with_tool_use:
+  Each content block independently contributes text,toolUse,reasoningContent,citationsContent, so one block may
+  contribute several. Text uses B218 _parse_content_for_reasoning; append parsed non-None text without separators,
+  and append extracted reasoning block before explicit reasoningContent. Lists startNone until any qualifying block,
+  preserving raw empty reasoning/citation values. No annotations conversion occurs in this helper. empty_tool_input:
+  toolUse requires name,input,toolUseId; serialize input with json.dumps defaultspacing/escaping, including{} ->{}
+  and None ->null, preserving missing-key failures. Return id,type=function,function{name,arguments},index=<original
+  block>. Do not replace missing input with{} or generate an id for a native toolUse. content_function_recovery:
+  Only when tools is notNone and message.content is notNone, parse JSON, require object type=function and name in
+  collected names, build Function from the full object and a generated tool-call id, replace message.tool_calls,
+  clearcontent and setfinish reason tool_calls. Every error including JSON nonobject, invalidtool schema or constructor
+  error is swallowed and original message/finish reason retained. Empty tool list parses but cannot match. Inject
+  id source for constructor comparison. citation_search_locations: No citation blocks ->(None,None). For each block
+  concatenate string text members of list content, ignoring malformed parts; offset advances Python character count
+  only for nonempty blocktext. Only list citations with dict location.searchResultLocation and integer start/end
+  (bool accepted) produce url_citation. Add block offset to raw start/end without range validation; title/source
+  become str(value or empty string). Ignore documentChar/documentPage/documentChunk locations. Emptytext blocks
+  can still emit annotations at current offset. Return concatenated text orNone and annotations orNone.
+
+
+  decode_converse_json_tool is the shared production JSON decoder for textual function recovery and properties unwrapping;
+  replay valid scalar/list/object, malformed and nested properties seeds through both call paths. Their different
+  catch scopes are observable and must remain in the same named cases.
+
+
+  Direct constructor/helper prerequisites used by this slice: B220. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-bedrock/src/converse_content.rs with adjacent tests under converse_content/. Keep
@@ -27,10 +67,10 @@ description: >-
 
 
   Write rstest function converse_content_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): reverse_tool_names, json_mode_filter, wrapped_properties, citation_document_char_page, text_with_tool_use,
-  empty_tool_input. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  file): reverse_tool_names, json_mode_filter, wrapped_properties, text_with_tool_use, empty_tool_input, content_function_recovery,
+  citation_search_locations. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_content* using HelperCase: kind:
@@ -48,9 +88,9 @@ description: >-
 
 
   Budget from 216 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 498 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 250 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 60 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 695 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -72,38 +112,47 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2267-L2525
-  why: >-
-    Own AmazonConverseConfig.get_tool_call_names, AmazonConverseConfig.apply_tool_call_transformation_if_needed,
+  why: Own AmazonConverseConfig.get_tool_call_names, AmazonConverseConfig.apply_tool_call_transformation_if_needed,
     AmazonConverseConfig._translate_message_content, AmazonConverseConfig._transform_citations_to_annotations, AmazonConverseConfig._unwrap_bedrock_properties,
     AmazonConverseConfig._filter_json_mode_tools. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'reverse tool names: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/reverse-tool-names.yaml.'
+- text: 'reverse_tool_names: get_tool_call_names collects unique string names from both non-None toolSpec and function
+    mappings, includingempty strings; toolsNone ->[]. Ordering is Pythonset order and not a promised API contract;
+    canonicalize only this helper collection in oracle comparison. _translate_message_content uses B598 reverse-name
+    lookup for every toolUse and original content-block index, not a dense tool index.'
   proof:
   - case-reverse-tool-names
   - oracle
   - helper-python
-- text: 'json mode filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/json-mode-filter.yaml.'
+- text: 'json_mode_filter: Falsey json_mode or no tools returns original tools orNone. Exact function.name=json_tool_call
+    is synthetic; no synthetic ->unchanged. All synthetic ->take first arguments whennon-None, B606 unwrap, replace
+    messagecontent (discard previous text), return None; only this allsynthetic path debug Processing JSON tool
+    call response for response_format. Mixed ->append first synthetic arguments to existingcontent-or-empty with
+    no separator, keep real tools in original order, discard other synthetic outputs. Missing arguments leaves content
+    unchanged; do not reindex real tools.'
   proof:
   - case-json-mode-filter
   - oracle
   - helper-python
-- text: 'wrapped properties: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/wrapped-properties.yaml.'
+- text: 'wrapped_properties: Parse JSON; only dict with exactly one key properties unwraps its value and json.dumps
+    it, even scalar/None/list. Otherwise preserve the original string byte-for-byte including whitespace; catch
+    JSONDecodeError only. No schema interpretation or recursive properties unwrapping.'
   proof:
   - case-wrapped-properties
   - oracle
   - helper-python
-- text: >-
-    citation document char page: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/citation-document-char-page.yaml.
-  proof:
-  - case-citation-document-char-page
-  - oracle
-  - helper-python
-- text: 'text with tool use: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/text-with-tool-use.yaml.'
+- text: 'text_with_tool_use: Each content block independently contributes text,toolUse,reasoningContent,citationsContent,
+    so one block may contribute several. Text uses B218 _parse_content_for_reasoning; append parsed non-None text
+    without separators, and append extracted reasoning block before explicit reasoningContent. Lists startNone until
+    any qualifying block, preserving raw empty reasoning/citation values. No annotations conversion occurs in this
+    helper.'
   proof:
   - case-text-with-tool-use
   - oracle
   - helper-python
-- text: 'empty tool input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-content/empty-tool-input.yaml.'
+- text: 'empty_tool_input: toolUse requires name,input,toolUseId; serialize input with json.dumps defaultspacing/escaping,
+    including{} ->{} and None ->null, preserving missing-key failures. Return id,type=function,function{name,arguments},index=<original
+    block>. Do not replace missing input with{} or generate an id for a native toolUse.'
   proof:
   - case-empty-tool-input
   - oracle
@@ -116,130 +165,163 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'content_function_recovery: Only when tools is notNone and message.content is notNone, parse JSON, require
+    object type=function and name in collected names, build Function from the full object and a generated tool-call
+    id, replace message.tool_calls, clearcontent and setfinish reason tool_calls. Every error including JSON nonobject,
+    invalidtool schema or constructor error is swallowed and original message/finish reason retained. Empty tool
+    list parses but cannot match. Inject id source for constructor comparison.'
+  proof:
+  - case-content-function-recovery
+  - oracle
+  - helper-python
+- text: 'citation_search_locations: No citation blocks ->(None,None). For each block concatenate string text members
+    of list content, ignoring malformed parts; offset advances Python character count only for nonempty blocktext.
+    Only list citations with dict location.searchResultLocation and integer start/end (bool accepted) produce url_citation.
+    Add block offset to raw start/end without range validation; title/source become str(value or empty string).
+    Ignore documentChar/documentPage/documentChunk locations. Emptytext blocks can still emit annotations at current
+    offset. Return concatenated text orNone and annotations orNone.'
+  proof:
+  - case-citation-search-locations
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-reverse-tool-names
-    why: The reverse-tool-names behavior is missing or differs from its pinned fixture.
+    why: get_tool_call_names collects unique string names from both non-None toolSpec and function mappings, includingempty
+      strings; toolsNone ->[]. Ordering is Pythonset order and not a promised API contract; canonicalize only this
+      helper collection in oracle comparison. _translate_message_content uses B598 reverse-name lookup for every
+      toolUse and original content-block index, not a dense tool index.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_reverse_tool_names$/)'
   - id: case-json-mode-filter
-    why: The json-mode-filter behavior is missing or differs from its pinned fixture.
+    why: Falsey json_mode or no tools returns original tools orNone. Exact function.name=json_tool_call is synthetic;
+      no synthetic ->unchanged. All synthetic ->take first arguments whennon-None, B606 unwrap, replace messagecontent
+      (discard previous text), return None; only this allsynthetic path debug Processing JSON tool call response
+      for response_format. Mixed ->append first synthetic arguments to existingcontent-or-empty with no separator,
+      keep real tools in original order, discard other synthetic outputs. Missing arguments leaves content unchanged;
+      do not reindex real tools.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_json_mode_filter$/)'
   - id: case-wrapped-properties
-    why: The wrapped-properties behavior is missing or differs from its pinned fixture.
+    why: Parse JSON; only dict with exactly one key properties unwraps its value and json.dumps it, even scalar/None/list.
+      Otherwise preserve the original string byte-for-byte including whitespace; catch JSONDecodeError only. No
+      schema interpretation or recursive properties unwrapping.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_wrapped_properties$/)'
-  - id: case-citation-document-char-page
-    why: The citation-document-char-page behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_citation_document_char_page$/)'
   - id: case-text-with-tool-use
-    why: The text-with-tool-use behavior is missing or differs from its pinned fixture.
+    why: Each content block independently contributes text,toolUse,reasoningContent,citationsContent, so one block
+      may contribute several. Text uses B218 _parse_content_for_reasoning; append parsed non-None text without separators,
+      and append extracted reasoning block before explicit reasoningContent. Lists startNone until any qualifying
+      block, preserving raw empty reasoning/citation values. No annotations conversion occurs in this helper.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_text_with_tool_use$/)'
   - id: case-empty-tool-input
-    why: The empty-tool-input behavior is missing or differs from its pinned fixture.
+    why: toolUse requires name,input,toolUseId; serialize input with json.dumps defaultspacing/escaping, including{}
+      ->{} and None ->null, preserving missing-key failures. Return id,type=function,function{name,arguments},index=<original
+      block>. Do not replace missing input with{} or generate an id for a native toolUse.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_empty_tool_input$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_content.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_content.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_content*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_content*")"
       && grep -lq 'bedrock_converse_content' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_content* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_content$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_converse_content)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_converse_content)"
       && grep -q 'decode_converse_json_tool' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_converse_content.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_converse_content_corpus$/)'
+  - id: case-content-function-recovery
+    why: Only when tools is notNone and message.content is notNone, parse JSON, require object type=function and
+      name in collected names, build Function from the full object and a generated tool-call id, replace message.tool_calls,
+      clearcontent and setfinish reason tool_calls. Every error including JSON nonobject, invalidtool schema or
+      constructor error is swallowed and original message/finish reason retained. Empty tool list parses but cannot
+      match. Inject id source for constructor comparison.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_content_function_recovery$/)'
+  - id: case-citation-search-locations
+    why: No citation blocks ->(None,None). For each block concatenate string text members of list content, ignoring
+      malformed parts; offset advances Python character count only for nonempty blocktext. Only list citations with
+      dict location.searchResultLocation and integer start/end (bool accepted) produce url_citation. Add block offset
+      to raw start/end without range validation; title/source become str(value or empty string). Ignore documentChar/documentPage/documentChunk
+      locations. Emptytext blocks can still emit annotations at current offset. Return concatenated text orNone
+      and annotations orNone.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_content_cases::case_[0-9]+_citation_search_locations$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-content/reverse-tool-names.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-content/json-mode-filter.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-content/wrapped-properties.yaml
-- tools/oracle/cases/helpers/providers/bedrock-converse-content/citation-document-char-page.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-content/text-with-tool-use.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-content/empty-tool-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-content/content-function-recovery.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-content/citation-search-locations.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__ L143-L154; AmazonConverseConfig.custom_llm_provider
-  L157-L158; AmazonConverseConfig.get_config_blocks L161-L166; AmazonConverseConfig.get_config L299-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model
-  L388-L389; AmazonConverseConfig._requires_min_max_tokens L392-L393; AmazonConverseConfig._is_nova_2_model L395-L444;
-  AmazonConverseConfig._map_web_search_options L446-L473; AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config
-  L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort
-  L572-L591; AmazonConverseConfig._clamp_thinking_budget_tokens L594-L609; AmazonConverseConfig._is_deepseek_model
-  L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615; AmazonConverseConfig._model_accepts_anthropic_thinking_param
-  L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param L633-L639; AmazonConverseConfig._supports_sampling_params
-  L642-L656; AmazonConverseConfig.get_supported_openai_params L658-L733; AmazonConverseConfig._auto_tool_choice
-  L736-L737 belong to B600; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
-  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
-  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
-  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+- 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata
+  L316-L385 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__
+  L143-L154; AmazonConverseConfig.custom_llm_provider L156-L158; AmazonConverseConfig.get_config_blocks L160-L166;
+  AmazonConverseConfig.get_config L298-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model L387-L389; AmazonConverseConfig._requires_min_max_tokens
+  L391-L393; AmazonConverseConfig._is_nova_2_model L395-L444; AmazonConverseConfig._map_web_search_options L446-L473;
+  AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter
+  L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort L571-L591; AmazonConverseConfig._clamp_thinking_budget_tokens
+  L593-L609; AmazonConverseConfig._is_deepseek_model L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615;
+  AmazonConverseConfig._model_accepts_anthropic_thinking_param L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param
+  L633-L639; AmazonConverseConfig._supports_sampling_params L641-L656; AmazonConverseConfig.get_supported_openai_params
+  L658-L733; AmazonConverseConfig._auto_tool_choice L735-L737 belong to B600.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values
+  L739-L768; AmazonConverseConfig.get_supported_image_types L770-L771; AmazonConverseConfig.get_supported_document_types
+  L773-L774; AmazonConverseConfig.get_supported_video_types L776-L777; AmazonConverseConfig.get_all_supported_content_types
+  L779-L780; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
+  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
+  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L908-L919; AmazonConverseConfig._add_additional_properties_to_schema
+  L921-L955; AmazonConverseConfig._create_output_config_for_response_format L957-L996; AmazonConverseConfig._apply_tool_call_transformation
+  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params
+  L1010-L1165; AmazonConverseConfig._map_request_metadata_param L1167-L1170; AmazonConverseConfig._map_context_management_param
+  L1172-L1187; AmazonConverseConfig._map_service_tier_param L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens
+  L1271-L1294; AmazonConverseConfig.get_cache_point_block L1296-L1306; AmazonConverseConfig.get_cache_point_block
+  L1308-L1318; AmazonConverseConfig.get_cache_point_block L1320-L1338; AmazonConverseConfig._build_cache_point_block
+  L1340-L1353; AmazonConverseConfig._transform_inference_params L1508-L1511; AmazonConverseConfig._handle_top_k_value
+  L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config L1539-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config
+  L1555-L1567 belong to B602.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L168-L218; AmazonConverseConfig._has_orphaned_tool_blocks L220-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L227-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L280-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1355-L1357; AmazonConverseConfig._opens_with_tool_result L1359-L1371; AmazonConverseConfig._system_run_before
   L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
   L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
-  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
-  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
-  belong to B603; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values L739-L768; AmazonConverseConfig.get_supported_image_types
-  L770-L771; AmazonConverseConfig.get_supported_document_types L773-L774; AmazonConverseConfig.get_supported_video_types
-  L776-L777; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
-  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
-  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L909-L919; AmazonConverseConfig._add_additional_properties_to_schema
-  L922-L955; AmazonConverseConfig._create_output_config_for_response_format L958-L996; AmazonConverseConfig._apply_tool_call_transformation
-  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
-  have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params L1010-L1165; AmazonConverseConfig._map_request_metadata_param
-  L1167-L1170; AmazonConverseConfig._map_context_management_param L1172-L1187; AmazonConverseConfig._map_service_tier_param
-  L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens L1271-L1294; AmazonConverseConfig.get_cache_point_block
-  L1297-L1306; AmazonConverseConfig.get_cache_point_block L1309-L1318; AmazonConverseConfig.get_cache_point_block
-  L1320-L1338; AmazonConverseConfig._build_cache_point_block L1341-L1353; AmazonConverseConfig._transform_inference_params
-  L1508-L1511; AmazonConverseConfig._handle_top_k_value L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config
-  L1540-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config L1556-L1567 belong to B602;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
-  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
-  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
-  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
-  belong to B683; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response L2079-L2105; AmazonConverseConfig._transform_response
-  L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709; AmazonConverseConfig.validate_environment L2711-L2724;
-  AmazonConverseConfig.should_fake_stream L2726-L2752 belong to B607; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
-  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
-  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
-  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
-  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
-  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata L316-L385
-  belong to B596; reuse that implementation or its injected typed boundary.
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1461-L1465;
+  AmazonConverseConfig._converted_text_block L1467-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params
+  L1569-L1684; AmazonConverseConfig._transform_request_helper L1861-L1970; AmazonConverseConfig._async_transform_request
+  L1972-L2014; AmazonConverseConfig.transform_request L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077
+  belong to B604.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content
+  L2107-L2117; AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details
+  L2141-L2159; AmazonConverseConfig.thinking_tokens_from_additional_fields L2161-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2172-L2175; AmazonConverseConfig._usage_count L2177-L2183; AmazonConverseConfig._cache_read_count L2185-L2188;
+  AmazonConverseConfig._cache_write_count L2190-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response
+  L2079-L2105; AmazonConverseConfig._transform_response L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709;
+  AmazonConverseConfig.validate_environment L2711-L2724; AmazonConverseConfig.should_fake_stream L2726-L2752 belong
+  to B607.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
+  L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
-- Preserve original tool names and citation index/text/source details using the per-request reverse map.
+- Only searchResultLocation yields normalized citations; document/page locations are skipped.
+- Mixed synthetic JSON tools append their first payload to existing text; all-synthetic tools replace existing text.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: standard

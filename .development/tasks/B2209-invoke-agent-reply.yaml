@@ -1,0 +1,272 @@
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+checks:
+  commands:
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/invoke_agent_reply.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply*")"
+      && grep -lq 'invoke_agent_reply' tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_invoke_agent_reply$/)' &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: parser-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/invoke_agent_reply)"
+      && grep -q 'decode_agent_trace' crates/betterlite-bedrock/fuzz/fuzz_targets/invoke_agent_reply.rs && cargo
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_invoke_agent_reply_corpus$/)'
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+  - id: case-agent-event-stream-content
+    why: 'Consume the complete response through B599 EventStreamBuffer-compatible framing and EventStreamJSONParser
+      shape. Header keys :event-type,:content-type,:message-type map to event_type/content_type/message_type default
+      empty; header extraction failures debug Error extracting headers: {error} then use empty headers. Only chunk
+      and trace event types are processed. Unknown types debug Unknown event type: {type} and are ignored, including
+      exception-type frames with no recognized event-type.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_agent_event_stream_content$/)'
+  - id: case-chunk-parse-and-decode
+    why: 'For each recognized frame parse event.to_response_dict with shared shape first. Parsed chunk presence
+      wins; falsey chunk returns None, otherwise its bytes decode UTF-8. If no chunk key use nonempty raw body decoded
+      UTF-8. Empty/failed messages are omitted. Successful chunk text is re-encoded as base64 bytes then decoded
+      again during extraction; concatenate in arrival order without separators. Direct malformed base64/UTF-8 extraction
+      warns Failed to decode chunk content: {error} and skips that chunk.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_chunk_parse_and_decode$/)'
+  - id: case-agent-error-frame
+    why: 'Non200 frame constructs BedrockError from raw decoded body prefixed by :exception-type plus space, but
+      the broad inner catch swallows this and all parser/decode errors, debugs Error parsing message from event:
+      {error}, and returns None. Do not turn a swallowed frame into a client error. Errors processing one frame
+      log Error processing event: {error} and continue; framing/CRC errors raised by buffer iteration occur outside
+      that catch and fail the whole response.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_agent_error_frame$/)'
+  - id: case-trace-json-warning
+    why: 'Trace messages JSON-decode into payload, retaining even nonobject JSON until later shape use. Invalid
+      trace JSON warns Failed to parse trace event JSON: {error} and drops only that frame. A falsey parsed trace
+      payload does not contribute usage. Keep structural-error categories distinct from malformed JSON.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_trace_json_warning$/)'
+  - id: case-preprocess-trace-usage
+    why: Start inputTokens=0,outputTokens=0,model=None. Only event_type trace with non-None payload qualifies; read
+      payload.trace default{}, skip falsey trace. Sum preProcessingTrace.modelInvocationOutput.metadata.usage inputTokens/outputTokens
+      (missing0), skipping each falsey intermediate. Orchestration usage is not counted; explicit wrong types may
+      raise rather than coerce.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_preprocess_trace_usage$/)'
+  - id: case-orchestration-model
+    why: Take foundationModel from orchestrationTrace.modelInvocationInput of the first trace returning a value
+      other than None; an empty string is a selected value. Subsequent traces do not replace it. Missing model remains
+      None, and _build_model_response uses usage_info.get(model, supplied_model), so it writes None rather than
+      falling back when the key exists.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_orchestration_model$/)'
+  - id: case-agent-reply-and-failure
+    why: 'Mutate supplied response choices to one assistant message with concatenated text,index0,finish_reason
+      stop. Always attach usage for the normal nonempty initialized usage record, including all-zero usage; total
+      is input plus output. Preserve unrelated id/created/hidden fields. Any uncaught outer failure logs Error processing
+      Bedrock Invoke Agent response: {error} and raises B682 BedrockError message Error processing response: {error},status=raw
+      response status,headers unchanged, even if status200. No own HTTP-status guard before parsing.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_reply_cases::case_[0-9]+_agent_reply_and_failure$/)'
+  optional:
+  - mutants
+description: >-
+  Decode the buffered InvokeAgent AWS event stream and project its text/trace usage into the supplied chat response.
+  Reuse B599 framing and its response stream shape; this lower part is callable without the request/signing adapter.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_agent/transformation.py:
+  AmazonInvokeAgentConfig._parse_aws_event_stream L164-L224; AmazonInvokeAgentConfig._parse_message_from_event L226-L264;
+  AmazonInvokeAgentConfig._extract_headers_from_event L266-L280; AmazonInvokeAgentConfig._get_response_stream_shape
+  L282-L285; AmazonInvokeAgentConfig._extract_response_content L287-L308; AmazonInvokeAgentConfig._extract_usage_info
+  L310-L341; AmazonInvokeAgentConfig._is_trace_event L343-L348; AmazonInvokeAgentConfig._get_trace_data L350-L357;
+  AmazonInvokeAgentConfig._extract_and_update_preprocessing_usage L359-L382; AmazonInvokeAgentConfig._extract_orchestration_model
+  L384-L396; AmazonInvokeAgentConfig._build_model_response L398-L428; AmazonInvokeAgentConfig.transform_response
+  L430-L473.
+
+
+  Named case contracts: agent_event_stream_content: Consume the complete response through B599 EventStreamBuffer-compatible
+  framing and EventStreamJSONParser shape. Header keys :event-type,:content-type,:message-type map to event_type/content_type/message_type
+  default empty; header extraction failures debug Error extracting headers: {error} then use empty headers. Only
+  chunk and trace event types are processed. Unknown types debug Unknown event type: {type} and are ignored, including
+  exception-type frames with no recognized event-type. chunk_parse_and_decode: For each recognized frame parse event.to_response_dict
+  with shared shape first. Parsed chunk presence wins; falsey chunk returns None, otherwise its bytes decode UTF-8.
+  If no chunk key use nonempty raw body decoded UTF-8. Empty/failed messages are omitted. Successful chunk text
+  is re-encoded as base64 bytes then decoded again during extraction; concatenate in arrival order without separators.
+  Direct malformed base64/UTF-8 extraction warns Failed to decode chunk content: {error} and skips that chunk. agent_error_frame:
+  Non200 frame constructs BedrockError from raw decoded body prefixed by :exception-type plus space, but the broad
+  inner catch swallows this and all parser/decode errors, debugs Error parsing message from event: {error}, and
+  returns None. Do not turn a swallowed frame into a client error. Errors processing one frame log Error processing
+  event: {error} and continue; framing/CRC errors raised by buffer iteration occur outside that catch and fail the
+  whole response. trace_json_warning: Trace messages JSON-decode into payload, retaining even nonobject JSON until
+  later shape use. Invalid trace JSON warns Failed to parse trace event JSON: {error} and drops only that frame.
+  A falsey parsed trace payload does not contribute usage. Keep structural-error categories distinct from malformed
+  JSON. preprocess_trace_usage: Start inputTokens=0,outputTokens=0,model=None. Only event_type trace with non-None
+  payload qualifies; read payload.trace default{}, skip falsey trace. Sum preProcessingTrace.modelInvocationOutput.metadata.usage
+  inputTokens/outputTokens (missing0), skipping each falsey intermediate. Orchestration usage is not counted; explicit
+  wrong types may raise rather than coerce. orchestration_model: Take foundationModel from orchestrationTrace.modelInvocationInput
+  of the first trace returning a value other than None; an empty string is a selected value. Subsequent traces do
+  not replace it. Missing model remains None, and _build_model_response uses usage_info.get(model, supplied_model),
+  so it writes None rather than falling back when the key exists. agent_reply_and_failure: Mutate supplied response
+  choices to one assistant message with concatenated text,index0,finish_reason stop. Always attach usage for the
+  normal nonempty initialized usage record, including all-zero usage; total is input plus output. Preserve unrelated
+  id/created/hidden fields. Any uncaught outer failure logs Error processing Bedrock Invoke Agent response: {error}
+  and raises B682 BedrockError message Error processing response: {error},status=raw response status,headers unchanged,
+  even if status200. No own HTTP-status guard before parsing.
+
+
+  Implement crates/betterlite-bedrock/src/invoke_agent_reply.rs with adjacent tests under invoke_agent_reply/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation invoke_agent_reply in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function invoke_agent_reply_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): agent_event_stream_content, chunk_parse_and_decode, agent_error_frame, trace_json_warning, preprocess_trace_usage,
+  orchestration_model, agent_reply_and_failure. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply* using HelperCase: kind: helper
+  and the externally tagged invoke_agent_reply variant inside call. Do not put the Python stdin operation field
+  in a HelperCase. Add oracle test helper_seeds_select_invoke_agent_reply that parses every prefixed seed with the
+  production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_agent_trace consumes AWS frame payload JSON and nested base64 chunk bytes in crates/betterlite-bedrock/src/invoke_agent_reply.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/invoke_agent_reply.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/invoke_agent_reply.
+  The adjacent test replays_the_invoke_agent_reply_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 236 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 255 production lines, 275 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 725 planned, 725 maximum changed lines.
+deviations:
+- what: Provider payload/trace debug records omit raw content and credentials; warnings retain their source level,
+    category and skip behavior.
+  why: Repository redaction rules prohibit logging raw trace/user payloads that LiteLLM includes in Response dict,
+    Parsed response and Trace event debug messages.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L226-L341
+dod:
+- proof:
+  - helper-case-corpus
+  text: New invoke_agent_reply seeds parse as the intended call variant and replay through the shared production
+    parser.
+- proof:
+  - parser-corpus
+  text: decode_agent_trace has newly committed malformed and boundary inputs replayed through production parsing.
+- text: 'agent_event_stream_content: Consume the complete response through B599 EventStreamBuffer-compatible framing
+    and EventStreamJSONParser shape. Header keys :event-type,:content-type,:message-type map to event_type/content_type/message_type
+    default empty; header extraction failures debug Error extracting headers: {error} then use empty headers. Only
+    chunk and trace event types are processed. Unknown types debug Unknown event type: {type} and are ignored, including
+    exception-type frames with no recognized event-type.'
+  proof:
+  - case-agent-event-stream-content
+  - oracle
+  - helper-python
+- text: 'chunk_parse_and_decode: For each recognized frame parse event.to_response_dict with shared shape first.
+    Parsed chunk presence wins; falsey chunk returns None, otherwise its bytes decode UTF-8. If no chunk key use
+    nonempty raw body decoded UTF-8. Empty/failed messages are omitted. Successful chunk text is re-encoded as base64
+    bytes then decoded again during extraction; concatenate in arrival order without separators. Direct malformed
+    base64/UTF-8 extraction warns Failed to decode chunk content: {error} and skips that chunk.'
+  proof:
+  - case-chunk-parse-and-decode
+  - oracle
+  - helper-python
+- text: 'agent_error_frame: Non200 frame constructs BedrockError from raw decoded body prefixed by :exception-type
+    plus space, but the broad inner catch swallows this and all parser/decode errors, debugs Error parsing message
+    from event: {error}, and returns None. Do not turn a swallowed frame into a client error. Errors processing
+    one frame log Error processing event: {error} and continue; framing/CRC errors raised by buffer iteration occur
+    outside that catch and fail the whole response.'
+  proof:
+  - case-agent-error-frame
+  - oracle
+  - helper-python
+- text: 'trace_json_warning: Trace messages JSON-decode into payload, retaining even nonobject JSON until later
+    shape use. Invalid trace JSON warns Failed to parse trace event JSON: {error} and drops only that frame. A falsey
+    parsed trace payload does not contribute usage. Keep structural-error categories distinct from malformed JSON.'
+  proof:
+  - case-trace-json-warning
+  - oracle
+  - helper-python
+- text: 'preprocess_trace_usage: Start inputTokens=0,outputTokens=0,model=None. Only event_type trace with non-None
+    payload qualifies; read payload.trace default{}, skip falsey trace. Sum preProcessingTrace.modelInvocationOutput.metadata.usage
+    inputTokens/outputTokens (missing0), skipping each falsey intermediate. Orchestration usage is not counted;
+    explicit wrong types may raise rather than coerce.'
+  proof:
+  - case-preprocess-trace-usage
+  - oracle
+  - helper-python
+- text: 'orchestration_model: Take foundationModel from orchestrationTrace.modelInvocationInput of the first trace
+    returning a value other than None; an empty string is a selected value. Subsequent traces do not replace it.
+    Missing model remains None, and _build_model_response uses usage_info.get(model, supplied_model), so it writes
+    None rather than falling back when the key exists.'
+  proof:
+  - case-orchestration-model
+  - oracle
+  - helper-python
+- text: 'agent_reply_and_failure: Mutate supplied response choices to one assistant message with concatenated text,index0,finish_reason
+    stop. Always attach usage for the normal nonempty initialized usage record, including all-zero usage; total
+    is input plus output. Preserve unrelated id/created/hidden fields. Any uncaught outer failure logs Error processing
+    Bedrock Invoke Agent response: {error} and raises B682 BedrockError message Error processing response: {error},status=raw
+    response status,headers unchanged, even if status200. No own HTTP-status guard before parsing.'
+  proof:
+  - case-agent-reply-and-failure
+  - oracle
+  - helper-python
+id: B2209
+oracle_cases:
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/agent-event-stream-content.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/chunk-parse-and-decode.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/agent-error-frame.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/trace-json-warning.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/preprocess-trace-usage.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/orchestration-model.yaml
+- tools/oracle/cases/helpers/providers/invoke-agent-reply/agent-reply-and-failure.yaml
+out_of_scope:
+- AmazonInvokeAgentConfig constructor, option/URL/signing/request functions L49-L162 and environment/error/fake-stream
+  methods L475-L496 are B652.
+- Binary frame/shape primitives are B599; error construction is B682; Python boto3 import availability is B159 SDK
+  packaging.
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_agent/transformation.py: AmazonInvokeAgentConfig.__init__
+  L49-L51; AmazonInvokeAgentConfig.get_supported_openai_params L53-L61; AmazonInvokeAgentConfig.map_openai_params
+  L63-L73; AmazonInvokeAgentConfig.get_complete_url L75-L106; AmazonInvokeAgentConfig.sign_request L108-L129; AmazonInvokeAgentConfig._get_agent_id_and_alias_id
+  L131-L142; AmazonInvokeAgentConfig._get_session_id L144-L146; AmazonInvokeAgentConfig.transform_request L148-L162;
+  AmazonInvokeAgentConfig.validate_environment L475-L485; AmazonInvokeAgentConfig.get_error_class L487-L488; AmazonInvokeAgentConfig.should_fake_stream
+  L490-L496 belong to B652.'
+pitfalls:
+- The frame parser swallows its own BedrockError, so an exception frame can disappear while a corrupt framing checksum
+  fails the whole response.
+- No trace model leaves model=None in the reply because the initialized usage record already contains the model
+  key.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L164-L473
+  why: Buffered event parsing, warn-and-drop branches, trace extraction and final reply.
+review_level: standard
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/invoke_agent_reply.rs
+  - crates/betterlite-bedrock/src/invoke_agent_reply/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/invoke_agent_reply.rs
+  - tools/oracle/src/helpers/invoke_agent_reply/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/invoke_agent_reply.py
+  - tools/oracle/cases/helpers/providers/invoke-agent-reply/**
+  - tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/invoke_agent_reply.rs
+  - crates/betterlite-bedrock/fuzz/corpus/invoke_agent_reply/**
+title: Bedrock InvokeAgent event and trace decoding

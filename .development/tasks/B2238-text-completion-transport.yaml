@@ -1,0 +1,246 @@
+id: B2238
+title: OpenAI text completion transport
+description: >-
+  Implement OpenAI text completion sync/async and stream-opening execution below B024 and B202/B203. Compose B2237
+  policy, B173 transport, B249 logging and B005 stream wrapper. Reuse B004 SDK wire decoding; add no duplicate byte
+  parser.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/completion/handler.py:
+  OpenAITextCompletion.__init__ L22-L23; validate_environment L25-L31; completion L33-L163; acompletion L165-L216;
+  streaming L218-L273; async_streaming L275-L321.
+
+
+  Named case contracts: text_headers_and_validation: Truthy caller headers replace optional extra_headers; headers=None
+  creates content-type application/json and Authorization Bearer {key} only for truthy key. Explicit {} is retained
+  without synthesized auth and does not replace options. None model/messages raises OpenAIError422 Missing model
+  or messages; empty model/list passes this guard. text_body_retries_dispatch: Use B2237 selector and supplied selected
+  text config transform, then pop max_retries from transformed data default2; explicit None remains None, with no
+  local int validation. Log pre_call after transformation and pop. Only acompletion is True selects async; stream
+  truthiness in original optional_params selects streaming, even when transformed body differs. No json_mode pop
+  or chat endpoint rewrite. text_client_paths: Buffered sync and sync stream default OpenAI with api_key/base_url/timeout/max_retries/organization
+  and litellm.client_session. Buffered async uses B173 _get_async_http_client; async stream uses litellm.aclient_session
+  directly. Supplied client non-None bypasses construction. All sends use completions.with_raw_response.create(**data),
+  with no per-call timeout argument; raw parse returns the response. text_buffered_reply: Sync post_call logs dumped
+  dict and returns TextCompletionResponse. Async post_call logs SDK object, returns the dumped TextCompletionResponse
+  and additionally stores JSON serialization of response_json in hidden original_response. Neither buffered path
+  adds raw response headers to hidden params here. Keep additional_args headers/base unchanged. text_error_mapping:
+  Buffered sync/async catch Exception: status_code attr default500 (explicit None retained), text attr else str(error),
+  headers attr else truthy response.headers; wrap OpenAIError with these three fields only. Missing guard preserves422
+  through this wrapper. Preserve credential redaction and source error category; do not manufacture body/request
+  metadata absent from this call. text_stream_boundaries: Both wrappers use custom_llm_provider literal text-completion-openai,
+  original model/logging and data.stream_options default None, yield every B005 transformed chunk. Sync send/parse
+  and iteration each wrap errors as text_error_mapping; sync client construction and wrapper construction are outside
+  these catches. Async send/parse/wrapper construction are outside its iteration-only catch and retain original
+  SDK errors. No post_call here; outer B024 owns its stream post-hook.
+
+
+  Write standalone Rust test text_completion_transport_credential_identity_isolation in betterlite-openai: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test text_completion_transport_secret_safe_failure in betterlite-openai: Debug and owned
+  failure paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Implement crates/betterlite-openai/src/text_completion_transport.rs with adjacent tests under text_completion_transport/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation text_completion_transport in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function text_completion_transport_cases in betterlite-openai with these exact named cases (one per
+  oracle file): text_headers_and_validation, text_body_retries_dispatch, text_client_paths, text_buffered_reply,
+  text_error_mapping, text_stream_boundaries. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/text_completion_transport* using HelperCase:
+  kind: helper and the externally tagged text_completion_transport variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_text_completion_transport that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 277 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 275 production lines, 255 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 685 planned, 700 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/text_completion_transport.rs
+  - crates/betterlite-openai/src/text_completion_transport/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/text_completion_transport.rs
+  - tools/oracle/src/helpers/text_completion_transport/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/text_completion_transport.py
+  - tools/oracle/cases/helpers/providers/text-completion-transport/**
+  - tools/oracle/fuzz/corpus/helper_case/text_completion_transport*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L22-L23
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L25-L31
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L33-L163
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L165-L216
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L218-L273
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L275-L321
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New text_completion_transport seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'text_headers_and_validation: Truthy caller headers replace optional extra_headers; headers=None creates
+    content-type application/json and Authorization Bearer {key} only for truthy key. Explicit {} is retained without
+    synthesized auth and does not replace options. None model/messages raises OpenAIError422 Missing model or messages;
+    empty model/list passes this guard.'
+  proof:
+  - case-text-headers-and-validation
+  - oracle
+  - helper-python
+- text: 'text_body_retries_dispatch: Use B2237 selector and supplied selected text config transform, then pop max_retries
+    from transformed data default2; explicit None remains None, with no local int validation. Log pre_call after
+    transformation and pop. Only acompletion is True selects async; stream truthiness in original optional_params
+    selects streaming, even when transformed body differs. No json_mode pop or chat endpoint rewrite.'
+  proof:
+  - case-text-body-retries-dispatch
+  - oracle
+  - helper-python
+- text: 'text_client_paths: Buffered sync and sync stream default OpenAI with api_key/base_url/timeout/max_retries/organization
+    and litellm.client_session. Buffered async uses B173 _get_async_http_client; async stream uses litellm.aclient_session
+    directly. Supplied client non-None bypasses construction. All sends use completions.with_raw_response.create(**data),
+    with no per-call timeout argument; raw parse returns the response.'
+  proof:
+  - case-text-client-paths
+  - oracle
+  - helper-python
+- text: 'text_buffered_reply: Sync post_call logs dumped dict and returns TextCompletionResponse. Async post_call
+    logs SDK object, returns the dumped TextCompletionResponse and additionally stores JSON serialization of response_json
+    in hidden original_response. Neither buffered path adds raw response headers to hidden params here. Keep additional_args
+    headers/base unchanged.'
+  proof:
+  - case-text-buffered-reply
+  - oracle
+  - helper-python
+- text: 'text_error_mapping: Buffered sync/async catch Exception: status_code attr default500 (explicit None retained),
+    text attr else str(error), headers attr else truthy response.headers; wrap OpenAIError with these three fields
+    only. Missing guard preserves422 through this wrapper. Preserve credential redaction and source error category;
+    do not manufacture body/request metadata absent from this call.'
+  proof:
+  - case-text-error-mapping
+  - oracle
+  - helper-python
+- text: 'text_stream_boundaries: Both wrappers use custom_llm_provider literal text-completion-openai, original
+    model/logging and data.stream_options default None, yield every B005 transformed chunk. Sync send/parse and
+    iteration each wrap errors as text_error_mapping; sync client construction and wrapper construction are outside
+    these catches. Async send/parse/wrapper construction are outside its iteration-only catch and retain original
+    SDK errors. No post_call here; outer B024 owns its stream post-hook.'
+  proof:
+  - case-text-stream-boundaries
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/text_completion_transport.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/text_completion_transport*")"
+      && grep -lq 'text_completion_transport' tools/oracle/fuzz/corpus/helper_case/text_completion_transport* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_text_completion_transport$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-text-headers-and-validation
+    why: Truthy caller headers replace optional extra_headers; headers=None creates content-type application/json
+      and Authorization Bearer {key} only for truthy key. Explicit {} is retained without synthesized auth and does
+      not replace options. None model/messages raises OpenAIError422 Missing model or messages; empty model/list
+      passes this guard.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_headers_and_validation$/)'
+  - id: case-text-body-retries-dispatch
+    why: Use B2237 selector and supplied selected text config transform, then pop max_retries from transformed data
+      default2; explicit None remains None, with no local int validation. Log pre_call after transformation and
+      pop. Only acompletion is True selects async; stream truthiness in original optional_params selects streaming,
+      even when transformed body differs. No json_mode pop or chat endpoint rewrite.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_body_retries_dispatch$/)'
+  - id: case-text-client-paths
+    why: Buffered sync and sync stream default OpenAI with api_key/base_url/timeout/max_retries/organization and
+      litellm.client_session. Buffered async uses B173 _get_async_http_client; async stream uses litellm.aclient_session
+      directly. Supplied client non-None bypasses construction. All sends use completions.with_raw_response.create(**data),
+      with no per-call timeout argument; raw parse returns the response.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_client_paths$/)'
+  - id: case-text-buffered-reply
+    why: Sync post_call logs dumped dict and returns TextCompletionResponse. Async post_call logs SDK object, returns
+      the dumped TextCompletionResponse and additionally stores JSON serialization of response_json in hidden original_response.
+      Neither buffered path adds raw response headers to hidden params here. Keep additional_args headers/base unchanged.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_buffered_reply$/)'
+  - id: case-text-error-mapping
+    why: 'Buffered sync/async catch Exception: status_code attr default500 (explicit None retained), text attr else
+      str(error), headers attr else truthy response.headers; wrap OpenAIError with these three fields only. Missing
+      guard preserves422 through this wrapper. Preserve credential redaction and source error category; do not manufacture
+      body/request metadata absent from this call.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_error_mapping$/)'
+  - id: case-text-stream-boundaries
+    why: Both wrappers use custom_llm_provider literal text-completion-openai, original model/logging and data.stream_options
+      default None, yield every B005 transformed chunk. Sync send/parse and iteration each wrap errors as text_error_mapping;
+      sync client construction and wrapper construction are outside these catches. Async send/parse/wrapper construction
+      are outside its iteration-only catch and retain original SDK errors. No post_call here; outer B024 owns its
+      stream post-hook.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_cases::case_[0-9]+_text_stream_boundaries$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::text_completion_transport_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-headers-and-validation.yaml
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-body-retries-dispatch.yaml
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-client-paths.yaml
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-buffered-reply.yaml
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-error-mapping.yaml
+- tools/oracle/cases/helpers/providers/text-completion-transport/text-stream-boundaries.yaml
+deviations: []
+out_of_scope:
+- B2237 owns transformations and config selection; B202/B203 own route registration and public text/chat bridges.
+  B005 owns streaming chunk conversion and B004 owns SDK JSON decoding.
+pitfalls:
+- Buffered async resolves its HTTP client through BaseOpenAILLM, while async streaming uses aclient_session directly;
+  only the former can select network_mock automatically.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

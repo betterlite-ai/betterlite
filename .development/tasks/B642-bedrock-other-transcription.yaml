@@ -15,6 +15,97 @@ description: >-
   L42-L73; BedrockAudioTranscriptionRustDispatch.async_audio_transcriptions L75-L106.
 
 
+  Named case contracts: wav_mime_payload: First call B1001 process_audio_file and preserve its filename/content_type/file_content
+  behavior. Exact MIME audio/wav or audio/x-wav selects wav; audio/flac selects flac and audio/ogg selects ogg.
+  Base64-encode bytes with the standard alphabet and ASCII output, returning data,format,filename, with no audio
+  decoding or re-encoding. MIME matching is case-sensitive. mp3_mime_alias: Exact audio/mpeg and audio/mp3 both
+  select mp3, even when the filename extension disagrees. All recognized MIME values take precedence over filename
+  fallback; preserve the B1001 selected filename verbatim. filename_format_fallback: For an unrecognized MIME, use
+  only the lowercased suffix after the final dot in filename, or an empty string if no dot exists. Accept exactly
+  wav,mp3,flac,ogg; a filename ending in a dot yields an empty format. Do not infer content by inspecting magic
+  bytes. unsupported_audio_format: If neither MIME nor suffix selects an allowed format, raise ValueError Unsupported
+  Bedrock audio format for file {filename!r}. Preserve B1001 errors before this check. Python preparation can base64-encode
+  empty bytes; the native request validator then rejects empty audio.data, so do not move that native error into
+  the oracle preparation case. transcription_binding_arguments: Both dispatch methods use Route.TRANSCRIPTION with
+  supplied provider and model, select NATIVE_TRANSCRIPTION or NATIVE_ATRANSCRIPTION and runtime.NO_PYTHON, pass
+  the prepared audio plus model,api_key,api_base,custom_llm_provider,extra_headers,optional_params unchanged, and
+  wrap the binding mapping as TranscriptionResponse. timeout_seconds is None for None, timeout.read for httpx.Timeout
+  (not connect/write/pool), otherwise float(timeout). Capture the callable arguments at the excluded bridge binding
+  seam and compare both sync/async paths; a binding or response-construction failure propagates. Do not port the
+  excluded rust_bridge runtime or compare betterlite with itself.
+
+
+  Standalone Rust fixture case native_audio_validation: Use the pinned native contract in normal Rust fixture tests:
+  audio must be an object, otherwise InvalidType expected object with the actual JSON type. data must be a nonempty
+  string, otherwise MissingField audio.data. Missing, wrong-type or unsupported format raises InvalidRequest audio.format
+  must be wav, mp3, flac, or ogg; accept only exact lowercase formats. Ignore filename after preparation and do
+  not decode the base64 payload. This validates the referenced native contract, not a Python oracle result.
+
+
+  Standalone Rust fixture case native_transcription_request: Supported params are language,prompt,temperature,response_format.
+  Start instruction exactly Transcribe the audio. Respond with only the transcript.; append The audio language is
+  {language}. preceded by one space for a nonempty string language, then Additional context: {prompt} preceded by
+  one space for a nonempty string prompt. Ignore wrong-type/empty language and prompt. Emit one user message whose
+  content is first audio={format,source:{bytes:data}}, then text=instruction; system is [{text: You are a transcription
+  assistant.}]. inferenceConfig starts maxTokens=4096 and copies temperature by key presence including null. response_format
+  does not alter this body or produce a URL. This validates the referenced native contract, not a Python oracle
+  result.
+
+
+  Standalone Rust fixture case native_transcription_url: Implement the local transcription model/region selector
+  for this native contract: remove the first matching prefix bedrock/converse/,bedrock/,converse/; take an optional
+  leading region segment when its length exceeds3, it contains a hyphen and consists only of ASCII alphanumeric/hyphen;
+  then remove one nova-2/ or nova/ prefix. If no path region exists, extract nonempty ARN region from the full ARN
+  colon field3. Choose optional string aws_region_name, then model region, AWS_REGION_NAME, AWS_REGION, then us-west-2;
+  retain empty strings at these choices. Endpoint chooses a string aws_bedrock_runtime_endpoint before api_base,
+  trims it and uses https://bedrock-runtime.{region}.amazonaws.com if empty/missing; an explicitly empty runtime
+  string suppresses api_base before falling back. Strip endpoint trailing slashes and append /model/{model_id}/converse;
+  the native function does not percent-encode model_id. No AWS_DEFAULT_REGION or AWS_BEDROCK_RUNTIME_ENDPOINT environment
+  read occurs in this URL function. This validates the referenced native contract, not a Python oracle result.
+
+
+  Standalone Rust fixture case native_transcription_auth: Default Content-Type is application/json. Native environment
+  validation preserves supplied headers and selects AwsSigV4 with service bedrock and the same region policy; it
+  does not itself turn api_key into Bearer auth. B590/B594 credentials use host-supplied nonempty trimmed aws_access_key_id
+  and aws_secret_access_key (optional trimmed session token) before ambient profile/role settings; otherwise use
+  the shared chain with optional string aws_access_key_id,aws_secret_access_key,aws_session_token,aws_region_name,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_external_id
+  before corresponding uppercase env vars. Secret names are exactly AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_SESSION_TOKEN,AWS_REGION_NAME,AWS_REGION,AWS_SESSION_NAME,AWS_PROFILE_NAME,AWS_ROLE_NAME,AWS_WEB_IDENTITY_TOKEN,AWS_STS_ENDPOINT,AWS_EXTERNAL_ID.
+  Reuse shared loaders and sign through B595, keeping the native precedence fixture separate from Python signing
+  paths. This validates the referenced native contract, not a Python oracle result.
+
+
+  Standalone Rust fixture case native_transcript_reply: decode_transcription_reply parses the pinned Converse reply
+  contract: require output.message.content array. Each block with text must hold a string; concatenate texts in
+  order with no separator. A block lacking text, even a scalar, causes InvalidResponse Bedrock response contains
+  non-text transcript content; a text key with a wrong type instead yields InvalidResponse invalid Converse response:
+  {decoder_error}. Unknown extra keys on a text block are ignored. Empty content returns text empty string. Missing
+  usage is allowed; when usage is present, require unsigned inputTokens/outputTokens and validate optional cache/total
+  fields as in the native record, even though no usage is returned. Optional stopReason must be a string or null.
+  Return only {text}; malformed structural JSON uses invalid Converse response: {decoder_error}. This validates
+  the referenced native contract, not a Python oracle result.
+
+
+  Outside-byte boundary: decode_transcription_reply consumes HTTP Converse response JSON bytes on the native transcription
+  path in crates/betterlite-bedrock/src/transcription.rs or its scoped child module. Use that production decoder
+  from the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_transcription_reply.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_bedrock_transcription_reply_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Write standalone Rust test transcription_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test transcription_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  The 82-line count covers the owned Python binding/preparation ranges. The 245 production and 300 test lines also
+  budget the separately referenced native transcription contract; Rust-only native fixtures are deliberately distinct
+  from Python oracle coverage. Report that limitation when this task runs.
+
+
   Implement crates/betterlite-bedrock/src/transcription.rs with adjacent tests under transcription/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,9 +121,8 @@ description: >-
 
   Write rstest function transcription_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   wav_mime_payload, mp3_mime_alias, filename_format_fallback, unsupported_audio_format, transcription_binding_arguments.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription* using HelperCase:
@@ -42,15 +132,14 @@ description: >-
   then replay the shared corpus.
 
 
-  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
-  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
-  needed, is B002.
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
 
 
   Budget from 82 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 115 production lines, 90 behavior/config-test lines, 75 combined
-  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 305 planned, 400 maximum changed lines.
+  SDK overloads share an async implementation): 245 production lines, 300 behavior/config-test lines, 100 combined
+  Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 730 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -66,40 +155,62 @@ scope:
   - tools/oracle/helpers/bedrock_other_transcription.py
   - tools/oracle/cases/helpers/providers/bedrock-other-transcription/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_transcription_reply.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_transcription_reply/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/bedrock/audio_transcription/mod.rs#L1-L253
   why: Native-only transcription contract; verify in normal Rust fixtures, not a nonexistent Python implementation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/audio_transcription/__init__.py#L21-L106
-  why: >-
-    Own BedrockAudioTranscriptionRustDispatch._audio_payload, BedrockAudioTranscriptionRustDispatch.audio_transcriptions,
+  why: Own BedrockAudioTranscriptionRustDispatch._audio_payload, BedrockAudioTranscriptionRustDispatch.audio_transcriptions,
     BedrockAudioTranscriptionRustDispatch.async_audio_transcriptions. Other functions in this file remain with the
     owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-aws/src/aws.rs#L500-L651
+  why: Native model/region, credential chain and host-supplied credential precedence referenced by transcription.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-aws/src/constants.rs#L1-L58
+  why: Exact native secret-name catalog, signing service and fallback endpoint.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/bedrock/chat/converse_transformation.rs#L66-L163
+  why: Native transcription accepts missing usage but rejects nontext content.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/timeouts.py#L8-L13
+  why: Excluded bridge timeout coercion observed only at the captured call seam.
 dod:
-- text: 'wav mime payload: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-transcription/wav-mime-payload.yaml.'
+- text: 'wav_mime_payload: First call B1001 process_audio_file and preserve its filename/content_type/file_content
+    behavior. Exact MIME audio/wav or audio/x-wav selects wav; audio/flac selects flac and audio/ogg selects ogg.
+    Base64-encode bytes with the standard alphabet and ASCII output, returning data,format,filename, with no audio
+    decoding or re-encoding. MIME matching is case-sensitive.'
   proof:
   - case-wav-mime-payload
   - oracle
   - helper-python
-- text: 'mp3 mime alias: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-transcription/mp3-mime-alias.yaml.'
+- text: 'mp3_mime_alias: Exact audio/mpeg and audio/mp3 both select mp3, even when the filename extension disagrees.
+    All recognized MIME values take precedence over filename fallback; preserve the B1001 selected filename verbatim.'
   proof:
   - case-mp3-mime-alias
   - oracle
   - helper-python
-- text: >-
-    filename format fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-transcription/filename-format-fallback.yaml.
+- text: 'filename_format_fallback: For an unrecognized MIME, use only the lowercased suffix after the final dot
+    in filename, or an empty string if no dot exists. Accept exactly wav,mp3,flac,ogg; a filename ending in a dot
+    yields an empty format. Do not infer content by inspecting magic bytes.'
   proof:
   - case-filename-format-fallback
   - oracle
   - helper-python
-- text: >-
-    unsupported audio format: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-transcription/unsupported-audio-format.yaml.
+- text: 'unsupported_audio_format: If neither MIME nor suffix selects an allowed format, raise ValueError Unsupported
+    Bedrock audio format for file {filename!r}. Preserve B1001 errors before this check. Python preparation can
+    base64-encode empty bytes; the native request validator then rejects empty audio.data, so do not move that native
+    error into the oracle preparation case.'
   proof:
   - case-unsupported-audio-format
   - oracle
   - helper-python
-- text: >-
-    transcription binding arguments: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-transcription/transcription-binding-arguments.yaml.
+- text: 'transcription_binding_arguments: Both dispatch methods use Route.TRANSCRIPTION with supplied provider and
+    model, select NATIVE_TRANSCRIPTION or NATIVE_ATRANSCRIPTION and runtime.NO_PYTHON, pass the prepared audio plus
+    model,api_key,api_base,custom_llm_provider,extra_headers,optional_params unchanged, and wrap the binding mapping
+    as TranscriptionResponse. timeout_seconds is None for None, timeout.read for httpx.Timeout (not connect/write/pool),
+    otherwise float(timeout). Capture the callable arguments at the excluded bridge binding seam and compare both
+    sync/async paths; a binding or response-construction failure propagates. Do not port the excluded rust_bridge
+    runtime or compare betterlite with itself.'
   proof:
   - case-transcription-binding-arguments
   - oracle
@@ -108,38 +219,133 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'native_audio_validation: Use the pinned native contract in normal Rust fixture tests: audio must be an
+    object, otherwise InvalidType expected object with the actual JSON type. data must be a nonempty string, otherwise
+    MissingField audio.data. Missing, wrong-type or unsupported format raises InvalidRequest audio.format must be
+    wav, mp3, flac, or ogg; accept only exact lowercase formats. Ignore filename after preparation and do not decode
+    the base64 payload.'
+  proof:
+  - native-audio-validation
+- text: 'native_transcription_request: Supported params are language,prompt,temperature,response_format. Start instruction
+    exactly Transcribe the audio. Respond with only the transcript.; append The audio language is {language}. preceded
+    by one space for a nonempty string language, then Additional context: {prompt} preceded by one space for a nonempty
+    string prompt. Ignore wrong-type/empty language and prompt. Emit one user message whose content is first audio={format,source:{bytes:data}},
+    then text=instruction; system is [{text: You are a transcription assistant.}]. inferenceConfig starts maxTokens=4096
+    and copies temperature by key presence including null. response_format does not alter this body or produce a
+    URL.'
+  proof:
+  - native-transcription-request
+- text: 'native_transcription_url: Implement the local transcription model/region selector for this native contract:
+    remove the first matching prefix bedrock/converse/,bedrock/,converse/; take an optional leading region segment
+    when its length exceeds3, it contains a hyphen and consists only of ASCII alphanumeric/hyphen; then remove one
+    nova-2/ or nova/ prefix. If no path region exists, extract nonempty ARN region from the full ARN colon field3.
+    Choose optional string aws_region_name, then model region, AWS_REGION_NAME, AWS_REGION, then us-west-2; retain
+    empty strings at these choices. Endpoint chooses a string aws_bedrock_runtime_endpoint before api_base, trims
+    it and uses https://bedrock-runtime.{region}.amazonaws.com if empty/missing; an explicitly empty runtime string
+    suppresses api_base before falling back. Strip endpoint trailing slashes and append /model/{model_id}/converse;
+    the native function does not percent-encode model_id. No AWS_DEFAULT_REGION or AWS_BEDROCK_RUNTIME_ENDPOINT
+    environment read occurs in this URL function.'
+  proof:
+  - native-transcription-url
+- text: 'native_transcription_auth: Default Content-Type is application/json. Native environment validation preserves
+    supplied headers and selects AwsSigV4 with service bedrock and the same region policy; it does not itself turn
+    api_key into Bearer auth. B590/B594 credentials use host-supplied nonempty trimmed aws_access_key_id and aws_secret_access_key
+    (optional trimmed session token) before ambient profile/role settings; otherwise use the shared chain with optional
+    string aws_access_key_id,aws_secret_access_key,aws_session_token,aws_region_name,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_external_id
+    before corresponding uppercase env vars. Secret names are exactly AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_SESSION_TOKEN,AWS_REGION_NAME,AWS_REGION,AWS_SESSION_NAME,AWS_PROFILE_NAME,AWS_ROLE_NAME,AWS_WEB_IDENTITY_TOKEN,AWS_STS_ENDPOINT,AWS_EXTERNAL_ID.
+    Reuse shared loaders and sign through B595, keeping the native precedence fixture separate from Python signing
+    paths.'
+  proof:
+  - native-transcription-auth
+- text: 'native_transcript_reply: decode_transcription_reply parses the pinned Converse reply contract: require
+    output.message.content array. Each block with text must hold a string; concatenate texts in order with no separator.
+    A block lacking text, even a scalar, causes InvalidResponse Bedrock response contains non-text transcript content;
+    a text key with a wrong type instead yields InvalidResponse invalid Converse response: {decoder_error}. Unknown
+    extra keys on a text block are ignored. Empty content returns text empty string. Missing usage is allowed; when
+    usage is present, require unsigned inputTokens/outputTokens and validate optional cache/total fields as in the
+    native record, even though no usage is returned. Optional stopReason must be a string or null. Return only {text};
+    malformed structural JSON uses invalid Converse response: {decoder_error}.'
+  proof:
+  - native-transcript-reply
+- text: decode_transcription_reply has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-wav-mime-payload
-    why: The wav-mime-payload behavior is missing or differs from its pinned fixture.
+    why: First call B1001 process_audio_file and preserve its filename/content_type/file_content behavior. Exact
+      MIME audio/wav or audio/x-wav selects wav; audio/flac selects flac and audio/ogg selects ogg. Base64-encode
+      bytes with the standard alphabet and ASCII output, returning data,format,filename, with no audio decoding
+      or re-encoding. MIME matching is case-sensitive.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_wav_mime_payload$/)'
   - id: case-mp3-mime-alias
-    why: The mp3-mime-alias behavior is missing or differs from its pinned fixture.
+    why: Exact audio/mpeg and audio/mp3 both select mp3, even when the filename extension disagrees. All recognized
+      MIME values take precedence over filename fallback; preserve the B1001 selected filename verbatim.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_mp3_mime_alias$/)'
   - id: case-filename-format-fallback
-    why: The filename-format-fallback behavior is missing or differs from its pinned fixture.
+    why: For an unrecognized MIME, use only the lowercased suffix after the final dot in filename, or an empty string
+      if no dot exists. Accept exactly wav,mp3,flac,ogg; a filename ending in a dot yields an empty format. Do not
+      infer content by inspecting magic bytes.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_filename_format_fallback$/)'
   - id: case-unsupported-audio-format
-    why: The unsupported-audio-format behavior is missing or differs from its pinned fixture.
+    why: If neither MIME nor suffix selects an allowed format, raise ValueError Unsupported Bedrock audio format
+      for file {filename!r}. Preserve B1001 errors before this check. Python preparation can base64-encode empty
+      bytes; the native request validator then rejects empty audio.data, so do not move that native error into the
+      oracle preparation case.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_unsupported_audio_format$/)'
   - id: case-transcription-binding-arguments
-    why: The transcription-binding-arguments behavior is missing or differs from its pinned fixture.
+    why: Both dispatch methods use Route.TRANSCRIPTION with supplied provider and model, select NATIVE_TRANSCRIPTION
+      or NATIVE_ATRANSCRIPTION and runtime.NO_PYTHON, pass the prepared audio plus model,api_key,api_base,custom_llm_provider,extra_headers,optional_params
+      unchanged, and wrap the binding mapping as TranscriptionResponse. timeout_seconds is None for None, timeout.read
+      for httpx.Timeout (not connect/write/pool), otherwise float(timeout). Capture the callable arguments at the
+      excluded bridge binding seam and compare both sync/async paths; a binding or response-construction failure
+      propagates. Do not port the excluded rust_bridge runtime or compare betterlite with itself.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_transcription_binding_arguments$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_transcription.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_transcription.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*")"
       && grep -lq 'bedrock_other_transcription' tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_transcription$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: native-audio-validation
+    why: The native transcription contract is absent or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_native_cases::case_[0-9]+_native_audio_validation$/)'
+  - id: native-transcription-request
+    why: The native transcription contract is absent or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_native_cases::case_[0-9]+_native_transcription_request$/)'
+  - id: native-transcription-url
+    why: The native transcription contract is absent or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_native_cases::case_[0-9]+_native_transcription_url$/)'
+  - id: native-transcription-auth
+    why: The native transcription contract is absent or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_native_cases::case_[0-9]+_native_transcription_auth$/)'
+  - id: native-transcript-reply
+    why: The native transcription contract is absent or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_native_cases::case_[0-9]+_native_transcript_reply$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_transcription_reply)"
+      && grep -q 'decode_transcription_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_transcription_reply.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_transcription_reply_corpus$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::transcription_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-transcription/wav-mime-payload.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-transcription/mp3-mime-alias.yaml
@@ -152,10 +358,15 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- Excluded litellm/rust_bridge runtime, catalog and native binding loaders remain excluded; capture their call seam
+  only. B1001 owns process_audio_file and SDK upload handling. Reuse B590/B594/B595 credential and signing primitives;
+  this task owns the local native model/region selector and the host-supplied credential selection before passing
+  a typed credential source to that chain. These local policy functions preserve the referenced native contract,
+  which differs from the general Python Bedrock path helpers. Do not add another signer or credential cache.
 pitfalls:
-- The Python transcription function reaches NO_PYTHON native bindings, so the oracle can compare payload preparation
-  only.
+- A recognized MIME overrides the filename extension before the format allowlist runs.
+- The native URL builder does not percent-encode its model ID, unlike several Python Bedrock handlers.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 750
   max_new_expects: 0
-review_level: standard
+review_level: security

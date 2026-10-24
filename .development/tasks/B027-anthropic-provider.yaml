@@ -1,14 +1,16 @@
 id: B027
 title: Anthropic provider composition
 description: >-
-  Register Provider::Anthropic and compose all native Anthropic operations and exported typed records. Select legacy
-  completion only for the pinned model predicate, otherwise use chat messages; expose file/batch/count methods for
-  later public API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B075.
-  Exercise installed operations through the closed dispatcher and existing text/chat bridges.
+  Register Provider::Anthropic and compose all native Anthropic operations and exported typed records. Consume the
+  already selected anthropic_text or anthropic dispatch branch; expose file/batch/count methods for later public
+  API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B075. Exercise installed
+  operations through the closed dispatcher and existing text/chat bridges.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/__init__.py:
   get_anthropic_config L7-L13. litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945.
+  litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.completion provider-config lookup/error branch
+  L363-L368.
 
 
   Own _complete_anthropic_text and _complete_anthropic in main.py. Default bases are https://api.anthropic.com/v1/complete
@@ -24,10 +26,51 @@ description: >-
   route owner; pure helper cases exercise the other typed provider operations without calling FastAPI globals.
 
 
+  Named case contracts: anthropic_chat_dispatch: Use truthy explicit api_key, litellm.anthropic_key, litellm.api_key,
+  then raw ANTHROPIC_API_KEY from the injected environment; this last lookup does not call the secret manager. Chat
+  passes global custom_prompt_dict even though it computed caller-or-global earlier, forwards supplied headers/client
+  and delegates B584. Post_call runs for truthy optional stream or acompletion is True. anthropic_legacy_dispatch:
+  Legacy uses the same key chain and B010 HTTP completion with provider forced to anthropic_text, stream, shared_session
+  and B196 encoding. It computes caller-or-global custom_prompt_dict but never forwards it to that call; no owned
+  post_call or exception catch is added. anthropic_count_dispatch: Install B585 count_tokens and retain its model,
+  system/tool/image translation and input_tokens result; use its configured transport and key policy rather than
+  invoking chat dispatch. anthropic_batch_file_dispatch: Install B586 batch create/retrieve/cancel/list/results
+  and B587/B588 upload/retrieve/list/delete/content operations through the closed operation enum. Preserve beta
+  headers, multipart boundaries, pagination and result streams from those leaves; public API routes remain B081
+  and their file/batch family owners. messages_default_base: For messages choose explicit base, litellm.api_base,
+  ANTHROPIC_API_BASE, ANTHROPIC_BASE_URL, then https://api.anthropic.com/v1/messages. Empty values fall through.
+  Existing loaders belong to B567/B500, and ANTHROPIC_API_KEY raw environment lookup preserves an empty final value.
+  legacy_default_base: The legacy chain is identical except its final URL is https://api.anthropic.com/v1/complete.
+  B567 owns LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX, default False. url_suffix_enabled: Append /v1/messages or /v1/complete
+  unless the resolved string already ends with that exact suffix. Do not strip trailing slash or parse query strings:
+  a slash-ended host produces //v1/... and suffix?query receives another suffix. url_suffix_disabled: With LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX
+  true leave the URL unchanged and emit the exact debug message LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping
+  /v1/messages suffix or the corresponding /v1/complete suffix. provider_config_selection: At the composition boundary
+  select the Anthropic chat config for model/provider before B584 execution. Invalid LlmProviders value retains
+  ValueError; a missing selected config raises ValueError Provider config not found for model: {model} and provider:
+  {provider}. The shared closed config selector owns factory selection, while this task owns the handler lookup/error
+  branch; no reverse B584-to-umbrella call is allowed. config_url_selector: get_anthropic_config selects B586 AnthropicBatchesConfig
+  only when the supplied URL contains both case-sensitive substrings messages/batches and results, anywhere and
+  in either order. Otherwise select B576 AnthropicConfig. Do not parse a route or require adjacent path segments.
+
+
+  Write standalone Rust test anthropic_provider_credential_identity_isolation in betterlite-provider: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test anthropic_provider_secret_safe_failure in betterlite-provider: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  ProviderConfigManager.get_provider_chat_config selection is B2230. Consume its closed tag and call the selected
+  existing provider constructor at this composition boundary; do not call B157.
+
+
   Implement crates/betterlite-provider/src/anthropic_dispatch.rs with adjacent tests under anthropic_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
-  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
-  implementation used by tests and oracle adapters.
+  leaf crates remain below this dispatcher and never import it. The production function is the only Rust implementation
+  used by tests and oracle adapters.
 
 
   Register helper operation anthropic_provider in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
@@ -39,10 +82,11 @@ description: >-
 
   Write rstest function anthropic_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
   file): anthropic_chat_dispatch, anthropic_legacy_dispatch, anthropic_count_dispatch, anthropic_batch_file_dispatch,
-  messages_default_base, legacy_default_base, url_suffix_enabled, url_suffix_disabled, anthropic_provider_dispatch_http.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  messages_default_base, legacy_default_base, url_suffix_enabled, url_suffix_disabled, anthropic_provider_dispatch_http,
+  provider_config_selection, config_url_selector. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_provider* using HelperCase: kind: helper
@@ -56,10 +100,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 113 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 145 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 387 planned, 400 maximum changed lines.
+  Budget from 119 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 180 production lines, 280 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
@@ -95,47 +139,60 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2827-L2945
   why: Own _complete_anthropic_text, _complete_anthropic. Other functions in this file remain with the owners listed
     below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L363-L368
+  why: Own the small provider-selection branch above the transport leaf.
 dod:
-- text: >-
-    anthropic chat dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-chat-dispatch.yaml.
+- text: 'anthropic_chat_dispatch: Use truthy explicit api_key, litellm.anthropic_key, litellm.api_key, then raw
+    ANTHROPIC_API_KEY from the injected environment; this last lookup does not call the secret manager. Chat passes
+    global custom_prompt_dict even though it computed caller-or-global earlier, forwards supplied headers/client
+    and delegates B584. Post_call runs for truthy optional stream or acompletion is True.'
   proof:
   - case-anthropic-chat-dispatch
   - oracle
   - helper-python
-- text: >-
-    anthropic legacy dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-legacy-dispatch.yaml.
+- text: 'anthropic_legacy_dispatch: Legacy uses the same key chain and B010 HTTP completion with provider forced
+    to anthropic_text, stream, shared_session and B196 encoding. It computes caller-or-global custom_prompt_dict
+    but never forwards it to that call; no owned post_call or exception catch is added.'
   proof:
   - case-anthropic-legacy-dispatch
   - oracle
   - helper-python
-- text: >-
-    anthropic count dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-count-dispatch.yaml.
+- text: 'anthropic_count_dispatch: Install B585 count_tokens and retain its model, system/tool/image translation
+    and input_tokens result; use its configured transport and key policy rather than invoking chat dispatch.'
   proof:
   - case-anthropic-count-dispatch
   - oracle
   - helper-python
-- text: >-
-    anthropic batch file dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-batch-file-dispatch.yaml.
+- text: 'anthropic_batch_file_dispatch: Install B586 batch create/retrieve/cancel/list/results and B587/B588 upload/retrieve/list/delete/content
+    operations through the closed operation enum. Preserve beta headers, multipart boundaries, pagination and result
+    streams from those leaves; public API routes remain B081 and their file/batch family owners.'
   proof:
   - case-anthropic-batch-file-dispatch
   - oracle
   - helper-python
-- text: 'messages default base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/messages-default-base.yaml.'
+- text: 'messages_default_base: For messages choose explicit base, litellm.api_base, ANTHROPIC_API_BASE, ANTHROPIC_BASE_URL,
+    then https://api.anthropic.com/v1/messages. Empty values fall through. Existing loaders belong to B567/B500,
+    and ANTHROPIC_API_KEY raw environment lookup preserves an empty final value.'
   proof:
   - case-messages-default-base
   - oracle
   - helper-python
-- text: 'legacy default base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/legacy-default-base.yaml.'
+- text: 'legacy_default_base: The legacy chain is identical except its final URL is https://api.anthropic.com/v1/complete.
+    B567 owns LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX, default False.'
   proof:
   - case-legacy-default-base
   - oracle
   - helper-python
-- text: 'url suffix enabled: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-enabled.yaml.'
+- text: 'url_suffix_enabled: Append /v1/messages or /v1/complete unless the resolved string already ends with that
+    exact suffix. Do not strip trailing slash or parse query strings: a slash-ended host produces //v1/... and suffix?query
+    receives another suffix.'
   proof:
   - case-url-suffix-enabled
   - oracle
   - helper-python
-- text: 'url suffix disabled: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-disabled.yaml.'
+- text: 'url_suffix_disabled: With LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX true leave the URL unchanged and emit the
+    exact debug message LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping /v1/messages suffix or the corresponding
+    /v1/complete suffix.'
   proof:
   - case-url-suffix-disabled
   - oracle
@@ -148,50 +205,102 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'provider_config_selection: At the composition boundary select the Anthropic chat config for model/provider
+    before B584 execution. Invalid LlmProviders value retains ValueError; a missing selected config raises ValueError
+    Provider config not found for model: {model} and provider: {provider}. The shared closed config selector owns
+    factory selection, while this task owns the handler lookup/error branch; no reverse B584-to-umbrella call is
+    allowed.'
+  proof:
+  - case-provider-config-selection
+  - oracle
+  - helper-python
+- text: 'config_url_selector: get_anthropic_config selects B586 AnthropicBatchesConfig only when the supplied URL
+    contains both case-sensitive substrings messages/batches and results, anywhere and in either order. Otherwise
+    select B576 AnthropicConfig. Do not parse a route or require adjacent path segments.'
+  proof:
+  - case-config-url-selector
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-anthropic-chat-dispatch
-    why: The anthropic-chat-dispatch behavior is missing or differs from its pinned fixture.
+    why: Use truthy explicit api_key, litellm.anthropic_key, litellm.api_key, then raw ANTHROPIC_API_KEY from the
+      injected environment; this last lookup does not call the secret manager. Chat passes global custom_prompt_dict
+      even though it computed caller-or-global earlier, forwards supplied headers/client and delegates B584. Post_call
+      runs for truthy optional stream or acompletion is True.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_chat_dispatch$/)'
   - id: case-anthropic-legacy-dispatch
-    why: The anthropic-legacy-dispatch behavior is missing or differs from its pinned fixture.
+    why: Legacy uses the same key chain and B010 HTTP completion with provider forced to anthropic_text, stream,
+      shared_session and B196 encoding. It computes caller-or-global custom_prompt_dict but never forwards it to
+      that call; no owned post_call or exception catch is added.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_legacy_dispatch$/)'
   - id: case-anthropic-count-dispatch
-    why: The anthropic-count-dispatch behavior is missing or differs from its pinned fixture.
+    why: Install B585 count_tokens and retain its model, system/tool/image translation and input_tokens result;
+      use its configured transport and key policy rather than invoking chat dispatch.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_count_dispatch$/)'
   - id: case-anthropic-batch-file-dispatch
-    why: The anthropic-batch-file-dispatch behavior is missing or differs from its pinned fixture.
+    why: Install B586 batch create/retrieve/cancel/list/results and B587/B588 upload/retrieve/list/delete/content
+      operations through the closed operation enum. Preserve beta headers, multipart boundaries, pagination and
+      result streams from those leaves; public API routes remain B081 and their file/batch family owners.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_batch_file_dispatch$/)'
   - id: case-messages-default-base
-    why: The messages-default-base behavior is missing or differs from its pinned fixture.
+    why: For messages choose explicit base, litellm.api_base, ANTHROPIC_API_BASE, ANTHROPIC_BASE_URL, then https://api.anthropic.com/v1/messages.
+      Empty values fall through. Existing loaders belong to B567/B500, and ANTHROPIC_API_KEY raw environment lookup
+      preserves an empty final value.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_messages_default_base$/)'
   - id: case-legacy-default-base
-    why: The legacy-default-base behavior is missing or differs from its pinned fixture.
+    why: The legacy chain is identical except its final URL is https://api.anthropic.com/v1/complete. B567 owns
+      LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX, default False.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_legacy_default_base$/)'
   - id: case-url-suffix-enabled
-    why: The url-suffix-enabled behavior is missing or differs from its pinned fixture.
+    why: 'Append /v1/messages or /v1/complete unless the resolved string already ends with that exact suffix. Do
+      not strip trailing slash or parse query strings: a slash-ended host produces //v1/... and suffix?query receives
+      another suffix.'
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_url_suffix_enabled$/)'
   - id: case-url-suffix-disabled
-    why: The url-suffix-disabled behavior is missing or differs from its pinned fixture.
+    why: With LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX true leave the URL unchanged and emit the exact debug message
+      LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping /v1/messages suffix or the corresponding /v1/complete
+      suffix.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_url_suffix_disabled$/)'
   - id: case-anthropic-provider-dispatch-http
-    why: The anthropic_provider-dispatch-http behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_provider.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_provider.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_provider*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_provider*")"
       && grep -lq 'anthropic_provider' tools/oracle/fuzz/corpus/helper_case/anthropic_provider* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_provider$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-provider-config-selection
+    why: 'At the composition boundary select the Anthropic chat config for model/provider before B584 execution.
+      Invalid LlmProviders value retains ValueError; a missing selected config raises ValueError Provider config
+      not found for model: {model} and provider: {provider}. The shared closed config selector owns factory selection,
+      while this task owns the handler lookup/error branch; no reverse B584-to-umbrella call is allowed.'
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_provider_config_selection$/)'
+  - id: case-config-url-selector
+    why: get_anthropic_config selects B586 AnthropicBatchesConfig only when the supplied URL contains both case-sensitive
+      substrings messages/batches and results, anywhere and in either order. Otherwise select B576 AnthropicConfig.
+      Do not parse a route or require adjacent path segments.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_config_url_selector$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_provider_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_provider_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-chat-dispatch.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-legacy-dispatch.yaml
@@ -202,100 +311,129 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-enabled.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-disabled.yaml
 - tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
+- tools/oracle/cases/helpers/providers/anthropic-provider/provider-config-selection.yaml
+- tools/oracle/cases/helpers/providers/anthropic-provider/config-url-selector.yaml
 deviations: []
 out_of_scope:
-- >-
-  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+- B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai L2590-L2728 belong to B024;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong to B025; reuse that implementation
-  or its injected typed boundary.'
-- 'litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304
-  belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/files/handler.py: AnthropicFilesHandler.__init__ L36-L37; AnthropicFilesHandler.afile_content
+- 'litellm/llms/anthropic/files/handler.py: AnthropicFilesHandler.__init__ L36-L37; AnthropicFilesHandler.afile_content
   L39-L109; AnthropicFilesHandler.file_content L111-L153; AnthropicFilesHandler._transform_anthropic_batch_results_to_openai_format
   L155-L267; AnthropicFilesHandler._transform_anthropic_message_to_openai_format L269-L345 have no caller at the
-  pin; do not port them.
-- >-
-  litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375; Chat.__init__ L379-L385; Completions.__init__
-  L389-L391; Completions.create L393-L401; AsyncCompletions.__init__ L405-L407; AsyncCompletions.create L409-L417;
-  acompletion L422-L740; _resolve_dispatched_chat_response L743-L746; _model_response_from_cached_dict L749-L750;
-  _transcription_response_from_cached_dict L753-L754; _async_streaming L757-L771; _handle_mock_potential_exceptions
-  L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async L831-L842; _sleep_for_timeout L845-L851;
-  _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883; admitted_prompt_token_counter L886-L889;
-  mock_completion L892-L1057; _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base L1069-L1080; responses_api_bridge_check
-  L1083-L1194; _is_claude_tool_target L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys
-  L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229; _proxy_auth_headers L1232-L1233; _provider_config_items
-  L1236-L1237; _locals_snapshot L1240-L1241; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
-  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _dispatch_metadata L1320-L1321; _dispatch_client_http
-  L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai L1334-L1335; _custom_api_first_output
-  L4909-L4910; completion L5145-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136;
-  responses_with_retries L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6196-L6250; embedding L6257-L6278;
-  embedding L6283-L6304; embedding L6310-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
-  L7385-L7386; atext_completion L7390-L7456; text_completion L7460-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
-  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7793-L7864; atranscription L7871-L7929;
-  transcription L7933-L8195; aspeech L8199-L8234; speech L8238-L8719; ahealth_check L8725-L8831; print_verbose L8836-L8842;
-  config_completion L8845-L8853; stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
-  L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
-  L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
-  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271;
-  acount_tokens L9277-L9372; _load_module_encoding L9379-L9382; _get_encoding L9385-L9391; _load_default_encoding
-  L9394-L9397; __getattr__ L9400-L9411 belong to B158; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception L4045-L4106 belong to B038;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957; _complete_groq L2111-L2170;
-  _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface L3181-L3221; _complete_openrouter
-  L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649; _complete_predibase L3936-L3992;
-  _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci L3224-L3256; _complete_databricks
-  L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker L4146-L4171;
-  _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake L4655-L4705; _complete_gdc
-  L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_ragflow L2010-L2057 belong to B049; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
-  L3995-L4042 belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow L5094-L5140 belong
-  to B050; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995; _complete_aleph_alpha L2998-L3044;
-  _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir L3521-L3545; _complete_gradient_ai
-  L4708-L4740 belong to B043; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979; _complete_custom_providers
-  L4982-L5042 belong to B044; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_minimax L2500-L2543 belong to B039; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332; _complete_vllm L4421-L4455;
-  _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton L4540-L4573; _complete_petals
-  L4615-L4652; _complete_lemonade L4822-L4859 belong to B040; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037; reuse that implementation or its injected
-  typed boundary.'
-- 'litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046; reuse that implementation or its injected typed
-  boundary.'
-- 'litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933 belong to B031; reuse
-  that implementation or its injected typed boundary.'
+  pin; do not port them.'
 - 'litellm/llms/anthropic/files/handler.py: AnthropicFilesHandler has no caller at the pin. files/main.py uses AnthropicFilesConfig
   instead; B589 is removed.'
+- 'Function ownership inventory litellm/llms/anthropic/cache_aware_routing.py: AnthropicCacheRouting.request_body
+  L71-L89; AnthropicCacheRouting.from_body L91-L97; AnthropicCacheRouting.supports L99-L101; AnthropicCacheRouting.is_warm
+  L103-L109; AnthropicCacheRouting.fits L111-L129; AnthropicCacheRouting.predict L131-L139; AnthropicCacheRouting.cost
+  L141-L147; AnthropicCacheRouting.count_tokens L149-L151; _buckets L154-L160; _scenario L163-L165; predict_arm
+  L168-L236 belong to B075.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602;
+  ModelResponseIterator.accumulated_json L604-L606; ModelResponseIterator.accumulated_json L608-L610; ModelResponseIterator.check_empty_tool_call_args
+  L612-L633; ModelResponseIterator._handle_usage L635-L646; ModelResponseIterator._content_block_delta_helper L648-L732;
+  ModelResponseIterator._handle_redacted_thinking_content L734-L750; ModelResponseIterator.get_content_block_start
+  L752-L763; ModelResponseIterator._web_search_call_snapshot L765-L766; ModelResponseIterator._complete_web_search_call
+  L768-L776; ModelResponseIterator._build_code_interpreter_results L778-L809; ModelResponseIterator._handle_message_delta
+  L1096-L1116 belong to B581.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048;
+  ModelResponseIterator._handle_json_mode_chunk L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk
+  L1118-L1149 belong to B582.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data
+  L1151-L1174; ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
+  L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
+  L1267-L1290 belong to B583.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202;
+  AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion (L323-L362, L370-L538);
+  AnthropicChatCompletion.embedding L540-L542 belong to B584.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
+  AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
+- 'Function ownership inventory litellm/llms/anthropic/compaction.py: supports_native_compaction L19-L28; compatible_defaults
+  L31-L32; request_kwargs L35-L44; _native_blocks L47-L56; extract_summary L59-L71 belong to B100.'
+- 'Function ownership inventory litellm/llms/anthropic/files/handler.py: AnthropicFilesHandler.__init__ L36-L37;
+  AnthropicFilesHandler.afile_content L39-L109; AnthropicFilesHandler.file_content L111-L153; AnthropicFilesHandler._transform_anthropic_batch_results_to_openai_format
+  L155-L267; AnthropicFilesHandler._transform_anthropic_message_to_openai_format L269-L345 have no caller at the
+  pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/llms/anthropic/prompt_cache_prediction.py: _content_blocks L220-L223; _position
+  L226-L239; _positions L242-L257; _prefix_body L260-L297; _position_group L300-L306; _chain_digest L309-L310; _cacheable_position
+  L313-L318; _entry_fingerprint L321-L322; parse_cache_plan L325-L410; _digest L421-L424; _json_object L427-L428;
+  parse_prompt L431-L445; cache_scope L448-L455; TokenCounter.__call__ L502-L502; _count_objects L505-L508; _messages_url
+  L511-L518; count_prompt_tokens L521-L546; count_cache_plan L549-L584; supported_baseline_recipient L594-L597;
+  resolve_prediction_target L610-L611; resolve_baseline_prediction_target L614-L615; _resolve_prediction_target
+  L618-L643; _supported_provider_key L646-L647; supported_prediction_headers L650-L655; parse_observed_cache L666-L714
+  belong to B075.'
+- 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
+  L2590-L2728 belong to B024.'
+- 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
+  to B025.'
+- 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
+- 'Function ownership inventory litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178;
+  _complete_bedrock L4178-L4304 belong to B028.'
+- 'Function ownership inventory litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933
+  belong to B031.'
+- 'Function ownership inventory litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036.'
+- 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
+- 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
+  L4045-L4106 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
+  _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+- 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
+  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
+  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
+  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
+- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
+  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
+  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
+  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
+  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
+  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+- 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
+  _complete_custom_providers L4982-L5042 belong to B044.'
+- 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
+- 'Function ownership inventory litellm/main.py: _complete_ragflow L2010-L2057 belong to B049.'
+- 'Function ownership inventory litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow
+  L5094-L5140 belong to B050.'
+- 'Function ownership inventory litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375;
+  Chat.__init__ L379-L385; Completions.__init__ L389-L391; Completions.create L393-L401; AsyncCompletions.__init__
+  L405-L407; AsyncCompletions.create L409-L417; acompletion L420-L740; _resolve_dispatched_chat_response L743-L746;
+  _model_response_from_cached_dict L749-L750; _transcription_response_from_cached_dict L753-L754; _async_streaming
+  L757-L771; _handle_mock_potential_exceptions L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async
+  L831-L842; _sleep_for_timeout L845-L851; _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883;
+  admitted_prompt_token_counter L886-L889; mock_completion L892-L1057; responses_api_bridge_check L1083-L1194; _is_claude_tool_target
+  L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers
+  L1229-L1229; _proxy_auth_headers L1232-L1233; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _custom_api_first_output L4909-L4910; completion
+  L5143-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136; responses_with_retries
+  L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6195-L6250; embedding L6256-L6278; embedding L6282-L6304;
+  embedding L6309-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
+  transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+- 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
+- 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
+  to B196.'
+- 'Function ownership inventory litellm/main.py: _provider_config_items L1236-L1237; _locals_snapshot L1240-L1241;
+  _dispatch_metadata L1320-L1321; _dispatch_client_http L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai
+  L1334-L1335 belong to B198.'
+- 'Function ownership inventory litellm/main.py: stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+  L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
+  L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271
+  belong to B2227.'
+- 'Function ownership inventory litellm/main.py: print_verbose L8836-L8842 belong to B2239.'
+- 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
+  L1069-L1080 belong to B500.'
 pitfalls:
-- Select legacy completion only for the pinned model predicate, otherwise use chat messages; expose file/batch/count
-  methods for later public API tasks.
+- The calculated caller custom_prompt_dict is not the value passed to Anthropic chat; the source passes the global
+  map.
+- The batch-results selector tests substrings anywhere in the URL, not an endpoint suffix.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 625
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -15,6 +15,41 @@ description: >-
   L261-L266; AzureAIVectorStoreConfig.transform_create_vector_store_response L268-L269.
 
 
+  Named case contracts: store_type_endpoints: Read map is GET /indexes/ plus POST /docs/search,/docs/suggest,/docs/autocomplete,/analyze;
+  write map is POST /docs/index. These are literal substring patterns, not placeholders. Exercise the B1058 consumer
+  with write classification first, including an index named analyze, so batch writes cannot gain a read classification.
+  auth_credentials: get_auth_credentials rejects only api_key=None with ValueError api_key is required and returns
+  api-key otherwise, including empty. Environment validation calls B2200 then overwrites Content-Type=application/json.
+  search_query_fields: Use B1059 query_text/embed_query or aembed_query first. Set logging input,embedding_model=litellm_embedding_model,top_k;
+  top_k defaults10 only when absent and vector field defaults contentVector only when absent. Body is search=*,
+  vectorQueries=[{vector,fields,kind:vector,k:top_k}], select=id,content, top=top_k. Ignore extra_body and other
+  search options. vector_query_with_embedding: Use the injected B1059 embedding executor and preserve query-vector
+  order; URL is <api_base>/indexes/<vector_store_id>/docs/search?api-version=2024-07-01 with literal unencoded vector_store_id,
+  not B206 segment encoding. document_score_citation: Missing value defaults []; per result default id/content to
+  empty and @search.score to0.0, emit one text content, file_id=id, filename=Document <id>, copy metadata except
+  id/content/contentVector/@search.score and overwrite document_id=id. Return object=vector_store.search_results.page
+  with logging input default empty as search_query. unsupported_store_create: Both create request and response raise
+  bare NotImplementedError. Search JSON/type/validation failures are caught and rethrown through B1058 get_error_class
+  with str(error), original response status and headers, even a 200 status. azure_search_endpoint: Truthy api_base
+  is trimmed and returned; otherwise require truthy litellm_params.azure_search_service_name or the Azure AI Search
+  service name is required diagnostic naming the setting/api_base. Construct https://<name>.search.windows.net literally.
+
+
+  Load azure_search_service_name, azure_search_vector_field through betterlite-config, with injected environment
+  lookup and the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest foundry_vector_store_config_cases; each named loads_<key> case invokes the real B002 loader,
+  checks explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  Write standalone Rust test foundry_vector_store_credential_identity_isolation in betterlite-foundry: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test foundry_vector_store_secret_safe_failure in betterlite-foundry: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-foundry/src/vector_stores.rs with adjacent tests under vector_stores/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,9 +65,9 @@ description: >-
 
   Write rstest function vector_stores_cases in betterlite-foundry with these exact named cases (one per oracle file):
   store_type_endpoints, auth_credentials, search_query_fields, vector_query_with_embedding, document_score_citation,
-  unsupported_store_create. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  unsupported_store_create, azure_search_endpoint. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores* using HelperCase: kind:
@@ -50,9 +85,9 @@ description: >-
 
 
   Budget from 188 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 215 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 473 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 200 production lines, 235 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 45 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -71,45 +106,67 @@ scope:
   - crates/betterlite-foundry/fuzz/Cargo.toml
   - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
   - crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/foundry.rs
+  - crates/betterlite-config/src/providers/foundry/foundry_vector_store.rs
+  - crates/betterlite-config/src/providers/foundry/foundry_vector_store/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/foundry_vector_store_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/foundry_vector_store*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L41-L269
-  why: >-
-    Own AzureAIVectorStoreConfig.__init__, AzureAIVectorStoreConfig.get_vector_store_endpoints_by_type, AzureAIVectorStoreConfig.get_auth_credentials,
+  why: Own AzureAIVectorStoreConfig.__init__, AzureAIVectorStoreConfig.get_vector_store_endpoints_by_type, AzureAIVectorStoreConfig.get_auth_credentials,
     AzureAIVectorStoreConfig.validate_environment, AzureAIVectorStoreConfig.get_complete_url, AzureAIVectorStoreConfig.transform_search_vector_store_request,
     AzureAIVectorStoreConfig.atransform_search_vector_store_request, AzureAIVectorStoreConfig._search_request, AzureAIVectorStoreConfig.transform_search_vector_store_response,
     AzureAIVectorStoreConfig.transform_create_vector_store_request, AzureAIVectorStoreConfig.transform_create_vector_store_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'store type endpoints: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/store-type-endpoints.yaml.'
+- text: 'store_type_endpoints: Read map is GET /indexes/ plus POST /docs/search,/docs/suggest,/docs/autocomplete,/analyze;
+    write map is POST /docs/index. These are literal substring patterns, not placeholders. Exercise the B1058 consumer
+    with write classification first, including an index named analyze, so batch writes cannot gain a read classification.'
   proof:
   - case-store-type-endpoints
   - oracle
   - helper-python
-- text: 'auth credentials: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/auth-credentials.yaml.'
+- text: 'auth_credentials: get_auth_credentials rejects only api_key=None with ValueError api_key is required and
+    returns api-key otherwise, including empty. Environment validation calls B2200 then overwrites Content-Type=application/json.'
   proof:
   - case-auth-credentials
   - oracle
   - helper-python
-- text: 'search query fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/search-query-fields.yaml.'
+- text: 'search_query_fields: Use B1059 query_text/embed_query or aembed_query first. Set logging input,embedding_model=litellm_embedding_model,top_k;
+    top_k defaults10 only when absent and vector field defaults contentVector only when absent. Body is search=*,
+    vectorQueries=[{vector,fields,kind:vector,k:top_k}], select=id,content, top=top_k. Ignore extra_body and other
+    search options.'
   proof:
   - case-search-query-fields
   - oracle
   - helper-python
-- text: >-
-    vector query with embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/vector-query-with-embedding.yaml.
+- text: 'vector_query_with_embedding: Use the injected B1059 embedding executor and preserve query-vector order;
+    URL is <api_base>/indexes/<vector_store_id>/docs/search?api-version=2024-07-01 with literal unencoded vector_store_id,
+    not B206 segment encoding.'
   proof:
   - case-vector-query-with-embedding
   - oracle
   - helper-python
-- text: >-
-    document score citation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/document-score-citation.yaml.
+- text: 'document_score_citation: Missing value defaults []; per result default id/content to empty and @search.score
+    to0.0, emit one text content, file_id=id, filename=Document <id>, copy metadata except id/content/contentVector/@search.score
+    and overwrite document_id=id. Return object=vector_store.search_results.page with logging input default empty
+    as search_query.'
   proof:
   - case-document-score-citation
   - oracle
   - helper-python
-- text: >-
-    unsupported store create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/unsupported-store-create.yaml.
+- text: 'unsupported_store_create: Both create request and response raise bare NotImplementedError. Search JSON/type/validation
+    failures are caught and rethrown through B1058 get_error_class with str(error), original response status and
+    headers, even a 200 status.'
   proof:
   - case-unsupported-store-create
   - oracle
@@ -122,47 +179,92 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'azure_search_endpoint: Truthy api_base is trimmed and returned; otherwise require truthy litellm_params.azure_search_service_name
+    or the Azure AI Search service name is required diagnostic naming the setting/api_base. Construct https://<name>.search.windows.net
+    literally.'
+  proof:
+  - case-azure-search-endpoint
+  - oracle
+  - helper-python
+- text: The real config loader resolves azure_search_service_name, including its default and precedence.
+  proof:
+  - config-azure-search-service-name
+- text: The real config loader resolves azure_search_vector_field, including its default and precedence.
+  proof:
+  - config-azure-search-vector-field
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-store-type-endpoints
-    why: The store-type-endpoints behavior is missing or differs from its pinned fixture.
+    why: Read map is GET /indexes/ plus POST /docs/search,/docs/suggest,/docs/autocomplete,/analyze; write map is
+      POST /docs/index. These are literal substring patterns, not placeholders. Exercise the B1058 consumer with
+      write classification first, including an index named analyze, so batch writes cannot gain a read classification.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_store_type_endpoints$/)'
   - id: case-auth-credentials
-    why: The auth-credentials behavior is missing or differs from its pinned fixture.
+    why: get_auth_credentials rejects only api_key=None with ValueError api_key is required and returns api-key
+      otherwise, including empty. Environment validation calls B2200 then overwrites Content-Type=application/json.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_auth_credentials$/)'
   - id: case-search-query-fields
-    why: The search-query-fields behavior is missing or differs from its pinned fixture.
+    why: Use B1059 query_text/embed_query or aembed_query first. Set logging input,embedding_model=litellm_embedding_model,top_k;
+      top_k defaults10 only when absent and vector field defaults contentVector only when absent. Body is search=*,
+      vectorQueries=[{vector,fields,kind:vector,k:top_k}], select=id,content, top=top_k. Ignore extra_body and other
+      search options.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_search_query_fields$/)'
   - id: case-vector-query-with-embedding
-    why: The vector-query-with-embedding behavior is missing or differs from its pinned fixture.
+    why: Use the injected B1059 embedding executor and preserve query-vector order; URL is <api_base>/indexes/<vector_store_id>/docs/search?api-version=2024-07-01
+      with literal unencoded vector_store_id, not B206 segment encoding.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_vector_query_with_embedding$/)'
   - id: case-document-score-citation
-    why: The document-score-citation behavior is missing or differs from its pinned fixture.
+    why: Missing value defaults []; per result default id/content to empty and @search.score to0.0, emit one text
+      content, file_id=id, filename=Document <id>, copy metadata except id/content/contentVector/@search.score and
+      overwrite document_id=id. Return object=vector_store.search_results.page with logging input default empty
+      as search_query.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_document_score_citation$/)'
   - id: case-unsupported-store-create
-    why: The unsupported-store-create behavior is missing or differs from its pinned fixture.
+    why: Both create request and response raise bare NotImplementedError. Search JSON/type/validation failures are
+      caught and rethrown through B1058 get_error_class with str(error), original response status and headers, even
+      a 200 status.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_unsupported_store_create$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_vector_stores.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_vector_stores.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores*")"
       && grep -lq 'foundry_vector_stores' tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_vector_stores$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores)"
       && grep -q 'decode_azure_search_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
       && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_vector_stores_corpus$/)'
+  - id: case-azure-search-endpoint
+    why: Truthy api_base is trimmed and returned; otherwise require truthy litellm_params.azure_search_service_name
+      or the Azure AI Search service name is required diagnostic naming the setting/api_base. Construct https://<name>.search.windows.net
+      literally.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_azure_search_endpoint$/)'
+  - id: config-azure-search-service-name
+    why: azure_search_service_name lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_vector_store_config_cases::case_[0-9]+_loads_azure_search_service_name$/)'
+  - id: config-azure-search-vector-field
+    why: azure_search_vector_field lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_vector_store_config_cases::case_[0-9]+_loads_azure_search_vector_field$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_vector_store_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_vector_store_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-vector-stores/store-type-endpoints.yaml
 - tools/oracle/cases/helpers/providers/foundry-vector-stores/auth-credentials.yaml
@@ -170,6 +272,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-vector-stores/vector-query-with-embedding.yaml
 - tools/oracle/cases/helpers/providers/foundry-vector-stores/document-score-citation.yaml
 - tools/oracle/cases/helpers/providers/foundry-vector-stores/unsupported-store-create.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/azure-search-endpoint.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -177,8 +280,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve source citations/document metadata and unsupported create behavior.
+- Metadata exclusion always removes the literal contentVector, even when azure_search_vector_field names a different
+  vector column.
+- The index ID is interpolated without path encoding in this source; adding encoding silently would alter the captured
+  request.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

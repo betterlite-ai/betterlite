@@ -2,9 +2,9 @@ id: B554
 title: Foundry MAI images and usage
 description: >-
   Add MaiImageOptions and image usage normalization with Decimal-free integer token counts and checked pixel arithmetic.
-  Defaults are width=1024, height=1024, n=1; minimum dimension is 768 pixels and maximum total pixels is 1,056,768.
-  Preserve native field precedence, explicit drop policy and exact response size. No pixel download or image decoder
-  is needed for this map.
+  Missing width/height default to 1024 each; n is not inserted when absent, and the endpoint returns one image;
+  minimum dimension is 768 pixels and maximum total pixels is 1,056,768. Preserve native field precedence, explicit
+  drop policy and exact response size. No pixel download or image decoder is needed for this map.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/image_generation/mai_transformation.py:
@@ -18,6 +18,37 @@ description: >-
 
   Reuse OpenAIError.__init__ from B668 (litellm/llms/openai/common_utils.py); its implementation remains with that
   prerequisite.
+
+
+  Named case contracts: mai_generation_edit_url: None base raises ValueError api_base is required for Azure AI MAI
+  image generation/editing respectively. Falsy version defaults preview. Partition on first ?, trim path trailing
+  slashes, and if /mai/ appears rewrite from the first /images/ to /images/generations or /images/edits; otherwise
+  append /mai/v1/images/<operation>. Any original ? preserves its query verbatim, even empty, instead of injecting
+  api-version. Family detector lowercases and removes hyphens/underscores before matching maiimage. default_dimensions:
+  Existing optional_params keys win by skipping matching non-default inputs. Missing width/height become1024; explicit
+  width/height are passed through without the size-dimension validation, and size is always popped at the end. n
+  is not defaulted into the request. known_and_custom_size: For a truthy size accept the named 1024x1024,1792x1024,1024x1792,512x512,256x256
+  or custom text containing lowercase x; parse after lowercasing, then validate dimensions. Uppercase X alone takes
+  the unsupported-value diagnostic before parsing. Malformed split/int yields Invalid size format, and other names
+  yield Unsupported size value with the custom WIDTHxHEIGHT advice. dimension_and_pixel_limit: Size-derived width/height
+  must each be at least768 before checking product <=1056768; violations raise UnsupportedParamsError azure_ai with
+  the minimum-pixel or total-pixel diagnostic and actual dimensions/product. This validation runs even when drop_params=True.
+  n_one_only: n is int directly (bool included), otherwise int(str(n)); invalid conversion raises UnsupportedParamsError
+  n=<repr> is not a whole number of images for model <model>. A count unequal1 raises the exactly-one-image advice
+  unless drop_params=True, which omits it; valid n=1/None is retained in its original representation. drop_unsupported_fields:
+  Advertise n,size, additionally accept width/height in mapping. Unknown non-default keys absent from optional_params
+  raise UnsupportedParamsError naming key/model and n,size,width/height unless drop_params=True, when omitted; existing
+  optional unknown keys survive. usage_alias_priority: For None usage return zero input/output/total plus image/text
+  details. Text priority: num_input_text_tokens, details.text_tokens, input_tokens or0. Image: num_input_image_tokens,details.image_tokens,0.
+  Output: output_tokens,num_output_tokens,output_image_tokens,0. Explicit non-None input/total win, else sum; preserve
+  unrelated top-level usage fields but replace details with only image_tokens/text_tokens. response_size: Only normalize
+  usage if the response has a usage key; absent stays absent. JSON failure becomes B668 OpenAIError with raw text/status;
+  B004 projects image_generation. Always set response.size=<optional width default1024>x<optional height default1024>,
+  independent of returned image fields.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
 
 
   Implement crates/betterlite-foundry/src/mai_images.rs with adjacent tests under mai_images/. Keep each Rust module
@@ -36,8 +67,8 @@ description: >-
   Write rstest function mai_images_cases in betterlite-foundry with these exact named cases (one per oracle file):
   mai_generation_edit_url, default_dimensions, known_and_custom_size, dimension_and_pixel_limit, n_one_only, drop_unsupported_fields,
   usage_alias_priority, response_size. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_mai_images* using HelperCase: kind: helper
@@ -54,9 +85,9 @@ description: >-
 
 
   Budget from 210 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 519 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 255 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 660 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -78,53 +109,69 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L31-L277
-  why: >-
-    Own AzureFoundryMAIImageGenerationConfig.get_mai_image_generation_url, AzureFoundryMAIImageGenerationConfig.get_mai_image_edit_url,
+  why: Own AzureFoundryMAIImageGenerationConfig.get_mai_image_generation_url, AzureFoundryMAIImageGenerationConfig.get_mai_image_edit_url,
     AzureFoundryMAIImageGenerationConfig.is_mai_model, AzureFoundryMAIImageGenerationConfig.normalize_mai_image_usage,
     AzureFoundryMAIImageGenerationConfig.get_supported_openai_params, AzureFoundryMAIImageGenerationConfig.map_openai_params,
     AzureFoundryMAIImageGenerationConfig._unsupported, AzureFoundryMAIImageGenerationConfig._image_count, AzureFoundryMAIImageGenerationConfig._map_size_param,
     AzureFoundryMAIImageGenerationConfig._validate_dimensions, AzureFoundryMAIImageGenerationConfig.transform_image_generation_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    mai generation edit url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/mai-generation-edit-url.yaml.
+- text: 'mai_generation_edit_url: None base raises ValueError api_base is required for Azure AI MAI image generation/editing
+    respectively. Falsy version defaults preview. Partition on first ?, trim path trailing slashes, and if /mai/
+    appears rewrite from the first /images/ to /images/generations or /images/edits; otherwise append /mai/v1/images/<operation>.
+    Any original ? preserves its query verbatim, even empty, instead of injecting api-version. Family detector lowercases
+    and removes hyphens/underscores before matching maiimage.'
   proof:
   - case-mai-generation-edit-url
   - oracle
   - helper-python
-- text: 'default dimensions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/default-dimensions.yaml.'
+- text: 'default_dimensions: Existing optional_params keys win by skipping matching non-default inputs. Missing
+    width/height become1024; explicit width/height are passed through without the size-dimension validation, and
+    size is always popped at the end. n is not defaulted into the request.'
   proof:
   - case-default-dimensions
   - oracle
   - helper-python
-- text: 'known and custom size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/known-and-custom-size.yaml.'
+- text: 'known_and_custom_size: For a truthy size accept the named 1024x1024,1792x1024,1024x1792,512x512,256x256
+    or custom text containing lowercase x; parse after lowercasing, then validate dimensions. Uppercase X alone
+    takes the unsupported-value diagnostic before parsing. Malformed split/int yields Invalid size format, and other
+    names yield Unsupported size value with the custom WIDTHxHEIGHT advice.'
   proof:
   - case-known-and-custom-size
   - oracle
   - helper-python
-- text: >-
-    dimension and pixel limit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/dimension-and-pixel-limit.yaml.
+- text: 'dimension_and_pixel_limit: Size-derived width/height must each be at least768 before checking product <=1056768;
+    violations raise UnsupportedParamsError azure_ai with the minimum-pixel or total-pixel diagnostic and actual
+    dimensions/product. This validation runs even when drop_params=True.'
   proof:
   - case-dimension-and-pixel-limit
   - oracle
   - helper-python
-- text: 'n one only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/n-one-only.yaml.'
+- text: 'n_one_only: n is int directly (bool included), otherwise int(str(n)); invalid conversion raises UnsupportedParamsError
+    n=<repr> is not a whole number of images for model <model>. A count unequal1 raises the exactly-one-image advice
+    unless drop_params=True, which omits it; valid n=1/None is retained in its original representation.'
   proof:
   - case-n-one-only
   - oracle
   - helper-python
-- text: >-
-    drop unsupported fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/drop-unsupported-fields.yaml.
+- text: 'drop_unsupported_fields: Advertise n,size, additionally accept width/height in mapping. Unknown non-default
+    keys absent from optional_params raise UnsupportedParamsError naming key/model and n,size,width/height unless
+    drop_params=True, when omitted; existing optional unknown keys survive.'
   proof:
   - case-drop-unsupported-fields
   - oracle
   - helper-python
-- text: 'usage alias priority: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/usage-alias-priority.yaml.'
+- text: 'usage_alias_priority: For None usage return zero input/output/total plus image/text details. Text priority:
+    num_input_text_tokens, details.text_tokens, input_tokens or0. Image: num_input_image_tokens,details.image_tokens,0.
+    Output: output_tokens,num_output_tokens,output_image_tokens,0. Explicit non-None input/total win, else sum;
+    preserve unrelated top-level usage fields but replace details with only image_tokens/text_tokens.'
   proof:
   - case-usage-alias-priority
   - oracle
   - helper-python
-- text: 'response size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/response-size.yaml.'
+- text: 'response_size: Only normalize usage if the response has a usage key; absent stays absent. JSON failure
+    becomes B668 OpenAIError with raw text/status; B004 projects image_generation. Always set response.size=<optional
+    width default1024>x<optional height default1024>, independent of returned image fields.'
   proof:
   - case-response-size
   - oracle
@@ -141,46 +188,63 @@ checks:
   - mutants
   commands:
   - id: case-mai-generation-edit-url
-    why: The mai-generation-edit-url behavior is missing or differs from its pinned fixture.
+    why: None base raises ValueError api_base is required for Azure AI MAI image generation/editing respectively.
+      Falsy version defaults preview. Partition on first ?, trim path trailing slashes, and if /mai/ appears rewrite
+      from the first /images/ to /images/generations or /images/edits; otherwise append /mai/v1/images/<operation>.
+      Any original ? preserves its query verbatim, even empty, instead of injecting api-version. Family detector
+      lowercases and removes hyphens/underscores before matching maiimage.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_mai_generation_edit_url$/)'
   - id: case-default-dimensions
-    why: The default-dimensions behavior is missing or differs from its pinned fixture.
+    why: Existing optional_params keys win by skipping matching non-default inputs. Missing width/height become1024;
+      explicit width/height are passed through without the size-dimension validation, and size is always popped
+      at the end. n is not defaulted into the request.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_default_dimensions$/)'
   - id: case-known-and-custom-size
-    why: The known-and-custom-size behavior is missing or differs from its pinned fixture.
+    why: For a truthy size accept the named 1024x1024,1792x1024,1024x1792,512x512,256x256 or custom text containing
+      lowercase x; parse after lowercasing, then validate dimensions. Uppercase X alone takes the unsupported-value
+      diagnostic before parsing. Malformed split/int yields Invalid size format, and other names yield Unsupported
+      size value with the custom WIDTHxHEIGHT advice.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_known_and_custom_size$/)'
   - id: case-dimension-and-pixel-limit
-    why: The dimension-and-pixel-limit behavior is missing or differs from its pinned fixture.
+    why: Size-derived width/height must each be at least768 before checking product <=1056768; violations raise
+      UnsupportedParamsError azure_ai with the minimum-pixel or total-pixel diagnostic and actual dimensions/product.
+      This validation runs even when drop_params=True.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_dimension_and_pixel_limit$/)'
   - id: case-n-one-only
-    why: The n-one-only behavior is missing or differs from its pinned fixture.
+    why: n is int directly (bool included), otherwise int(str(n)); invalid conversion raises UnsupportedParamsError
+      n=<repr> is not a whole number of images for model <model>. A count unequal1 raises the exactly-one-image
+      advice unless drop_params=True, which omits it; valid n=1/None is retained in its original representation.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_n_one_only$/)'
   - id: case-drop-unsupported-fields
-    why: The drop-unsupported-fields behavior is missing or differs from its pinned fixture.
+    why: Advertise n,size, additionally accept width/height in mapping. Unknown non-default keys absent from optional_params
+      raise UnsupportedParamsError naming key/model and n,size,width/height unless drop_params=True, when omitted;
+      existing optional unknown keys survive.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_drop_unsupported_fields$/)'
   - id: case-usage-alias-priority
-    why: The usage-alias-priority behavior is missing or differs from its pinned fixture.
+    why: 'For None usage return zero input/output/total plus image/text details. Text priority: num_input_text_tokens,
+      details.text_tokens, input_tokens or0. Image: num_input_image_tokens,details.image_tokens,0. Output: output_tokens,num_output_tokens,output_image_tokens,0.
+      Explicit non-None input/total win, else sum; preserve unrelated top-level usage fields but replace details
+      with only image_tokens/text_tokens.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_usage_alias_priority$/)'
   - id: case-response-size
-    why: The response-size behavior is missing or differs from its pinned fixture.
+    why: Only normalize usage if the response has a usage key; absent stays absent. JSON failure becomes B668 OpenAIError
+      with raw text/status; B004 projects image_generation. Always set response.size=<optional width default1024>x<optional
+      height default1024>, independent of returned image fields.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_response_size$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_mai_images.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_mai_images.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_mai_images*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_mai_images*")"
       && grep -lq 'foundry_mai_images' tools/oracle/fuzz/corpus/helper_case/foundry_mai_images* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_mai_images$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_mai_images)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_mai_images)"
       && grep -q 'decode_mai_image_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_mai_images.rs && cargo
       nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_mai_images_corpus$/)'
 oracle_cases:
@@ -199,8 +263,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Defaults are width=1024, height=1024, n=1; minimum dimension is 768 pixels and maximum total pixels is 1,056,768.
+- Named 512x512 and 1792x1024 are recognized syntactically but still fail the MAI dimension/pixel limits.
+- Explicit width/height bypass _validate_dimensions; enforcing the size-string checks on them would change the pin.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

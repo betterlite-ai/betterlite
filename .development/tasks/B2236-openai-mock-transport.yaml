@@ -1,0 +1,204 @@
+id: B2236
+title: Configured OpenAI mock transport
+description: >-
+  Implement the configured native in-process OpenAI mock transport below real HTTP clients. This is operator configuration,
+  not an alternate public route. Inject clock and UUID source; return the same mock body for sync/async SDK calls
+  without opening a connection.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/custom_httpx/mock_transport.py:
+  _mock_id L21-L22; _chat_completion_json L25-L47; MockOpenAITransport._parse_request L65-L74; handle_async_request
+  L76-L83; handle_request L85-L92.
+
+
+  Named case contracts: mock_reply_literals: Always status200, content-type application/json; id chatcmpl-mock-
+  followed by first8 lowercase UUID4 hex digits, object chat.completion, integer created clock, supplied model,
+  one index0 choice role assistant/content Mock response/finish_reason stop, usage prompt_tokens1/completion_tokens1/total_tokens2.
+  No SSE even for stream=true. mock_request_decoder: decode_mock_request parses request.content JSON; JSON/Unicode/value
+  failure uses model mock-model and stream false. Valid mapping uses model key by presence, preserving None/empty/nonstrings;
+  missing model uses mock-model. Valid nonmapping JSON raises the source attribute-access failure. Method/path/headers
+  do not alter the fixed response and never trigger outbound traffic. mock_selection: litellm_settings.network_mock
+  defaults false. B173 uses a supplied async/sync client_session whenever non-None before considering this flag;
+  a truthy flag otherwise selects this mock transport before TLS/proxy/session construction. Supplied shared_session
+  is ignored by the mock branch. Test both client variants and configured false/true.
+
+
+  Load network_mock through betterlite-config, with injected environment lookup and the defaults/precedence stated
+  here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest openai_mock_transport_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Outside-byte boundary: decode_mock_request consumes the JSON bytes passed to the configured mock transport in
+  crates/betterlite-http/src/openai_mock_transport.rs or its scoped child module. Use that production decoder from
+  the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-http/fuzz/fuzz_targets/openai_mock_transport.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_openai_mock_transport_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Implement crates/betterlite-http/src/openai_mock_transport.rs with adjacent tests under openai_mock_transport/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation openai_mock_transport in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function openai_mock_transport_cases in betterlite-http with these exact named cases (one per oracle
+  file): mock_reply_literals, mock_request_decoder, mock_selection. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_mock_transport* using HelperCase: kind:
+  helper and the externally tagged openai_mock_transport variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_mock_transport that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
+
+
+  Budget from 50 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 145 production lines, 165 behavior/config-test lines, 90 combined
+  Rust/Python adapter lines, 45 parser target/replay lines, 35 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 515 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-http/Cargo.toml
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/error.rs
+  - crates/betterlite-http/src/openai_mock_transport.rs
+  - crates/betterlite-http/src/openai_mock_transport/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_mock_transport.rs
+  - tools/oracle/src/helpers/openai_mock_transport/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_mock_transport.py
+  - tools/oracle/cases/helpers/providers/openai-mock-transport/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_mock_transport*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/openai.rs
+  - crates/betterlite-config/src/providers/openai/openai_mock_transport.rs
+  - crates/betterlite-config/src/providers/openai/openai_mock_transport/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/openai_mock_transport_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/openai_mock_transport*
+  - crates/betterlite-http/fuzz/Cargo.toml
+  - crates/betterlite-http/fuzz/fuzz_targets/openai_mock_transport.rs
+  - crates/betterlite-http/fuzz/corpus/openai_mock_transport/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L21-L22
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L25-L47
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L65-L74
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L76-L83
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L85-L92
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New openai_mock_transport seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'mock_reply_literals: Always status200, content-type application/json; id chatcmpl-mock- followed by first8
+    lowercase UUID4 hex digits, object chat.completion, integer created clock, supplied model, one index0 choice
+    role assistant/content Mock response/finish_reason stop, usage prompt_tokens1/completion_tokens1/total_tokens2.
+    No SSE even for stream=true.'
+  proof:
+  - case-mock-reply-literals
+  - oracle
+  - helper-python
+- text: 'mock_request_decoder: decode_mock_request parses request.content JSON; JSON/Unicode/value failure uses
+    model mock-model and stream false. Valid mapping uses model key by presence, preserving None/empty/nonstrings;
+    missing model uses mock-model. Valid nonmapping JSON raises the source attribute-access failure. Method/path/headers
+    do not alter the fixed response and never trigger outbound traffic.'
+  proof:
+  - case-mock-request-decoder
+  - oracle
+  - helper-python
+- text: 'mock_selection: litellm_settings.network_mock defaults false. B173 uses a supplied async/sync client_session
+    whenever non-None before considering this flag; a truthy flag otherwise selects this mock transport before TLS/proxy/session
+    construction. Supplied shared_session is ignored by the mock branch. Test both client variants and configured
+    false/true.'
+  proof:
+  - case-mock-selection
+  - oracle
+  - helper-python
+- text: The real config loader resolves network_mock, including its default and precedence.
+  proof:
+  - config-network-mock
+- text: decode_mock_request has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_mock_transport.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_mock_transport*")"
+      && grep -lq 'openai_mock_transport' tools/oracle/fuzz/corpus/helper_case/openai_mock_transport* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_mock_transport$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-mock-reply-literals
+    why: Always status200, content-type application/json; id chatcmpl-mock- followed by first8 lowercase UUID4 hex
+      digits, object chat.completion, integer created clock, supplied model, one index0 choice role assistant/content
+      Mock response/finish_reason stop, usage prompt_tokens1/completion_tokens1/total_tokens2. No SSE even for stream=true.
+    run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::openai_mock_transport_cases::case_[0-9]+_mock_reply_literals$/)'
+  - id: case-mock-request-decoder
+    why: decode_mock_request parses request.content JSON; JSON/Unicode/value failure uses model mock-model and stream
+      false. Valid mapping uses model key by presence, preserving None/empty/nonstrings; missing model uses mock-model.
+      Valid nonmapping JSON raises the source attribute-access failure. Method/path/headers do not alter the fixed
+      response and never trigger outbound traffic.
+    run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::openai_mock_transport_cases::case_[0-9]+_mock_request_decoder$/)'
+  - id: case-mock-selection
+    why: litellm_settings.network_mock defaults false. B173 uses a supplied async/sync client_session whenever non-None
+      before considering this flag; a truthy flag otherwise selects this mock transport before TLS/proxy/session
+      construction. Supplied shared_session is ignored by the mock branch. Test both client variants and configured
+      false/true.
+    run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::openai_mock_transport_cases::case_[0-9]+_mock_selection$/)'
+  - id: config-network-mock
+    why: network_mock lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_mock_transport_config_cases::case_[0-9]+_loads_network_mock$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/openai_mock_transport)"
+      && grep -q 'decode_mock_request' crates/betterlite-http/fuzz/fuzz_targets/openai_mock_transport.rs && cargo
+      nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::replays_the_openai_mock_transport_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-mock-transport/mock-reply-literals.yaml
+- tools/oracle/cases/helpers/providers/openai-mock-transport/mock-request-decoder.yaml
+- tools/oracle/cases/helpers/providers/openai-mock-transport/mock-selection.yaml
+deviations: []
+out_of_scope:
+- BaseOpenAILLM._get_async_http_client and _get_sync_http_client remain B173; the source mock transport is complete
+  in this task. Real provider responses and transport pooling remain their existing owners.
+pitfalls:
+- stream=true still returns buffered JSON because _parse_request always returns false; do not synthesize mock SSE.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

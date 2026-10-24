@@ -1,24 +1,66 @@
 id: B599
 title: AWS event-stream decoding and native errors
 description: >-
-  Add AwsEvent decoder backed by an existing AWS event-stream framing library, including length/CRC/header type
-  checks and split-frame reads. Separate BedrockEvent decoding from provider content transformation; preserve native
-  exception event status/code and undecoded error-body diagnostics through the shared redactor. Keep bounded frame/header/body
-  buffers under B173 limits and typed SSE wrapper records for Messages reuse. The iter_bytes/aiter_bytes wrapper
-  takes an injected typed chunk projection; B609 owns provider-family _chunk_parser and supplies it at composition,
-  avoiding a framing-to-provider-selector dependency. Oracle framing cases capture the raw payload at that seam.
+  Implement AwsEvent framing with a maintained AWS event-stream decoder, then decode modeled Bedrock payloads and
+  errors. Preserve lengths, CRC/header-type failures, chunk bytes, fallback raw bodies and error tally diagnostics.
+  B609 owns iter_bytes/aiter_bytes and provider decoder construction above this task; it feeds each framed payload
+  to B608/B581 provider mapping. This task never calls a provider chunk converter. B682 owns BedrockError, B187
+  redacts diagnostics, and B173 supplies bounded transport inputs.
 
 
-  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/__init__.py:
-  get_bedrock_event_stream_decoder L9-L25. litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape
-  L1639-L1659; get_bedrock_response_stream_shape L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
-  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
-  get_anthropic_beta_from_headers L1747-L1783. litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182;
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
+  _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape L1663-L1670; build_bedrock_stream_error
+  L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
+  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783. litellm/llms/bedrock/chat/invoke_handler.py:
   _response_header L363-L364; _EventStreamTally.__init__ L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event
-  L379-L381; _EventStreamTally.undecoded_stream_error L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes
-  L767-L786; AWSEventStreamDecoder._parse_message_from_event L788-L813. litellm/types/llms/bedrock.py: ServerSentEvent.__init__
-  L455-L469; ServerSentEvent.event L472-L473; ServerSentEvent.id L476-L477; ServerSentEvent.retry L480-L481; ServerSentEvent.data
-  L484-L485; ServerSentEvent.json L487-L488; ServerSentEvent.__repr__ L491-L492.
+  L379-L381; _EventStreamTally.undecoded_stream_error L383-L403; AWSEventStreamDecoder._parse_message_from_event
+  L788-L813. litellm/types/llms/bedrock.py: ServerSentEvent.__init__ L455-L469; ServerSentEvent.event L472-L473;
+  ServerSentEvent.id L476-L477; ServerSentEvent.retry L480-L481; ServerSentEvent.data L484-L485; ServerSentEvent.json
+  L487-L488; ServerSentEvent.__repr__ L491-L492.
+
+
+  Named case contracts: exception_frame: For non200 events parse modeled response first, then build BedrockError
+  from raw UTF8 body. If truthy :exception-type prefix message as <type> <decoded body>; otherwise body only. When
+  that type has modeled error.httpStatusCode, int-convert it and override raw status. Native examples internalServerException500,serviceUnavailableException503,modelTimeoutException408,modelStreamErrorException424,validationException400;
+  unknown/missing type or absent modeled status uses raw status (usually400). No JSON message extraction or synthesized
+  error param/code here; invalid UTF8/status conversion propagates. unknown_frame: Both BedrockEventStreamDecoderBase
+  and AWSEventStreamDecoder._parse_message_from_event use identical cases. On200, parsed chunk key wins; falsey
+  chunk ->None, otherwise decode chunk.bytes UTF8. Without chunk key use raw body, falsey ->None, otherwise UTF8
+  text. Missing chunk.bytes is not replaced with empty bytes. Preserve unknown-frame body fallback and parser failure
+  ordering before non200 classification. error_before_first_event: Tally all input chunk lengths and retain first
+  200 raw bytes across chunk boundaries. Every framed event increments event count and decoded bytes by prelude.total_length,
+  even if payload is ignored. At EOF no events ->BedrockError502 Bedrock answered the stream with HTTP 200 but its
+  body decoded to no events (content-type=<repr>, x-amzn-requestid=<repr>, <N> bytes received, first bytes=<bytes
+  repr>), including empty input. Header lookup is mapping.get of exact lowercase names; httpx.Headers itself is
+  case-insensitive, plain mappings are not. shape_load_failure: Lazily cache bedrock-runtime service-2 ResponseStream
+  shape once (including None). Loader failure warns litellm: could not load bedrock-runtime response stream shape
+  — Bedrock event-stream decoding will be unavailable. Error: <exception> and returns None; attempting either event
+  parser then raises BedrockError500 Bedrock event-stream shape could not be loaded from botocore. Ensure botocore
+  is correctly installed. Rust ships required modeled metadata, so missing Python SDK is an oracle setup failure;
+  a missing native model table must remain explicit500 rather than silently decode unknown shapes. leftover_frame_after_events:
+  At EOF with events and received-decoded!=0 ->BedrockError502 Bedrock stream ended with <undecoded> undecoded bytes
+  after <events> events (content-type=<repr>, x-amzn-requestid=<repr>, <N> bytes received). Do not include first
+  bytes here. Complete frames with no leftover succeed even when no payload emitted; B609 surfaces same errors after
+  any prior yielded chunks. anthropic_beta_header_forms: Lookup only exact anthropic-beta. Missing/falsey ->[].
+  Existing list returned unchanged including nonstrings, whitespace and duplicates. String strip first; if it begins[
+  and ends], json.loads and list -> each element Pythonstr then strip. JSONDecodeError falls through to comma split/strip
+  preserving empty members and duplicates; whitespace-only original string yields [empty string], while original
+  empty string yields[]. Nonstring/nonlist ->[]. No case-insensitive header lookup or deduplication. sse_record_and_json:
+  ServerSentEvent defaults dataNone to empty string, eventfalsey toNone, id/retry preserved includingempty/zero.
+  Accessors return original values. json parses data as arbitrary JSON value without requiring object; malformed/empty
+  raises JSONDecodeError. repr is exactly ServerSentEvent(event=<value>, data=<value>, id=<value>, retry=<value>)
+  with string interpolation, not repr escaping. _decoded_json_value shares JSON decoding for beta strings.
+
+
+  decode_aws_event_frame consumes arbitrary network chunks and yields validated frames; also expose decode_bedrock_json
+  for ServerSentEvent.json and beta-array text. Extend the existing bedrock_event_frames cargo-fuzz target/replay
+  to exercise both production decoders with a tagged seed, including malformed/truncated UTF8 and JSON, never a
+  parallel test-only parser. B609 calls the shared frame/error helpers and owns its payload JSON parse. Named split_frame,crc_mismatch,header_type_values,truncated_frame
+  cases compare library framing with pinned botocore, including frame-length bounds before allocation.
+
+
+  Add standalone Rust test event_frames_limits_and_redaction for the16 MiB/64 KiB preallocation limits and secret-safe
+  diagnostic projection, with exact upstream502 outcome; it is a deviation test, not a Python equality fixture.
 
 
   Implement crates/betterlite-bedrock/src/event_frames.rs with adjacent tests under event_frames/. Keep each Rust
@@ -36,9 +78,9 @@ description: >-
 
   Write rstest function event_frames_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   split_frame, crc_mismatch, header_type_values, exception_frame, unknown_frame, truncated_frame, json_payload_error,
-  error_before_first_event. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  error_before_first_event, shape_load_failure, leftover_frame_after_events, anthropic_beta_header_forms, sse_record_and_json.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_event_frames* using HelperCase: kind:
@@ -55,10 +97,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 257 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 280 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 564 planned, 575 maximum changed lines.
+  Budget from 188 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 245 production lines, 245 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 80 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 705 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -87,23 +129,19 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/__init__.py#L9-L25
   why: Own get_bedrock_event_stream_decoder. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1639-L1783
-  why: >-
-    Own _load_bedrock_response_stream_shape, get_bedrock_response_stream_shape, build_bedrock_stream_error, BedrockEventStreamDecoderBase.__init__,
+  why: Own _load_bedrock_response_stream_shape, get_bedrock_response_stream_shape, build_bedrock_stream_error, BedrockEventStreamDecoderBase.__init__,
     BedrockEventStreamDecoderBase._parse_message_from_event, _decoded_json_value, get_anthropic_beta_from_headers.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L169-L182
   why: Own _stream_decoder. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L363-L403
-  why: >-
-    Own _response_header, _EventStreamTally.__init__, _EventStreamTally.add_chunk, _EventStreamTally.add_event,
+  why: Own _response_header, _EventStreamTally.__init__, _EventStreamTally.add_chunk, _EventStreamTally.add_event,
     _EventStreamTally.undecoded_stream_error. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L745-L813
-  why: >-
-    Own AWSEventStreamDecoder.iter_bytes, AWSEventStreamDecoder.aiter_bytes, AWSEventStreamDecoder._parse_message_from_event.
+  why: Own AWSEventStreamDecoder.iter_bytes, AWSEventStreamDecoder.aiter_bytes, AWSEventStreamDecoder._parse_message_from_event.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L455-L492
-  why: >-
-    Own ServerSentEvent.__init__, ServerSentEvent.event, ServerSentEvent.id, ServerSentEvent.retry, ServerSentEvent.data,
+  why: Own ServerSentEvent.__init__, ServerSentEvent.event, ServerSentEvent.id, ServerSentEvent.retry, ServerSentEvent.data,
     ServerSentEvent.json, ServerSentEvent.__repr__. Other functions in this file remain with the owners listed below.
 dod:
 - text: 'split frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/split-frame.yaml.'
@@ -121,12 +159,19 @@ dod:
   - case-header-type-values
   - oracle
   - helper-python
-- text: 'exception frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/exception-frame.yaml.'
+- text: 'exception_frame: For non200 events parse modeled response first, then build BedrockError from raw UTF8
+    body. If truthy :exception-type prefix message as <type> <decoded body>; otherwise body only. When that type
+    has modeled error.httpStatusCode, int-convert it and override raw status. Native examples internalServerException500,serviceUnavailableException503,modelTimeoutException408,modelStreamErrorException424,validationException400;
+    unknown/missing type or absent modeled status uses raw status (usually400). No JSON message extraction or synthesized
+    error param/code here; invalid UTF8/status conversion propagates.'
   proof:
   - case-exception-frame
   - oracle
   - helper-python
-- text: 'unknown frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/unknown-frame.yaml.'
+- text: 'unknown_frame: Both BedrockEventStreamDecoderBase and AWSEventStreamDecoder._parse_message_from_event use
+    identical cases. On200, parsed chunk key wins; falsey chunk ->None, otherwise decode chunk.bytes UTF8. Without
+    chunk key use raw body, falsey ->None, otherwise UTF8 text. Missing chunk.bytes is not replaced with empty bytes.
+    Preserve unknown-frame body fallback and parser failure ordering before non200 classification.'
   proof:
   - case-unknown-frame
   - oracle
@@ -141,8 +186,12 @@ dod:
   - case-json-payload-error
   - oracle
   - helper-python
-- text: >-
-    error before first event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/error-before-first-event.yaml.
+- text: 'error_before_first_event: Tally all input chunk lengths and retain first 200 raw bytes across chunk boundaries.
+    Every framed event increments event count and decoded bytes by prelude.total_length, even if payload is ignored.
+    At EOF no events ->BedrockError502 Bedrock answered the stream with HTTP 200 but its body decoded to no events
+    (content-type=<repr>, x-amzn-requestid=<repr>, <N> bytes received, first bytes=<bytes repr>), including empty
+    input. Header lookup is mapping.get of exact lowercase names; httpx.Headers itself is case-insensitive, plain
+    mappings are not.'
   proof:
   - case-error-before-first-event
   - oracle
@@ -154,53 +203,130 @@ dod:
 - text: decode_aws_event_frame has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'shape_load_failure: Lazily cache bedrock-runtime service-2 ResponseStream shape once (including None).
+    Loader failure warns litellm: could not load bedrock-runtime response stream shape — Bedrock event-stream decoding
+    will be unavailable. Error: <exception> and returns None; attempting either event parser then raises BedrockError500
+    Bedrock event-stream shape could not be loaded from botocore. Ensure botocore is correctly installed. Rust ships
+    required modeled metadata, so missing Python SDK is an oracle setup failure; a missing native model table must
+    remain explicit500 rather than silently decode unknown shapes.'
+  proof:
+  - case-shape-load-failure
+  - oracle
+  - helper-python
+- text: 'leftover_frame_after_events: At EOF with events and received-decoded!=0 ->BedrockError502 Bedrock stream
+    ended with <undecoded> undecoded bytes after <events> events (content-type=<repr>, x-amzn-requestid=<repr>,
+    <N> bytes received). Do not include first bytes here. Complete frames with no leftover succeed even when no
+    payload emitted; B609 surfaces same errors after any prior yielded chunks.'
+  proof:
+  - case-leftover-frame-after-events
+  - oracle
+  - helper-python
+- text: 'anthropic_beta_header_forms: Lookup only exact anthropic-beta. Missing/falsey ->[]. Existing list returned
+    unchanged including nonstrings, whitespace and duplicates. String strip first; if it begins[ and ends], json.loads
+    and list -> each element Pythonstr then strip. JSONDecodeError falls through to comma split/strip preserving
+    empty members and duplicates; whitespace-only original string yields [empty string], while original empty string
+    yields[]. Nonstring/nonlist ->[]. No case-insensitive header lookup or deduplication.'
+  proof:
+  - case-anthropic-beta-header-forms
+  - oracle
+  - helper-python
+- text: 'sse_record_and_json: ServerSentEvent defaults dataNone to empty string, eventfalsey toNone, id/retry preserved
+    includingempty/zero. Accessors return original values. json parses data as arbitrary JSON value without requiring
+    object; malformed/empty raises JSONDecodeError. repr is exactly ServerSentEvent(event=<value>, data=<value>,
+    id=<value>, retry=<value>) with string interpolation, not repr escaping. _decoded_json_value shares JSON decoding
+    for beta strings.'
+  proof:
+  - case-sse-record-and-json
+  - oracle
+  - helper-python
+- text: Frame bounds reject oversized headers/body before allocation and redact credential fixtures in errors.
+  proof:
+  - frame-limits
 checks:
   optional:
   - mutants
   commands:
   - id: case-split-frame
-    why: The split-frame behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/split-frame.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_split_frame$/)'
   - id: case-crc-mismatch
-    why: The crc-mismatch behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/crc-mismatch.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_crc_mismatch$/)'
   - id: case-header-type-values
-    why: The header-type-values behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/header-type-values.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_header_type_values$/)'
   - id: case-exception-frame
-    why: The exception-frame behavior is missing or differs from its pinned fixture.
+    why: For non200 events parse modeled response first, then build BedrockError from raw UTF8 body. If truthy :exception-type
+      prefix message as <type> <decoded body>; otherwise body only. When that type has modeled error.httpStatusCode,
+      int-convert it and override raw status. Native examples internalServerException500,serviceUnavailableException503,modelTimeoutException408,modelStreamErrorException424,validationException400;
+      unknown/missing type or absent modeled status uses raw status (usually400). No JSON message extraction or
+      synthesized error param/code here; invalid UTF8/status conversion propagates.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_exception_frame$/)'
   - id: case-unknown-frame
-    why: The unknown-frame behavior is missing or differs from its pinned fixture.
+    why: Both BedrockEventStreamDecoderBase and AWSEventStreamDecoder._parse_message_from_event use identical cases.
+      On200, parsed chunk key wins; falsey chunk ->None, otherwise decode chunk.bytes UTF8. Without chunk key use
+      raw body, falsey ->None, otherwise UTF8 text. Missing chunk.bytes is not replaced with empty bytes. Preserve
+      unknown-frame body fallback and parser failure ordering before non200 classification.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_unknown_frame$/)'
   - id: case-truncated-frame
-    why: The truncated-frame behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/truncated-frame.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_truncated_frame$/)'
   - id: case-json-payload-error
-    why: The json-payload-error behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-event-frames/json-payload-error.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_json_payload_error$/)'
   - id: case-error-before-first-event
-    why: The error-before-first-event behavior is missing or differs from its pinned fixture.
+    why: Tally all input chunk lengths and retain first 200 raw bytes across chunk boundaries. Every framed event
+      increments event count and decoded bytes by prelude.total_length, even if payload is ignored. At EOF no events
+      ->BedrockError502 Bedrock answered the stream with HTTP 200 but its body decoded to no events (content-type=<repr>,
+      x-amzn-requestid=<repr>, <N> bytes received, first bytes=<bytes repr>), including empty input. Header lookup
+      is mapping.get of exact lowercase names; httpx.Headers itself is case-insensitive, plain mappings are not.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_error_before_first_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_event_frames.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_event_frames.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_event_frames*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_event_frames*")"
       && grep -lq 'bedrock_event_frames' tools/oracle/fuzz/corpus/helper_case/bedrock_event_frames* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_event_frames$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_event_frames)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_event_frames)"
       && grep -q 'decode_aws_event_frame' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_event_frames.rs &&
       cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_event_frames_corpus$/)'
+  - id: case-shape-load-failure
+    why: 'Lazily cache bedrock-runtime service-2 ResponseStream shape once (including None). Loader failure warns
+      litellm: could not load bedrock-runtime response stream shape — Bedrock event-stream decoding will be unavailable.
+      Error: <exception> and returns None; attempting either event parser then raises BedrockError500 Bedrock event-stream
+      shape could not be loaded from botocore. Ensure botocore is correctly installed. Rust ships required modeled
+      metadata, so missing Python SDK is an oracle setup failure; a missing native model table must remain explicit500
+      rather than silently decode unknown shapes.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_shape_load_failure$/)'
+  - id: case-leftover-frame-after-events
+    why: At EOF with events and received-decoded!=0 ->BedrockError502 Bedrock stream ended with <undecoded> undecoded
+      bytes after <events> events (content-type=<repr>, x-amzn-requestid=<repr>, <N> bytes received). Do not include
+      first bytes here. Complete frames with no leftover succeed even when no payload emitted; B609 surfaces same
+      errors after any prior yielded chunks.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_leftover_frame_after_events$/)'
+  - id: case-anthropic-beta-header-forms
+    why: Lookup only exact anthropic-beta. Missing/falsey ->[]. Existing list returned unchanged including nonstrings,
+      whitespace and duplicates. String strip first; if it begins[ and ends], json.loads and list -> each element
+      Pythonstr then strip. JSONDecodeError falls through to comma split/strip preserving empty members and duplicates;
+      whitespace-only original string yields [empty string], while original empty string yields[]. Nonstring/nonlist
+      ->[]. No case-insensitive header lookup or deduplication.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_anthropic_beta_header_forms$/)'
+  - id: case-sse-record-and-json
+    why: ServerSentEvent defaults dataNone to empty string, eventfalsey toNone, id/retry preserved includingempty/zero.
+      Accessors return original values. json parses data as arbitrary JSON value without requiring object; malformed/empty
+      raises JSONDecodeError. repr is exactly ServerSentEvent(event=<value>, data=<value>, id=<value>, retry=<value>)
+      with string interpolation, not repr escaping. _decoded_json_value shares JSON decoding for beta strings.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_cases::case_[0-9]+_sse_record_and_json$/)'
+  - id: frame-limits
+    why: The Rust-only bounded-frame/redaction deviation is untested.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::event_frames_limits_and_redaction$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-event-frames/split-frame.yaml
 - tools/oracle/cases/helpers/providers/bedrock-event-frames/crc-mismatch.yaml
@@ -210,104 +336,110 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-event-frames/truncated-frame.yaml
 - tools/oracle/cases/helpers/providers/bedrock-event-frames/json-payload-error.yaml
 - tools/oracle/cases/helpers/providers/bedrock-event-frames/error-before-first-event.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-event-frames/shape-load-failure.yaml
+- tools/oracle/cases/helpers/providers/bedrock-event-frames/leftover-frame-after-events.yaml
+- tools/oracle/cases/helpers/providers/bedrock-event-frames/anthropic-beta-header-forms.yaml
+- tools/oracle/cases/helpers/providers/bedrock-event-frames/sse-record-and-json.yaml
+deviations:
+- what: Reject event frames larger than16 MiB or aggregate frame headers larger than64 KiB with a typed upstream502
+    error before allocation. Secret-bearing first-byte diagnostics are redacted in errors/logs.
+  why: B173 bounded buffers and B187 secret-redaction policy apply; the pin retains up to200 raw diagnostic bytes
+    and delegates framing limits to botocore. The normal modeled status and safe diagnostic fields remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L374-L403
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'litellm/llms/bedrock/chat/__init__.py: get_bedrock_event_stream_decoder L9-L25 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418;
+  AWSEventStreamDecoder.check_empty_tool_call_args L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str
+  L442-L447; AWSEventStreamDecoder.translate_thinking_blocks L449-L472; AWSEventStreamDecoder._initialize_converse_response_id
+  L474-L483; AWSEventStreamDecoder._handle_converse_start_event L485-L528; AWSEventStreamDecoder._handle_converse_delta_event
+  L530-L585; AWSEventStreamDecoder._handle_converse_stop_event L587-L609; AWSEventStreamDecoder.converse_chunk_parser
+  L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743 belong to B608.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; AWSEventStreamDecoder.iter_bytes
+  L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833;
+  AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853;
+  AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871;
+  AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__
+  L884-L885; MockResponseIterator._handle_json_mode_chunk L887-L913; MockResponseIterator._chunk_parser L915-L953;
+  MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__ L962-L963; MockResponseIterator.__anext__
+  L965-L969 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110;
+  AmazonCohereChatConfig.get_config L112-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
+  L274-L360 belong to B691.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
-  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
-  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
-  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
-  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
-  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
-  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
-  belong to B608; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
-  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
-  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
-  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
-  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
-  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
-  typed boundary.
-- 'litellm/types/llms/bedrock.py: BedrockToolSpec.__init__ L296-L322 belong to B601; reuse that implementation or
-  its injected typed boundary.'
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
+- 'Function ownership inventory litellm/types/llms/bedrock.py: BedrockToolSpec.__init__ L296-L322 belong to B601.'
 pitfalls:
-- Keep bounded frame/header/body buffers under B173 limits and typed SSE wrapper records for Messages reuse.
+- The shape loader caches failure too; retrying it for each frame would repeat warnings and change failure behavior.
+- A completely framed but ignored event still prevents the no-events error; tally framing, not yielded chunks.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

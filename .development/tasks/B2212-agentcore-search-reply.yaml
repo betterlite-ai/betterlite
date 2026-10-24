@@ -1,0 +1,287 @@
+id: B2212
+title: AgentCore search MCP reply parsing
+description: >-
+  Parse buffered AgentCore Gateway MCP search replies from JSON or SSE and project their result records. This lower
+  reply part owns in-band errors and data extraction; B659 owns credential-scoped request preparation.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/search/transformation.py:
+  _string_field L97-L101; _to_search_result L104-L111; _result_items L114-L118; _parse_result_items L121-L134; _iter_sse_events
+  L137-L154; transform_search_response L360-L403; _tool_error_message L405-L409; _text_blocks L411-L417; _parse_mcp_body
+  L419-L445.
+
+
+  Named case contracts: mcp_json_results: Inspect raw text.lstrip prefix, ignoring content-type. Unless starts event:,data:,:,id:
+  or retry:, use raw_response.json directly; invalid JSON/nondict decoded shape failures propagate, not silently
+  empty. Require dict result and Sequence-not-string/bytes content; keep dict blocks type=text only. Parse each
+  string text as JSON; malformed/nonstring block text silently contributes no items. A dict JSON text contributes
+  its results field default(), otherwise use parsed sequence directly; retain only Mapping elements. mcp_structured_fallback:
+  Flatten items from all eligible text blocks in order; any nonempty text-items tuple, even [{}], suppresses structuredContent.
+  Only with no text items use result.structuredContent via same results-or-sequence projection. Do not dedupe, sort,
+  truncate or synthesize usage. search_result_fields: Each item: title first nonempty string title else empty; url
+  likewise; snippet first nonempty string text then snippet else empty; date first nonempty string publishedDate
+  then date elseNone; last_updated=None. Whitespace-only strings count as nonempty. Other fields/types ignored.
+  Return SearchResponse object=search,results list in retained order. mcp_sse_results: Split events on regex CR?
+  LF followed optional spaces/tabs then CR? LF. Inside each chunk join only column-zero data: line suffixes with
+  newline, applying lstrip to each suffix. Empty/malformed/nondict JSON events are silently ignored. Unlike AgentCore
+  chat B655, multiline data joins here. Choose FIRST dict event containing result or error key (including None values);
+  otherwise last valid event; no ID matching. Leading indentation can trigger SSE sniffing but prevents that indented
+  data line from being collected. mcp_sse_no_frame: If SSE sniffing selected but no valid dict event remains, raise
+  BedrockError502 message AgentCore gateway returned SSE without a JSON data frame: {first 200 raw text characters},headers
+  preserved. Plain invalid JSON remains its original parse error. Unterminated final valid SSE event is accepted.
+  mcp_error_precedence: A top-level error value other than None, including empty dict or False, wins over result
+  and raises BedrockError with raw status when>=400 else502,headers preserved,message AgentCore gateway MCP error:
+  {Python error string}. Otherwise truthy dict result.isError raises same status policy with AgentCore web search
+  tool error: {detail}. No independent status rejection: a successful result can be projected at HTTP500. mcp_tool_error:
+  Detail is space-join of all string text values from eligible text blocks, including empty strings; a nonempty
+  tuple of empty text returns empty detail. If no strings exist, json.dumps(result) truncated to500 characters.
+  No JSON parsing of these error text blocks. Preserve source failure category for malformed values rather than
+  swallowing every error.
+
+
+  Implement crates/betterlite-bedrock/src/agentcore_search_reply.rs with adjacent tests under agentcore_search_reply/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation agentcore_search_reply in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function agentcore_search_reply_cases in betterlite-bedrock with these exact named cases (one per
+  oracle file): mcp_json_results, mcp_structured_fallback, search_result_fields, mcp_sse_results, mcp_sse_no_frame,
+  mcp_error_precedence, mcp_tool_error. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/agentcore_search_reply* using HelperCase: kind:
+  helper and the externally tagged agentcore_search_reply variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_agentcore_search_reply that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_agentcore_search_reply consumes AgentCore JSON/text response bytes in crates/betterlite-bedrock/src/agentcore_search_reply.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/agentcore_search_reply.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/agentcore_search_reply.
+  The adjacent test replays_the_agentcore_search_reply_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 121 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 190 production lines, 265 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 645 planned, 650 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/agentcore_search_reply.rs
+  - crates/betterlite-bedrock/src/agentcore_search_reply/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/agentcore_search_reply.rs
+  - tools/oracle/src/helpers/agentcore_search_reply/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/agentcore_search_reply.py
+  - tools/oracle/cases/helpers/providers/agentcore-search-reply/**
+  - tools/oracle/fuzz/corpus/helper_case/agentcore_search_reply*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/agentcore_search_reply.rs
+  - crates/betterlite-bedrock/fuzz/corpus/agentcore_search_reply/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L97-L154
+  why: Result and SSE parsing helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L360-L445
+  why: MCP in-band failures and SearchResponse projection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L97-L101
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L104-L111
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L114-L118
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L121-L134
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L137-L154
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L360-L403
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L405-L409
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L411-L417
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L419-L445
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New agentcore_search_reply seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_agentcore_search_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+- text: 'agentcore_search_reply_error: Mutate supplied response to one assistant choice,index0,finish_reason stop;
+    model always supplied model. Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore
+    response: {error}, then B682 BedrockError message Error processing response: {error},status=raw status,headers=raw
+    headers even200. There is no own HTTP-status check before parsing.'
+  proof:
+  - case-agentcore-response-error
+  - oracle
+  - helper-python
+- text: 'mcp_json_results: Inspect raw text.lstrip prefix, ignoring content-type. Unless starts event:,data:,:,id:
+    or retry:, use raw_response.json directly; invalid JSON/nondict decoded shape failures propagate, not silently
+    empty. Require dict result and Sequence-not-string/bytes content; keep dict blocks type=text only. Parse each
+    string text as JSON; malformed/nonstring block text silently contributes no items. A dict JSON text contributes
+    its results field default(), otherwise use parsed sequence directly; retain only Mapping elements.'
+  proof:
+  - case-mcp-json-results
+  - oracle
+  - helper-python
+- text: 'mcp_structured_fallback: Flatten items from all eligible text blocks in order; any nonempty text-items
+    tuple, even [{}], suppresses structuredContent. Only with no text items use result.structuredContent via same
+    results-or-sequence projection. Do not dedupe, sort, truncate or synthesize usage.'
+  proof:
+  - case-mcp-structured-fallback
+  - oracle
+  - helper-python
+- text: 'search_result_fields: Each item: title first nonempty string title else empty; url likewise; snippet first
+    nonempty string text then snippet else empty; date first nonempty string publishedDate then date elseNone; last_updated=None.
+    Whitespace-only strings count as nonempty. Other fields/types ignored. Return SearchResponse object=search,results
+    list in retained order.'
+  proof:
+  - case-search-result-fields
+  - oracle
+  - helper-python
+- text: 'mcp_sse_results: Split events on regex CR? LF followed optional spaces/tabs then CR? LF. Inside each chunk
+    join only column-zero data: line suffixes with newline, applying lstrip to each suffix. Empty/malformed/nondict
+    JSON events are silently ignored. Unlike AgentCore chat B655, multiline data joins here. Choose FIRST dict event
+    containing result or error key (including None values); otherwise last valid event; no ID matching. Leading
+    indentation can trigger SSE sniffing but prevents that indented data line from being collected.'
+  proof:
+  - case-mcp-sse-results
+  - oracle
+  - helper-python
+- text: 'mcp_sse_no_frame: If SSE sniffing selected but no valid dict event remains, raise BedrockError502 message
+    AgentCore gateway returned SSE without a JSON data frame: {first 200 raw text characters},headers preserved.
+    Plain invalid JSON remains its original parse error. Unterminated final valid SSE event is accepted.'
+  proof:
+  - case-mcp-sse-no-frame
+  - oracle
+  - helper-python
+- text: 'mcp_error_precedence: A top-level error value other than None, including empty dict or False, wins over
+    result and raises BedrockError with raw status when>=400 else502,headers preserved,message AgentCore gateway
+    MCP error: {Python error string}. Otherwise truthy dict result.isError raises same status policy with AgentCore
+    web search tool error: {detail}. No independent status rejection: a successful result can be projected at HTTP500.'
+  proof:
+  - case-mcp-error-precedence
+  - oracle
+  - helper-python
+- text: 'mcp_tool_error: Detail is space-join of all string text values from eligible text blocks, including empty
+    strings; a nonempty tuple of empty text returns empty detail. If no strings exist, json.dumps(result) truncated
+    to500 characters. No JSON parsing of these error text blocks. Preserve source failure category for malformed
+    values rather than swallowing every error.'
+  proof:
+  - case-mcp-tool-error
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/agentcore_search_reply.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/agentcore_search_reply*")"
+      && grep -lq 'agentcore_search_reply' tools/oracle/fuzz/corpus/helper_case/agentcore_search_reply* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_agentcore_search_reply$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/agentcore_search_reply)"
+      && grep -q 'decode_agentcore_search_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/agentcore_search_reply.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_agentcore_search_reply_corpus$/)'
+  - id: case-agentcore-response-error
+    why: 'Mutate supplied response to one assistant choice,index0,finish_reason stop; model always supplied model.
+      Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore response: {error},
+      then B682 BedrockError message Error processing response: {error},status=raw status,headers=raw headers even200.
+      There is no own HTTP-status check before parsing.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_agentcore_search_reply_error$/)'
+  - id: case-mcp-json-results
+    why: 'Inspect raw text.lstrip prefix, ignoring content-type. Unless starts event:,data:,:,id: or retry:, use
+      raw_response.json directly; invalid JSON/nondict decoded shape failures propagate, not silently empty. Require
+      dict result and Sequence-not-string/bytes content; keep dict blocks type=text only. Parse each string text
+      as JSON; malformed/nonstring block text silently contributes no items. A dict JSON text contributes its results
+      field default(), otherwise use parsed sequence directly; retain only Mapping elements.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_json_results$/)'
+  - id: case-mcp-structured-fallback
+    why: Flatten items from all eligible text blocks in order; any nonempty text-items tuple, even [{}], suppresses
+      structuredContent. Only with no text items use result.structuredContent via same results-or-sequence projection.
+      Do not dedupe, sort, truncate or synthesize usage.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_structured_fallback$/)'
+  - id: case-search-result-fields
+    why: 'Each item: title first nonempty string title else empty; url likewise; snippet first nonempty string text
+      then snippet else empty; date first nonempty string publishedDate then date elseNone; last_updated=None. Whitespace-only
+      strings count as nonempty. Other fields/types ignored. Return SearchResponse object=search,results list in
+      retained order.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_search_result_fields$/)'
+  - id: case-mcp-sse-results
+    why: 'Split events on regex CR? LF followed optional spaces/tabs then CR? LF. Inside each chunk join only column-zero
+      data: line suffixes with newline, applying lstrip to each suffix. Empty/malformed/nondict JSON events are
+      silently ignored. Unlike AgentCore chat B655, multiline data joins here. Choose FIRST dict event containing
+      result or error key (including None values); otherwise last valid event; no ID matching. Leading indentation
+      can trigger SSE sniffing but prevents that indented data line from being collected.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_sse_results$/)'
+  - id: case-mcp-sse-no-frame
+    why: 'If SSE sniffing selected but no valid dict event remains, raise BedrockError502 message AgentCore gateway
+      returned SSE without a JSON data frame: {first 200 raw text characters},headers preserved. Plain invalid JSON
+      remains its original parse error. Unterminated final valid SSE event is accepted.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_sse_no_frame$/)'
+  - id: case-mcp-error-precedence
+    why: 'A top-level error value other than None, including empty dict or False, wins over result and raises BedrockError
+      with raw status when>=400 else502,headers preserved,message AgentCore gateway MCP error: {Python error string}.
+      Otherwise truthy dict result.isError raises same status policy with AgentCore web search tool error: {detail}.
+      No independent status rejection: a successful result can be projected at HTTP500.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_error_precedence$/)'
+  - id: case-mcp-tool-error
+    why: Detail is space-join of all string text values from eligible text blocks, including empty strings; a nonempty
+      tuple of empty text returns empty detail. If no strings exist, json.dumps(result) truncated to500 characters.
+      No JSON parsing of these error text blocks. Preserve source failure category for malformed values rather than
+      swallowing every error.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_search_reply_cases::case_[0-9]+_mcp_tool_error$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/agentcore-response-error.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-json-results.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-structured-fallback.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/search-result-fields.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-sse-results.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-sse-no-frame.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-error-precedence.yaml
+- tools/oracle/cases/helpers/providers/agentcore-search-reply/mcp-tool-error.yaml
+deviations: []
+out_of_scope:
+- All other functions in search/transformation.py, including credential transport/host checks, constructor, environment,
+  URL, request, signing and error factory are B659. Base SearchResult/SearchResponse types belong to B091.
+- 'Function ownership inventory litellm/llms/bedrock/search/transformation.py: _gateway_host_match L85-L86; _credential_safe_transport
+  L92-L94; AgentCoreSearchConfig.__init__ L158-L160; AgentCoreSearchConfig.ui_friendly_name L162-L164; AgentCoreSearchConfig.validate_environment
+  L166-L187; AgentCoreSearchConfig.get_complete_url L189-L203; AgentCoreSearchConfig.transform_search_request L205-L248;
+  AgentCoreSearchConfig.sign_request L250-L321; AgentCoreSearchConfig._is_configured_gateway L323-L328; AgentCoreSearchConfig._signing_region
+  L330-L358; AgentCoreSearchConfig.get_error_class L447-L457 belong to B659.'
+pitfalls:
+- Response format is sniffed from the body, so an SSE content-type does not guarantee the SSE parser runs.
+- One empty Mapping in a text result list suppresses a richer structuredContent fallback.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: standard

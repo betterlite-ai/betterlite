@@ -11,6 +11,18 @@ description: >-
   L585-L598; AzureAssistantsAPI.get_thread L601-L614; AzureAssistantsAPI.get_thread L618-L656.
 
 
+  Named case contracts: thread_create: Call B686 client preparation, then beta.threads.create. Include messages/metadata
+  only when not None, retaining []/{}; no other fields or default message are added. Project response.dict() through
+  Thread.model_validate, unlike OpenAI B520 four-field construction; retain fields accepted by that shared model
+  and preserve validation failures. thread_retrieve: Call beta.threads.retrieve(thread_id=thread_id) and validate
+  its full dict as Thread. No extra query/pagination inputs, no remote delete operation and no local error catch.
+  assistants_beta_default: OpenAI-Beta: assistants=v2 is supplied for thread create/retrieve by the same SDK namespace
+  used in B519/B520/B527; Azure endpoint/api-version come from B686/B531. azure_thread_async_flags: Only literal
+  True acreate_thread/aget_thread selects async; all branches forward the same B686 client inputs and preserve its
+  supplied-client and ignored-argument behavior. Call failures propagate; response validation runs after successful
+  SDK return.
+
+
   Implement crates/betterlite-azure/src/azure_thread_messages.rs with adjacent tests under azure_thread_messages/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -25,9 +37,9 @@ description: >-
 
 
   Write rstest function azure_thread_messages_cases in betterlite-azure with these exact named cases (one per oracle
-  file): thread_create, thread_retrieve. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): thread_create, thread_retrieve, assistants_beta_default, azure_thread_async_flags. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_thread_messages* using HelperCase: kind:
@@ -43,9 +55,9 @@ description: >-
 
 
   Budget from 201 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 225 production lines, 63 behavior/config-test lines,
-  63 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 391 planned, 400 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 225 production lines, 180 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 545 planned, 550 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -64,17 +76,20 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L425-L656
-  why: >-
-    Own AzureAssistantsAPI.async_create_thread, AzureAssistantsAPI.create_thread, AzureAssistantsAPI.create_thread,
+  why: Own AzureAssistantsAPI.async_create_thread, AzureAssistantsAPI.create_thread, AzureAssistantsAPI.create_thread,
     AzureAssistantsAPI.create_thread, AzureAssistantsAPI.async_get_thread, AzureAssistantsAPI.get_thread, AzureAssistantsAPI.get_thread,
     AzureAssistantsAPI.get_thread. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'thread create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-thread-messages/thread-create.yaml.'
+- text: 'thread_create: Call B686 client preparation, then beta.threads.create. Include messages/metadata only when
+    not None, retaining []/{}; no other fields or default message are added. Project response.dict() through Thread.model_validate,
+    unlike OpenAI B520 four-field construction; retain fields accepted by that shared model and preserve validation
+    failures.'
   proof:
   - case-thread-create
   - oracle
   - helper-python
-- text: 'thread retrieve: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-thread-messages/thread-retrieve.yaml.'
+- text: 'thread_retrieve: Call beta.threads.retrieve(thread_id=thread_id) and validate its full dict as Thread.
+    No extra query/pagination inputs, no remote delete operation and no local error catch.'
   proof:
   - case-thread-retrieve
   - oracle
@@ -83,82 +98,94 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'assistants_beta_default: OpenAI-Beta: assistants=v2 is supplied for thread create/retrieve by the same
+    SDK namespace used in B519/B520/B527; Azure endpoint/api-version come from B686/B531.'
+  proof:
+  - case-assistants-beta-default
+  - oracle
+  - helper-python
+- text: 'azure_thread_async_flags: Only literal True acreate_thread/aget_thread selects async; all branches forward
+    the same B686 client inputs and preserve its supplied-client and ignored-argument behavior. Call failures propagate;
+    response validation runs after successful SDK return.'
+  proof:
+  - case-azure-thread-async-flags
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-thread-create
-    why: The thread-create behavior is missing or differs from its pinned fixture.
+    why: Call B686 client preparation, then beta.threads.create. Include messages/metadata only when not None, retaining
+      []/{}; no other fields or default message are added. Project response.dict() through Thread.model_validate,
+      unlike OpenAI B520 four-field construction; retain fields accepted by that shared model and preserve validation
+      failures.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_thread_messages_cases::case_[0-9]+_thread_create$/)'
   - id: case-thread-retrieve
-    why: The thread-retrieve behavior is missing or differs from its pinned fixture.
+    why: Call beta.threads.retrieve(thread_id=thread_id) and validate its full dict as Thread. No extra query/pagination
+      inputs, no remote delete operation and no local error catch.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_thread_messages_cases::case_[0-9]+_thread_retrieve$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_thread_messages.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_thread_messages.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_thread_messages*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_thread_messages*")"
       && grep -lq 'azure_thread_messages' tools/oracle/fuzz/corpus/helper_case/azure_thread_messages* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_thread_messages$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-assistants-beta-default
+    why: 'OpenAI-Beta: assistants=v2 is supplied for thread create/retrieve by the same SDK namespace used in B519/B520/B527;
+      Azure endpoint/api-version come from B686/B531.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_thread_messages_cases::case_[0-9]+_assistants_beta_default$/)'
+  - id: case-azure-thread-async-flags
+    why: Only literal True acreate_thread/aget_thread selects async; all branches forward the same B686 client inputs
+      and preserve its supplied-client and ignored-argument behavior. Call failures propagate; response validation
+      runs after successful SDK return.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_thread_messages_cases::case_[0-9]+_azure_thread_async_flags$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-thread-messages/thread-create.yaml
 - tools/oracle/cases/helpers/providers/azure-thread-messages/thread-retrieve.yaml
+- tools/oracle/cases/helpers/providers/azure-thread-messages/assistants-beta-default.yaml
+- tools/oracle/cases/helpers/providers/azure-thread-messages/azure-thread-async-flags.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
-  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
-  belong to B534; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
-  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
-  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
-  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
-  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
-  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
-  belong to B685; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream
-  L705-L730; AzureAssistantsAPI.run_thread_stream L732-L757; AzureAssistantsAPI.run_thread L762-L781; AzureAssistantsAPI.run_thread
-  L784-L803; AzureAssistantsAPI.run_thread L807-L905 belong to B543; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client L40-L64;
-  AzureAssistantsAPI.async_get_azure_client L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120; AzureAssistantsAPI.get_assistants
-  L125-L136; AzureAssistantsAPI.get_assistants L139-L150; AzureAssistantsAPI.get_assistants L154-L190; AzureAssistantsAPI.async_create_assistants
-  L908-L932; AzureAssistantsAPI.create_assistants L934-L971; AzureAssistantsAPI.async_delete_assistant L974-L998;
-  AzureAssistantsAPI.delete_assistant L1000-L1037 belong to B686; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message L234-L248;
-  AzureAssistantsAPI.add_message L251-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
-  L320-L345; AzureAssistantsAPI.get_messages L350-L363; AzureAssistantsAPI.get_messages L366-L379; AzureAssistantsAPI.get_messages
-  L383-L421 belong to B697; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream
+  L705-L730; AzureAssistantsAPI.run_thread_stream L732-L757; AzureAssistantsAPI.run_thread L761-L781; AzureAssistantsAPI.run_thread
+  L783-L803; AzureAssistantsAPI.run_thread L807-L905 belong to B543.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client
+  L40-L64; AzureAssistantsAPI.async_get_azure_client L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120;
+  AzureAssistantsAPI.get_assistants L124-L136; AzureAssistantsAPI.get_assistants L138-L150; AzureAssistantsAPI.get_assistants
+  L154-L190; AzureAssistantsAPI.async_create_assistants L908-L932; AzureAssistantsAPI.create_assistants L934-L971;
+  AzureAssistantsAPI.async_delete_assistant L974-L998; AzureAssistantsAPI.delete_assistant L1000-L1037 belong to
+  B686.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message
+  L233-L248; AzureAssistantsAPI.add_message L250-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
+  L320-L345; AzureAssistantsAPI.get_messages L349-L363; AzureAssistantsAPI.get_messages L365-L379; AzureAssistantsAPI.get_messages
+  L383-L421 belong to B697.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194 belong to B505.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
+  L577-L652 belong to B685.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
 pitfalls:
-- Thread creation and retrieval must preserve metadata without acquiring message-list query parameters.
+- Azure validates the entire SDK thread dictionary; OpenAI reconstructs only four fields first.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

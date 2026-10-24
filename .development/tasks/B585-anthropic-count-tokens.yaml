@@ -2,8 +2,9 @@ id: B585
 title: Anthropic native token counting
 description: >-
   Add AnthropicCountRequest and native count_tokens execution, preserving selection policy, message/system/tool
-  conversion, model validation and required beta headers. Keep fallback local token counting explicit with its warning;
-  no Hugging Face downloads or request-media fetching is introduced.
+  conversion, model validation and required beta headers. Keep missing-input None separate from explicit native
+  error records; this counter never invokes a local tokenizer; no Hugging Face downloads or request-media fetching
+  is introduced.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/count_tokens/handler.py:
@@ -11,7 +12,7 @@ description: >-
   AnthropicTokenCounter.should_use_token_counting_api L20-L24; AnthropicTokenCounter.count_tokens L26-L106. litellm/llms/anthropic/count_tokens/transformation.py:
   AnthropicCountTokensConfig.get_anthropic_count_tokens_endpoint L29-L36; AnthropicCountTokensConfig.transform_request_to_count_tokens
   L38-L65; AnthropicCountTokensConfig.get_required_headers L67-L88; AnthropicCountTokensConfig.validate_request
-  L90-L125.
+  L90-L125 litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213.
 
 
   Reuse AnthropicError.__init__ from B567 (litellm/llms/anthropic/common_utils.py); its implementation remains with
@@ -20,6 +21,53 @@ description: >-
 
   Reuse optionally_handle_anthropic_oauth from B567 (litellm/llms/anthropic/common_utils.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: count_endpoint: Handler uses truthy explicit api_base as a complete endpoint verbatim, otherwise
+  https://api.anthropic.com/v1/messages/count_tokens. No ANTHROPIC_API_BASE/BASE_URL lookup or suffix append here.
+  Timeout uses explicit non-None including0 else B198 request_timeout (default6000). messages_system_tools: Request
+  is model/messages unchanged, include system/tools iff non-None (including empty), and copy only optional_params
+  thinking,tool_choice,output_config. Validate as dict[str,JsonValue], allowing arbitrary JSON fields inside messages/tools;
+  no B577 prompt/system/tool normalization occurs. required_beta_header: Content-Type=application/json,x-api-key=given
+  key,anthropic-version=2023-06-01,anthropic-beta=ANTHROPIC_TOKEN_COUNTING_BETA_VERSION env defaulttoken-counting-2024-11-01;
+  apply B567 OAuth mutator with its beta merge/browser header. Reuse exactly the shared beta loader in B565. model_validation:
+  Validate in order: falsey model -> ValueError model parameter is required; all falsey messages/system/tools ->
+  messages parameter is required; non-list messages -> messages must be a list; each nondict -> Message <i> must
+  be a dictionary; missing role/content -> Message <i> must have a 'role'/'content' field. A list with no messages
+  but truthy system/tools is valid at the handler layer. native_count_success: Only HTTP200 succeeds, decode response
+  bytes as dict[str,JsonValue] without requiring input_tokens; counter maps result input_tokens default0, request_model/model_used,
+  tokenizer_type=anthropic_api, original_response. No result returns None. count_selection: Only exact provider
+  anthropic selects API. Falsey messages return None even with system/tools; contents ignored. Use truthy deployment
+  litellm_params.api_key then ANTHROPIC_API_KEY only; absent key warns No Anthropic API key found for token counting
+  and returns None. Counter does not forward deployment api_base/timeout/optional_params or use ANTHROPIC_AUTH_TOKEN/globalkey.
+  token_counter_factory: AnthropicModelInfo.get_token_counter always returns the native Anthropic counter supplied
+  by this service; it never selects a tokenizer based on model. count_api_error_result: Non200 -> AnthropicError
+  raw status/text; HTTPStatusError -> response status/text; all other validation/JSON/transport errors -> AnthropicError500
+  CountTokens processing error: <error>. Counter catches AnthropicError and warns Anthropic CountTokens API error:
+  status=<status>, message=<message>, returns error=true,total_tokens0,status/error_message. Other exceptions warn
+  Error calling Anthropic CountTokens API: <error> and return500 error record; no local fallback.
+
+
+  Load ANTHROPIC_TOKEN_COUNTING_BETA_VERSION through betterlite-config, with injected environment lookup and the
+  defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest anthropic_count_config_cases; each named loads_<key> case invokes the real B002 loader, checks
+  explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  Outside-byte boundary: decode_count_response consumes native count-response JSON bytes as a JSON object in crates/betterlite-anthropic/src/count_tokens.rs
+  or its scoped child module. Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz
+  target crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_count_tokens.rs. Add valid, malformed, truncated
+  and boundary corpus inputs and adjacent test replays_the_anthropic_count_tokens_corpus that checks outcome categories
+  through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Write standalone Rust test count_tokens_credential_identity_isolation in betterlite-anthropic: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test count_tokens_secret_safe_failure in betterlite-anthropic: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-anthropic/src/count_tokens.rs with adjacent tests under count_tokens/. Keep each Rust
@@ -36,10 +84,10 @@ description: >-
 
 
   Write rstest function count_tokens_cases in betterlite-anthropic with these exact named cases (one per oracle
-  file): count_endpoint, messages_system_tools, required_beta_header, model_validation, native_count_success, count_api_failure_fallback,
-  count_selection. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  file): count_endpoint, messages_system_tools, required_beta_header, model_validation, native_count_success, count_selection,
+  token_counter_factory, count_api_error_result. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens* using HelperCase: kind:
@@ -49,15 +97,14 @@ description: >-
   corpus.
 
 
-  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
-  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
-  needed, is B002.
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
 
 
-  Budget from 229 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 255 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 471 planned, 475 maximum changed lines.
+  Budget from 239 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 260 production lines, 250 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 30 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 730 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -73,6 +120,22 @@ scope:
   - tools/oracle/helpers/anthropic_count_tokens.py
   - tools/oracle/cases/helpers/providers/anthropic-count-tokens/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/anthropic.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_count.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_count/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/anthropic_count_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_count*
+  - crates/betterlite-anthropic/fuzz/Cargo.toml
+  - crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_count_tokens.rs
+  - crates/betterlite-anthropic/fuzz/corpus/anthropic_count_tokens/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/handler.py#L31-L128
@@ -82,44 +145,52 @@ references:
   why: Own AnthropicTokenCounter.should_use_token_counting_api, AnthropicTokenCounter.count_tokens. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/transformation.py#L29-L125
-  why: >-
-    Own AnthropicCountTokensConfig.get_anthropic_count_tokens_endpoint, AnthropicCountTokensConfig.transform_request_to_count_tokens,
+  why: Own AnthropicCountTokensConfig.get_anthropic_count_tokens_endpoint, AnthropicCountTokensConfig.transform_request_to_count_tokens,
     AnthropicCountTokensConfig.get_required_headers, AnthropicCountTokensConfig.validate_request. Other functions
     in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1202-L1213
+  why: Own the helper at the layer its callers can depend on without a cycle.
 dod:
-- text: 'count endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-endpoint.yaml.'
+- text: 'count_endpoint: Handler uses truthy explicit api_base as a complete endpoint verbatim, otherwise https://api.anthropic.com/v1/messages/count_tokens.
+    No ANTHROPIC_API_BASE/BASE_URL lookup or suffix append here. Timeout uses explicit non-None including0 else
+    B198 request_timeout (default6000).'
   proof:
   - case-count-endpoint
   - oracle
   - helper-python
-- text: >-
-    messages system tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/messages-system-tools.yaml.
+- text: 'messages_system_tools: Request is model/messages unchanged, include system/tools iff non-None (including
+    empty), and copy only optional_params thinking,tool_choice,output_config. Validate as dict[str,JsonValue], allowing
+    arbitrary JSON fields inside messages/tools; no B577 prompt/system/tool normalization occurs.'
   proof:
   - case-messages-system-tools
   - oracle
   - helper-python
-- text: 'required beta header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/required-beta-header.yaml.'
+- text: 'required_beta_header: Content-Type=application/json,x-api-key=given key,anthropic-version=2023-06-01,anthropic-beta=ANTHROPIC_TOKEN_COUNTING_BETA_VERSION
+    env defaulttoken-counting-2024-11-01; apply B567 OAuth mutator with its beta merge/browser header. Reuse exactly
+    the shared beta loader in B565.'
   proof:
   - case-required-beta-header
   - oracle
   - helper-python
-- text: 'model validation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/model-validation.yaml.'
+- text: 'model_validation: Validate in order: falsey model -> ValueError model parameter is required; all falsey
+    messages/system/tools -> messages parameter is required; non-list messages -> messages must be a list; each
+    nondict -> Message <i> must be a dictionary; missing role/content -> Message <i> must have a ''role''/''content''
+    field. A list with no messages but truthy system/tools is valid at the handler layer.'
   proof:
   - case-model-validation
   - oracle
   - helper-python
-- text: 'native count success: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/native-count-success.yaml.'
+- text: 'native_count_success: Only HTTP200 succeeds, decode response bytes as dict[str,JsonValue] without requiring
+    input_tokens; counter maps result input_tokens default0, request_model/model_used, tokenizer_type=anthropic_api,
+    original_response. No result returns None.'
   proof:
   - case-native-count-success
   - oracle
   - helper-python
-- text: >-
-    count api failure fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-api-failure-fallback.yaml.
-  proof:
-  - case-count-api-failure-fallback
-  - oracle
-  - helper-python
-- text: 'count selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-selection.yaml.'
+- text: 'count_selection: Only exact provider anthropic selects API. Falsey messages return None even with system/tools;
+    contents ignored. Use truthy deployment litellm_params.api_key then ANTHROPIC_API_KEY only; absent key warns
+    No Anthropic API key found for token counting and returns None. Counter does not forward deployment api_base/timeout/optional_params
+    or use ANTHROPIC_AUTH_TOKEN/globalkey.'
   proof:
   - case-count-selection
   - oracle
@@ -128,63 +199,174 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'token_counter_factory: AnthropicModelInfo.get_token_counter always returns the native Anthropic counter
+    supplied by this service; it never selects a tokenizer based on model.'
+  proof:
+  - case-token-counter-factory
+  - oracle
+  - helper-python
+- text: 'count_api_error_result: Non200 -> AnthropicError raw status/text; HTTPStatusError -> response status/text;
+    all other validation/JSON/transport errors -> AnthropicError500 CountTokens processing error: <error>. Counter
+    catches AnthropicError and warns Anthropic CountTokens API error: status=<status>, message=<message>, returns
+    error=true,total_tokens0,status/error_message. Other exceptions warn Error calling Anthropic CountTokens API:
+    <error> and return500 error record; no local fallback.'
+  proof:
+  - case-count-api-error-result
+  - oracle
+  - helper-python
+- text: The real config loader resolves ANTHROPIC_TOKEN_COUNTING_BETA_VERSION, including its default and precedence.
+  proof:
+  - config-anthropic-token-counting-beta-version
+- text: decode_count_response has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-count-endpoint
-    why: The count-endpoint behavior is missing or differs from its pinned fixture.
+    why: Handler uses truthy explicit api_base as a complete endpoint verbatim, otherwise https://api.anthropic.com/v1/messages/count_tokens.
+      No ANTHROPIC_API_BASE/BASE_URL lookup or suffix append here. Timeout uses explicit non-None including0 else
+      B198 request_timeout (default6000).
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_endpoint$/)'
   - id: case-messages-system-tools
-    why: The messages-system-tools behavior is missing or differs from its pinned fixture.
+    why: Request is model/messages unchanged, include system/tools iff non-None (including empty), and copy only
+      optional_params thinking,tool_choice,output_config. Validate as dict[str,JsonValue], allowing arbitrary JSON
+      fields inside messages/tools; no B577 prompt/system/tool normalization occurs.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_messages_system_tools$/)'
   - id: case-required-beta-header
-    why: The required-beta-header behavior is missing or differs from its pinned fixture.
+    why: Content-Type=application/json,x-api-key=given key,anthropic-version=2023-06-01,anthropic-beta=ANTHROPIC_TOKEN_COUNTING_BETA_VERSION
+      env defaulttoken-counting-2024-11-01; apply B567 OAuth mutator with its beta merge/browser header. Reuse exactly
+      the shared beta loader in B565.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_required_beta_header$/)'
   - id: case-model-validation
-    why: The model-validation behavior is missing or differs from its pinned fixture.
+    why: 'Validate in order: falsey model -> ValueError model parameter is required; all falsey messages/system/tools
+      -> messages parameter is required; non-list messages -> messages must be a list; each nondict -> Message <i>
+      must be a dictionary; missing role/content -> Message <i> must have a ''role''/''content'' field. A list with
+      no messages but truthy system/tools is valid at the handler layer.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_model_validation$/)'
   - id: case-native-count-success
-    why: The native-count-success behavior is missing or differs from its pinned fixture.
+    why: Only HTTP200 succeeds, decode response bytes as dict[str,JsonValue] without requiring input_tokens; counter
+      maps result input_tokens default0, request_model/model_used, tokenizer_type=anthropic_api, original_response.
+      No result returns None.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_native_count_success$/)'
-  - id: case-count-api-failure-fallback
-    why: The count-api-failure-fallback behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_api_failure_fallback$/)'
   - id: case-count-selection
-    why: The count-selection behavior is missing or differs from its pinned fixture.
+    why: Only exact provider anthropic selects API. Falsey messages return None even with system/tools; contents
+      ignored. Use truthy deployment litellm_params.api_key then ANTHROPIC_API_KEY only; absent key warns No Anthropic
+      API key found for token counting and returns None. Counter does not forward deployment api_base/timeout/optional_params
+      or use ANTHROPIC_AUTH_TOKEN/globalkey.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_selection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_count_tokens.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_count_tokens.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens*")"
       && grep -lq 'anthropic_count_tokens' tools/oracle/fuzz/corpus/helper_case/anthropic_count_tokens* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_count_tokens$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-token-counter-factory
+    why: AnthropicModelInfo.get_token_counter always returns the native Anthropic counter supplied by this service;
+      it never selects a tokenizer based on model.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_token_counter_factory$/)'
+  - id: case-count-api-error-result
+    why: 'Non200 -> AnthropicError raw status/text; HTTPStatusError -> response status/text; all other validation/JSON/transport
+      errors -> AnthropicError500 CountTokens processing error: <error>. Counter catches AnthropicError and warns
+      Anthropic CountTokens API error: status=<status>, message=<message>, returns error=true,total_tokens0,status/error_message.
+      Other exceptions warn Error calling Anthropic CountTokens API: <error> and return500 error record; no local
+      fallback.'
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_api_error_result$/)'
+  - id: config-anthropic-token-counting-beta-version
+    why: ANTHROPIC_TOKEN_COUNTING_BETA_VERSION lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_count_config_cases::case_[0-9]+_loads_anthropic_token_counting_beta_version$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_count_tokens)"
+      && grep -q 'decode_count_response' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_count_tokens.rs
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_count_tokens_corpus$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-endpoint.yaml
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/messages-system-tools.yaml
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/required-beta-header.yaml
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/model-validation.yaml
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/native-count-success.yaml
-- tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-api-failure-fallback.yaml
 - tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-selection.yaml
+- tools/oracle/cases/helpers/providers/anthropic-count-tokens/token-counter-factory.yaml
+- tools/oracle/cases/helpers/providers/anthropic-count-tokens/count-api-error-result.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
+  L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
+  L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
+  belong to B2216.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106;
+  supports_anthropic_cache_control L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping
+  L130-L134; _validated_claude_code_list L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts
+  L163-L178; _is_claude_code_subagent_billing_system L181-L193; is_claude_code_one_shot_subagent_request L196-L210;
+  eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set L320-L335; AnthropicModelInfo.is_file_id_used
+  L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347; AnthropicModelInfo.is_mid_conversation_tool_change_used
+  L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used L361-L365; AnthropicModelInfo.is_mcp_server_used
+  L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381; AnthropicModelInfo.is_web_search_tool_used L383-L390;
+  AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used
+  L420-L444; AnthropicModelInfo.is_input_examples_used L446-L472; AnthropicModelInfo.is_eager_input_streaming_used
+  L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
+  L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
+  L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940 belong to B568.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers
+  L951-L1046; AnthropicModelInfo.validate_environment L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry
+  L1800-L1815; create_anthropic_model_list_response L1818-L1844 belong to B570.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299;
+  is_anthropic_invalid_thinking_block_error L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346;
+  _without_encrypted_reasoning_blocks L1349-L1360; strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372;
+  strip_thinking_blocks_from_anthropic_messages_request_dict L1375-L1385; strip_empty_content_blocks_from_anthropic_messages
+  L1388-L1428; _is_empty_text_block L1431-L1435; is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block
+  L1453-L1469; normalize_anthropic_tool_use_id L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages
+  L1504-L1526; _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691;
+  strip_provider_specific_fields_from_anthropic_messages L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control
+  L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
+  L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
+  _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780
+  belong to B571.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params
+  L477-L503; AnthropicModelInfo._apply_sampling_param L505-L528; AnthropicModelInfo.forced_tool_use_unsupported
+  L530-L532; AnthropicModelInfo.forced_tool_use_downgraded L534-L552; AnthropicModelInfo._apply_forced_tool_choice
+  L554-L567; AnthropicModelInfo._get_provider_resolved_capability L650-L668; AnthropicModelInfo._supports_model_capability
+  L670-L693; AnthropicModelInfo._is_adaptive_thinking_model L695-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L707-L714; AnthropicModelInfo._supports_legacy_thinking L716-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
-- >-
-  Add AnthropicCountRequest and native count_tokens execution, preserving selection policy, message/system/tool
-  conversion, model validation and required beta headers.
+- The counter refuses empty messages even though the lower handler accepts system-only or tools-only input.
+- A supplied api_base is the whole count endpoint, and deployment api_base is ignored by the counter.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 750
   max_new_expects: 0
-review_level: standard
+review_level: security

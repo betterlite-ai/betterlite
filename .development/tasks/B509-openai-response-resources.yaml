@@ -15,6 +15,26 @@ description: >-
   L953-L984.
 
 
+  Named case contracts: encoded_response_id: Use B171 single-segment encoding of response_id; GET/DELETE append
+  /{id}, POST cancel appends /{id}/cancel and each returns an empty body. Unlike compact, these methods use literal
+  concatenation. delete_result: Delete parses B506 JSON then validates id/object/deleted as DeleteResponseResult,
+  preserving validation failure instead of substituting success. get_strict_response: GET and cancel parse JSON
+  with B506 then strictly validate ResponsesAPIResponse; they do not apply create/compact lax fallback. Add B206
+  processed additional_headers plus raw headers. list_default_limit_order: Append /{id}/input_items; default limit=20
+  and order=desc, omit either when explicitly None, and include after/before whenever not None including empty strings.
+  include_comma_query: Truthy include becomes a comma-joined string; empty/None include is omitted rather than emitted
+  as an empty query key. compact_keeps_query: Trim trailing slashes from only the URL path and append /compact,
+  preserving query parameters including api-version; use B507 input/tool preparation before assembling model/input/options.
+  compact_lax_response: Compact shares B508 created_at conversion and ValidationError debug-plus-model_construct
+  fallback, with raw and processed hidden headers. resource_json_error_status: JSON extraction failure in delete/get/list/cancel
+  or compact raises B668 OpenAIError with upstream status and response text diagnostic; list returns its parsed
+  JSON without model validation.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-openai/src/response_resources.rs with adjacent tests under response_resources/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,10 +50,9 @@ description: >-
 
   Write rstest function response_resources_cases in betterlite-openai with these exact named cases (one per oracle
   file): encoded_response_id, delete_result, get_strict_response, list_default_limit_order, include_comma_query,
-  cancel_response, compact_keeps_query, compact_replay_input. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  cancel_response, compact_keeps_query, compact_replay_input, compact_lax_response, resource_json_error_status.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_response_resources* using HelperCase:
@@ -51,9 +70,9 @@ description: >-
 
 
   Budget from 190 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 215 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 499 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 230 production lines, 170 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 585 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -75,36 +94,39 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L761-L984
-  why: >-
-    Own OpenAIResponsesAPIConfig.transform_delete_response_api_request, OpenAIResponsesAPIConfig.transform_delete_response_api_response,
+  why: Own OpenAIResponsesAPIConfig.transform_delete_response_api_request, OpenAIResponsesAPIConfig.transform_delete_response_api_response,
     OpenAIResponsesAPIConfig.transform_get_response_api_request, OpenAIResponsesAPIConfig.transform_get_response_api_response,
     OpenAIResponsesAPIConfig.transform_list_input_items_request, OpenAIResponsesAPIConfig.transform_list_input_items_response,
     OpenAIResponsesAPIConfig.transform_cancel_response_api_request, OpenAIResponsesAPIConfig.transform_cancel_response_api_response,
     OpenAIResponsesAPIConfig.transform_compact_response_api_request, OpenAIResponsesAPIConfig.transform_compact_response_api_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'encoded response id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/encoded-response-id.yaml.'
+- text: 'encoded_response_id: Use B171 single-segment encoding of response_id; GET/DELETE append /{id}, POST cancel
+    appends /{id}/cancel and each returns an empty body. Unlike compact, these methods use literal concatenation.'
   proof:
   - case-encoded-response-id
   - oracle
   - helper-python
-- text: 'delete result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/delete-result.yaml.'
+- text: 'delete_result: Delete parses B506 JSON then validates id/object/deleted as DeleteResponseResult, preserving
+    validation failure instead of substituting success.'
   proof:
   - case-delete-result
   - oracle
   - helper-python
-- text: 'get strict response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/get-strict-response.yaml.'
+- text: 'get_strict_response: GET and cancel parse JSON with B506 then strictly validate ResponsesAPIResponse; they
+    do not apply create/compact lax fallback. Add B206 processed additional_headers plus raw headers.'
   proof:
   - case-get-strict-response
   - oracle
   - helper-python
-- text: >-
-    list default limit order: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/list-default-limit-order.yaml.
+- text: 'list_default_limit_order: Append /{id}/input_items; default limit=20 and order=desc, omit either when explicitly
+    None, and include after/before whenever not None including empty strings.'
   proof:
   - case-list-default-limit-order
   - oracle
   - helper-python
-- text: 'include comma query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/include-comma-query.yaml.'
+- text: 'include_comma_query: Truthy include becomes a comma-joined string; empty/None include is omitted rather
+    than emitted as an empty query key.'
   proof:
   - case-include-comma-query
   - oracle
@@ -114,13 +136,13 @@ dod:
   - case-cancel-response
   - oracle
   - helper-python
-- text: 'compact keeps query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/compact-keeps-query.yaml.'
+- text: 'compact_keeps_query: Trim trailing slashes from only the URL path and append /compact, preserving query
+    parameters including api-version; use B507 input/tool preparation before assembling model/input/options.'
   proof:
   - case-compact-keeps-query
   - oracle
   - helper-python
-- text: >-
-    compact replay input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/compact-replay-input.yaml.
+- text: 'compact replay input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/compact-replay-input.yaml.'
   proof:
   - case-compact-replay-input
   - oracle
@@ -132,53 +154,76 @@ dod:
 - text: decode_response_resource has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'compact_lax_response: Compact shares B508 created_at conversion and ValidationError debug-plus-model_construct
+    fallback, with raw and processed hidden headers.'
+  proof:
+  - case-compact-lax-response
+  - oracle
+  - helper-python
+- text: 'resource_json_error_status: JSON extraction failure in delete/get/list/cancel or compact raises B668 OpenAIError
+    with upstream status and response text diagnostic; list returns its parsed JSON without model validation.'
+  proof:
+  - case-resource-json-error-status
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-encoded-response-id
-    why: The encoded-response-id behavior is missing or differs from its pinned fixture.
+    why: Use B171 single-segment encoding of response_id; GET/DELETE append /{id}, POST cancel appends /{id}/cancel
+      and each returns an empty body. Unlike compact, these methods use literal concatenation.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_encoded_response_id$/)'
   - id: case-delete-result
-    why: The delete-result behavior is missing or differs from its pinned fixture.
+    why: Delete parses B506 JSON then validates id/object/deleted as DeleteResponseResult, preserving validation
+      failure instead of substituting success.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_delete_result$/)'
   - id: case-get-strict-response
-    why: The get-strict-response behavior is missing or differs from its pinned fixture.
+    why: GET and cancel parse JSON with B506 then strictly validate ResponsesAPIResponse; they do not apply create/compact
+      lax fallback. Add B206 processed additional_headers plus raw headers.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_get_strict_response$/)'
   - id: case-list-default-limit-order
-    why: The list-default-limit-order behavior is missing or differs from its pinned fixture.
+    why: Append /{id}/input_items; default limit=20 and order=desc, omit either when explicitly None, and include
+      after/before whenever not None including empty strings.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_list_default_limit_order$/)'
   - id: case-include-comma-query
-    why: The include-comma-query behavior is missing or differs from its pinned fixture.
+    why: Truthy include becomes a comma-joined string; empty/None include is omitted rather than emitted as an empty
+      query key.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_include_comma_query$/)'
   - id: case-cancel-response
-    why: The cancel-response behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/cancel-response.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_cancel_response$/)'
   - id: case-compact-keeps-query
-    why: The compact-keeps-query behavior is missing or differs from its pinned fixture.
+    why: Trim trailing slashes from only the URL path and append /compact, preserving query parameters including
+      api-version; use B507 input/tool preparation before assembling model/input/options.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_compact_keeps_query$/)'
   - id: case-compact-replay-input
-    why: The compact-replay-input behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-resources/compact-replay-input.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_compact_replay_input$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_resources.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_resources.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_resources*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_resources*")"
       && grep -lq 'openai_response_resources' tools/oracle/fuzz/corpus/helper_case/openai_response_resources* &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_response_resources$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_resources)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_resources)"
       && grep -q 'decode_response_resource' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_resources.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_resources_corpus$/)'
+  - id: case-compact-lax-response
+    why: Compact shares B508 created_at conversion and ValidationError debug-plus-model_construct fallback, with
+      raw and processed hidden headers.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_compact_lax_response$/)'
+  - id: case-resource-json-error-status
+    why: JSON extraction failure in delete/get/list/cancel or compact raises B668 OpenAIError with upstream status
+      and response text diagnostic; list returns its parsed JSON without model validation.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_resources_cases::case_[0-9]+_resource_json_error_status$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-resources/encoded-response-id.yaml
 - tools/oracle/cases/helpers/providers/openai-response-resources/delete-result.yaml
@@ -188,42 +233,42 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-resources/cancel-response.yaml
 - tools/oracle/cases/helpers/providers/openai-response-resources/compact-keeps-query.yaml
 - tools/oracle/cases/helpers/providers/openai-response-resources/compact-replay-input.yaml
+- tools/oracle/cases/helpers/providers/openai-response-resources/compact-lax-response.yaml
+- tools/oracle/cases/helpers/providers/openai-response-resources/resource-json-error-status.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request L283-L311;
-  OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models
+  L59-L72; _DeleteResponse.json L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body
+  L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider L106-L108; OpenAIResponsesAPIConfig.supports_native_file_search
+  L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model
+  L116-L126; OpenAIResponsesAPIConfig._model_map_lookup_name L128-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none
+  L132-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none L139-L151; OpenAIResponsesAPIConfig._supports_reasoning_param
+  L153-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort L168-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens
+  L175-L186; OpenAIResponsesAPIConfig.get_supported_openai_params L188-L205; OpenAIResponsesAPIConfig.map_openai_params
+  L207-L281 belong to B506.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request
+  L283-L311; OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
   L330-L341; OpenAIResponsesAPIConfig._tool_with_object_parameters L343-L359; OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools
   L361-L391; OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids L393-L397; OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id
-  L400-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
-  L441-L444; OpenAIResponsesAPIConfig._combinator_gate_model L447-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
-  L453-L477; OpenAIResponsesAPIConfig._sanitized_tools L480-L488; OpenAIResponsesAPIConfig._validate_input_param
-  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response L558-L587;
-  OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url L604-L623;
-  OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
-  L659-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L669-L671; OpenAIResponsesAPIConfig.get_event_model_class
-  L674-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
-  L754-L756 belong to B508; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models L60-L72; _DeleteResponse.json
-  L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider
-  L107-L108; OpenAIResponsesAPIConfig.supports_native_file_search L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages
-  L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model L117-L126; OpenAIResponsesAPIConfig._model_map_lookup_name
-  L129-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none L133-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none
-  L140-L151; OpenAIResponsesAPIConfig._supports_reasoning_param L154-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort
-  L169-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens L176-L186; OpenAIResponsesAPIConfig.get_supported_openai_params
-  L188-L205; OpenAIResponsesAPIConfig.map_openai_params L207-L281 belong to B506; reuse that implementation or its
-  injected typed boundary.
+  L399-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
+  L440-L444; OpenAIResponsesAPIConfig._combinator_gate_model L446-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
+  L452-L477; OpenAIResponsesAPIConfig._sanitized_tools L479-L488; OpenAIResponsesAPIConfig._validate_input_param
+  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response
+  L558-L587; OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url
+  L604-L623; OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
+  L658-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L668-L671; OpenAIResponsesAPIConfig.get_event_model_class
+  L673-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
+  L754-L756 belong to B508.'
 pitfalls:
-- The compact URL retains existing query parameters, and input_items include uses a comma-separated query.
+- GET/cancel validation happens outside their JSON exception wrapper and has no lax fallback; reusing compact response
+  conversion changes failures.
+- Only compact edits the URL path structurally; a shared query-aware URL join would alter the other resource helpers.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: standard

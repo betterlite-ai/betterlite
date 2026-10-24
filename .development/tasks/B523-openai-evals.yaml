@@ -22,6 +22,33 @@ description: >-
   OpenAIEvalsConfig.transform_delete_run_response L415-L424.
 
 
+  Named case contracts: eval_create_update: Create/update and create-run omit only top-level None values, preserving
+  false, zero, empty containers and nested nulls. Update returns URL, original headers and filtered body. eval_list_pagination:
+  List uses truthy litellm_params.api_base or https://api.openai.com, not global base/env fallbacks. Forward only
+  truthy limit, after, before, order and order_by without stringifying limit; ignore other query keys. eval_get_delete_cancel:
+  Get/delete eval return URL and original headers; cancel appends /cancel and returns an empty body. Eval ID encoding
+  delegates to B206 with field_name=eval_id. run_list_pagination: Run list has the same base and truthiness rules
+  but omits order_by entirely; path is /v1/evals/{encoded eval_id}/runs. run_get_cancel_delete: Run get/delete use
+  /v1/evals/{encoded eval_id}/runs/{encoded run_id}; cancel appends /cancel. Both run delete and cancel include
+  {}, while get returns URL and headers only. malformed_json_error: Every response first calls raw_response.json
+  and then its operation-specific model validator; JSON/model-validation errors propagate without conversion into
+  a provider-specific error. eval_auth_required: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key,
+  OPENAI_API_KEY in order by truthiness. If none resolves, raise ValueError OPENAI_API_KEY is required for Evals
+  API. Otherwise overwrite Authorization with Bearer <key> and Content-Type with application/json. eval_url_literal_append:
+  get_complete_url defaults only None to https://api.openai.com and appends /v1/{endpoint}, or /v1/evals/{encoded
+  eval_id} when eval_id is truthy. It does not strip slashes or /v1: retain duplicate slashes and /v1/v1 for corresponding
+  bases.
+
+
+  Write standalone Rust test openai_evals_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_evals_secret_safe_failure in betterlite-openai: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-openai/src/evals.rs with adjacent tests under evals/. Keep each Rust module at most
   300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -37,9 +64,9 @@ description: >-
 
   Write rstest function evals_cases in betterlite-openai with these exact named cases (one per oracle file): eval_create_update,
   eval_list_pagination, eval_get_delete_cancel, run_create_data_source, run_list_pagination, run_get_cancel_delete,
-  malformed_json_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  malformed_json_error, eval_auth_required, eval_url_literal_append. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_evals* using HelperCase: kind: helper
@@ -56,9 +83,9 @@ description: >-
 
 
   Budget from 300 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 320 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 591 planned, 600 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 325 production lines, 235 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 755 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -80,29 +107,32 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L35-L424
-  why: >-
-    Own _parsed_response_json, OpenAIEvalsConfig.custom_llm_provider, OpenAIEvalsConfig.validate_environment, OpenAIEvalsConfig.get_complete_url,
-    OpenAIEvalsConfig.transform_create_eval_request, OpenAIEvalsConfig.transform_create_eval_response, OpenAIEvalsConfig.transform_list_evals_request,
-    OpenAIEvalsConfig.transform_list_evals_response, OpenAIEvalsConfig.transform_get_eval_request, OpenAIEvalsConfig.transform_get_eval_response,
-    OpenAIEvalsConfig.transform_update_eval_request, OpenAIEvalsConfig.transform_update_eval_response, OpenAIEvalsConfig.transform_delete_eval_request,
-    OpenAIEvalsConfig.transform_delete_eval_response, OpenAIEvalsConfig.transform_cancel_eval_request, OpenAIEvalsConfig.transform_cancel_eval_response,
-    OpenAIEvalsConfig.transform_create_run_request, OpenAIEvalsConfig.transform_create_run_response, OpenAIEvalsConfig.transform_list_runs_request,
-    OpenAIEvalsConfig.transform_list_runs_response, OpenAIEvalsConfig.transform_get_run_request, OpenAIEvalsConfig.transform_get_run_response,
-    OpenAIEvalsConfig.transform_cancel_run_request, OpenAIEvalsConfig.transform_cancel_run_response, OpenAIEvalsConfig.transform_delete_run_request,
-    OpenAIEvalsConfig.transform_delete_run_response. Other functions in this file remain with the owners listed
-    below.
+  why: Own _parsed_response_json, OpenAIEvalsConfig.custom_llm_provider, OpenAIEvalsConfig.validate_environment,
+    OpenAIEvalsConfig.get_complete_url, OpenAIEvalsConfig.transform_create_eval_request, OpenAIEvalsConfig.transform_create_eval_response,
+    OpenAIEvalsConfig.transform_list_evals_request, OpenAIEvalsConfig.transform_list_evals_response, OpenAIEvalsConfig.transform_get_eval_request,
+    OpenAIEvalsConfig.transform_get_eval_response, OpenAIEvalsConfig.transform_update_eval_request, OpenAIEvalsConfig.transform_update_eval_response,
+    OpenAIEvalsConfig.transform_delete_eval_request, OpenAIEvalsConfig.transform_delete_eval_response, OpenAIEvalsConfig.transform_cancel_eval_request,
+    OpenAIEvalsConfig.transform_cancel_eval_response, OpenAIEvalsConfig.transform_create_run_request, OpenAIEvalsConfig.transform_create_run_response,
+    OpenAIEvalsConfig.transform_list_runs_request, OpenAIEvalsConfig.transform_list_runs_response, OpenAIEvalsConfig.transform_get_run_request,
+    OpenAIEvalsConfig.transform_get_run_response, OpenAIEvalsConfig.transform_cancel_run_request, OpenAIEvalsConfig.transform_cancel_run_response,
+    OpenAIEvalsConfig.transform_delete_run_request, OpenAIEvalsConfig.transform_delete_run_response. Other functions
+    in this file remain with the owners listed below.
 dod:
-- text: 'eval create update: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-create-update.yaml.'
+- text: 'eval_create_update: Create/update and create-run omit only top-level None values, preserving false, zero,
+    empty containers and nested nulls. Update returns URL, original headers and filtered body.'
   proof:
   - case-eval-create-update
   - oracle
   - helper-python
-- text: 'eval list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-list-pagination.yaml.'
+- text: 'eval_list_pagination: List uses truthy litellm_params.api_base or https://api.openai.com, not global base/env
+    fallbacks. Forward only truthy limit, after, before, order and order_by without stringifying limit; ignore other
+    query keys.'
   proof:
   - case-eval-list-pagination
   - oracle
   - helper-python
-- text: 'eval get delete cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-get-delete-cancel.yaml.'
+- text: 'eval_get_delete_cancel: Get/delete eval return URL and original headers; cancel appends /cancel and returns
+    an empty body. Eval ID encoding delegates to B206 with field_name=eval_id.'
   proof:
   - case-eval-get-delete-cancel
   - oracle
@@ -112,17 +142,20 @@ dod:
   - case-run-create-data-source
   - oracle
   - helper-python
-- text: 'run list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-list-pagination.yaml.'
+- text: 'run_list_pagination: Run list has the same base and truthiness rules but omits order_by entirely; path
+    is /v1/evals/{encoded eval_id}/runs.'
   proof:
   - case-run-list-pagination
   - oracle
   - helper-python
-- text: 'run get cancel delete: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-get-cancel-delete.yaml.'
+- text: 'run_get_cancel_delete: Run get/delete use /v1/evals/{encoded eval_id}/runs/{encoded run_id}; cancel appends
+    /cancel. Both run delete and cancel include {}, while get returns URL and headers only.'
   proof:
   - case-run-get-cancel-delete
   - oracle
   - helper-python
-- text: 'malformed json error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/malformed-json-error.yaml.'
+- text: 'malformed_json_error: Every response first calls raw_response.json and then its operation-specific model
+    validator; JSON/model-validation errors propagate without conversion into a provider-specific error.'
   proof:
   - case-malformed-json-error
   - oracle
@@ -133,50 +166,89 @@ dod:
 - text: decode_eval_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'eval_auth_required: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY
+    in order by truthiness. If none resolves, raise ValueError OPENAI_API_KEY is required for Evals API. Otherwise
+    overwrite Authorization with Bearer <key> and Content-Type with application/json.'
+  proof:
+  - case-eval-auth-required
+  - oracle
+  - helper-python
+- text: 'eval_url_literal_append: get_complete_url defaults only None to https://api.openai.com and appends /v1/{endpoint},
+    or /v1/evals/{encoded eval_id} when eval_id is truthy. It does not strip slashes or /v1: retain duplicate slashes
+    and /v1/v1 for corresponding bases.'
+  proof:
+  - case-eval-url-literal-append
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-eval-create-update
-    why: The eval-create-update behavior is missing or differs from its pinned fixture.
+    why: Create/update and create-run omit only top-level None values, preserving false, zero, empty containers
+      and nested nulls. Update returns URL, original headers and filtered body.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_create_update$/)'
   - id: case-eval-list-pagination
-    why: The eval-list-pagination behavior is missing or differs from its pinned fixture.
+    why: List uses truthy litellm_params.api_base or https://api.openai.com, not global base/env fallbacks. Forward
+      only truthy limit, after, before, order and order_by without stringifying limit; ignore other query keys.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_list_pagination$/)'
   - id: case-eval-get-delete-cancel
-    why: The eval-get-delete-cancel behavior is missing or differs from its pinned fixture.
+    why: Get/delete eval return URL and original headers; cancel appends /cancel and returns an empty body. Eval
+      ID encoding delegates to B206 with field_name=eval_id.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_get_delete_cancel$/)'
   - id: case-run-create-data-source
-    why: The run-create-data-source behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-create-data-source.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_create_data_source$/)'
   - id: case-run-list-pagination
-    why: The run-list-pagination behavior is missing or differs from its pinned fixture.
+    why: Run list has the same base and truthiness rules but omits order_by entirely; path is /v1/evals/{encoded
+      eval_id}/runs.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_list_pagination$/)'
   - id: case-run-get-cancel-delete
-    why: The run-get-cancel-delete behavior is missing or differs from its pinned fixture.
+    why: Run get/delete use /v1/evals/{encoded eval_id}/runs/{encoded run_id}; cancel appends /cancel. Both run
+      delete and cancel include {}, while get returns URL and headers only.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_get_cancel_delete$/)'
   - id: case-malformed-json-error
-    why: The malformed-json-error behavior is missing or differs from its pinned fixture.
+    why: Every response first calls raw_response.json and then its operation-specific model validator; JSON/model-validation
+      errors propagate without conversion into a provider-specific error.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_malformed_json_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_evals.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_evals.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_evals*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_evals*")"
       && grep -lq 'openai_evals' tools/oracle/fuzz/corpus/helper_case/openai_evals* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_evals$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_evals)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_evals)"
       && grep -q 'decode_eval_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_evals.rs && cargo nextest
       run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_evals_corpus$/)'
+  - id: case-eval-auth-required
+    why: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY in order by truthiness.
+      If none resolves, raise ValueError OPENAI_API_KEY is required for Evals API. Otherwise overwrite Authorization
+      with Bearer <key> and Content-Type with application/json.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_auth_required$/)'
+  - id: case-eval-url-literal-append
+    why: 'get_complete_url defaults only None to https://api.openai.com and appends /v1/{endpoint}, or /v1/evals/{encoded
+      eval_id} when eval_id is truthy. It does not strip slashes or /v1: retain duplicate slashes and /v1/v1 for
+      corresponding bases.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_url_literal_append$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_evals_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_evals_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-evals/eval-create-update.yaml
 - tools/oracle/cases/helpers/providers/openai-evals/eval-list-pagination.yaml
@@ -185,6 +257,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-evals/run-list-pagination.yaml
 - tools/oracle/cases/helpers/providers/openai-evals/run-get-cancel-delete.yaml
 - tools/oracle/cases/helpers/providers/openai-evals/malformed-json-error.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/eval-auth-required.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/eval-url-literal-append.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -192,8 +266,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Eval definition and run cancellation have distinct resource paths and response shapes.
+- The request helpers return different tuple shapes; treating every second element as a body would send auth headers
+  in JSON.
+- An empty eval_id chooses the collection path in get_complete_url, but create/list-run always invoke the path-segment
+  encoder.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 775
   max_new_expects: 0
-review_level: standard
+review_level: security

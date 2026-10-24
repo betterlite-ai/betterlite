@@ -6,15 +6,16 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
-  AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock L389-L401; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock
-  L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke
-  L471-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools
-  L605-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields L643-L654.
+  AmazonAnthropicClaudeMessagesConfig.custom_llm_provider L82-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider
+  L86-L87; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock
+  L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke L471-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers
+  L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools L605-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields
+  L643-L654.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
-  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
-  and no copied helper algorithm is permitted.
+  with direct dependencies. Provider leaves must never import betterlite-core, and no copied helper algorithm is
+  permitted.
 
 
   Reuse get_anthropic_beta_from_headers from B599 (litellm/llms/bedrock/common_utils.py); its implementation remains
@@ -27,6 +28,40 @@ description: >-
 
   Reuse is_claude_4_5_on_bedrock from B690 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: tool_search_beta: For tool search without programmatic calling or input examples, remove
+  advanced-tool-use-2025-11-20 from the current set and add tool-search-tool-2025-10-19 only when B690 supports
+  it. Otherwise leave the set untouched. If tool-search-tool-2025-10-19 exists after adjustment, also add tool-examples-2025-10-29,
+  even when the tool-search beta came from the user. context_filter: For a non-dict context_management do nothing
+  here. A dict with missing/non-list edits is removed; for a list retain only dict edits with type compact_20260112
+  or clear_tool_uses_20250919, preserving order and every edit field. If none remain remove the whole context_management;
+  otherwise preserve its other fields and replace edits. Add compact-2026-01-12 and context-management-2025-06-27
+  for the respective retained types. clear_thinking_20251015 is consumed by B621 before this filtering and is not
+  forwarded. No warning is emitted for dropped edits. web_search_rejection: Only inspect tools when it is a list.
+  Find the first dict matching B568 is_anthropic_native_web_search_tool (type string starts web_search_). Reject
+  it with BadRequestError status 400, llm_provider=bedrock and the requested model; do not invent param/code fields.
+  Exact message: Bedrock does not support Anthropic's server-side web search tool (tool type '{type}', model '{model}').
+  To use web search with this model, enable LiteLLM's web search interception so the proxy executes the search instead:
+  https://docs.litellm.ai/docs/integrations/websearch_interception. Alternatively, remove the web_search tool from
+  the request. Converted function tools and bare-name tools pass. B119 owns callbacks:[websearch_interception] configuration
+  and interception, not this leaf. unsupported_fields: Retain exactly anthropic_version,max_tokens,messages,anthropic_beta,system,stop_sequences,temperature,top_p,top_k,tools,tool_choice,thinking,metadata,output_config,safeguards,context_management,
+  preserving input values and order without validating nested types. Return a fresh mapping. If other keys exist,
+  sort them and debug-log Bedrock Invoke: stripping unsupported top-level request fields: %s. Do not emit a warning
+  or claim output_config is always removed; it is on this allowlist. beta_provider_filter: Use B568 feature predicates
+  on original options.tools and messages for file IDs; use required outgoing request.messages for mid-conversation
+  output_config and tool-change predicates, and outgoing thinking for display updates. Call B568 get_anthropic_beta_list
+  with provider=bedrock,prompt_caching_set=False. Union B599 user headers and auto betas, add interleaved-thinking-2025-05-14
+  when clear-thinking injection returned True, fine-grained-tool-streaming-2025-05-14 for eager tools, and dangerous-tool-use-2026-09-03
+  whenever original options.safeguards is not None, including []. Apply context filtering, tool-search adjustment
+  and tool-examples addition, then B960 filtering to the entire set using beta_headers_provider. Sort the resulting
+  list; unlike B618, user betas are filtered too. provider_beta_identity: custom_llm_provider returns bedrock; beta_headers_provider
+  returns that value or bedrock when a subclass value is falsey. _supports_tool_search_on_bedrock delegates B690,
+  preserving its catalog and fallback outcomes. unsupported_user_beta_warning: Individually filter each original
+  user beta through B960; collect and sort only those yielding no result, then warn exactly Bedrock Invoke: dropping
+  unsupported anthropic-beta values from client headers: %s. Bedrock has no mapping entry for these; forwarding
+  them would cause a 400. A beta transformed to another nonempty value is not reported as dropped. Preserve Python
+  sorted-list display in the warning; no warning when the dropped list is empty.
 
 
   Implement crates/betterlite-bedrock/src/bedrock_messages_beta.rs with adjacent tests under bedrock_messages_beta/.
@@ -43,10 +78,10 @@ description: >-
 
 
   Write rstest function bedrock_messages_beta_cases in betterlite-bedrock with these exact named cases (one per
-  oracle file): tool_search_beta, context_filter, web_search_rejection, unsupported_fields, beta_provider_filter.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  oracle file): tool_search_beta, context_filter, web_search_rejection, unsupported_fields, beta_provider_filter,
+  provider_beta_identity, unsupported_user_beta_warning. Each case exercises its named outcome independently; use
+  stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta* using HelperCase: kind:
@@ -61,10 +96,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 215 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 445 planned, 450 maximum changed lines.
+  Budget from 209 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 250 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 625 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,36 +117,62 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L389-L654
-  why: >-
-    Own AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock, AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L389-L654
+  why: Own AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock, AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock,
     AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock, AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke,
     AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers, AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools,
     AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields. Other functions in this file remain
     with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L82-L83
+  why: Own AmazonAnthropicClaudeMessagesConfig.custom_llm_provider below its direct callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L86-L87
+  why: Own AmazonAnthropicClaudeMessagesConfig.beta_headers_provider below its direct callers.
 dod:
-- text: 'tool search beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages-beta/tool-search-beta.yaml.'
+- text: 'tool_search_beta: For tool search without programmatic calling or input examples, remove advanced-tool-use-2025-11-20
+    from the current set and add tool-search-tool-2025-10-19 only when B690 supports it. Otherwise leave the set
+    untouched. If tool-search-tool-2025-10-19 exists after adjustment, also add tool-examples-2025-10-29, even when
+    the tool-search beta came from the user.'
   proof:
   - case-tool-search-beta
   - oracle
   - helper-python
-- text: 'context filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages-beta/context-filter.yaml.'
+- text: 'context_filter: For a non-dict context_management do nothing here. A dict with missing/non-list edits is
+    removed; for a list retain only dict edits with type compact_20260112 or clear_tool_uses_20250919, preserving
+    order and every edit field. If none remain remove the whole context_management; otherwise preserve its other
+    fields and replace edits. Add compact-2026-01-12 and context-management-2025-06-27 for the respective retained
+    types. clear_thinking_20251015 is consumed by B621 before this filtering and is not forwarded. No warning is
+    emitted for dropped edits.'
   proof:
   - case-context-filter
   - oracle
   - helper-python
-- text: 'web search rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages-beta/web-search-rejection.yaml.'
+- text: 'web_search_rejection: Only inspect tools when it is a list. Find the first dict matching B568 is_anthropic_native_web_search_tool
+    (type string starts web_search_). Reject it with BadRequestError status 400, llm_provider=bedrock and the requested
+    model; do not invent param/code fields. Exact message: Bedrock does not support Anthropic''s server-side web
+    search tool (tool type ''{type}'', model ''{model}''). To use web search with this model, enable LiteLLM''s
+    web search interception so the proxy executes the search instead: https://docs.litellm.ai/docs/integrations/websearch_interception.
+    Alternatively, remove the web_search tool from the request. Converted function tools and bare-name tools pass.
+    B119 owns callbacks:[websearch_interception] configuration and interception, not this leaf.'
   proof:
   - case-web-search-rejection
   - oracle
   - helper-python
-- text: 'unsupported fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages-beta/unsupported-fields.yaml.'
+- text: 'unsupported_fields: Retain exactly anthropic_version,max_tokens,messages,anthropic_beta,system,stop_sequences,temperature,top_p,top_k,tools,tool_choice,thinking,metadata,output_config,safeguards,context_management,
+    preserving input values and order without validating nested types. Return a fresh mapping. If other keys exist,
+    sort them and debug-log Bedrock Invoke: stripping unsupported top-level request fields: %s. Do not emit a warning
+    or claim output_config is always removed; it is on this allowlist.'
   proof:
   - case-unsupported-fields
   - oracle
   - helper-python
-- text: 'beta provider filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages-beta/beta-provider-filter.yaml.'
+- text: 'beta_provider_filter: Use B568 feature predicates on original options.tools and messages for file IDs;
+    use required outgoing request.messages for mid-conversation output_config and tool-change predicates, and outgoing
+    thinking for display updates. Call B568 get_anthropic_beta_list with provider=bedrock,prompt_caching_set=False.
+    Union B599 user headers and auto betas, add interleaved-thinking-2025-05-14 when clear-thinking injection returned
+    True, fine-grained-tool-streaming-2025-05-14 for eager tools, and dangerous-tool-use-2026-09-03 whenever original
+    options.safeguards is not None, including []. Apply context filtering, tool-search adjustment and tool-examples
+    addition, then B960 filtering to the entire set using beta_headers_provider. Sort the resulting list; unlike
+    B618, user betas are filtered too.'
   proof:
   - case-beta-provider-filter
   - oracle
@@ -120,70 +181,123 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'provider_beta_identity: custom_llm_provider returns bedrock; beta_headers_provider returns that value or
+    bedrock when a subclass value is falsey. _supports_tool_search_on_bedrock delegates B690, preserving its catalog
+    and fallback outcomes.'
+  proof:
+  - case-provider-beta-identity
+  - oracle
+  - helper-python
+- text: 'unsupported_user_beta_warning: Individually filter each original user beta through B960; collect and sort
+    only those yielding no result, then warn exactly Bedrock Invoke: dropping unsupported anthropic-beta values
+    from client headers: %s. Bedrock has no mapping entry for these; forwarding them would cause a 400. A beta transformed
+    to another nonempty value is not reported as dropped. Preserve Python sorted-list display in the warning; no
+    warning when the dropped list is empty.'
+  proof:
+  - case-unsupported-user-beta-warning
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-tool-search-beta
-    why: The tool-search-beta behavior is missing or differs from its pinned fixture.
+    why: For tool search without programmatic calling or input examples, remove advanced-tool-use-2025-11-20 from
+      the current set and add tool-search-tool-2025-10-19 only when B690 supports it. Otherwise leave the set untouched.
+      If tool-search-tool-2025-10-19 exists after adjustment, also add tool-examples-2025-10-29, even when the tool-search
+      beta came from the user.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_tool_search_beta$/)'
   - id: case-context-filter
-    why: The context-filter behavior is missing or differs from its pinned fixture.
+    why: For a non-dict context_management do nothing here. A dict with missing/non-list edits is removed; for a
+      list retain only dict edits with type compact_20260112 or clear_tool_uses_20250919, preserving order and every
+      edit field. If none remain remove the whole context_management; otherwise preserve its other fields and replace
+      edits. Add compact-2026-01-12 and context-management-2025-06-27 for the respective retained types. clear_thinking_20251015
+      is consumed by B621 before this filtering and is not forwarded. No warning is emitted for dropped edits.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_context_filter$/)'
   - id: case-web-search-rejection
-    why: The web-search-rejection behavior is missing or differs from its pinned fixture.
+    why: 'Only inspect tools when it is a list. Find the first dict matching B568 is_anthropic_native_web_search_tool
+      (type string starts web_search_). Reject it with BadRequestError status 400, llm_provider=bedrock and the
+      requested model; do not invent param/code fields. Exact message: Bedrock does not support Anthropic''s server-side
+      web search tool (tool type ''{type}'', model ''{model}''). To use web search with this model, enable LiteLLM''s
+      web search interception so the proxy executes the search instead: https://docs.litellm.ai/docs/integrations/websearch_interception.
+      Alternatively, remove the web_search tool from the request. Converted function tools and bare-name tools pass.
+      B119 owns callbacks:[websearch_interception] configuration and interception, not this leaf.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_web_search_rejection$/)'
   - id: case-unsupported-fields
-    why: The unsupported-fields behavior is missing or differs from its pinned fixture.
+    why: 'Retain exactly anthropic_version,max_tokens,messages,anthropic_beta,system,stop_sequences,temperature,top_p,top_k,tools,tool_choice,thinking,metadata,output_config,safeguards,context_management,
+      preserving input values and order without validating nested types. Return a fresh mapping. If other keys exist,
+      sort them and debug-log Bedrock Invoke: stripping unsupported top-level request fields: %s. Do not emit a
+      warning or claim output_config is always removed; it is on this allowlist.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_unsupported_fields$/)'
   - id: case-beta-provider-filter
-    why: The beta-provider-filter behavior is missing or differs from its pinned fixture.
+    why: Use B568 feature predicates on original options.tools and messages for file IDs; use required outgoing
+      request.messages for mid-conversation output_config and tool-change predicates, and outgoing thinking for
+      display updates. Call B568 get_anthropic_beta_list with provider=bedrock,prompt_caching_set=False. Union B599
+      user headers and auto betas, add interleaved-thinking-2025-05-14 when clear-thinking injection returned True,
+      fine-grained-tool-streaming-2025-05-14 for eager tools, and dangerous-tool-use-2026-09-03 whenever original
+      options.safeguards is not None, including []. Apply context filtering, tool-search adjustment and tool-examples
+      addition, then B960 filtering to the entire set using beta_headers_provider. Sort the resulting list; unlike
+      B618, user betas are filtered too.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_beta_provider_filter$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_messages_beta.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_messages_beta.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta*")"
       && grep -lq 'bedrock_messages_beta' tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_messages_beta$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-provider-beta-identity
+    why: custom_llm_provider returns bedrock; beta_headers_provider returns that value or bedrock when a subclass
+      value is falsey. _supports_tool_search_on_bedrock delegates B690, preserving its catalog and fallback outcomes.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_provider_beta_identity$/)'
+  - id: case-unsupported-user-beta-warning
+    why: 'Individually filter each original user beta through B960; collect and sort only those yielding no result,
+      then warn exactly Bedrock Invoke: dropping unsupported anthropic-beta values from client headers: %s. Bedrock
+      has no mapping entry for these; forwarding them would cause a 400. A beta transformed to another nonempty
+      value is not reported as dropped. Preserve Python sorted-list display in the warning; no warning when the
+      dropped list is empty.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_beta_cases::case_[0-9]+_unsupported_user_beta_warning$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-messages-beta/tool-search-beta.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages-beta/context-filter.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages-beta/web-search-rejection.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages-beta/unsupported-fields.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages-beta/beta-provider-filter.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages-beta/provider-beta-identity.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages-beta/unsupported-user-beta-warning.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig.custom_llm_provider
-  L82-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider L86-L87; AmazonAnthropicClaudeMessagesConfig.get_error_class
-  L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__ L99-L101; AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment
-  L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request L116-L137; AmazonAnthropicClaudeMessagesConfig.get_complete_url
-  L139-L156; AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request L676-L795; AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator
-  L797-L815; AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper L817-L854 belong to B622; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage
-  L857-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage L878-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser
-  L956-L991 belong to B623; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control
-  L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management
-  L250-L320; AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L323-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
-  L332-L339; AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking L341-L368; AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock
-  L657-L674 belong to B621; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
-  L370-L387 have no caller at the pin; do not port them.
+- 'litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
+  L370-L387 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock
+  L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management L250-L320;
+  AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L322-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
+  L331-L339; AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking L341-L368; AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock
+  L389-L401; AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock L656-L674 belong to
+  B621.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig.get_error_class L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__ L99-L101;
+  AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request
+  L116-L137; AmazonAnthropicClaudeMessagesConfig.get_complete_url L139-L156; AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request
+  L676-L795; AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator L797-L815; AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper
+  L817-L854 belong to B622.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage L856-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage
+  L877-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser L956-L991 belong to B623.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5 L370-L387 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- Unsupported web-search tools are rejected before native Messages serialization, independently of beta filtering.
+- Messages filters explicit user betas as well as generated betas; chat Invoke B618 intentionally filters only generated
+  additions.
+- The allowlist still contains output_config, despite the nearby safety-net comment listing it as an example of
+  an extension.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: standard

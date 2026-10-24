@@ -18,6 +18,20 @@ description: >-
   already normalized settings and reuse leaf errors.
 
 
+  Named case contracts: titan_image: Dispatch B634 Titan generation with signed fixture transport, including the
+  first image result and provider error. stability_image: Parameterize Stability1 and Stability3 generation through
+  B634 so their request schemas cannot be conflated. canvas_image: Dispatch B634 Nova Canvas TEXT_IMAGE with its
+  own parameters and reply mapping. canvas_edit: Dispatch B638 Canvas editing, preserving mode/image/mask preparation
+  and its double-decoded image reply. stability_edit: Dispatch B638 Stability edit with base64 image data and the
+  distinct output-format/size policy.
+
+
+  Each named composition case uses separate fixture rows for its operations, invokes the existing native dispatcher
+  and then the actual leaf prepare/send/project functions, and asserts captured upstream request and returned typed
+  result. Include a leaf failure per family to detect accidental error rewriting. This composition reads no new
+  config/env values and registers no HTTP route; defaults, headers, warnings and parsers remain with the named leaves.
+
+
   Implement crates/betterlite-provider/src/bedrock_image_dispatch.rs with adjacent tests under bedrock_image_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -33,9 +47,8 @@ description: >-
 
   Write rstest function bedrock_image_dispatch_cases in betterlite-provider with these exact named cases (one per
   oracle file): titan_image, stability_image, canvas_image, canvas_edit, stability_edit. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_image_dispatch* using HelperCase: kind:
@@ -55,9 +68,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 105 behavior/config-test lines, 105 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 130 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 395 planned, 400 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 535 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -93,27 +106,31 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/handler.py#L58-L67
   why: Operation contract delegated to B638; only native dispatcher wiring is added here.
 dod:
-- text: 'titan image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-image-dispatch/titan-image.yaml.'
+- text: 'titan_image: Dispatch B634 Titan generation with signed fixture transport, including the first image result
+    and provider error.'
   proof:
   - case-titan-image
   - oracle
   - helper-python
-- text: 'stability image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-image-dispatch/stability-image.yaml.'
+- text: 'stability_image: Parameterize Stability1 and Stability3 generation through B634 so their request schemas
+    cannot be conflated.'
   proof:
   - case-stability-image
   - oracle
   - helper-python
-- text: 'canvas image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-image-dispatch/canvas-image.yaml.'
+- text: 'canvas_image: Dispatch B634 Nova Canvas TEXT_IMAGE with its own parameters and reply mapping.'
   proof:
   - case-canvas-image
   - oracle
   - helper-python
-- text: 'canvas edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-image-dispatch/canvas-edit.yaml.'
+- text: 'canvas_edit: Dispatch B638 Canvas editing, preserving mode/image/mask preparation and its double-decoded
+    image reply.'
   proof:
   - case-canvas-edit
   - oracle
   - helper-python
-- text: 'stability edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-image-dispatch/stability-edit.yaml.'
+- text: 'stability_edit: Dispatch B638 Stability edit with base64 image data and the distinct output-format/size
+    policy.'
   proof:
   - case-stability-edit
   - oracle
@@ -130,30 +147,29 @@ checks:
   - mutants
   commands:
   - id: case-titan-image
-    why: The titan-image behavior is missing or differs from its pinned fixture.
+    why: Dispatch B634 Titan generation with signed fixture transport, including the first image result and provider
+      error.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_image_dispatch_cases::case_[0-9]+_titan_image$/)'
   - id: case-stability-image
-    why: The stability-image behavior is missing or differs from its pinned fixture.
+    why: Parameterize Stability1 and Stability3 generation through B634 so their request schemas cannot be conflated.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_image_dispatch_cases::case_[0-9]+_stability_image$/)'
   - id: case-canvas-image
-    why: The canvas-image behavior is missing or differs from its pinned fixture.
+    why: Dispatch B634 Nova Canvas TEXT_IMAGE with its own parameters and reply mapping.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_image_dispatch_cases::case_[0-9]+_canvas_image$/)'
   - id: case-canvas-edit
-    why: The canvas-edit behavior is missing or differs from its pinned fixture.
+    why: Dispatch B638 Canvas editing, preserving mode/image/mask preparation and its double-decoded image reply.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_image_dispatch_cases::case_[0-9]+_canvas_edit$/)'
   - id: case-stability-edit
-    why: The stability-edit behavior is missing or differs from its pinned fixture.
+    why: Dispatch B638 Stability edit with base64 image data and the distinct output-format/size policy.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_image_dispatch_cases::case_[0-9]+_stability_edit$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_image_dispatch.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_image_dispatch.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_image_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_image_dispatch*")"
       && grep -lq 'bedrock_image_dispatch' tools/oracle/fuzz/corpus/helper_case/bedrock_image_dispatch* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_image_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -168,20 +184,19 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-image-dispatch/stability-edit.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class L66-L74; BedrockImageGeneration.image_generation
+- 'Function ownership inventory litellm/llms/bedrock/image_edit/handler.py: BedrockImageEdit.get_config_class L57-L67;
+  BedrockImageEdit.image_edit L69-L135; BedrockImageEdit.async_image_edit L137-L182; BedrockImageEdit._prepare_request
+  L184-L267; BedrockImageEdit._get_request_body L269-L294; BedrockImageEdit._transform_response_dict_to_openai_response
+  L296-L331 belong to B638.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class
+  L65-L74 belong to B633.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.image_generation
   L76-L139; BedrockImageGeneration.async_image_generation L141-L188; BedrockImageGeneration._extract_headers_from_optional_params
   L190-L203; BedrockImageGeneration._prepare_request L205-L292; BedrockImageGeneration._get_request_body L294-L310;
-  BedrockImageGeneration._transform_response_dict_to_openai_response L312-L345 belong to B634; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/image_edit/handler.py: BedrockImageEdit.get_config_class L58-L67; BedrockImageEdit.image_edit
-  L69-L135; BedrockImageEdit.async_image_edit L137-L182; BedrockImageEdit._prepare_request L184-L267; BedrockImageEdit._get_request_body
-  L269-L294; BedrockImageEdit._transform_response_dict_to_openai_response L296-L331 belong to B638; reuse that implementation
-  or its injected typed boundary.
+  BedrockImageGeneration._transform_response_dict_to_openai_response L312-L345 belong to B634.'
 pitfalls:
 - Canvas and Stability edit dispatch share transport but select different request and reply projections.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

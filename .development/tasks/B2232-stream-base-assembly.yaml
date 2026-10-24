@@ -1,0 +1,217 @@
+id: B2232
+title: Stream base response assembly
+description: >-
+  Implement shared typed chunk assembly in betterlite-streaming, below provider and SSE execution. Parsed chunk
+  DTOs come from B004; this task does not create another SSE/JSON parser. Use bounded outputs and injected clock/counters
+  where the source reads them.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/litellm_core_utils/streaming_chunk_builder_utils.py:
+  ChunkProcessor.__init__ L227-L230; _sort_chunks L232-L259; update_model_response_with_hidden_params L261-L269;
+  _get_provider_response_model L271-L285; apply_provider_assembled_streaming_metadata L287-L331; _get_chunk_id L333-L342;
+  _get_role_from_chunks L344-L346; _role_of_choice L348-L354; _get_model_from_chunks L356-L371; _get_service_tier_from_chunks
+  L373-L378; build_base_response L380-L441.
+
+
+  Named case contracts: conditional_sort_original_first: Only a truthy created_at in the original first chunk hidden
+  dict enables stable ascending sorting; absent timestamps sort last, non-dict hidden fields act absent. created_at=0
+  does not enable sorting. first_chunk always remains the original first input, even after sorting; empty construction
+  raises on chunks[0]. base_metadata: Required object/created/model and optional system_fingerprint come from original
+  first chunk. ID is first truthy ID in supplied chunks or empty; model is first truthy model different from original
+  or original; service_tier is last nonempty string. Role comes from the first chunk with choices and its first
+  choice only, default assistant even if later roles exist. Initialize one index=0 choice with empty content and
+  zero usage. finish_and_hidden: Last non-None first-choice finish_reason wins, including empty string; default
+  stop. Hidden params are copied from the last loop chunk, default {} (not necessarily original first). provider_response_model
+  is first nonempty hidden string differing from original model, otherwise first such string; overlay that only
+  when present. assembled_provider_metadata: No chunks or falsey response.model is a no-op. Prefer truthy logging
+  custom_llm_provider, otherwise B174 resolution; B2230 selects config. Invoke injected ProviderAssembledMetadataProjection
+  for that tag when installed. Resolver, enum, selector or projection exceptions are swallowed with debug apply_provider_assembled_streaming_metadata
+  failed for model=%s: %s. Test each failure before/after projection; redact diagnostics via B187.
+
+
+  ProviderAssembledMetadataProjection is an injected typed callback over the selected B2230 config tag; the installed
+  provider implementation supplies the callback at the outer call site. It does not construct/import provider crates
+  here. Preserve the source debug-and-return exception boundary around resolution, selection and callback. B2227
+  composes this helper; B005 streams then calls B2227, never the reverse.
+
+
+  Implement crates/betterlite-streaming/src/stream_base_assembly.rs with adjacent tests under stream_base_assembly/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation stream_base_assembly in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function stream_base_assembly_cases in betterlite-streaming with these exact named cases (one per
+  oracle file): conditional_sort_original_first, base_metadata, finish_and_hidden, assembled_provider_metadata.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/stream_base_assembly* using HelperCase: kind:
+  helper and the externally tagged stream_base_assembly variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_stream_base_assembly that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 187 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 205 production lines, 245 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 595 planned, 600 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-streaming/Cargo.toml
+  - crates/betterlite-streaming/src/lib.rs
+  - crates/betterlite-streaming/src/error.rs
+  - crates/betterlite-streaming/src/stream_base_assembly.rs
+  - crates/betterlite-streaming/src/stream_base_assembly/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/stream_base_assembly.rs
+  - tools/oracle/src/helpers/stream_base_assembly/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/stream_base_assembly.py
+  - tools/oracle/cases/helpers/providers/stream-base-assembly/**
+  - tools/oracle/fuzz/corpus/helper_case/stream_base_assembly*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L227-L230
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L232-L259
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L261-L269
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L271-L285
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L287-L331
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L333-L342
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L344-L346
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L348-L354
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L356-L371
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L373-L378
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L380-L441
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New stream_base_assembly seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'conditional_sort_original_first: Only a truthy created_at in the original first chunk hidden dict enables
+    stable ascending sorting; absent timestamps sort last, non-dict hidden fields act absent. created_at=0 does
+    not enable sorting. first_chunk always remains the original first input, even after sorting; empty construction
+    raises on chunks[0].'
+  proof:
+  - case-conditional-sort-original-first
+  - oracle
+  - helper-python
+- text: 'base_metadata: Required object/created/model and optional system_fingerprint come from original first chunk.
+    ID is first truthy ID in supplied chunks or empty; model is first truthy model different from original or original;
+    service_tier is last nonempty string. Role comes from the first chunk with choices and its first choice only,
+    default assistant even if later roles exist. Initialize one index=0 choice with empty content and zero usage.'
+  proof:
+  - case-base-metadata
+  - oracle
+  - helper-python
+- text: 'finish_and_hidden: Last non-None first-choice finish_reason wins, including empty string; default stop.
+    Hidden params are copied from the last loop chunk, default {} (not necessarily original first). provider_response_model
+    is first nonempty hidden string differing from original model, otherwise first such string; overlay that only
+    when present.'
+  proof:
+  - case-finish-and-hidden
+  - oracle
+  - helper-python
+- text: 'assembled_provider_metadata: No chunks or falsey response.model is a no-op. Prefer truthy logging custom_llm_provider,
+    otherwise B174 resolution; B2230 selects config. Invoke injected ProviderAssembledMetadataProjection for that
+    tag when installed. Resolver, enum, selector or projection exceptions are swallowed with debug apply_provider_assembled_streaming_metadata
+    failed for model=%s: %s. Test each failure before/after projection; redact diagnostics via B187.'
+  proof:
+  - case-assembled-provider-metadata
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/stream_base_assembly.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_base_assembly*")"
+      && grep -lq 'stream_base_assembly' tools/oracle/fuzz/corpus/helper_case/stream_base_assembly* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_stream_base_assembly$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-conditional-sort-original-first
+    why: Only a truthy created_at in the original first chunk hidden dict enables stable ascending sorting; absent
+      timestamps sort last, non-dict hidden fields act absent. created_at=0 does not enable sorting. first_chunk
+      always remains the original first input, even after sorting; empty construction raises on chunks[0].
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::stream_base_assembly_cases::case_[0-9]+_conditional_sort_original_first$/)'
+  - id: case-base-metadata
+    why: Required object/created/model and optional system_fingerprint come from original first chunk. ID is first
+      truthy ID in supplied chunks or empty; model is first truthy model different from original or original; service_tier
+      is last nonempty string. Role comes from the first chunk with choices and its first choice only, default assistant
+      even if later roles exist. Initialize one index=0 choice with empty content and zero usage.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::stream_base_assembly_cases::case_[0-9]+_base_metadata$/)'
+  - id: case-finish-and-hidden
+    why: Last non-None first-choice finish_reason wins, including empty string; default stop. Hidden params are
+      copied from the last loop chunk, default {} (not necessarily original first). provider_response_model is first
+      nonempty hidden string differing from original model, otherwise first such string; overlay that only when
+      present.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::stream_base_assembly_cases::case_[0-9]+_finish_and_hidden$/)'
+  - id: case-assembled-provider-metadata
+    why: 'No chunks or falsey response.model is a no-op. Prefer truthy logging custom_llm_provider, otherwise B174
+      resolution; B2230 selects config. Invoke injected ProviderAssembledMetadataProjection for that tag when installed.
+      Resolver, enum, selector or projection exceptions are swallowed with debug apply_provider_assembled_streaming_metadata
+      failed for model=%s: %s. Test each failure before/after projection; redact diagnostics via B187.'
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::stream_base_assembly_cases::case_[0-9]+_assembled_provider_metadata$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/stream-base-assembly/conditional-sort-original-first.yaml
+- tools/oracle/cases/helpers/providers/stream-base-assembly/base-metadata.yaml
+- tools/oracle/cases/helpers/providers/stream-base-assembly/finish-and-hidden.yaml
+- tools/oracle/cases/helpers/providers/stream-base-assembly/assembled-provider-metadata.yaml
+deviations: []
+out_of_scope:
+- 'litellm/litellm_core_utils/streaming_chunk_builder_utils.py: other methods are B2232 base metadata, B2233 tools/functions,
+  B2234 text/thinking/audio and B2235 usage; this task owns only the explicit ranges. B2227 owns main.py assembly
+  and B005 owns SSE delivery.'
+- 'Function ownership inventory litellm/litellm_core_utils/streaming_chunk_builder_utils.py: ChunkProcessor._iter_tool_call_fragments
+  L443-L474; ChunkProcessor._join_fragments_by_key_and_field L476-L488; ChunkProcessor.get_combined_tool_content
+  L490-L640; ChunkProcessor.get_combined_function_call_content L642-L665 belong to B2233.'
+- 'Function ownership inventory litellm/litellm_core_utils/streaming_chunk_builder_utils.py: ChunkProcessor.get_combined_content
+  L667-L684; ChunkProcessor.get_combined_thinking_content L686-L742; ChunkProcessor.get_combined_reasoning_content
+  L744-L745; ChunkProcessor.get_combined_audio_content L747-L775; concatenate_base64_list L1177-L1191 belong to
+  B2234.'
+- 'Function ownership inventory litellm/litellm_core_utils/streaming_chunk_builder_utils.py: _reports_prompt_side_usage
+  L169-L174; capture_cache_creation_token_details L177-L187; attach_cache_creation_token_details L190-L202; apply_grounding_request_counts
+  L205-L223; ChunkProcessor._usage_chunk_calculation_helper L777-L816; ChunkProcessor.count_reasoning_tokens L818-L832;
+  ChunkProcessor._extract_usage_chunk L834-L850; ChunkProcessor._calculate_usage_per_chunk L852-L976; ChunkProcessor._last_provider_pricing_field
+  L978-L994; ChunkProcessor._finish_reason_of_choice L996-L1004; ChunkProcessor._chunk_choices L1006-L1010; ChunkProcessor._saw_finish_reason
+  L1012-L1018; ChunkProcessor._reset_anthropic_cursor_completion_tokens L1020-L1057; ChunkProcessor.calculate_usage
+  L1059-L1174 belong to B2235.'
+pitfalls:
+- Sorting changes chunks but not first_chunk; Azure model-router selection therefore compares against the original
+  model.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

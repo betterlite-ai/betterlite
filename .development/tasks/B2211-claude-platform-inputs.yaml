@@ -1,0 +1,409 @@
+id: B2211
+title: Claude Platform workspace and signing inputs
+description: >-
+  Implement Claude Platform on AWS workspace selection, endpoint/auth inputs and body filtering shared by chat and
+  native Messages. Preserve the source precedence, including caller optional settings that precede deployment values.
+  This lower helper part does not register routes.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/claude_platform/common_utils.py:
+  constants L13-L26; filter_claude_platform_request_body L29-L48; resolve_unsupported_override L51-L72; strip_claude_platform_route
+  L75-L78; get_error_class L82-L88; _get_workspace_id L90-L104; _get_required_aws_region_name L106-L123; get_complete_url
+  L125-L145; sign_request L147-L170.
+
+
+  Named case contracts: workspace_alias_precedence: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
+  Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id. Any
+  non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
+  or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+  and optional-before-deployment alias precedence. explicit_region_required: Region chain truthy optional.aws_region_name,AWS_REGION_NAME,AWS_REGION,AWS_DEFAULT_REGION.
+  Result None -> AuthenticationError status401,provider bedrock,model empty,message Missing AWS region for Claude
+  Platform on AWS. Pass `aws_region_name` or set a standard AWS region environment value. Otherwise stringify then
+  call B591 _validate_aws_region_name; do not default us-west-2. Final empty environment value follows validation,
+  not missing-None branch. api_base_before_region: Base chain explicit api_base,litellm.api_base,ANTHROPIC_AWS_BASE_URL,ANTHROPIC_AWS_API_BASE;
+  only final None requires region and builds https://aws-external-anthropic.{region}.api.aws. If not exact endswith
+  /v1/messages append it after rstrip slash; already complete path remains, trailing /v1/messages/ becomes /v1/messages/v1/messages.
+  Empty final base becomes /v1/messages without region validation. platform_route_prefix: strip_claude_platform_route
+  removes exactly one leading claude_platform/ and leaves other prefixes and later occurrences unchanged. unsupported_override:
+  Resolve non-None optional.claude_platform_unsupported_params before deployment value. None uses default {context_management};
+  list/set/frozenset/tuple stringify every item and form set, including numeric/None entries. Empty sequence is
+  an intentional empty override, allowing context_management through. Other types warn bedrock/claude_platform:
+  ignoring claude_platform_unsupported_params of type {type}; expected a list of param names. Using the default
+  unsupported-param set. and fall back; log_invalid=False suppresses only that warning. No invalid-override error.
+  filtered_body_fields: Always remove workspace_id,aws_workspace_id,anthropic_workspace_id,anthropic-workspace-id,claude_platform_unsupported_params
+  and every key starting aws_. Also remove override/default unsupported names; warn only for present unsupported-set
+  keys, in original map order, when log_dropped=True: bedrock/claude_platform: dropping unsupported Messages API
+  param(s) {tuple} from the request body; the Claude Platform on AWS endpoint rejects unknown fields. The request
+  will proceed without them. No warning for nonrequest/aws_ removals unless also in unsupported set. Preserve other
+  keys and values, including None. platform_signing: Truthy explicit api_key or ANTHROPIC_AWS_API_KEY returns supplied
+  headers,None without signing; this helper does not add x-api-key itself. Otherwise B595 _sign_request service
+  aws-external-anthropic with original args but no explicit api_key argument. Thus its ordinary fallback AWS_BEARER_TOKEN_BEDROCK
+  behavior remains applicable; do not invent a forced SigV4-only gate. get_error_class delegates B682 unchanged.
+
+
+  Load workspace_id, aws_workspace_id, anthropic-workspace-id, anthropic_workspace_id through betterlite-config,
+  with injected environment lookup and the defaults/precedence stated here. Deployment inputs use litellm_params
+  and global inputs use litellm_settings. Add config rstest claude_workspace_aliases_config_cases; each named loads_<key>
+  case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml parser seeds. Reject
+  unrelated keys.
+
+
+  All six newly owned environment/override fields and all four workspace aliases default None. Keep underscore and
+  hyphen aliases distinct in loader rstest names; name the hyphen-key loader loads_anthropic_hyphen_workspace_hyphen_id.
+  api_base and standard AWS environment loaders keep their existing owners B500/B591; B129 supplies get_secret_str.
+
+
+  Implement crates/betterlite-bedrock/src/claude_platform_inputs.rs with adjacent tests under claude_platform/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation claude_platform_inputs in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function claude_platform_inputs_cases in betterlite-bedrock with these exact named cases (one per
+  oracle file): workspace_alias_precedence, explicit_region_required, api_base_before_region, platform_route_prefix,
+  unsupported_override, filtered_body_fields, platform_signing. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs* using HelperCase: kind:
+  helper and the externally tagged claude_platform_inputs variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_claude_platform_inputs that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/claude_platform_inputs.rs
+  and its loader wiring: ANTHROPIC_AWS_WORKSPACE_ID, ANTHROPIC_WORKSPACE_ID, ANTHROPIC_AWS_BASE_URL, ANTHROPIC_AWS_API_BASE,
+  ANTHROPIC_AWS_API_KEY, claude_platform_unsupported_params. Module-level settings enter litellm_settings; deployment
+  settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above
+  and in the linked branches; existing key owners remain unchanged. Write config rstest claude_platform_inputs_config_cases
+  with named cases loads_anthropic_aws_workspace_id, loads_anthropic_workspace_id, loads_anthropic_aws_base_url,
+  loads_anthropic_aws_api_base, loads_anthropic_aws_api_key, loads_claude_platform_unsupported_params, plus rejects_unrelated_key.
+  Each loads case calls the real config loader with that key and asserts the resolved value, default, precedence
+  and secret redaction where applicable. Seed B002 config_yaml with new claude_platform_inputs* files for every
+  key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone claude_platform_inputs_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone claude_platform_inputs_secret_safe_failure in betterlite-bedrock for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 143 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 200 production lines, 275 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 130 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 745 planned, 750 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/claude_platform_inputs.rs
+  - crates/betterlite-bedrock/src/claude_platform_inputs/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/claude_platform_inputs.rs
+  - tools/oracle/src/helpers/claude_platform_inputs/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/claude_platform_inputs.py
+  - tools/oracle/cases/helpers/providers/claude-platform-inputs/**
+  - tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/claude_platform_inputs.rs
+  - crates/betterlite-config/src/providers/bedrock/claude_platform_inputs/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/claude_platform_inputs_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - crates/betterlite-config/src/providers/bedrock/claude_workspace_aliases.rs
+  - crates/betterlite-config/src/providers/bedrock/claude_workspace_aliases/**
+  - crates/betterlite-config/src/tests/claude_workspace_aliases_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/claude_workspace_aliases*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L13-L170
+  why: Every shared Claude Platform constant, selector, filter and signing method.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L13-L26
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L29-L48
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L51-L72
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L75-L78
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L82-L88
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L90-L104
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L106-L123
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L125-L145
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147-L170
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New claude_platform_inputs seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: ANTHROPIC_AWS_WORKSPACE_ID is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-anthropic-aws-workspace-id
+  - config-corpus
+- text: ANTHROPIC_WORKSPACE_ID is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-anthropic-workspace-id
+  - config-corpus
+- text: ANTHROPIC_AWS_BASE_URL is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-anthropic-aws-base-url
+  - config-corpus
+- text: ANTHROPIC_AWS_API_BASE is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-anthropic-aws-api-base
+  - config-corpus
+- text: ANTHROPIC_AWS_API_KEY is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-anthropic-aws-api-key
+  - config-corpus
+- text: claude_platform_unsupported_params is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-claude-platform-unsupported-params
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+- text: 'workspace_alias_precedence: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
+    Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id.
+    Any non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
+    or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+    and optional-before-deployment alias precedence.'
+  proof:
+  - case-workspace-alias-precedence
+  - oracle
+  - helper-python
+- text: 'explicit_region_required: Region chain truthy optional.aws_region_name,AWS_REGION_NAME,AWS_REGION,AWS_DEFAULT_REGION.
+    Result None -> AuthenticationError status401,provider bedrock,model empty,message Missing AWS region for Claude
+    Platform on AWS. Pass `aws_region_name` or set a standard AWS region environment value. Otherwise stringify
+    then call B591 _validate_aws_region_name; do not default us-west-2. Final empty environment value follows validation,
+    not missing-None branch.'
+  proof:
+  - case-explicit-region-required
+  - oracle
+  - helper-python
+- text: 'api_base_before_region: Base chain explicit api_base,litellm.api_base,ANTHROPIC_AWS_BASE_URL,ANTHROPIC_AWS_API_BASE;
+    only final None requires region and builds https://aws-external-anthropic.{region}.api.aws. If not exact endswith
+    /v1/messages append it after rstrip slash; already complete path remains, trailing /v1/messages/ becomes /v1/messages/v1/messages.
+    Empty final base becomes /v1/messages without region validation.'
+  proof:
+  - case-api-base-before-region
+  - oracle
+  - helper-python
+- text: 'platform_route_prefix: strip_claude_platform_route removes exactly one leading claude_platform/ and leaves
+    other prefixes and later occurrences unchanged.'
+  proof:
+  - case-platform-route-prefix
+  - oracle
+  - helper-python
+- text: 'unsupported_override: Resolve non-None optional.claude_platform_unsupported_params before deployment value.
+    None uses default {context_management}; list/set/frozenset/tuple stringify every item and form set, including
+    numeric/None entries. Empty sequence is an intentional empty override, allowing context_management through.
+    Other types warn bedrock/claude_platform: ignoring claude_platform_unsupported_params of type {type}; expected
+    a list of param names. Using the default unsupported-param set. and fall back; log_invalid=False suppresses
+    only that warning. No invalid-override error.'
+  proof:
+  - case-unsupported-override
+  - oracle
+  - helper-python
+- text: 'filtered_body_fields: Always remove workspace_id,aws_workspace_id,anthropic_workspace_id,anthropic-workspace-id,claude_platform_unsupported_params
+    and every key starting aws_. Also remove override/default unsupported names; warn only for present unsupported-set
+    keys, in original map order, when log_dropped=True: bedrock/claude_platform: dropping unsupported Messages API
+    param(s) {tuple} from the request body; the Claude Platform on AWS endpoint rejects unknown fields. The request
+    will proceed without them. No warning for nonrequest/aws_ removals unless also in unsupported set. Preserve
+    other keys and values, including None.'
+  proof:
+  - case-filtered-body-fields
+  - oracle
+  - helper-python
+- text: 'platform_signing: Truthy explicit api_key or ANTHROPIC_AWS_API_KEY returns supplied headers,None without
+    signing; this helper does not add x-api-key itself. Otherwise B595 _sign_request service aws-external-anthropic
+    with original args but no explicit api_key argument. Thus its ordinary fallback AWS_BEARER_TOKEN_BEDROCK behavior
+    remains applicable; do not invent a forced SigV4-only gate. get_error_class delegates B682 unchanged.'
+  proof:
+  - case-platform-signing
+  - oracle
+  - helper-python
+- text: The real config loader resolves workspace_id, including its default and precedence.
+  proof:
+  - config-workspace-alias-workspace-id-underscore
+- text: The real config loader resolves aws_workspace_id, including its default and precedence.
+  proof:
+  - config-workspace-alias-aws-workspace-id-underscore
+- text: The real config loader resolves anthropic-workspace-id, including its default and precedence.
+  proof:
+  - config-workspace-alias-anthropic-workspace-id-hyphen
+- text: The real config loader resolves anthropic_workspace_id, including its default and precedence.
+  proof:
+  - config-workspace-alias-anthropic-workspace-id-underscore
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/claude_platform_inputs.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs*")"
+      && grep -lq 'claude_platform_inputs' tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_claude_platform_inputs$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-anthropic-aws-workspace-id
+    why: The ANTHROPIC_AWS_WORKSPACE_ID setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_anthropic_aws_workspace_id$/)'
+      && grep -lq 'ANTHROPIC_AWS_WORKSPACE_ID' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-anthropic-workspace-id
+    why: The ANTHROPIC_WORKSPACE_ID setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_anthropic_workspace_id$/)'
+      && grep -lq 'ANTHROPIC_WORKSPACE_ID' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-anthropic-aws-base-url
+    why: The ANTHROPIC_AWS_BASE_URL setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_anthropic_aws_base_url$/)'
+      && grep -lq 'ANTHROPIC_AWS_BASE_URL' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-anthropic-aws-api-base
+    why: The ANTHROPIC_AWS_API_BASE setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_anthropic_aws_api_base$/)'
+      && grep -lq 'ANTHROPIC_AWS_API_BASE' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-anthropic-aws-api-key
+    why: The ANTHROPIC_AWS_API_KEY setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_anthropic_aws_api_key$/)'
+      && grep -lq 'ANTHROPIC_AWS_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-claude-platform-unsupported-params
+    why: The claude_platform_unsupported_params setting is not loaded with its required defaults and precedence.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_loads_claude_platform_unsupported_params$/)'
+      && grep -lq 'claude_platform_unsupported_params' crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_platform_inputs_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/claude_platform_inputs*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_secret_safe_failure$/)'
+  - id: case-workspace-alias-precedence
+    why: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
+      Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id.
+      Any non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
+      or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+      and optional-before-deployment alias precedence.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_workspace_alias_precedence$/)'
+  - id: case-explicit-region-required
+    why: Region chain truthy optional.aws_region_name,AWS_REGION_NAME,AWS_REGION,AWS_DEFAULT_REGION. Result None
+      -> AuthenticationError status401,provider bedrock,model empty,message Missing AWS region for Claude Platform
+      on AWS. Pass `aws_region_name` or set a standard AWS region environment value. Otherwise stringify then call
+      B591 _validate_aws_region_name; do not default us-west-2. Final empty environment value follows validation,
+      not missing-None branch.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_explicit_region_required$/)'
+  - id: case-api-base-before-region
+    why: Base chain explicit api_base,litellm.api_base,ANTHROPIC_AWS_BASE_URL,ANTHROPIC_AWS_API_BASE; only final
+      None requires region and builds https://aws-external-anthropic.{region}.api.aws. If not exact endswith /v1/messages
+      append it after rstrip slash; already complete path remains, trailing /v1/messages/ becomes /v1/messages/v1/messages.
+      Empty final base becomes /v1/messages without region validation.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_api_base_before_region$/)'
+  - id: case-platform-route-prefix
+    why: strip_claude_platform_route removes exactly one leading claude_platform/ and leaves other prefixes and
+      later occurrences unchanged.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_platform_route_prefix$/)'
+  - id: case-unsupported-override
+    why: 'Resolve non-None optional.claude_platform_unsupported_params before deployment value. None uses default
+      {context_management}; list/set/frozenset/tuple stringify every item and form set, including numeric/None entries.
+      Empty sequence is an intentional empty override, allowing context_management through. Other types warn bedrock/claude_platform:
+      ignoring claude_platform_unsupported_params of type {type}; expected a list of param names. Using the default
+      unsupported-param set. and fall back; log_invalid=False suppresses only that warning. No invalid-override
+      error.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_unsupported_override$/)'
+  - id: case-filtered-body-fields
+    why: 'Always remove workspace_id,aws_workspace_id,anthropic_workspace_id,anthropic-workspace-id,claude_platform_unsupported_params
+      and every key starting aws_. Also remove override/default unsupported names; warn only for present unsupported-set
+      keys, in original map order, when log_dropped=True: bedrock/claude_platform: dropping unsupported Messages
+      API param(s) {tuple} from the request body; the Claude Platform on AWS endpoint rejects unknown fields. The
+      request will proceed without them. No warning for nonrequest/aws_ removals unless also in unsupported set.
+      Preserve other keys and values, including None.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_filtered_body_fields$/)'
+  - id: case-platform-signing
+    why: Truthy explicit api_key or ANTHROPIC_AWS_API_KEY returns supplied headers,None without signing; this helper
+      does not add x-api-key itself. Otherwise B595 _sign_request service aws-external-anthropic with original args
+      but no explicit api_key argument. Thus its ordinary fallback AWS_BEARER_TOKEN_BEDROCK behavior remains applicable;
+      do not invent a forced SigV4-only gate. get_error_class delegates B682 unchanged.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_platform_signing$/)'
+  - id: config-workspace-alias-workspace-id-underscore
+    why: workspace_id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_workspace_aliases_config_cases::case_[0-9]+_loads_workspace_id$/)'
+  - id: config-workspace-alias-aws-workspace-id-underscore
+    why: aws_workspace_id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_workspace_aliases_config_cases::case_[0-9]+_loads_aws_workspace_id$/)'
+  - id: config-workspace-alias-anthropic-workspace-id-hyphen
+    why: anthropic-workspace-id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_workspace_aliases_config_cases::case_[0-9]+_loads_anthropic_hyphen_workspace_hyphen_id$/)'
+  - id: config-workspace-alias-anthropic-workspace-id-underscore
+    why: anthropic_workspace_id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::claude_workspace_aliases_config_cases::case_[0-9]+_loads_anthropic_workspace_id$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/workspace-alias-precedence.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/explicit-region-required.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/api-base-before-region.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/platform-route-prefix.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/unsupported-override.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/filtered-body-fields.yaml
+- tools/oracle/cases/helpers/providers/claude-platform-inputs/platform-signing.yaml
+deviations: []
+out_of_scope:
+- Chat and native Messages overrides are B656; all functions in this covered common_utils.py file are owned here.
+pitfalls:
+- The workspace fallback checks None after an or-chain, so a falsey final alias can block environment fallback.
+- An explicitly empty unsupported list enables context_management instead of restoring the default drop set.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

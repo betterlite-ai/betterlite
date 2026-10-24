@@ -61,6 +61,42 @@ description: >-
   its implementation remains with that prerequisite.
 
 
+  Named case contracts: flux_json_images: Flux2 filters None options then delegates B553 mapping. Require non-None
+  prompt/image with FLUX 2 image edit requires a prompt./an image.; only Python list expands into multiple images,
+  empty list raises requires at least one image. Cap10 for model containing flex case-insensitively, otherwise8;
+  excess raises <model> supports at most <cap> reference images. Emit input_image,input_image_2,... and overlay
+  optional params last over prompt/model/image fields, returning no multipart files. flux_inline_base64: Base64-encode
+  bytes; BufferedReader reads from its current position then seeks to0, while other read-capable objects are read
+  without rewind. Other inputs, including URL strings, raise ValueError Unsupported image type: <type>; no fetching
+  or URL interpretation occurs. mai_edit_prompt_images: MAI advertises prompt,image,model,n. Options overlay model,
+  non-None positional prompt then overrides options; remove image/mask from form data. Add only the first non-None
+  supplied list image under field image via B512, ignoring remaining entries and all masks; missing image/prompt
+  is not rejected here. mai_edit_usage: Normalize present usage through B554, log empty input/key/request and B004-project
+  into a new ImageResponse. JSON failure becomes B668 OpenAIError with raw text/status; do not synthesize response.size
+  as generation does. image_edit_api_version: Flux1 version is params.api_version or litellm.api_version or AZURE_AI_API_VERSION;
+  missing None raises the Azure API version is required diagnostic. B668 appends /images/edits if base already contains
+  /openai/deployments/, otherwise deployment/model/images/edits; replace all existing query with only api-version.
+  Missing base in every variant raises Azure AI API base is required. Set AZURE_AI_API_BASE environment variable
+  or pass api_base parameter. image_edit_model_selection: Check B554 MAI first, B553 Flux2 next, then lower/hyphen/underscore-normalized
+  empty or flux chooses Flux1. Other models raise ValueError Model <model> is not supported for Azure AI image editing.
+  foundry_edit_auth: All variants resolve B549 base/key. Flux1/Flux2 keys use Api-Key, MAI uses api-key; absent
+  key delegates Entra auth. Flux2 additionally overwrites Content-Type=application/json and uses JSON, while Flux1/MAI
+  preserve multipart transport headers.
+
+
+  Write standalone Rust test foundry_image_edit_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test foundry_image_edit_secret_safe_failure in betterlite-foundry: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-foundry/src/image_edits.rs with adjacent tests under image_edits/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -76,10 +112,9 @@ description: >-
 
   Write rstest function image_edits_cases in betterlite-foundry with these exact named cases (one per oracle file):
   flux_json_images, flux_inline_base64, mai_edit_prompt_images, mai_edit_usage, image_edit_api_version, image_edit_model_selection,
-  flux1_missing_version, flux2_preview_default, mai_preview_ignores_global. Each case exercises its named outcome
-  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
-  both client response and captured upstream request. Existing API tasks retain route registration; this task must
-  not register a duplicate axum route.
+  flux1_missing_version, flux2_preview_default, mai_preview_ignores_global, foundry_edit_auth. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_image_edits* using HelperCase: kind:
@@ -106,9 +141,9 @@ description: >-
 
 
   Budget from 279 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 300 production lines, 133 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 55 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 632 planned, 650 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 285 production lines, 245 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 40 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 710 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -145,50 +180,62 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/__init__.py#L22-L42
   why: Own get_azure_ai_image_edit_config. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/transformation.py#L26-L97
-  why: >-
-    Own AzureFoundryFluxImageEditConfig.validate_environment, AzureFoundryFluxImageEditConfig.get_complete_url.
+  why: Own AzureFoundryFluxImageEditConfig.validate_environment, AzureFoundryFluxImageEditConfig.get_complete_url.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/flux2_transformation.py#L33-L167
-  why: >-
-    Own AzureFoundryFlux2ImageEditConfig.get_supported_openai_params, AzureFoundryFlux2ImageEditConfig.map_openai_params,
+  why: Own AzureFoundryFlux2ImageEditConfig.get_supported_openai_params, AzureFoundryFlux2ImageEditConfig.map_openai_params,
     AzureFoundryFlux2ImageEditConfig.use_multipart_form_data, AzureFoundryFlux2ImageEditConfig.validate_environment,
     AzureFoundryFlux2ImageEditConfig.transform_image_edit_request, AzureFoundryFlux2ImageEditConfig._convert_image_to_base64,
     AzureFoundryFlux2ImageEditConfig.get_complete_url. Other functions in this file remain with the owners listed
     below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/mai_transformation.py#L28-L125
-  why: >-
-    Own AzureFoundryMAIImageEditConfig.get_supported_openai_params, AzureFoundryMAIImageEditConfig.validate_environment,
+  why: Own AzureFoundryMAIImageEditConfig.get_supported_openai_params, AzureFoundryMAIImageEditConfig.validate_environment,
     AzureFoundryMAIImageEditConfig.get_complete_url, AzureFoundryMAIImageEditConfig.transform_image_edit_request,
     AzureFoundryMAIImageEditConfig.transform_image_edit_response. Other functions in this file remain with the owners
     listed below.
 dod:
-- text: 'flux json images: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/flux-json-images.yaml.'
+- text: 'flux_json_images: Flux2 filters None options then delegates B553 mapping. Require non-None prompt/image
+    with FLUX 2 image edit requires a prompt./an image.; only Python list expands into multiple images, empty list
+    raises requires at least one image. Cap10 for model containing flex case-insensitively, otherwise8; excess raises
+    <model> supports at most <cap> reference images. Emit input_image,input_image_2,... and overlay optional params
+    last over prompt/model/image fields, returning no multipart files.'
   proof:
   - case-flux-json-images
   - oracle
   - helper-python
-- text: 'flux inline base64: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/flux-inline-base64.yaml.'
+- text: 'flux_inline_base64: Base64-encode bytes; BufferedReader reads from its current position then seeks to0,
+    while other read-capable objects are read without rewind. Other inputs, including URL strings, raise ValueError
+    Unsupported image type: <type>; no fetching or URL interpretation occurs.'
   proof:
   - case-flux-inline-base64
   - oracle
   - helper-python
-- text: 'mai edit prompt images: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/mai-edit-prompt-images.yaml.'
+- text: 'mai_edit_prompt_images: MAI advertises prompt,image,model,n. Options overlay model, non-None positional
+    prompt then overrides options; remove image/mask from form data. Add only the first non-None supplied list image
+    under field image via B512, ignoring remaining entries and all masks; missing image/prompt is not rejected here.'
   proof:
   - case-mai-edit-prompt-images
   - oracle
   - helper-python
-- text: 'mai edit usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/mai-edit-usage.yaml.'
+- text: 'mai_edit_usage: Normalize present usage through B554, log empty input/key/request and B004-project into
+    a new ImageResponse. JSON failure becomes B668 OpenAIError with raw text/status; do not synthesize response.size
+    as generation does.'
   proof:
   - case-mai-edit-usage
   - oracle
   - helper-python
-- text: 'image edit api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/image-edit-api-version.yaml.'
+- text: 'image_edit_api_version: Flux1 version is params.api_version or litellm.api_version or AZURE_AI_API_VERSION;
+    missing None raises the Azure API version is required diagnostic. B668 appends /images/edits if base already
+    contains /openai/deployments/, otherwise deployment/model/images/edits; replace all existing query with only
+    api-version. Missing base in every variant raises Azure AI API base is required. Set AZURE_AI_API_BASE environment
+    variable or pass api_base parameter.'
   proof:
   - case-image-edit-api-version
   - oracle
   - helper-python
-- text: >-
-    image edit model selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/image-edit-model-selection.yaml.
+- text: 'image_edit_model_selection: Check B554 MAI first, B553 Flux2 next, then lower/hyphen/underscore-normalized
+    empty or flux chooses Flux1. Other models raise ValueError Model <model> is not supported for Azure AI image
+    editing.'
   proof:
   - case-image-edit-model-selection
   - oracle
@@ -203,8 +250,7 @@ dod:
   - case-flux2-preview-default
   - oracle
   - helper-python
-- text: >-
-    mai preview ignores global: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/mai-preview-ignores-global.yaml.
+- text: 'mai preview ignores global: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/mai-preview-ignores-global.yaml.'
   proof:
   - case-mai-preview-ignores-global
   - oracle
@@ -223,69 +269,103 @@ dod:
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
   - config-unknown-key
+- text: 'foundry_edit_auth: All variants resolve B549 base/key. Flux1/Flux2 keys use Api-Key, MAI uses api-key;
+    absent key delegates Entra auth. Flux2 additionally overwrites Content-Type=application/json and uses JSON,
+    while Flux1/MAI preserve multipart transport headers.'
+  proof:
+  - case-foundry-edit-auth
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-flux-json-images
-    why: The flux-json-images behavior is missing or differs from its pinned fixture.
+    why: Flux2 filters None options then delegates B553 mapping. Require non-None prompt/image with FLUX 2 image
+      edit requires a prompt./an image.; only Python list expands into multiple images, empty list raises requires
+      at least one image. Cap10 for model containing flex case-insensitively, otherwise8; excess raises <model>
+      supports at most <cap> reference images. Emit input_image,input_image_2,... and overlay optional params last
+      over prompt/model/image fields, returning no multipart files.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_flux_json_images$/)'
   - id: case-flux-inline-base64
-    why: The flux-inline-base64 behavior is missing or differs from its pinned fixture.
+    why: 'Base64-encode bytes; BufferedReader reads from its current position then seeks to0, while other read-capable
+      objects are read without rewind. Other inputs, including URL strings, raise ValueError Unsupported image type:
+      <type>; no fetching or URL interpretation occurs.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_flux_inline_base64$/)'
   - id: case-mai-edit-prompt-images
-    why: The mai-edit-prompt-images behavior is missing or differs from its pinned fixture.
+    why: MAI advertises prompt,image,model,n. Options overlay model, non-None positional prompt then overrides options;
+      remove image/mask from form data. Add only the first non-None supplied list image under field image via B512,
+      ignoring remaining entries and all masks; missing image/prompt is not rejected here.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_mai_edit_prompt_images$/)'
   - id: case-mai-edit-usage
-    why: The mai-edit-usage behavior is missing or differs from its pinned fixture.
+    why: Normalize present usage through B554, log empty input/key/request and B004-project into a new ImageResponse.
+      JSON failure becomes B668 OpenAIError with raw text/status; do not synthesize response.size as generation
+      does.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_mai_edit_usage$/)'
   - id: case-image-edit-api-version
-    why: The image-edit-api-version behavior is missing or differs from its pinned fixture.
+    why: Flux1 version is params.api_version or litellm.api_version or AZURE_AI_API_VERSION; missing None raises
+      the Azure API version is required diagnostic. B668 appends /images/edits if base already contains /openai/deployments/,
+      otherwise deployment/model/images/edits; replace all existing query with only api-version. Missing base in
+      every variant raises Azure AI API base is required. Set AZURE_AI_API_BASE environment variable or pass api_base
+      parameter.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_image_edit_api_version$/)'
   - id: case-image-edit-model-selection
-    why: The image-edit-model-selection behavior is missing or differs from its pinned fixture.
+    why: Check B554 MAI first, B553 Flux2 next, then lower/hyphen/underscore-normalized empty or flux chooses Flux1.
+      Other models raise ValueError Model <model> is not supported for Azure AI image editing.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_image_edit_model_selection$/)'
   - id: case-flux1-missing-version
-    why: The flux1-missing-version behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/flux1-missing-version.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_flux1_missing_version$/)'
   - id: case-flux2-preview-default
-    why: The flux2-preview-default behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/flux2-preview-default.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_flux2_preview_default$/)'
   - id: case-mai-preview-ignores-global
-    why: The mai-preview-ignores-global behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-edits/mai-preview-ignores-global.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_mai_preview_ignores_global$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_image_edits.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_image_edits.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_image_edits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_image_edits*")"
       && grep -lq 'foundry_image_edits' tools/oracle/fuzz/corpus/helper_case/foundry_image_edits* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_image_edits)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_image_edits)"
       && grep -q 'decode_mai_edit_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_image_edits.rs && cargo
       nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_image_edits_corpus$/)'
   - id: config-azure-ai-api-version
     why: The AZURE_AI_API_VERSION setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_image_edits_config_cases::case_[0-9]+_loads_azure_ai_api_version$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_image_edits_config_cases::case_[0-9]+_loads_azure_ai_api_version$/)'
       && grep -lq 'AZURE_AI_API_VERSION' crates/betterlite-config/fuzz/corpus/config_yaml/foundry_image_edits*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_image_edits_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/foundry_image_edits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/foundry_image_edits*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: case-foundry-edit-auth
+    why: All variants resolve B549 base/key. Flux1/Flux2 keys use Api-Key, MAI uses api-key; absent key delegates
+      Entra auth. Flux2 additionally overwrites Content-Type=application/json and uses JSON, while Flux1/MAI preserve
+      multipart transport headers.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_foundry_edit_auth$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_image_edit_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_image_edit_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-image-edits/flux-json-images.yaml
 - tools/oracle/cases/helpers/providers/foundry-image-edits/flux-inline-base64.yaml
@@ -296,6 +376,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-image-edits/flux1-missing-version.yaml
 - tools/oracle/cases/helpers/providers/foundry-image-edits/flux2-preview-default.yaml
 - tools/oracle/cases/helpers/providers/foundry-image-edits/mai-preview-ignores-global.yaml
+- tools/oracle/cases/helpers/providers/foundry-image-edits/foundry-edit-auth.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -303,8 +384,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- MAI ignores litellm.api_version while Flux1 requires an API version and Flux2 supplies preview.
+- Flux2 treats a tuple as one file-like input, not a list of references, despite the broader Sequence annotation.
+- MAI silently uses the first non-None image and discards mask fields rather than rejecting unsupported multipart
+  input.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 725
   max_new_expects: 0
-review_level: standard
+review_level: security

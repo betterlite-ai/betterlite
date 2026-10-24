@@ -15,8 +15,57 @@ description: >-
   L265-L293.
 
 
-  Reuse B576 _map_stop_sequences and the B195 litellm.encoding-equivalent engine for the completion token estimate;
+  Reuse B2201 _map_stop_sequences and the B195 litellm.encoding-equivalent engine for the completion token estimate;
   no new tokenizer acquisition is owned here.
+
+
+  Named case contracts: legacy_model_selection: Only exact claude-2 or claude-instant-1 match, with no prefix stripping/case
+  folding/version extension. Other routing predicates remain B027. human_assistant_prompt: Use model-specific litellm.custom_prompt_dict
+  when key exists, requiring roles,initial_prompt_value,final_prompt_value and invoking B177 custom_prompt; otherwise
+  B177 prompt_factory(model,messages,provider=anthropic). Cast resulting prompt to str. Repeat same prompt construction
+  for response usage, not request_data.prompt. legacy_options: Constructor sets non-None class defaults max_tokens_to_sample=DEFAULT_MAX_TOKENS
+  env4096, stop_sequences,temperature,top_p,top_k,metadata. Initial class max sample is litellm.max_tokens=DEFAULT_MAX_TOKENS,
+  then constructor default overwrites it. B2202 get_config fills only absent option keys; body model/prompt appear
+  first so optional overrides win. Allowlist stream,max_tokens,max_completion_tokens,stop,temperature,top_p,extra_headers,user;
+  max aliases overwrite max_tokens_to_sample in input order without rounding/clamping, stream onlyTrue, stop B2201,
+  temperature/top_p copied, user->metadata.user_id with no validation evenNone. extra_headers is advertised but
+  not mapped here. legacy_response_stop_reason: JSON failure raises AnthropicTextError with raw text/status; error
+  key raises str(error)/rawstatus. Nonempty completion replaces content; empty completion retains existing content.
+  stop_reason is copied without B206 mapping. Tokenize regenerated prompt and final content using explicit encoding
+  or B195 litellm.encoding; set created current inttime/model=request model and summedUsage; keep initialized id.
+  legacy_stream_chunk: index=int(get(index,0)); only string non-None completion becomes text, elseempty. finish_reason=get(stop_reason)
+  or empty; then check !=None means is_finished ALWAYS true, including missing/None/empty stop_reason. No tool/usage/provider
+  fields. JSONDecodeError caught as ValueError Failed to decode JSON from chunk: <chunk>, other conversion errors
+  retain class. legacy_auth: api_key=None raises ValueError Missing Anthropic API Key - A call is being made to
+  anthropic but no key is set either in the environment variables or via params; empty accepted. Overwrite accept=application/json,anthropic-version=2023-06-01,content-type=application/json,x-api-key=key;
+  no OAuth handling and no env lookup inside validator. legacy_error_envelope: AnthropicTextError always synthesizes
+  POST https://api.anthropic.com/v1/complete and same-status response via B2202 BaseLLMException; get_error_class
+  ignores supplied headers. Iterator construction delegates B005 shared BaseModelResponseIterator semantics with
+  supplied sync_stream/json_mode.
+
+
+  Load AnthropicTextConfig.max_tokens_to_sample, AnthropicTextConfig.stop_sequences, AnthropicTextConfig.temperature,
+  AnthropicTextConfig.top_p, AnthropicTextConfig.top_k, AnthropicTextConfig.metadata through betterlite-config,
+  with injected environment lookup and the defaults/precedence stated here. Deployment inputs use litellm_params
+  and global inputs use litellm_settings. Add config rstest anthropic_legacy_config_cases; each named loads_<key>
+  case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml parser seeds. Reject
+  unrelated keys.
+
+
+  Reuse B2202 DEFAULT_MAX_TOKENS loader and B177 custom_prompt_dict loader, rather than introducing new environment
+  spellings.
+
+
+  Write standalone Rust test legacy_credential_identity_isolation in betterlite-anthropic: Distinct configured identities
+  cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle case.
+
+
+  Write standalone Rust test legacy_secret_safe_failure in betterlite-anthropic: Debug and owned failure paths do
+  not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2214. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-anthropic/src/completion.rs with adjacent tests under completion/. Keep each Rust
@@ -34,9 +83,9 @@ description: >-
 
   Write rstest function completion_cases in betterlite-anthropic with these exact named cases (one per oracle file):
   legacy_model_selection, human_assistant_prompt, legacy_options, legacy_response_stop_reason, legacy_stream_chunk,
-  legacy_auth. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
-  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
-  retain route registration; this task must not register a duplicate axum route.
+  legacy_auth, legacy_error_envelope. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_completion* using HelperCase: kind:
@@ -54,9 +103,9 @@ description: >-
 
 
   Budget from 211 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 493 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 230 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 65 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 725 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -75,45 +124,72 @@ scope:
   - crates/betterlite-anthropic/fuzz/Cargo.toml
   - crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
   - crates/betterlite-anthropic/fuzz/corpus/anthropic_completion/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/anthropic.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_legacy.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_legacy/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/anthropic_legacy_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_legacy*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L40-L293
-  why: >-
-    Own AnthropicTextError.__init__, AnthropicTextConfig.__init__, AnthropicTextConfig.validate_environment, AnthropicTextConfig.transform_request,
-    AnthropicTextConfig.get_supported_openai_params, AnthropicTextConfig.map_openai_params, AnthropicTextConfig.transform_response,
-    AnthropicTextConfig.get_error_class, AnthropicTextConfig._is_anthropic_text_model, AnthropicTextConfig._get_anthropic_text_prompt_from_messages,
-    AnthropicTextConfig.get_model_response_iterator, AnthropicTextCompletionResponseIterator.chunk_parser. Other
-    functions in this file remain with the owners listed below.
+  why: Own AnthropicTextError.__init__, AnthropicTextConfig.__init__, AnthropicTextConfig.validate_environment,
+    AnthropicTextConfig.transform_request, AnthropicTextConfig.get_supported_openai_params, AnthropicTextConfig.map_openai_params,
+    AnthropicTextConfig.transform_response, AnthropicTextConfig.get_error_class, AnthropicTextConfig._is_anthropic_text_model,
+    AnthropicTextConfig._get_anthropic_text_prompt_from_messages, AnthropicTextConfig.get_model_response_iterator,
+    AnthropicTextCompletionResponseIterator.chunk_parser. Other functions in this file remain with the owners listed
+    below.
 dod:
-- text: >-
-    legacy model selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-model-selection.yaml.
+- text: 'legacy_model_selection: Only exact claude-2 or claude-instant-1 match, with no prefix stripping/case folding/version
+    extension. Other routing predicates remain B027.'
   proof:
   - case-legacy-model-selection
   - oracle
   - helper-python
-- text: >-
-    human assistant prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/human-assistant-prompt.yaml.
+- text: 'human_assistant_prompt: Use model-specific litellm.custom_prompt_dict when key exists, requiring roles,initial_prompt_value,final_prompt_value
+    and invoking B177 custom_prompt; otherwise B177 prompt_factory(model,messages,provider=anthropic). Cast resulting
+    prompt to str. Repeat same prompt construction for response usage, not request_data.prompt.'
   proof:
   - case-human-assistant-prompt
   - oracle
   - helper-python
-- text: 'legacy options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-options.yaml.'
+- text: 'legacy_options: Constructor sets non-None class defaults max_tokens_to_sample=DEFAULT_MAX_TOKENS env4096,
+    stop_sequences,temperature,top_p,top_k,metadata. Initial class max sample is litellm.max_tokens=DEFAULT_MAX_TOKENS,
+    then constructor default overwrites it. B2202 get_config fills only absent option keys; body model/prompt appear
+    first so optional overrides win. Allowlist stream,max_tokens,max_completion_tokens,stop,temperature,top_p,extra_headers,user;
+    max aliases overwrite max_tokens_to_sample in input order without rounding/clamping, stream onlyTrue, stop B2201,
+    temperature/top_p copied, user->metadata.user_id with no validation evenNone. extra_headers is advertised but
+    not mapped here.'
   proof:
   - case-legacy-options
   - oracle
   - helper-python
-- text: >-
-    legacy response stop reason: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-response-stop-reason.yaml.
+- text: 'legacy_response_stop_reason: JSON failure raises AnthropicTextError with raw text/status; error key raises
+    str(error)/rawstatus. Nonempty completion replaces content; empty completion retains existing content. stop_reason
+    is copied without B206 mapping. Tokenize regenerated prompt and final content using explicit encoding or B195
+    litellm.encoding; set created current inttime/model=request model and summedUsage; keep initialized id.'
   proof:
   - case-legacy-response-stop-reason
   - oracle
   - helper-python
-- text: 'legacy stream chunk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-stream-chunk.yaml.'
+- text: 'legacy_stream_chunk: index=int(get(index,0)); only string non-None completion becomes text, elseempty.
+    finish_reason=get(stop_reason) or empty; then check !=None means is_finished ALWAYS true, including missing/None/empty
+    stop_reason. No tool/usage/provider fields. JSONDecodeError caught as ValueError Failed to decode JSON from
+    chunk: <chunk>, other conversion errors retain class.'
   proof:
   - case-legacy-stream-chunk
   - oracle
   - helper-python
-- text: 'legacy auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-auth.yaml.'
+- text: 'legacy_auth: api_key=None raises ValueError Missing Anthropic API Key - A call is being made to anthropic
+    but no key is set either in the environment variables or via params; empty accepted. Overwrite accept=application/json,anthropic-version=2023-06-01,content-type=application/json,x-api-key=key;
+    no OAuth handling and no env lookup inside validator.'
   proof:
   - case-legacy-auth
   - oracle
@@ -126,47 +202,120 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'legacy_error_envelope: AnthropicTextError always synthesizes POST https://api.anthropic.com/v1/complete
+    and same-status response via B2202 BaseLLMException; get_error_class ignores supplied headers. Iterator construction
+    delegates B005 shared BaseModelResponseIterator semantics with supplied sync_stream/json_mode.'
+  proof:
+  - case-legacy-error-envelope
+  - oracle
+  - helper-python
+- text: The real config loader resolves AnthropicTextConfig.max_tokens_to_sample, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-max-tokens-to-sample
+- text: The real config loader resolves AnthropicTextConfig.stop_sequences, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-stop-sequences
+- text: The real config loader resolves AnthropicTextConfig.temperature, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-temperature
+- text: The real config loader resolves AnthropicTextConfig.top_p, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-top-p
+- text: The real config loader resolves AnthropicTextConfig.top_k, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-top-k
+- text: The real config loader resolves AnthropicTextConfig.metadata, including its default and precedence.
+  proof:
+  - config-anthropictextconfig-metadata
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-legacy-model-selection
-    why: The legacy-model-selection behavior is missing or differs from its pinned fixture.
+    why: Only exact claude-2 or claude-instant-1 match, with no prefix stripping/case folding/version extension.
+      Other routing predicates remain B027.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_model_selection$/)'
   - id: case-human-assistant-prompt
-    why: The human-assistant-prompt behavior is missing or differs from its pinned fixture.
+    why: Use model-specific litellm.custom_prompt_dict when key exists, requiring roles,initial_prompt_value,final_prompt_value
+      and invoking B177 custom_prompt; otherwise B177 prompt_factory(model,messages,provider=anthropic). Cast resulting
+      prompt to str. Repeat same prompt construction for response usage, not request_data.prompt.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_human_assistant_prompt$/)'
   - id: case-legacy-options
-    why: The legacy-options behavior is missing or differs from its pinned fixture.
+    why: Constructor sets non-None class defaults max_tokens_to_sample=DEFAULT_MAX_TOKENS env4096, stop_sequences,temperature,top_p,top_k,metadata.
+      Initial class max sample is litellm.max_tokens=DEFAULT_MAX_TOKENS, then constructor default overwrites it.
+      B2202 get_config fills only absent option keys; body model/prompt appear first so optional overrides win.
+      Allowlist stream,max_tokens,max_completion_tokens,stop,temperature,top_p,extra_headers,user; max aliases overwrite
+      max_tokens_to_sample in input order without rounding/clamping, stream onlyTrue, stop B2201, temperature/top_p
+      copied, user->metadata.user_id with no validation evenNone. extra_headers is advertised but not mapped here.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_options$/)'
   - id: case-legacy-response-stop-reason
-    why: The legacy-response-stop-reason behavior is missing or differs from its pinned fixture.
+    why: JSON failure raises AnthropicTextError with raw text/status; error key raises str(error)/rawstatus. Nonempty
+      completion replaces content; empty completion retains existing content. stop_reason is copied without B206
+      mapping. Tokenize regenerated prompt and final content using explicit encoding or B195 litellm.encoding; set
+      created current inttime/model=request model and summedUsage; keep initialized id.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_response_stop_reason$/)'
   - id: case-legacy-stream-chunk
-    why: The legacy-stream-chunk behavior is missing or differs from its pinned fixture.
+    why: 'index=int(get(index,0)); only string non-None completion becomes text, elseempty. finish_reason=get(stop_reason)
+      or empty; then check !=None means is_finished ALWAYS true, including missing/None/empty stop_reason. No tool/usage/provider
+      fields. JSONDecodeError caught as ValueError Failed to decode JSON from chunk: <chunk>, other conversion errors
+      retain class.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_stream_chunk$/)'
   - id: case-legacy-auth
-    why: The legacy-auth behavior is missing or differs from its pinned fixture.
+    why: api_key=None raises ValueError Missing Anthropic API Key - A call is being made to anthropic but no key
+      is set either in the environment variables or via params; empty accepted. Overwrite accept=application/json,anthropic-version=2023-06-01,content-type=application/json,x-api-key=key;
+      no OAuth handling and no env lookup inside validator.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_auth$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_completion.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_completion.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_completion*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_completion*")"
       && grep -lq 'anthropic_completion' tools/oracle/fuzz/corpus/helper_case/anthropic_completion* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_completion$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_completion)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_completion)"
       && grep -q 'decode_legacy_anthropic_reply' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
       && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_completion_corpus$/)'
+  - id: case-legacy-error-envelope
+    why: AnthropicTextError always synthesizes POST https://api.anthropic.com/v1/complete and same-status response
+      via B2202 BaseLLMException; get_error_class ignores supplied headers. Iterator construction delegates B005
+      shared BaseModelResponseIterator semantics with supplied sync_stream/json_mode.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_error_envelope$/)'
+  - id: config-anthropictextconfig-max-tokens-to-sample
+    why: AnthropicTextConfig.max_tokens_to_sample lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_max_tokens_to_sample$/)'
+  - id: config-anthropictextconfig-stop-sequences
+    why: AnthropicTextConfig.stop_sequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_stop_sequences$/)'
+  - id: config-anthropictextconfig-temperature
+    why: AnthropicTextConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_temperature$/)'
+  - id: config-anthropictextconfig-top-p
+    why: AnthropicTextConfig.top_p lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_top_p$/)'
+  - id: config-anthropictextconfig-top-k
+    why: AnthropicTextConfig.top_k lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_top_k$/)'
+  - id: config-anthropictextconfig-metadata
+    why: AnthropicTextConfig.metadata lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_legacy_config_cases::case_[0-9]+_loads_anthropictextconfig_metadata$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::legacy_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::legacy_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-completion/legacy-model-selection.yaml
 - tools/oracle/cases/helpers/providers/anthropic-completion/human-assistant-prompt.yaml
@@ -174,6 +323,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-completion/legacy-response-stop-reason.yaml
 - tools/oracle/cases/helpers/providers/anthropic-completion/legacy-stream-chunk.yaml
 - tools/oracle/cases/helpers/providers/anthropic-completion/legacy-auth.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-error-envelope.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -181,9 +331,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Select this path only for the source legacy text-model names; share existing text-completion and chat bridge records
-  and stream framing.
+- The legacy stream sets is_finished=true even when stop_reason is absent, because it first substitutes an empty
+  string.
+- Legacy user metadata does not apply the chat email/phone filter, and extra_headers is advertised but ignored by
+  the mapper.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 725
   max_new_expects: 0
-review_level: standard
+review_level: security

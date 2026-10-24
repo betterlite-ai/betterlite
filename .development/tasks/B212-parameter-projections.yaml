@@ -11,14 +11,19 @@ description: >-
   tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
   names. Register helper operations parameter_projections in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
+
+
+  These pure policies live in betterlite-models below the executable provider dispatcher. Use catalog/wire DTOs
+  and closed config tags or caller-supplied policy projections, never an executable provider client. B010 reexports
+  ProviderId and composes the provider enum; do not import betterlite-provider or betterlite-core here.
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
-  - crates/betterlite-provider/src/projections.rs
-  - crates/betterlite-provider/src/projections/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/projections.rs
+  - crates/betterlite-models/src/projections/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
@@ -26,24 +31,19 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py#L25-L185
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py#L25-L185
   why: Standard API parameters and excluded content/metadata fields.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/reasoning_effort_utils.py#L12-L26
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/reasoning_effort_utils.py#L12-L26
   why: Thinking budget thresholds.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L70
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L70
   why: Served, requested and logging service-tier selection.
 dod:
-- text: >-
-    Each listed helper case compares its named production function with the pinned Python function, including precedence,
-    omissions and error facts.
+- text: Each listed helper case compares its named production function with the pinned Python function, including
+    precedence, omissions and error facts.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+- text: Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
     independently of corpus replay.
   proof:
   - behavior-tests
@@ -56,19 +56,16 @@ checks:
   commands:
   - id: behavior-tests
     why: new behavior tests are missing or fail
-    run: >-
-      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::b212_behavior_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b212_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'parameter_projections' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'parameter_projections' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -80,12 +77,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/parameter-projections/unknown-requested-tier.yaml
 deviations: []
 out_of_scope:
-- >-
-  The remaining functions in the shared covered paths belong to B175 and its explicitly named sibling parts; this
+- The remaining functions in the shared covered paths belong to B175 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
-- >-
-  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+- Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: standard
 budget:

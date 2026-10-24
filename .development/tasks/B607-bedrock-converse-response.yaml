@@ -19,6 +19,54 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: converse_reply_envelope: Post-call log before decode through B190 with input=messages,api_key,response.text
+  and complete_input_dict=data. Resolved json_mode is explicit argument whenevernon-None (false suppresses options),
+  otherwise optional_params value. Build output from required completion.output.message; explicit messageNone allowed
+  ->emptytext/no tools, missing output/message fails outside decodecatch. Ignore provider message.role and emit
+  assistant. Set one choiceindex0, created=int injectedtime, model=requestedmodel and B605 usage; preserve supplied
+  response.id, never copy a provider id or fabricate a new id here. stop_reasons: B206 map_finish_reason consumes
+  required stopReason. If truthy resolvedjsonmode removed all synthetics and original toolsnonempty, forcestop.
+  Then B606 textual function recovery may change it back to tool_calls if resulting JSON names an optional tool.
+  Retain this ordering and exact real/synthetic tool cases from B606. metrics_headers: Metrics, ordinary response
+  headers and arbitrary top-level fields are not projected by this function; headers only go to BedrockError on
+  conversion failure. Existing response fields survive unless explicitly replaced. Do not add metrics/headers to
+  provider_specific_fields from this helper. additional_model_fields: Preserve raw reasoningContentBlocks/citationsContent
+  under message.provider_specific_fields whenever listnon-None, then B605 reasoning/thinking projections. Only use
+  additionalModelResponseFields for B605 reasoning count, not wholesale passthrough. If trace key exists set response.trace
+  evenNone. If serviceTier isdict and contains type, set service_tier to rawtype evenNone/empty; otherwise leave
+  existing value. fake_stream_capability: Explicit fake_stream is literal True ->true regardless model/stream. Else
+  stream literal True plus modelnon-None containing case-sensitive ai21 ->true. Falsey/nonbooleanstream and othermodels
+  ->false; custom_llm_provider ignored. This is selection only, no upstream stream opened. malformed_json: Only
+  response.json or ConverseResponseBlock(**value) errors inside the initial try map to BedrockError422 Error converting
+  to valid response block=<error>. File an issue if litellm error - https://github.com/BerriAI/litellm/issues with
+  upstream headers. TypedDict construction does not validate required fields; missing output/usage/stopReason and
+  malformed later content retain their later failure path, not this422. get_error_class delegates B682 suppliedstatus/message/headers
+  with no fabricated param/code. tool_calls_response: Compose B606 text/tool/reasoning/citation parsing, json-mode
+  filtering, B605 usage then textual function recovery; preserve per-block tool index, real-tool ordering and preexisting
+  responseid. Source stream/encoding are unused in buffered conversion; they do not alter the returned envelope.
+  citation_content_alignment: B606 citations text replaces whitespace-only normaltext entirely. If normaltext stripped
+  has no alphanumeric Unicode character, prepend citedtext to original unstripped punctuation text. Only these two
+  insertion cases add normalized annotations. Existing alphanumeric text keeps its own content with no annotations,
+  even when identical to citedtext. Raw citations remain in provider_specific_fields in everycase. auth_and_metadata_headers:
+  Truthy explicit api_key mutates canonical Authorization=Bearer <key>; empty/None leaves existing headers. No env
+  lookup here. Then B596 metadata-header merge owns/evicts every case variant when optedin, evenempty resolution,
+  or forwards unowned headers unchanged. Replay B596 owned-empty and compactJSON header cases through this function;
+  APIbase/model/messages/options do not alter headers.
+
+
+  Write standalone Rust test converse_response_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test converse_response_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-bedrock/src/converse_response.rs with adjacent tests under converse_response/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -34,9 +82,9 @@ description: >-
 
   Write rstest function converse_response_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): converse_reply_envelope, stop_reasons, metrics_headers, additional_model_fields, fake_stream_capability,
-  malformed_json, tool_calls_response. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  malformed_json, tool_calls_response, citation_content_alignment, auth_and_metadata_headers. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_response* using HelperCase:
@@ -54,9 +102,9 @@ description: >-
 
 
   Budget from 208 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 506 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 280 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 60 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 730 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -80,44 +128,61 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2079-L2105
   why: Own AmazonConverseConfig.transform_response. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2527-L2752
-  why: >-
-    Own AmazonConverseConfig._transform_response, AmazonConverseConfig.get_error_class, AmazonConverseConfig.validate_environment,
+  why: Own AmazonConverseConfig._transform_response, AmazonConverseConfig.get_error_class, AmazonConverseConfig.validate_environment,
     AmazonConverseConfig.should_fake_stream. Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    converse reply envelope: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/converse-reply-envelope.yaml.
+- text: 'converse_reply_envelope: Post-call log before decode through B190 with input=messages,api_key,response.text
+    and complete_input_dict=data. Resolved json_mode is explicit argument whenevernon-None (false suppresses options),
+    otherwise optional_params value. Build output from required completion.output.message; explicit messageNone
+    allowed ->emptytext/no tools, missing output/message fails outside decodecatch. Ignore provider message.role
+    and emit assistant. Set one choiceindex0, created=int injectedtime, model=requestedmodel and B605 usage; preserve
+    supplied response.id, never copy a provider id or fabricate a new id here.'
   proof:
   - case-converse-reply-envelope
   - oracle
   - helper-python
-- text: 'stop reasons: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/stop-reasons.yaml.'
+- text: 'stop_reasons: B206 map_finish_reason consumes required stopReason. If truthy resolvedjsonmode removed all
+    synthetics and original toolsnonempty, forcestop. Then B606 textual function recovery may change it back to
+    tool_calls if resulting JSON names an optional tool. Retain this ordering and exact real/synthetic tool cases
+    from B606.'
   proof:
   - case-stop-reasons
   - oracle
   - helper-python
-- text: 'metrics headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/metrics-headers.yaml.'
+- text: 'metrics_headers: Metrics, ordinary response headers and arbitrary top-level fields are not projected by
+    this function; headers only go to BedrockError on conversion failure. Existing response fields survive unless
+    explicitly replaced. Do not add metrics/headers to provider_specific_fields from this helper.'
   proof:
   - case-metrics-headers
   - oracle
   - helper-python
-- text: >-
-    additional model fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/additional-model-fields.yaml.
+- text: 'additional_model_fields: Preserve raw reasoningContentBlocks/citationsContent under message.provider_specific_fields
+    whenever listnon-None, then B605 reasoning/thinking projections. Only use additionalModelResponseFields for
+    B605 reasoning count, not wholesale passthrough. If trace key exists set response.trace evenNone. If serviceTier
+    isdict and contains type, set service_tier to rawtype evenNone/empty; otherwise leave existing value.'
   proof:
   - case-additional-model-fields
   - oracle
   - helper-python
-- text: >-
-    fake stream capability: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/fake-stream-capability.yaml.
+- text: 'fake_stream_capability: Explicit fake_stream is literal True ->true regardless model/stream. Else stream
+    literal True plus modelnon-None containing case-sensitive ai21 ->true. Falsey/nonbooleanstream and othermodels
+    ->false; custom_llm_provider ignored. This is selection only, no upstream stream opened.'
   proof:
   - case-fake-stream-capability
   - oracle
   - helper-python
-- text: 'malformed json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/malformed-json.yaml.'
+- text: 'malformed_json: Only response.json or ConverseResponseBlock(**value) errors inside the initial try map
+    to BedrockError422 Error converting to valid response block=<error>. File an issue if litellm error - https://github.com/BerriAI/litellm/issues
+    with upstream headers. TypedDict construction does not validate required fields; missing output/usage/stopReason
+    and malformed later content retain their later failure path, not this422. get_error_class delegates B682 suppliedstatus/message/headers
+    with no fabricated param/code.'
   proof:
   - case-malformed-json
   - oracle
   - helper-python
-- text: 'tool calls response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-response/tool-calls-response.yaml.'
+- text: 'tool_calls_response: Compose B606 text/tool/reasoning/citation parsing, json-mode filtering, B605 usage
+    then textual function recovery; preserve per-block tool index, real-tool ordering and preexisting responseid.
+    Source stream/encoding are unused in buffered conversion; they do not alter the returned envelope.'
   proof:
   - case-tool-calls-response
   - oracle
@@ -129,50 +194,107 @@ dod:
 - text: decode_converse_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'citation_content_alignment: B606 citations text replaces whitespace-only normaltext entirely. If normaltext
+    stripped has no alphanumeric Unicode character, prepend citedtext to original unstripped punctuation text. Only
+    these two insertion cases add normalized annotations. Existing alphanumeric text keeps its own content with
+    no annotations, even when identical to citedtext. Raw citations remain in provider_specific_fields in everycase.'
+  proof:
+  - case-citation-content-alignment
+  - oracle
+  - helper-python
+- text: 'auth_and_metadata_headers: Truthy explicit api_key mutates canonical Authorization=Bearer <key>; empty/None
+    leaves existing headers. No env lookup here. Then B596 metadata-header merge owns/evicts every case variant
+    when optedin, evenempty resolution, or forwards unowned headers unchanged. Replay B596 owned-empty and compactJSON
+    header cases through this function; APIbase/model/messages/options do not alter headers.'
+  proof:
+  - case-auth-and-metadata-headers
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-converse-reply-envelope
-    why: The converse-reply-envelope behavior is missing or differs from its pinned fixture.
+    why: Post-call log before decode through B190 with input=messages,api_key,response.text and complete_input_dict=data.
+      Resolved json_mode is explicit argument whenevernon-None (false suppresses options), otherwise optional_params
+      value. Build output from required completion.output.message; explicit messageNone allowed ->emptytext/no tools,
+      missing output/message fails outside decodecatch. Ignore provider message.role and emit assistant. Set one
+      choiceindex0, created=int injectedtime, model=requestedmodel and B605 usage; preserve supplied response.id,
+      never copy a provider id or fabricate a new id here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_converse_reply_envelope$/)'
   - id: case-stop-reasons
-    why: The stop-reasons behavior is missing or differs from its pinned fixture.
+    why: B206 map_finish_reason consumes required stopReason. If truthy resolvedjsonmode removed all synthetics
+      and original toolsnonempty, forcestop. Then B606 textual function recovery may change it back to tool_calls
+      if resulting JSON names an optional tool. Retain this ordering and exact real/synthetic tool cases from B606.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_stop_reasons$/)'
   - id: case-metrics-headers
-    why: The metrics-headers behavior is missing or differs from its pinned fixture.
+    why: Metrics, ordinary response headers and arbitrary top-level fields are not projected by this function; headers
+      only go to BedrockError on conversion failure. Existing response fields survive unless explicitly replaced.
+      Do not add metrics/headers to provider_specific_fields from this helper.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_metrics_headers$/)'
   - id: case-additional-model-fields
-    why: The additional-model-fields behavior is missing or differs from its pinned fixture.
+    why: Preserve raw reasoningContentBlocks/citationsContent under message.provider_specific_fields whenever listnon-None,
+      then B605 reasoning/thinking projections. Only use additionalModelResponseFields for B605 reasoning count,
+      not wholesale passthrough. If trace key exists set response.trace evenNone. If serviceTier isdict and contains
+      type, set service_tier to rawtype evenNone/empty; otherwise leave existing value.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_additional_model_fields$/)'
   - id: case-fake-stream-capability
-    why: The fake-stream-capability behavior is missing or differs from its pinned fixture.
+    why: Explicit fake_stream is literal True ->true regardless model/stream. Else stream literal True plus modelnon-None
+      containing case-sensitive ai21 ->true. Falsey/nonbooleanstream and othermodels ->false; custom_llm_provider
+      ignored. This is selection only, no upstream stream opened.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_fake_stream_capability$/)'
   - id: case-malformed-json
-    why: The malformed-json behavior is missing or differs from its pinned fixture.
+    why: Only response.json or ConverseResponseBlock(**value) errors inside the initial try map to BedrockError422
+      Error converting to valid response block=<error>. File an issue if litellm error - https://github.com/BerriAI/litellm/issues
+      with upstream headers. TypedDict construction does not validate required fields; missing output/usage/stopReason
+      and malformed later content retain their later failure path, not this422. get_error_class delegates B682 suppliedstatus/message/headers
+      with no fabricated param/code.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_malformed_json$/)'
   - id: case-tool-calls-response
-    why: The tool-calls-response behavior is missing or differs from its pinned fixture.
+    why: Compose B606 text/tool/reasoning/citation parsing, json-mode filtering, B605 usage then textual function
+      recovery; preserve per-block tool index, real-tool ordering and preexisting responseid. Source stream/encoding
+      are unused in buffered conversion; they do not alter the returned envelope.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_tool_calls_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_response.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_response.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_response*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_response*")"
       && grep -lq 'bedrock_converse_response' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_response* &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_response$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_converse_response)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_converse_response)"
       && grep -q 'decode_converse_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_converse_response.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_converse_response_corpus$/)'
+  - id: case-citation-content-alignment
+    why: B606 citations text replaces whitespace-only normaltext entirely. If normaltext stripped has no alphanumeric
+      Unicode character, prepend citedtext to original unstripped punctuation text. Only these two insertion cases
+      add normalized annotations. Existing alphanumeric text keeps its own content with no annotations, even when
+      identical to citedtext. Raw citations remain in provider_specific_fields in everycase.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_citation_content_alignment$/)'
+  - id: case-auth-and-metadata-headers
+    why: Truthy explicit api_key mutates canonical Authorization=Bearer <key>; empty/None leaves existing headers.
+      No env lookup here. Then B596 metadata-header merge owns/evicts every case variant when optedin, evenempty
+      resolution, or forwards unowned headers unchanged. Replay B596 owned-empty and compactJSON header cases through
+      this function; APIbase/model/messages/options do not alter headers.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_cases::case_[0-9]+_auth_and_metadata_headers$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_response_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-response/converse-reply-envelope.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-response/stop-reasons.yaml
@@ -181,82 +303,74 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-response/fake-stream-capability.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-response/malformed-json.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-response/tool-calls-response.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-response/citation-content-alignment.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-response/auth-and-metadata-headers.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__ L143-L154; AmazonConverseConfig.custom_llm_provider
-  L157-L158; AmazonConverseConfig.get_config_blocks L161-L166; AmazonConverseConfig.get_config L299-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model
-  L388-L389; AmazonConverseConfig._requires_min_max_tokens L392-L393; AmazonConverseConfig._is_nova_2_model L395-L444;
-  AmazonConverseConfig._map_web_search_options L446-L473; AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config
-  L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort
-  L572-L591; AmazonConverseConfig._clamp_thinking_budget_tokens L594-L609; AmazonConverseConfig._is_deepseek_model
-  L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615; AmazonConverseConfig._model_accepts_anthropic_thinking_param
-  L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param L633-L639; AmazonConverseConfig._supports_sampling_params
-  L642-L656; AmazonConverseConfig.get_supported_openai_params L658-L733; AmazonConverseConfig._auto_tool_choice
-  L736-L737 belong to B600; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
-  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
-  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
-  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+- 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata
+  L316-L385 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__
+  L143-L154; AmazonConverseConfig.custom_llm_provider L156-L158; AmazonConverseConfig.get_config_blocks L160-L166;
+  AmazonConverseConfig.get_config L298-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model L387-L389; AmazonConverseConfig._requires_min_max_tokens
+  L391-L393; AmazonConverseConfig._is_nova_2_model L395-L444; AmazonConverseConfig._map_web_search_options L446-L473;
+  AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter
+  L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort L571-L591; AmazonConverseConfig._clamp_thinking_budget_tokens
+  L593-L609; AmazonConverseConfig._is_deepseek_model L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615;
+  AmazonConverseConfig._model_accepts_anthropic_thinking_param L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param
+  L633-L639; AmazonConverseConfig._supports_sampling_params L641-L656; AmazonConverseConfig.get_supported_openai_params
+  L658-L733; AmazonConverseConfig._auto_tool_choice L735-L737 belong to B600.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values
+  L739-L768; AmazonConverseConfig.get_supported_image_types L770-L771; AmazonConverseConfig.get_supported_document_types
+  L773-L774; AmazonConverseConfig.get_supported_video_types L776-L777; AmazonConverseConfig.get_all_supported_content_types
+  L779-L780; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
+  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
+  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L908-L919; AmazonConverseConfig._add_additional_properties_to_schema
+  L921-L955; AmazonConverseConfig._create_output_config_for_response_format L957-L996; AmazonConverseConfig._apply_tool_call_transformation
+  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params
+  L1010-L1165; AmazonConverseConfig._map_request_metadata_param L1167-L1170; AmazonConverseConfig._map_context_management_param
+  L1172-L1187; AmazonConverseConfig._map_service_tier_param L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens
+  L1271-L1294; AmazonConverseConfig.get_cache_point_block L1296-L1306; AmazonConverseConfig.get_cache_point_block
+  L1308-L1318; AmazonConverseConfig.get_cache_point_block L1320-L1338; AmazonConverseConfig._build_cache_point_block
+  L1340-L1353; AmazonConverseConfig._transform_inference_params L1508-L1511; AmazonConverseConfig._handle_top_k_value
+  L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config L1539-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config
+  L1555-L1567 belong to B602.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L168-L218; AmazonConverseConfig._has_orphaned_tool_blocks L220-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L227-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L280-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1355-L1357; AmazonConverseConfig._opens_with_tool_result L1359-L1371; AmazonConverseConfig._system_run_before
   L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
   L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
-  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
-  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
-  belong to B603; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values L739-L768; AmazonConverseConfig.get_supported_image_types
-  L770-L771; AmazonConverseConfig.get_supported_document_types L773-L774; AmazonConverseConfig.get_supported_video_types
-  L776-L777; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
-  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
-  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L909-L919; AmazonConverseConfig._add_additional_properties_to_schema
-  L922-L955; AmazonConverseConfig._create_output_config_for_response_format L958-L996; AmazonConverseConfig._apply_tool_call_transformation
-  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
-  have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params L1010-L1165; AmazonConverseConfig._map_request_metadata_param
-  L1167-L1170; AmazonConverseConfig._map_context_management_param L1172-L1187; AmazonConverseConfig._map_service_tier_param
-  L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens L1271-L1294; AmazonConverseConfig.get_cache_point_block
-  L1297-L1306; AmazonConverseConfig.get_cache_point_block L1309-L1318; AmazonConverseConfig.get_cache_point_block
-  L1320-L1338; AmazonConverseConfig._build_cache_point_block L1341-L1353; AmazonConverseConfig._transform_inference_params
-  L1508-L1511; AmazonConverseConfig._handle_top_k_value L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config
-  L1540-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config L1556-L1567 belong to B602;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
-  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
-  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
-  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
-  belong to B683; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
-  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
-  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
-  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
-  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
-  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed
-  L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
-  L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
-  L2483-L2525 belong to B606; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata L316-L385
-  belong to B596; reuse that implementation or its injected typed boundary.
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1461-L1465;
+  AmazonConverseConfig._converted_text_block L1467-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params
+  L1569-L1684; AmazonConverseConfig._transform_request_helper L1861-L1970; AmazonConverseConfig._async_transform_request
+  L1972-L2014; AmazonConverseConfig.transform_request L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077
+  belong to B604.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content
+  L2107-L2117; AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details
+  L2141-L2159; AmazonConverseConfig.thinking_tokens_from_additional_fields L2161-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2172-L2175; AmazonConverseConfig._usage_count L2177-L2183; AmazonConverseConfig._cache_read_count L2185-L2188;
+  AmazonConverseConfig._cache_write_count L2190-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names
+  L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed L2287-L2317; AmazonConverseConfig._translate_message_content
+  L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations L2390-L2457; AmazonConverseConfig._unwrap_bedrock_properties
+  L2459-L2480; AmazonConverseConfig._filter_json_mode_tools L2482-L2525 belong to B606.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
+  L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
-- should_fake_stream is a model capability decision, not evidence that an upstream event stream was opened.
+- ConverseResponseBlock is a TypedDict constructor, so required-field failures occur after the422 decode catch.
+- Citation annotations are omitted when ordinary text contains any alphanumeric character, even if citations describe
+  that same text.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
-review_level: standard
+review_level: security

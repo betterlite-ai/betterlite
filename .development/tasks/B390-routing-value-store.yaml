@@ -1,27 +1,28 @@
 id: B390
 title: Typed routing values and bounded local store
-description: 'Define RouteKey, RouteValue, StoreRead and StoreError plus a bounded in-memory TTL store,
-  ordered batch reads, checked integer/Decimal increments and compare-and-set. Values include counter,
-  spend, pin and scheduler tuple variants; keep the enum closed. Fuzz stored value bytes and replay valid/malformed
-  seeds. B360 supplies Redis transport over this interface. Use InMemoryCache defaults: 200 items, 600-second
-  default TTL and 1024 KiB per item, with earliest-expiry eviction after expired entries. Retain exact
-  TTL equality behavior. Bound serialized RouteKey to 1024 bytes and reject oversized typed values before
-  allocation. Implement the owned native service in crates/betterlite-router/src/routing_value_store.rs.
-  Add ProbeOperation::B390 in tools/oracle/src/router_probes/mod.rs and the corresponding B390 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
-  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
-  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
-  of copying their algorithms. Function coverage in litellm/caching/in_memory_cache.py: InMemoryCache.__init__
-  (L32-L54), InMemoryCache.check_value_size (L56-L91), InMemoryCache._is_key_expired (L93-L97), InMemoryCache._remove_key
-  (L99-L104), InMemoryCache.evict_cache (L106-L141), InMemoryCache.allow_ttl_override (L148-L156), InMemoryCache.set_cache
-  (L158-L177), InMemoryCache.async_set_cache (L179-L180), InMemoryCache.async_set_cache_pipeline (L182-L187),
-  InMemoryCache.async_set_cache_sadd (L189-L198), InMemoryCache.evict_element_if_expired (L200-L209),
-  InMemoryCache.get_cache (L211-L221), InMemoryCache.batch_get_cache (L223-L228), InMemoryCache.increment_cache
-  (L230-L236). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports. Bound the route_value outside-byte
-  parser to 1048576 bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation
-  consumers keep their pinned warning/fallback path).'
+description: >-
+  Define RouteKey, RouteValue, StoreRead and StoreError plus a bounded in-memory TTL store, ordered batch reads,
+  checked integer/Decimal increments and compare-and-set. Values include counter, spend, pin and scheduler tuple
+  variants; keep the enum closed. Fuzz stored value bytes and replay valid/malformed seeds. B360 supplies Redis
+  transport over this interface. Use InMemoryCache defaults: 200 items, 600-second default TTL and 1024 KiB per
+  item, with earliest-expiry eviction after expired entries. Retain exact TTL equality behavior. Bound serialized
+  RouteKey to 1024 bytes and reject oversized typed values before allocation. Implement the owned native service
+  in crates/betterlite-router/src/routing_value_store.rs. Add ProbeOperation::B390 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B390 entry in tools/oracle/litellm/probes/registry.py; the adapters only call production
+  services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation
+  lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead of copying
+  their algorithms. Shared constructor/size/TTL/eviction/get/set/delete are now B2226. Own async_set_cache L179-L180,
+  async_set_cache_pipeline L182-L187, async_set_cache_sadd L189-L198, batch_get_cache L223-L228 and increment_cache
+  L230-L236, with typed routing value codecs, ordered batch operations and checked atomic increments. Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors reuse the
+  same primitive instead of separate ports. Bound the route_value outside-byte parser to 1048576 bytes before decoding;
+  on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
+  path).
+
+
+  Call B2226 for local TTL semantics instead of copying its maps/heap. The shared native size deviation is owned
+  there; keep the routing-specific byte parser here.
 scope:
   paths:
   - crates/betterlite-router/src/routing_value_store.rs
@@ -53,20 +54,18 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L230-L236
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b390_behaviors and b390_boundaries under routing_value_store::tests. The first
-    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
-    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
-    satisfy either check.
+- text: Write tests named b390_behaviors and b390_boundaries under routing_value_store::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation and
+    the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either check.
   proof:
   - b390-behaviors
   - b390-boundaries
-- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
-    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
-    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier, provider
+    requests, status, code and state changes; only /error/message may be ignored for betterlite wording. Every declared
+    deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
-    suppressions.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad suppressions.
   proof:
   - probe-python
   - oracle
@@ -85,24 +84,21 @@ checks:
   commands:
   - id: b390-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_behaviors(::|$)/)
-      - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: b390-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_boundaries(::|$)/)
-      - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
-    run: test -f tools/oracle/litellm/probes/routing_value_store.py && test -n "$(git diff --name-only
-      "$GATE_BASE" -- tools/oracle/litellm/probes/routing_value_store.py)" && uv run --locked --project
-      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
-      basedpyright tools/oracle/litellm/probes
+    run: test -f tools/oracle/litellm/probes/routing_value_store.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_value_store.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
     run: test -f crates/betterlite-router/fuzz/corpus/route_value/b390-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_value/b390-invalid.json
-      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/route_value
-      | grep -Fq "/b390-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && cargo
-      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_value_corpus)'
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/route_value |
+      grep -Fq "/b390-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && cargo nextest run
+      --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_value_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-value-store/typed-store-expiry.yaml
 - tools/oracle/cases/routing/routing-value-store/ordered-batch-missing-values.yaml
@@ -110,24 +106,24 @@ oracle_cases:
 - tools/oracle/cases/routing/routing-value-store/parser-byte-bound.yaml
 deviations:
 - what: Routing state keys have a 1024-byte cap and typed serialized values have a 1 MiB cap.
-  why: The pin bounds Python object size but not key bytes; bounded-inputs requires explicit byte limits
-    for Redis decoding.
+  why: The pin bounds Python object size but not key bytes; bounded-inputs requires explicit byte limits for Redis
+    decoding.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L91
 - what: The route_value byte parser rejects inputs over 1048576 bytes before allocation.
-  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
-    limit. Existing structural field limits remain unchanged.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite limit.
+    Existing structural field limits remain unchanged.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L1-L236
 out_of_scope:
 - B360 owns final integration and the remaining functions listed in its implementation boundary.
 - 'litellm/caching/in_memory_cache.py: B125 owns: InMemoryCache.async_get_cache (L238-L239), InMemoryCache.async_batch_get_cache
-  (L241-L246), InMemoryCache.async_increment (L248-L249), InMemoryCache.async_increment_pipeline (L251-L258),
-  InMemoryCache.flush_cache (L260-L263), InMemoryCache.disconnect (L265-L266), InMemoryCache.delete_cache
-  (L268-L269), InMemoryCache.async_get_ttl (L271-L275), InMemoryCache.async_get_oldest_n_keys (L277-L283).'
+  (L241-L246), InMemoryCache.async_increment (L248-L249), InMemoryCache.async_increment_pipeline (L251-L258), InMemoryCache.flush_cache
+  (L260-L263), InMemoryCache.disconnect (L265-L266), InMemoryCache.delete_cache (L268-L269), InMemoryCache.async_get_ttl
+  (L271-L275), InMemoryCache.async_get_oldest_n_keys (L277-L283).'
 pitfalls:
-- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
-  a hard request error.
-- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
-  at the repository 300-line limit.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become a hard
+  request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules at the
+  repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800

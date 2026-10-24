@@ -23,6 +23,40 @@ description: >-
   metadata separately.
 
 
+  Named case contracts: gpt_transcription_fields: Whisper allows language,prompt,response_format,temperature,timestamp_granularities;
+  GPT replaces timestamp_granularities with include. Mapping copies supported values and silently omits other non-default
+  keys. upstream_error: The send wrappers rethrow original errors; async logs and rethrows without wrapping. Use
+  B1001 get_audio_file_name for post-call metadata and never open a request-provided filename. whisper_default_verbose_json:
+  Whisper body is model/file plus options, with response_format=verbose_json only when the key is absent; explicit
+  None survives. GPT adds no response_format default. text_duration: Only the async SDK path derives _audio_transcription_duration
+  from textual replies; ordinary text with no timestamp returns None. Sync textual replies become TranscriptionResponse(text=reply)
+  without duration extraction. srt_duration: Match every hh:mm:ss,mmm or hh:mm:ss.mmm occurrence, compute hours*3600+minutes*60+seconds+milliseconds/1000
+  and return the largest time, not merely the final matched subtitle end; use exact decimals. vtt_duration: Both
+  comma and dot separators work regardless of file format; absent matching timestamps returns None, and the regex
+  does not impose normal minute/second ranges. whisper_endpoint_auth: Trim base slashes, append /audio/transcriptions
+  if base ends /v1 and /v1/audio/transcriptions otherwise, including an absent base becoming the relative /v1/audio/transcriptions
+  path. Authorization uses explicit api_key or OPENAI_API_KEY, without module-key fallback, and overwrites caller
+  Authorization. raw_transcription_headers: Both send wrappers call with_raw_response.create with data and timeout,
+  preserve raw response headers for B206, and delegate response_type=audio_transcription to B004. non_json_content_type:
+  On JSONDecodeError, a content-type containing application/json (case-insensitive) rethrows; other content types
+  produce a text response. Parsed JSON must contain at least one TranscriptionResponse field or raises ValueError.
+  model_projection: Sync hidden model uses the method model; async uses data.model with whisper-1 only when missing,
+  plus custom_llm_provider=openai. Sync client construction omits shared_session while async forwards it.
+
+
+  Write standalone Rust test openai_transcription_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_transcription_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-openai/src/transcription.rs with adjacent tests under transcription/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -38,10 +72,10 @@ description: >-
 
   Write rstest function transcription_cases in betterlite-openai with these exact named cases (one per oracle file):
   whisper_multipart, gpt_transcription_fields, timestamps_array, verbose_json_segments, text_srt_vtt_body, upstream_error,
-  whisper_default_verbose_json, gpt_include, text_duration, srt_duration, vtt_duration. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  whisper_default_verbose_json, gpt_include, text_duration, srt_duration, vtt_duration, whisper_endpoint_auth, raw_transcription_headers,
+  non_json_content_type, model_projection. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_transcription* using HelperCase: kind:
@@ -60,9 +94,9 @@ description: >-
 
 
   Budget from 324 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 340 production lines, 144 behavior/config-test lines,
-  99 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 663 planned, 675 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 355 production lines, 230 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 795 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -86,20 +120,17 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10168-L10218
   why: Shared duration extraction called from transcriptions/handler.py:193-195; retain the computed duration.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L27-L222
-  why: >-
-    Own OpenAIAudioTranscription.make_openai_audio_transcriptions_request, OpenAIAudioTranscription.make_sync_openai_audio_transcriptions_request,
+  why: Own OpenAIAudioTranscription.make_openai_audio_transcriptions_request, OpenAIAudioTranscription.make_sync_openai_audio_transcriptions_request,
     OpenAIAudioTranscription.audio_transcriptions, OpenAIAudioTranscription.async_audio_transcriptions. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/whisper_transformation.py#L22-L141
-  why: >-
-    Own OpenAIWhisperAudioTranscriptionConfig.get_complete_url, OpenAIWhisperAudioTranscriptionConfig.get_supported_openai_params,
+  why: Own OpenAIWhisperAudioTranscriptionConfig.get_complete_url, OpenAIWhisperAudioTranscriptionConfig.get_supported_openai_params,
     OpenAIWhisperAudioTranscriptionConfig.map_openai_params, OpenAIWhisperAudioTranscriptionConfig.validate_environment,
     OpenAIWhisperAudioTranscriptionConfig.transform_audio_transcription_request, OpenAIWhisperAudioTranscriptionConfig.get_error_class,
     OpenAIWhisperAudioTranscriptionConfig.transform_audio_transcription_response. Other functions in this file remain
     with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/gpt_transformation.py#L13-L39
-  why: >-
-    Own OpenAIGPTAudioTranscriptionConfig.get_supported_openai_params, OpenAIGPTAudioTranscriptionConfig.transform_audio_transcription_request.
+  why: Own OpenAIGPTAudioTranscriptionConfig.get_supported_openai_params, OpenAIGPTAudioTranscriptionConfig.transform_audio_transcription_request.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10168-L10194
   why: Own extract_duration_from_srt_or_vtt. Other functions in this file remain with the owners listed below.
@@ -109,8 +140,9 @@ dod:
   - case-whisper-multipart
   - oracle
   - helper-python
-- text: >-
-    gpt transcription fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/gpt-transcription-fields.yaml.
+- text: 'gpt_transcription_fields: Whisper allows language,prompt,response_format,temperature,timestamp_granularities;
+    GPT replaces timestamp_granularities with include. Mapping copies supported values and silently omits other
+    non-default keys.'
   proof:
   - case-gpt-transcription-fields
   - oracle
@@ -130,13 +162,14 @@ dod:
   - case-text-srt-vtt-body
   - oracle
   - helper-python
-- text: 'upstream error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/upstream-error.yaml.'
+- text: 'upstream_error: The send wrappers rethrow original errors; async logs and rethrows without wrapping. Use
+    B1001 get_audio_file_name for post-call metadata and never open a request-provided filename.'
   proof:
   - case-upstream-error
   - oracle
   - helper-python
-- text: >-
-    whisper default verbose json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/whisper-default-verbose-json.yaml.
+- text: 'whisper_default_verbose_json: Whisper body is model/file plus options, with response_format=verbose_json
+    only when the key is absent; explicit None survives. GPT adds no response_format default.'
   proof:
   - case-whisper-default-verbose-json
   - oracle
@@ -146,17 +179,21 @@ dod:
   - case-gpt-include
   - oracle
   - helper-python
-- text: 'text duration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/text-duration.yaml.'
+- text: 'text_duration: Only the async SDK path derives _audio_transcription_duration from textual replies; ordinary
+    text with no timestamp returns None. Sync textual replies become TranscriptionResponse(text=reply) without duration
+    extraction.'
   proof:
   - case-text-duration
   - oracle
   - helper-python
-- text: 'srt duration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/srt-duration.yaml.'
+- text: 'srt_duration: Match every hh:mm:ss,mmm or hh:mm:ss.mmm occurrence, compute hours*3600+minutes*60+seconds+milliseconds/1000
+    and return the largest time, not merely the final matched subtitle end; use exact decimals.'
   proof:
   - case-srt-duration
   - oracle
   - helper-python
-- text: 'vtt duration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/vtt-duration.yaml.'
+- text: 'vtt_duration: Both comma and dot separators work regardless of file format; absent matching timestamps
+    returns None, and the regex does not impose normal minute/second ranges.'
   proof:
   - case-vtt-duration
   - oracle
@@ -169,62 +206,123 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'whisper_endpoint_auth: Trim base slashes, append /audio/transcriptions if base ends /v1 and /v1/audio/transcriptions
+    otherwise, including an absent base becoming the relative /v1/audio/transcriptions path. Authorization uses
+    explicit api_key or OPENAI_API_KEY, without module-key fallback, and overwrites caller Authorization.'
+  proof:
+  - case-whisper-endpoint-auth
+  - oracle
+  - helper-python
+- text: 'raw_transcription_headers: Both send wrappers call with_raw_response.create with data and timeout, preserve
+    raw response headers for B206, and delegate response_type=audio_transcription to B004.'
+  proof:
+  - case-raw-transcription-headers
+  - oracle
+  - helper-python
+- text: 'non_json_content_type: On JSONDecodeError, a content-type containing application/json (case-insensitive)
+    rethrows; other content types produce a text response. Parsed JSON must contain at least one TranscriptionResponse
+    field or raises ValueError.'
+  proof:
+  - case-non-json-content-type
+  - oracle
+  - helper-python
+- text: 'model_projection: Sync hidden model uses the method model; async uses data.model with whisper-1 only when
+    missing, plus custom_llm_provider=openai. Sync client construction omits shared_session while async forwards
+    it.'
+  proof:
+  - case-model-projection
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-whisper-multipart
-    why: The whisper-multipart behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/whisper-multipart.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_whisper_multipart$/)'
   - id: case-gpt-transcription-fields
-    why: The gpt-transcription-fields behavior is missing or differs from its pinned fixture.
+    why: Whisper allows language,prompt,response_format,temperature,timestamp_granularities; GPT replaces timestamp_granularities
+      with include. Mapping copies supported values and silently omits other non-default keys.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_gpt_transcription_fields$/)'
   - id: case-timestamps-array
-    why: The timestamps-array behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/timestamps-array.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_timestamps_array$/)'
   - id: case-verbose-json-segments
-    why: The verbose-json-segments behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/verbose-json-segments.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_verbose_json_segments$/)'
   - id: case-text-srt-vtt-body
-    why: The text-srt-vtt-body behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/text-srt-vtt-body.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_text_srt_vtt_body$/)'
   - id: case-upstream-error
-    why: The upstream-error behavior is missing or differs from its pinned fixture.
+    why: The send wrappers rethrow original errors; async logs and rethrows without wrapping. Use B1001 get_audio_file_name
+      for post-call metadata and never open a request-provided filename.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_upstream_error$/)'
   - id: case-whisper-default-verbose-json
-    why: The whisper-default-verbose-json behavior is missing or differs from its pinned fixture.
+    why: Whisper body is model/file plus options, with response_format=verbose_json only when the key is absent;
+      explicit None survives. GPT adds no response_format default.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_whisper_default_verbose_json$/)'
   - id: case-gpt-include
-    why: The gpt-include behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-transcription/gpt-include.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_gpt_include$/)'
   - id: case-text-duration
-    why: The text-duration behavior is missing or differs from its pinned fixture.
+    why: Only the async SDK path derives _audio_transcription_duration from textual replies; ordinary text with
+      no timestamp returns None. Sync textual replies become TranscriptionResponse(text=reply) without duration
+      extraction.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_text_duration$/)'
   - id: case-srt-duration
-    why: The srt-duration behavior is missing or differs from its pinned fixture.
+    why: Match every hh:mm:ss,mmm or hh:mm:ss.mmm occurrence, compute hours*3600+minutes*60+seconds+milliseconds/1000
+      and return the largest time, not merely the final matched subtitle end; use exact decimals.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_srt_duration$/)'
   - id: case-vtt-duration
-    why: The vtt-duration behavior is missing or differs from its pinned fixture.
+    why: Both comma and dot separators work regardless of file format; absent matching timestamps returns None,
+      and the regex does not impose normal minute/second ranges.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_vtt_duration$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_transcription.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_transcription.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_transcription*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_transcription*")"
       && grep -lq 'openai_transcription' tools/oracle/fuzz/corpus/helper_case/openai_transcription* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_transcription$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_transcription)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_transcription)"
       && grep -q 'decode_transcription_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_transcription.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_transcription_corpus$/)'
+  - id: case-whisper-endpoint-auth
+    why: Trim base slashes, append /audio/transcriptions if base ends /v1 and /v1/audio/transcriptions otherwise,
+      including an absent base becoming the relative /v1/audio/transcriptions path. Authorization uses explicit
+      api_key or OPENAI_API_KEY, without module-key fallback, and overwrites caller Authorization.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_whisper_endpoint_auth$/)'
+  - id: case-raw-transcription-headers
+    why: Both send wrappers call with_raw_response.create with data and timeout, preserve raw response headers for
+      B206, and delegate response_type=audio_transcription to B004.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_raw_transcription_headers$/)'
+  - id: case-non-json-content-type
+    why: On JSONDecodeError, a content-type containing application/json (case-insensitive) rethrows; other content
+      types produce a text response. Parsed JSON must contain at least one TranscriptionResponse field or raises
+      ValueError.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_non_json_content_type$/)'
+  - id: case-model-projection
+    why: Sync hidden model uses the method model; async uses data.model with whisper-1 only when missing, plus custom_llm_provider=openai.
+      Sync client construction omits shared_session while async forwards it.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_model_projection$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_transcription_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_transcription_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-transcription/whisper-multipart.yaml
 - tools/oracle/cases/helpers/providers/openai-transcription/gpt-transcription-fields.yaml
@@ -237,27 +335,27 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-transcription/text-duration.yaml
 - tools/oracle/cases/helpers/providers/openai-transcription/srt-duration.yaml
 - tools/oracle/cases/helpers/providers/openai-transcription/vtt-duration.yaml
+- tools/oracle/cases/helpers/providers/openai-transcription/whisper-endpoint-auth.yaml
+- tools/oracle/cases/helpers/providers/openai-transcription/raw-transcription-headers.yaml
+- tools/oracle/cases/helpers/providers/openai-transcription/non-json-content-type.yaml
+- tools/oracle/cases/helpers/providers/openai-transcription/model-projection.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- 'litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024; reuse that implementation or its injected
-  typed boundary.'
-- 'litellm/utils.py: add_openai_metadata L10292-L10324 belong to B527; reuse that implementation or its injected
-  typed boundary.'
-- >-
-  litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class L118-L126; _snapshot_exception_for_hook
-  L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response L168-L179; _get_cached_llm_caching_handler
-  L182-L193; _get_cached_audio_utils L201-L212; print_verbose L544-L559; _print_verbose_is_active L562-L567; custom_llm_setup
-  L572-L581; _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks
-  L624-L639; _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668;
-  get_request_guardrails L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks
-  L722-L728; _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
+- 'Function ownership inventory litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024.'
+- 'Function ownership inventory litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class
+  L117-L126; _snapshot_exception_for_hook L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response
+  L168-L179; _get_cached_llm_caching_handler L182-L193; _get_cached_audio_utils L201-L212; custom_llm_setup L572-L581;
+  _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks L624-L639;
+  _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668; get_request_guardrails
+  L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks L722-L728;
+  _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
   L754-L782; _process_tool_message_id L785-L795; _remove_thought_signatures_from_messages L798-L823; _restore_correlation_context_if_supported
   L826-L838; _is_streaming_response_for_correlation L841-L873; _is_converted_stream_result L876-L880; _run_success_deployment_hook_on_converted_chat_stream
-  L883-L906; _NamedFile.name L912-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
+  L883-L906; _NamedFile.name L911-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
   L920-L929; _SupportedOpenAIParamsGetter.__call__ L933-L939; _NestedPathChecker.__call__ L943-L943; _NestedValueDeleter.__call__
   L947-L947; _BaseModelFromMetadataGetter.__call__ L951-L951; _ocr_document_summary L954-L971; function_setup L981-L1344;
   _dispatch_success_logging L1347-L1368; _schedule_async_success_logging L1371-L1408; _client_async_logging_helper
@@ -265,45 +363,31 @@ out_of_scope:
   async_pre_call_deployment_hook L1475-L1495; async_post_call_success_deployment_hook L1498-L1531; async_post_call_failure_deployment_hook
   L1534-L1584; post_call_processing L1587-L1671; client L1674-L2315; _is_async_request L2318-L2348; _is_streaming_request
   L2361-L2373; _select_tokenizer L2376-L2384; _huggingface_tokenizer_backend L2387-L2392; _select_custom_tokenizer_helper
-  L2396-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
+  L2395-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
   L2426-L2427; huggingface_tokenizer_kind L2433-L2443; _return_huggingface_tokenizer L2446-L2453; _load_huggingface_tokenizer
-  L2457-L2469; supports_httpx_timeout L2589-L2598; supports_system_messages L2601-L2619; supports_web_search L2622-L2640;
-  supports_url_context L2643-L2661; supports_native_streaming L2664-L2695; supports_response_schema L2698-L2739;
-  supports_parallel_function_calling L2742-L2750; supports_function_calling L2753-L2771; supports_tool_choice L2774-L2778;
-  _supports_provider_info_factory L2781-L2790; _supports_factory L2793-L2852; declared_value_factory L2855-L2892;
-  is_explicitly_disabled_factory L2895-L2938; supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948;
-  supports_audio_output L2951-L2953; supports_prompt_caching L2956-L2974; supports_prompt_cache_breakpoint L2977-L2982;
-  supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
-  L3014-L3020; supports_vision L3023-L3038; supports_reasoning L3041-L3045; supports_anthropic_thinking_payload
-  L3048-L3051; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system L3061-L3067; supports_native_structured_output
-  L3070-L3078; get_supported_regions L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary
-  L3136-L3151; _convert_stringified_numbers L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info
-  L3224-L3235; _get_builtin_model_info_for_registration L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations
-  L3277-L3298; cost_map_omits_token_price L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486;
-  _bedrock_route_for_request L3489-L3494; _get_non_default_params L3497-L3507; get_optional_params_transcription
-  L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio L3600-L3614; get_optional_params_image_gen L3617-L3744;
-  get_optional_params_embeddings L3747-L4101; _remove_additional_properties L4104-L4124; _remove_strict_from_schema
-  L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params L4181-L4193; filter_out_litellm_params
-  L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
-  L4215-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4260-L4278; pre_process_non_default_params
+  L2456-L2469; supports_httpx_timeout L2589-L2598; supports_web_search L2622-L2640; supports_url_context L2643-L2661;
+  supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948; supports_audio_output L2951-L2953; supports_prompt_cache_breakpoint
+  L2977-L2982; supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
+  L3014-L3020; supports_vision L3023-L3038; supports_anthropic_thinking_payload L3048-L3051; get_supported_regions
+  L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary L3136-L3151; _convert_stringified_numbers
+  L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info L3224-L3235; _get_builtin_model_info_for_registration
+  L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations L3277-L3298; cost_map_omits_token_price
+  L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486; _bedrock_route_for_request L3489-L3494;
+  _get_non_default_params L3497-L3507; get_optional_params_transcription L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio
+  L3600-L3614; get_optional_params_image_gen L3617-L3744; get_optional_params_embeddings L3747-L4101; _remove_additional_properties
+  L4104-L4124; _remove_strict_from_schema L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params
+  L4181-L4193; filter_out_litellm_params L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
+  L4214-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4259-L4278; pre_process_non_default_params
   L4281-L4339; remove_sensitive_keys_from_dict L4342-L4353; pre_process_optional_params L4356-L4431; add_provider_specific_params_to_optional_params
   L5049-L5087; _apply_openai_param_overrides L5090-L5110; provider_rejectable_params L5116-L5126; get_non_default_params
   L5129-L5142; calculate_max_parallel_requests L5145-L5185; _get_deployment_order L5188-L5198; get_order_filtered_deployments
   L5201-L5217; get_excluded_filtered_deployments L5220-L5242; _get_model_region L5245-L5267; _infer_model_region
   L5270-L5310; _is_region_eu L5313-L5324; _is_region_us L5327-L5338; is_region_allowed L5341-L5347; get_model_region
   L5350-L5371; get_first_chars_messages L5374-L5380; _count_characters L5383-L5386; get_response_string L5389-L5432;
-  get_utc_datetime L5435-L5436; _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix L5508-L5509;
-  _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name L5543-L5559;
-  get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588; _rebuild_model_cost_lowercase_map
-  L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _handle_new_key_with_scan L5621-L5637; _get_model_cost_key
-  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _get_model_info_from_generalization
-  L5742-L5777; _strip_mantle_region_prefix L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings
-  L5847-L5867; _cached_get_model_info_helper L5871-L5885; get_provider_info L5888-L5903; _is_potential_model_name_in_model_cost
-  L5906-L5915; _model_not_mapped_message L5921-L5925; _get_model_info_helper L5928-L6377; _build_model_info L6380-L6404;
-  _cached_get_model_info L6408-L6413; json_schema_type L6504-L6527; modify_url L6619-L6622; load_test_model L6625-L6665;
-  get_provider_fields L6668-L6681; create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128;
-  acreate L7131-L7132; valid_model L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header
-  L7197-L7228; _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
+  get_utc_datetime L5435-L5436; json_schema_type L6504-L6527; load_test_model L6625-L6665; get_provider_fields L6668-L6681;
+  create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128; acreate L7131-L7132; valid_model
+  L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header L7197-L7228;
+  _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
   L7326-L7336; TextCompletionStreamWrapper.__iter__ L7338-L7339; TextCompletionStreamWrapper.__aiter__ L7341-L7342;
   TextCompletionStreamWrapper.convert_to_text_completion_object L7344-L7367; TextCompletionStreamWrapper.__next__
   L7369-L7389; TextCompletionStreamWrapper.__anext__ L7391-L7400; mock_stream_usage_chunk L7403-L7413; mock_completion_streaming_obj
@@ -318,54 +402,82 @@ out_of_scope:
   L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
   L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
   L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
-  is_cached_message L8055-L8101; is_base64_encoded L8104-L8120; get_base64_str L8123-L8129; has_tool_call_blocks
-  L8132-L8141; any_assistant_message_has_thinking_blocks L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks
-  L8165-L8194; add_dummy_tool L8197-L8215; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252;
-  validate_and_fix_openai_messages L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param
-  L8289-L8311; cleanup_none_field_in_message L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice
-  L8365-L8396; validate_openai_optional_params L8399-L8415; _get_bundled_model_cost_map L8419-L8424; _get_model_cost_entry_for_provider_config
-  L8427-L8442; ProviderConfigManager._build_provider_config_map L8452-L8625; ProviderConfigManager._get_azure_config
-  L8628-L8642; ProviderConfigManager._get_azure_ai_config L8645-L8649; ProviderConfigManager._get_vertex_ai_config
-  L8652-L8671; ProviderConfigManager._get_bedrock_config L8674-L8678; ProviderConfigManager._get_cohere_config L8681-L8687;
-  ProviderConfigManager._get_sail_chat_config L8690-L8693; ProviderConfigManager._get_langgraph_config L8696-L8700;
-  ProviderConfigManager._get_langflow_config L8703-L8707; ProviderConfigManager.get_provider_chat_config L8710-L8765;
-  ProviderConfigManager.get_provider_embedding_config L8768-L8858; ProviderConfigManager.get_provider_rerank_config
-  L8861-L8908; ProviderConfigManager.get_provider_decisions_config L8911-L8928; ProviderConfigManager.get_provider_anthropic_messages_config
-  L8931-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached L8939-L9010; ProviderConfigManager.get_provider_audio_transcription_config
-  L9013-L9110; ProviderConfigManager.get_provider_responses_api_config L9113-L9148; ProviderConfigManager._get_python_responses_api_config
-  L9151-L9243; ProviderConfigManager.get_provider_skills_api_config L9246-L9260; ProviderConfigManager.get_provider_evals_api_config
-  L9263-L9279; ProviderConfigManager.get_provider_text_completion_config L9282-L9292; ProviderConfigManager.get_provider_model_info
-  L9295-L9342; ProviderConfigManager.get_provider_passthrough_config L9345-L9397; ProviderConfigManager.get_provider_image_variation_config
-  L9400-L9408; ProviderConfigManager.get_provider_files_config L9411-L9445; ProviderConfigManager.get_provider_batches_config
-  L9448-L9460; ProviderConfigManager.get_provider_vector_store_config L9463-L9472; ProviderConfigManager.get_provider_vector_stores_config
-  L9475-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9564-L9573; ProviderConfigManager.get_provider_image_generation_config
-  L9576-L9688; ProviderConfigManager.get_provider_video_config L9691-L9725; ProviderConfigManager.get_provider_container_config
-  L9728-L9743; ProviderConfigManager.get_provider_realtime_config L9746-L9758; ProviderConfigManager.get_provider_realtime_http_config
-  L9761-L9782; ProviderConfigManager.get_provider_image_edit_config L9785-L9857; ProviderConfigManager.get_provider_search_config
-  L9860-L9916; ProviderConfigManager.get_provider_sandbox_config L9919-L9934; ProviderConfigManager.get_provider_harness_config
-  L9937-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9968-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
-  L10036-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
-  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; _add_path_to_api_base L10197-L10232; get_standard_openai_params
-  L10235-L10236; get_non_default_completion_params L10239-L10240; peek_reasoning_summary_aliases L10243-L10258;
-  strip_reasoning_summary_aliases_from_optional_params L10261-L10283; get_non_default_transcription_params L10286-L10289;
-  return_raw_request L10344-L10389; jsonify_tools L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion
-  L10417-L10424; __getattr__ L10427-L10439 belong to B157; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer L2518-L2532; create_tokenizer
-  L2535-L2547 belong to B195; reuse that implementation or its injected typed boundary.
-- 'litellm/utils.py: token_counter L2550-L2586 belong to B196; reuse that implementation or its injected typed boundary.'
-- 'litellm/utils.py: get_optional_params L4434-L5043 belong to B175; reuse that implementation or its injected typed
-  boundary.'
-- 'litellm/utils.py: get_max_tokens L5439-L5498; get_model_info L6416-L6497 belong to B205; reuse that implementation
-  or its injected typed boundary.'
-- 'litellm/utils.py: function_to_dict L6530-L6616 belong to B178; reuse that implementation or its injected typed
-  boundary.'
+  is_cached_message L8055-L8101; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252; validate_and_fix_openai_messages
+  L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param L8289-L8311; cleanup_none_field_in_message
+  L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice L8365-L8396;
+  validate_openai_optional_params L8399-L8415; _get_model_cost_entry_for_provider_config L8427-L8442; ProviderConfigManager.get_provider_embedding_config
+  L8767-L8858; ProviderConfigManager.get_provider_rerank_config L8860-L8908; ProviderConfigManager.get_provider_decisions_config
+  L8910-L8928; ProviderConfigManager.get_provider_anthropic_messages_config L8930-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached
+  L8937-L9010; ProviderConfigManager.get_provider_audio_transcription_config L9012-L9110; ProviderConfigManager.get_provider_responses_api_config
+  L9112-L9148; ProviderConfigManager._get_python_responses_api_config L9150-L9243; ProviderConfigManager.get_provider_skills_api_config
+  L9245-L9260; ProviderConfigManager.get_provider_evals_api_config L9262-L9279; ProviderConfigManager.get_provider_passthrough_config
+  L9344-L9397; ProviderConfigManager.get_provider_files_config L9410-L9445; ProviderConfigManager.get_provider_batches_config
+  L9447-L9460; ProviderConfigManager.get_provider_vector_store_config L9462-L9472; ProviderConfigManager.get_provider_vector_stores_config
+  L9474-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9563-L9573; ProviderConfigManager.get_provider_image_generation_config
+  L9575-L9688; ProviderConfigManager.get_provider_video_config L9690-L9725; ProviderConfigManager.get_provider_container_config
+  L9727-L9743; ProviderConfigManager.get_provider_realtime_config L9745-L9758; ProviderConfigManager.get_provider_realtime_http_config
+  L9760-L9782; ProviderConfigManager.get_provider_image_edit_config L9784-L9857; ProviderConfigManager.get_provider_search_config
+  L9859-L9916; ProviderConfigManager.get_provider_sandbox_config L9918-L9934; ProviderConfigManager.get_provider_harness_config
+  L9936-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9967-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
+  L10035-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; get_standard_openai_params L10235-L10236; get_non_default_completion_params
+  L10239-L10240; peek_reasoning_summary_aliases L10243-L10258; strip_reasoning_summary_aliases_from_optional_params
+  L10261-L10283; get_non_default_transcription_params L10286-L10289; return_raw_request L10344-L10389; jsonify_tools
+  L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion L10417-L10424; __getattr__ L10427-L10439
+  belong to B157.'
+- 'Function ownership inventory litellm/utils.py: get_optional_params L4434-L5043 belong to B175.'
+- 'Function ownership inventory litellm/utils.py: function_to_dict L6530-L6616 belong to B178.'
+- 'Function ownership inventory litellm/utils.py: is_base64_encoded L8104-L8120; get_base64_str L8123-L8129 belong
+  to B183.'
+- 'Function ownership inventory litellm/utils.py: _get_bundled_model_cost_map L8418-L8424 belong to B193.'
+- 'Function ownership inventory litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer
+  L2518-L2532; create_tokenizer L2535-L2547 belong to B195.'
+- 'Function ownership inventory litellm/utils.py: token_counter L2550-L2586 belong to B196.'
+- 'Function ownership inventory litellm/utils.py: get_max_tokens L5439-L5498 belong to B205.'
+- 'Function ownership inventory litellm/utils.py: has_tool_call_blocks L8132-L8141; any_assistant_message_has_thinking_blocks
+  L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks L8165-L8194; add_dummy_tool L8197-L8215 belong
+  to B2202.'
+- 'Function ownership inventory litellm/utils.py: _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix
+  L5508-L5509; _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name
+  L5543-L5559; get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588;
+  _rebuild_model_cost_lowercase_map L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _get_model_cost_key
+  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _is_potential_model_name_in_model_cost
+  L5906-L5915 belong to B2217.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_helper (L6111-L6372) belong to B2218.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_from_generalization L5742-L5777; _strip_mantle_region_prefix
+  L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings L5847-L5867; _model_not_mapped_message
+  L5921-L5925; _get_model_info_helper (L5928-L6110, L6373-L6377) belong to B2219.'
+- 'Function ownership inventory litellm/utils.py: get_provider_info L5888-L5903; ProviderConfigManager.get_provider_model_info
+  L9294-L9342 belong to B2220.'
+- 'Function ownership inventory litellm/utils.py: supports_system_messages L2601-L2619; supports_native_streaming
+  L2664-L2695; supports_response_schema L2698-L2739; supports_parallel_function_calling L2742-L2750; supports_function_calling
+  L2753-L2771; supports_tool_choice L2774-L2778; _supports_provider_info_factory L2781-L2790; _supports_factory
+  L2793-L2852; declared_value_factory L2855-L2892; is_explicitly_disabled_factory L2895-L2938; supports_prompt_caching
+  L2956-L2974; supports_reasoning L3041-L3045; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system
+  L3061-L3067; supports_native_structured_output L3070-L3078 belong to B2221.'
+- 'Function ownership inventory litellm/utils.py: _cached_get_model_info_helper L5870-L5885; _build_model_info L6380-L6404;
+  _cached_get_model_info L6407-L6413; get_model_info L6416-L6497 belong to B2225.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager._build_provider_config_map L8451-L8625;
+  ProviderConfigManager._get_azure_config L8627-L8642; ProviderConfigManager._get_azure_ai_config L8644-L8649; ProviderConfigManager._get_vertex_ai_config
+  L8651-L8671; ProviderConfigManager._get_bedrock_config L8673-L8678; ProviderConfigManager._get_cohere_config L8680-L8687;
+  ProviderConfigManager._get_sail_chat_config L8689-L8693; ProviderConfigManager._get_langgraph_config L8695-L8700;
+  ProviderConfigManager._get_langflow_config L8702-L8707; ProviderConfigManager.get_provider_chat_config L8709-L8765;
+  ProviderConfigManager.get_provider_image_variation_config L9399-L9408 belong to B2230.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager.get_provider_text_completion_config L9281-L9292
+  belong to B2237.'
+- 'Function ownership inventory litellm/utils.py: print_verbose L544-L559; _print_verbose_is_active L562-L567 belong
+  to B2239.'
+- 'Function ownership inventory litellm/utils.py: modify_url L6619-L6622 belong to B535.'
+- 'Function ownership inventory litellm/utils.py: _add_path_to_api_base L10197-L10232; add_openai_metadata L10292-L10324
+  belong to B668.'
+- 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
+  do not implement or add cases.'
 pitfalls:
-- >-
-  Represent JSON/verbose JSON versus textual formats as explicit reply variants; preserve timestamp granularity
-  fields, supplied file metadata, optional defaults and stream-related parameters without implementing the B083
-  route.
+- Only the asynchronous SDK branch extracts SRT/VTT duration from a string result; applying it to sync changes hidden
+  metadata.
+- A JSON-decodable object with an unexpected shape is not a textual fallback even when Content-Type is text/plain.
+- Whisper get_complete_url owns no global base fallback, so None produces a relative path at this seam.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
-review_level: standard
+review_level: security

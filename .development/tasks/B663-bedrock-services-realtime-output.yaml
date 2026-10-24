@@ -14,6 +14,37 @@ description: >-
   L924-L964; BedrockRealtimeConfig.transform_audio_output_event L966-L999.
 
 
+  Named case contracts: assistant_content_start: Role other than exact ASSISTANT emits no events and preserves passed
+  response/item/conversation IDs,delta_typeNone. USER+TEXT additionally marks transcriptactive and parses generation
+  stage. Other nonassistant roles/types do not reset old transcript state. ASSISTANT determines is_new_response
+  only by current_response_id isNone, but allocates resp_/item_/conv_ UUID IDs for any falsey existing value. Thus
+  an empty response id gets replaced without response.created. generation_stage: decode_generation_metadata parses
+  additionalModelFields only if string; malformed/nondict JSON,absent/nonstring generationStage ->None silently.
+  Return any string stage unchanged,includingempty; do not restrict to FINAL/SPECULATIVE enum here. user_speech_event:
+  is_speech_start true emits input_audio_buffer.speech_started and forces new item_UUID; false emits speech_stopped
+  with current item id,allocatingone if absent. Each has event_UUID and item_id only, no audio timestamps. Speech
+  start does not clear existing transcriptbuffer in this helper. user_transcript_final: Every user transcript emits
+  conversation.item.input_audio_transcription.delta,content_index0,shared itemid,event_UUID,delta exacttext. Append
+  text to completionbuffer unless generation stage exact SPECULATIVE; lowercase speculative still appends. user_transcript_completed_events
+  emits nothing for emptybuffer,otherwise one completed event with concatenated transcript and clearsbuffer while
+  preserving itemid. speculative_text: SPECULATIVE user text is still emitted as delta, only excluded from completed
+  transcript. Assistant transform_text_output_event itself performs no generation-stage suppression; dispatch policy
+  belongs B665, so do not filter assistant deltas here. final_text: Read event.textOutput.content defaultempty;
+  without truthy item AND response id return[] and original delta accumulator. Otherwise emit response.text.delta
+  with indices0,event_UUID,ids,delta text includingempty; initialize accumulator only ifNone,append same event and
+  returnit. No completion marker or text joining here. audio_output_delta: Read audioOutput.content defaultempty,requiretruthy
+  item/responseids,emit response.audio.delta with indices0,event_UUID,ids,delta unchanged. No base64 decode or rate
+  conversion, no text-accumulator mutation. item_id_consistency: User speech/transcript/completed calls share _user_item_id
+  until new speech start forces it. Assistant ids are caller-supplied state, separate from user id. transform_usage_event
+  stores the supplied cumulative BedrockUsageEvent replacing previous snapshot; it does not sum it or emit an event.
+  assistant_event_order: ASSISTANT creates a response.created record (allocating its event UUID even when not emitted),
+  emits it only for is_new_response; object realtime.response,status in_progress,output[],conversation_id. Always
+  emit response.output_item.added output_index0,item id/object realtime.item,type message,status in_progress,roleassistant,content[].
+  Then response.content_part.added content_index0/output_index0,event_UUID,item/response ids,part{text,text:empty}
+  only for exact content typeTEXT,otherwise{type:audio,transcript:empty}. Missing type defaultsTEXT; repeated blocks
+  repeat output-item/content-part additions.
+
+
   Implement crates/betterlite-bedrock/src/realtime_output.rs with adjacent tests under realtime_output/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -29,10 +60,9 @@ description: >-
 
   Write rstest function realtime_output_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): assistant_content_start, generation_stage, user_speech_event, user_transcript_final, speculative_text,
-  final_text, audio_output_delta, item_id_consistency. Each case exercises its named outcome independently; use
-  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
-  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  final_text, audio_output_delta, item_id_consistency, assistant_event_order. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_output* using HelperCase:
@@ -50,9 +80,9 @@ description: >-
 
 
   Budget from 212 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 519 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 260 production lines, 300 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 755 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -74,59 +104,68 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L709-L852
-  why: >-
-    Own BedrockRealtimeConfig.transform_content_start_event, BedrockRealtimeConfig._parse_generation_stage, BedrockRealtimeConfig._current_user_item_id,
+  why: Own BedrockRealtimeConfig.transform_content_start_event, BedrockRealtimeConfig._parse_generation_stage, BedrockRealtimeConfig._current_user_item_id,
     BedrockRealtimeConfig.transform_user_speech_event, BedrockRealtimeConfig.transform_usage_event. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L895-L999
-  why: >-
-    Own BedrockRealtimeConfig.transform_user_transcript_event, BedrockRealtimeConfig.user_transcript_completed_events,
+  why: Own BedrockRealtimeConfig.transform_user_transcript_event, BedrockRealtimeConfig.user_transcript_completed_events,
     BedrockRealtimeConfig.transform_text_output_event, BedrockRealtimeConfig.transform_audio_output_event. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    assistant content start: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/assistant-content-start.yaml.
+- text: 'assistant_content_start: Role other than exact ASSISTANT emits no events and preserves passed response/item/conversation
+    IDs,delta_typeNone. USER+TEXT additionally marks transcriptactive and parses generation stage. Other nonassistant
+    roles/types do not reset old transcript state. ASSISTANT determines is_new_response only by current_response_id
+    isNone, but allocates resp_/item_/conv_ UUID IDs for any falsey existing value. Thus an empty response id gets
+    replaced without response.created.'
   proof:
   - case-assistant-content-start
   - oracle
   - helper-python
-- text: >-
-    generation stage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/generation-stage.yaml.
+- text: 'generation_stage: decode_generation_metadata parses additionalModelFields only if string; malformed/nondict
+    JSON,absent/nonstring generationStage ->None silently. Return any string stage unchanged,includingempty; do
+    not restrict to FINAL/SPECULATIVE enum here.'
   proof:
   - case-generation-stage
   - oracle
   - helper-python
-- text: >-
-    user speech event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/user-speech-event.yaml.
+- text: 'user_speech_event: is_speech_start true emits input_audio_buffer.speech_started and forces new item_UUID;
+    false emits speech_stopped with current item id,allocatingone if absent. Each has event_UUID and item_id only,
+    no audio timestamps. Speech start does not clear existing transcriptbuffer in this helper.'
   proof:
   - case-user-speech-event
   - oracle
   - helper-python
-- text: >-
-    user transcript final: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/user-transcript-final.yaml.
+- text: 'user_transcript_final: Every user transcript emits conversation.item.input_audio_transcription.delta,content_index0,shared
+    itemid,event_UUID,delta exacttext. Append text to completionbuffer unless generation stage exact SPECULATIVE;
+    lowercase speculative still appends. user_transcript_completed_events emits nothing for emptybuffer,otherwise
+    one completed event with concatenated transcript and clearsbuffer while preserving itemid.'
   proof:
   - case-user-transcript-final
   - oracle
   - helper-python
-- text: >-
-    speculative text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/speculative-text.yaml.
+- text: 'speculative_text: SPECULATIVE user text is still emitted as delta, only excluded from completed transcript.
+    Assistant transform_text_output_event itself performs no generation-stage suppression; dispatch policy belongs
+    B665, so do not filter assistant deltas here.'
   proof:
   - case-speculative-text
   - oracle
   - helper-python
-- text: 'final text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/final-text.yaml.'
+- text: 'final_text: Read event.textOutput.content defaultempty; without truthy item AND response id return[] and
+    original delta accumulator. Otherwise emit response.text.delta with indices0,event_UUID,ids,delta text includingempty;
+    initialize accumulator only ifNone,append same event and returnit. No completion marker or text joining here.'
   proof:
   - case-final-text
   - oracle
   - helper-python
-- text: >-
-    audio output delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/audio-output-delta.yaml.
+- text: 'audio_output_delta: Read audioOutput.content defaultempty,requiretruthy item/responseids,emit response.audio.delta
+    with indices0,event_UUID,ids,delta unchanged. No base64 decode or rate conversion, no text-accumulator mutation.'
   proof:
   - case-audio-output-delta
   - oracle
   - helper-python
-- text: >-
-    item id consistency: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/item-id-consistency.yaml.
+- text: 'item_id_consistency: User speech/transcript/completed calls share _user_item_id until new speech start
+    forces it. Assistant ids are caller-supplied state, separate from user id. transform_usage_event stores the
+    supplied cumulative BedrockUsageEvent replacing previous snapshot; it does not sum it or emit an event.'
   proof:
   - case-item-id-consistency
   - oracle
@@ -139,53 +178,86 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'assistant_event_order: ASSISTANT creates a response.created record (allocating its event UUID even when
+    not emitted), emits it only for is_new_response; object realtime.response,status in_progress,output[],conversation_id.
+    Always emit response.output_item.added output_index0,item id/object realtime.item,type message,status in_progress,roleassistant,content[].
+    Then response.content_part.added content_index0/output_index0,event_UUID,item/response ids,part{text,text:empty}
+    only for exact content typeTEXT,otherwise{type:audio,transcript:empty}. Missing type defaultsTEXT; repeated
+    blocks repeat output-item/content-part additions.'
+  proof:
+  - case-assistant-event-order
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-assistant-content-start
-    why: The assistant-content-start behavior is missing or differs from its pinned fixture.
+    why: Role other than exact ASSISTANT emits no events and preserves passed response/item/conversation IDs,delta_typeNone.
+      USER+TEXT additionally marks transcriptactive and parses generation stage. Other nonassistant roles/types
+      do not reset old transcript state. ASSISTANT determines is_new_response only by current_response_id isNone,
+      but allocates resp_/item_/conv_ UUID IDs for any falsey existing value. Thus an empty response id gets replaced
+      without response.created.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_assistant_content_start$/)'
   - id: case-generation-stage
-    why: The generation-stage behavior is missing or differs from its pinned fixture.
+    why: decode_generation_metadata parses additionalModelFields only if string; malformed/nondict JSON,absent/nonstring
+      generationStage ->None silently. Return any string stage unchanged,includingempty; do not restrict to FINAL/SPECULATIVE
+      enum here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_generation_stage$/)'
   - id: case-user-speech-event
-    why: The user-speech-event behavior is missing or differs from its pinned fixture.
+    why: is_speech_start true emits input_audio_buffer.speech_started and forces new item_UUID; false emits speech_stopped
+      with current item id,allocatingone if absent. Each has event_UUID and item_id only, no audio timestamps. Speech
+      start does not clear existing transcriptbuffer in this helper.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_user_speech_event$/)'
   - id: case-user-transcript-final
-    why: The user-transcript-final behavior is missing or differs from its pinned fixture.
+    why: Every user transcript emits conversation.item.input_audio_transcription.delta,content_index0,shared itemid,event_UUID,delta
+      exacttext. Append text to completionbuffer unless generation stage exact SPECULATIVE; lowercase speculative
+      still appends. user_transcript_completed_events emits nothing for emptybuffer,otherwise one completed event
+      with concatenated transcript and clearsbuffer while preserving itemid.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_user_transcript_final$/)'
   - id: case-speculative-text
-    why: The speculative-text behavior is missing or differs from its pinned fixture.
+    why: SPECULATIVE user text is still emitted as delta, only excluded from completed transcript. Assistant transform_text_output_event
+      itself performs no generation-stage suppression; dispatch policy belongs B665, so do not filter assistant
+      deltas here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_speculative_text$/)'
   - id: case-final-text
-    why: The final-text behavior is missing or differs from its pinned fixture.
+    why: Read event.textOutput.content defaultempty; without truthy item AND response id return[] and original delta
+      accumulator. Otherwise emit response.text.delta with indices0,event_UUID,ids,delta text includingempty; initialize
+      accumulator only ifNone,append same event and returnit. No completion marker or text joining here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_final_text$/)'
   - id: case-audio-output-delta
-    why: The audio-output-delta behavior is missing or differs from its pinned fixture.
+    why: Read audioOutput.content defaultempty,requiretruthy item/responseids,emit response.audio.delta with indices0,event_UUID,ids,delta
+      unchanged. No base64 decode or rate conversion, no text-accumulator mutation.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_audio_output_delta$/)'
   - id: case-item-id-consistency
-    why: The item-id-consistency behavior is missing or differs from its pinned fixture.
+    why: User speech/transcript/completed calls share _user_item_id until new speech start forces it. Assistant
+      ids are caller-supplied state, separate from user id. transform_usage_event stores the supplied cumulative
+      BedrockUsageEvent replacing previous snapshot; it does not sum it or emit an event.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_item_id_consistency$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_output.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_output.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_output*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_output*")"
       && grep -lq 'bedrock_services_realtime_output' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_output*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_output$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_output)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_output)"
       && grep -q 'decode_generation_metadata' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_output.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_output_corpus$/)'
+  - id: case-assistant-event-order
+    why: ASSISTANT creates a response.created record (allocating its event UUID even when not emitted), emits it
+      only for is_new_response; object realtime.response,status in_progress,output[],conversation_id. Always emit
+      response.output_item.added output_index0,item id/object realtime.item,type message,status in_progress,roleassistant,content[].
+      Then response.content_part.added content_index0/output_index0,event_UUID,item/response ids,part{text,text:empty}
+      only for exact content typeTEXT,otherwise{type:audio,transcript:empty}. Missing type defaultsTEXT; repeated
+      blocks repeat output-item/content-part additions.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_output_cases::case_[0-9]+_assistant_event_order$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/assistant-content-start.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/generation-stage.yaml
@@ -195,39 +267,36 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/final-text.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/audio-output-delta.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/item-id-consistency.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-output/assistant-event-order.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__
+  L83-L124; BedrockRealtimeConfig.get_error_class L126-L132; BedrockRealtimeConfig.validate_environment L134-L136;
+  BedrockRealtimeConfig.get_complete_url L138-L140; BedrockRealtimeConfig.requires_session_configuration L142-L144;
+  BedrockRealtimeConfig.session_configuration_request L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format
+  L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate L216-L233; BedrockRealtimeConfig.transform_session_update_event
+  L235-L356; BedrockRealtimeConfig._session_object L670-L682; BedrockRealtimeConfig.session_created_event L684-L694;
+  BedrockRealtimeConfig.session_updated_event L696-L707 belong to B661.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
   L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event
   L452-L518; BedrockRealtimeConfig.transform_response_create_event L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages
   L568-L583; BedrockRealtimeConfig.transform_response_cancel_event L585-L597; BedrockRealtimeConfig.session_close_messages
   L599-L626; BedrockRealtimeConfig.transform_realtime_request L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event
-  L1212-L1273 belong to B662; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta L854-L875; BedrockRealtimeConfig.leftover_usage_done_events
-  L877-L893; BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
-  L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
-  L1159-L1210 belong to B664; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response L1275-L1415
-  belong to B665; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
-  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
-  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
-  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
-  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
-  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
-  L696-L707 belong to B661; reuse that implementation or its injected typed boundary.
+  L1212-L1273 belong to B662.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta
+  L854-L875; BedrockRealtimeConfig.leftover_usage_done_events L877-L893; BedrockRealtimeConfig.transform_content_end_event
+  L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event L1103-L1127; BedrockRealtimeConfig._response_done_events
+  L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event L1159-L1210 belong to B664.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
+  L1275-L1415 belong to B665.'
 pitfalls:
-- Preserve OpenAI item/response ids and event ordering using session-local state; do not emit speculative transcript
-  content twice.
+- An empty response id and None both allocate a new id, but only None causes response.created to be emitted.
+- SPECULATIVE user transcripts remain visible as deltas even though they are omitted from the final transcript buffer.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

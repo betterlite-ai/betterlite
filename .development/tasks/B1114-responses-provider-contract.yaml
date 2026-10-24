@@ -29,16 +29,15 @@ description: >-
   route tasks.
 
 
-  Callable ownership: litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.__init__ (L31-L32);
-  litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.custom_llm_provider (L36-L37); litellm/llms/base_llm/responses/transformation.py:
-  BaseResponsesAPIConfig.get_config (L40-L56); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.supports_native_file_search
-  (L58-L64); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.supports_encrypted_agent_messages
-  (L66-L67); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.sign_request (L69-L87); litellm/llms/base_llm/responses/transformation.py:
-  BaseResponsesAPIConfig.get_supported_openai_params (L90-L91); litellm/llms/base_llm/responses/transformation.py:
-  BaseResponsesAPIConfig.map_openai_params (L94-L100); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.validate_environment
-  (L103-L104); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.get_complete_url (L107-L121);
-  litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.transform_responses_api_request (L124-L132);
-  litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.async_transform_responses_api_request
+  Callable ownership: litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.custom_llm_provider
+  (L36-L37); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.get_config (L40-L56); litellm/llms/base_llm/responses/transformation.py:
+  BaseResponsesAPIConfig.supports_native_file_search (L58-L64); litellm/llms/base_llm/responses/transformation.py:
+  BaseResponsesAPIConfig.supports_encrypted_agent_messages (L66-L67); litellm/llms/base_llm/responses/transformation.py:
+  BaseResponsesAPIConfig.sign_request (L69-L87); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.get_supported_openai_params
+  (L90-L91); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.map_openai_params (L94-L100);
+  litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.validate_environment (L103-L104); litellm/llms/base_llm/responses/transformation.py:
+  BaseResponsesAPIConfig.get_complete_url (L107-L121); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.transform_responses_api_request
+  (L124-L132); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.async_transform_responses_api_request
   (L134-L148); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.transform_response_api_response
   (L151-L157); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.transform_streaming_response
   (L160-L168); litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.transform_delete_response_api_request
@@ -153,6 +152,8 @@ out_of_scope:
   operations. Python package export/event-loop facades remain B158-B161.
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
+- 'litellm/llms/base_llm/responses/transformation.py: BaseResponsesAPIConfig.__init__ L31-L32 belongs to B2202;
+  use its zero-state initialization.'
 pitfalls:
 - Within BaseResponsesAPIConfig.get_complete_url\'s api_base is None branch, preserve raise ValueError('api_base
   is required') and its nested guards.

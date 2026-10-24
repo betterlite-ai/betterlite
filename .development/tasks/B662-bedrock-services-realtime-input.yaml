@@ -3,16 +3,56 @@ title: Bedrock realtime audio and conversation input
 description: >-
   Add typed realtime client events for audio append/commit, text/conversation items, response create/cancel and
   session close. Preserve prompt/content state and the pinned precomputed PCM ready trigger bytes; copy them as
-  a fixture, not an audio synthesis dependency. Input base64 uses bounded decoding, no caller path/URL is opened.
+  a fixture, not an audio synthesis dependency. Client audio strings are forwarded without base64 decoding; no caller
+  path/URL is opened.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/transformation.py:
-  BedrockRealtimeConfig.transform_input_audio_buffer_append_event L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event
+  trigger audio constants L73-L77; BedrockRealtimeConfig.transform_input_audio_buffer_append_event L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event
   L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event L452-L518; BedrockRealtimeConfig.transform_response_create_event
   L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages L568-L583; BedrockRealtimeConfig.transform_response_cancel_event
   L585-L597; BedrockRealtimeConfig.session_close_messages L599-L626; BedrockRealtimeConfig.transform_realtime_request
   L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event L1212-L1273. litellm/llms/bedrock/realtime/trigger_audio.py:
-  ready_trigger_pcm L208-L209.
+  READY_TRIGGER_PCM_16KHZ_MONO_GZIP_B64 L14-L204; ready_trigger_pcm cache and body L207-L209.
+
+
+  Named case contracts: audio_append_before_after_session: Set client_audio_streamed=True before any other operation,
+  regardless of prompt_started/audio validity. Open audio content if marker absent: contentStart typeAUDIO,interactiveTrue,roleUSER
+  with B661 input media/rate/bits/channel/audioType/encoding. Then always audioInput content=json_message.audio
+  defaultempty, preservingNone/nonbase64 strings; no decoder or prompt-start check. Same-rate subsequent append
+  emits only audioInput. audio_commit: If audio marker present emit one contentEnd then delete marker; otherwise[].
+  Do not reset client_audio_streamed,prompt_started,savedrate or audio_content_name. conversation_text_item: Only
+  item.type=message walks content default[]. Each input_text block emits fresh-content UUID start/text/end in order,typeTEXT,interactiveTrue,roleUSER
+  even if caller item.role differs,textInputConfiguration text/plain,text defaultempty. Other block/item types silently
+  ignored; malformed shapes retain errors. No prompt_started guard. response_create_ready_audio: If not prompt_started
+  OR client_audio_streamed return[]. Otherwise ensure open audio content at trigger rate16000 with same input media/bits/channel/encoding
+  and typeAUDIO interactiveTrue roleUSER; an already open marker is reused without rate recheck. Then emit trigger
+  PCM chunks, without contentEnd. Repeated response.create repeats trigger audio because this synthetic injection
+  does not set client_audio_streamed. response_cancel: Return[] and only debug Handling response.cancel; no interrupt
+  or state reset is sent. close_session_order: If prompt_started=False return[] even when audio marker exists, leaving
+  it unchanged. Otherwise optional contentEnd removes audio marker,then promptEnd with promptName,then sessionEnd{},set
+  prompt_started=False. Do not reset client_audio_streamed or allocate new UUIDs; repeated close becomes[]. unknown_client_event:
+  decode_realtime_client_input JSON syntax failure warns Invalid JSON message: {first 200 source characters} and
+  returns[]; betterlite suppresses raw text per deviation. Valid nondict JSON fails .get outside that catch. Dispatch
+  exactly session.update to B661, audio append/commit,conversation.item.create,response.create,response.cancel;
+  any other/missing type warns Unknown message type: {type} then[]. Ignore model and previous session_configuration_request
+  arguments. audio_sample_rate_transition: When audio marker exists and saved sample rate differs from current input
+  rate, emit contentEnd for old audio_content_name,clear marker,allocate new UUID audio_content_name,then contentStart+audioInput
+  at newrate. Commit alone does not allocate a fresh content name, so same-name reopen after commit is preserved.
+  conversation_tool_result: Only function_call_output routes to tool result: fresh content UUID; contentStart typeTOOL,roleTOOL,interactiveFalse,toolResultInputConfiguration
+  toolUseId=call_id defaultempty,typeTEXT,textInputConfiguration.mediaType text/plain. toolResult.content is output
+  unchanged ifstring elsejson.dumps(output),defaultempty; finish contentEnd. No tool registry validation or supplied
+  item id reuse. ready_trigger_fixture: Copy pinned decompressed PCM as crates/betterlite-bedrock/src/realtime_input/ready_trigger.pcm
+  and include_bytes!, with15990bytes and SHA256 961653bfc4a99686cca3f2d64f10c9fa5589cfb511098508ca916c7f20a826bd.
+  Oracle calls cached ready_trigger_pcm (lru_cache maxsize1), not synthesizedaudio. Prepend16000zero bytes (0.5s)
+  and append96000zero bytes (3s), yielding127990bytes. Split1024-byte chunks,base64 each independently,125audioInput
+  frames,last1014bytes. No Polly/download/audio codec dependency. Count the source opaque literal separately from
+  executable logic in budget reasoning.
+
+
+  The counted source includes the191-line opaque compressed PCM literal. Store the verified binary fixture rather
+  than duplicating that literal or implementing runtime gzip decoding; its asset wiring is included in the production/wiring
+  allocation.
 
 
   Implement crates/betterlite-bedrock/src/realtime_input.rs with adjacent tests under realtime_input/. Keep each
@@ -30,9 +70,9 @@ description: >-
 
   Write rstest function realtime_input_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): audio_append_before_after_session, audio_commit, conversation_text_item, response_create_ready_audio, response_cancel,
-  close_session_order, unknown_client_event. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  close_session_order, unknown_client_event, audio_sample_rate_transition, conversation_tool_result, ready_trigger_fixture.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_input* using HelperCase:
@@ -49,10 +89,10 @@ description: >-
   success/failure categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 315 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 335 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 606 planned, 625 maximum changed lines.
+  Budget from 512 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 290 production lines, 300 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 785 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -74,8 +114,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L358-L668
-  why: >-
-    Own BedrockRealtimeConfig.transform_input_audio_buffer_append_event, BedrockRealtimeConfig.transform_input_audio_buffer_commit_event,
+  why: Own BedrockRealtimeConfig.transform_input_audio_buffer_append_event, BedrockRealtimeConfig.transform_input_audio_buffer_commit_event,
     BedrockRealtimeConfig.transform_conversation_item_create_event, BedrockRealtimeConfig.transform_response_create_event,
     BedrockRealtimeConfig._response_trigger_audio_messages, BedrockRealtimeConfig.transform_response_cancel_event,
     BedrockRealtimeConfig.session_close_messages, BedrockRealtimeConfig.transform_realtime_request. Other functions
@@ -85,43 +124,58 @@ references:
     remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/trigger_audio.py#L208-L209
   why: Own ready_trigger_pcm. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L73-L77
+  why: 16 kHz mono PCM16, 32000 bytes/second, 16000 leading silence bytes, 96000 trailing silence bytes and 1024-byte
+    chunks.
 dod:
-- text: >-
-    audio append before after session: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/audio-append-before-after-session.yaml.
+- text: 'audio_append_before_after_session: Set client_audio_streamed=True before any other operation, regardless
+    of prompt_started/audio validity. Open audio content if marker absent: contentStart typeAUDIO,interactiveTrue,roleUSER
+    with B661 input media/rate/bits/channel/audioType/encoding. Then always audioInput content=json_message.audio
+    defaultempty, preservingNone/nonbase64 strings; no decoder or prompt-start check. Same-rate subsequent append
+    emits only audioInput.'
   proof:
   - case-audio-append-before-after-session
   - oracle
   - helper-python
-- text: 'audio commit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/audio-commit.yaml.'
+- text: 'audio_commit: If audio marker present emit one contentEnd then delete marker; otherwise[]. Do not reset
+    client_audio_streamed,prompt_started,savedrate or audio_content_name.'
   proof:
   - case-audio-commit
   - oracle
   - helper-python
-- text: >-
-    conversation text item: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/conversation-text-item.yaml.
+- text: 'conversation_text_item: Only item.type=message walks content default[]. Each input_text block emits fresh-content
+    UUID start/text/end in order,typeTEXT,interactiveTrue,roleUSER even if caller item.role differs,textInputConfiguration
+    text/plain,text defaultempty. Other block/item types silently ignored; malformed shapes retain errors. No prompt_started
+    guard.'
   proof:
   - case-conversation-text-item
   - oracle
   - helper-python
-- text: >-
-    response create ready audio: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/response-create-ready-audio.yaml.
+- text: 'response_create_ready_audio: If not prompt_started OR client_audio_streamed return[]. Otherwise ensure
+    open audio content at trigger rate16000 with same input media/bits/channel/encoding and typeAUDIO interactiveTrue
+    roleUSER; an already open marker is reused without rate recheck. Then emit trigger PCM chunks, without contentEnd.
+    Repeated response.create repeats trigger audio because this synthetic injection does not set client_audio_streamed.'
   proof:
   - case-response-create-ready-audio
   - oracle
   - helper-python
-- text: 'response cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/response-cancel.yaml.'
+- text: 'response_cancel: Return[] and only debug Handling response.cancel; no interrupt or state reset is sent.'
   proof:
   - case-response-cancel
   - oracle
   - helper-python
-- text: >-
-    close session order: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/close-session-order.yaml.
+- text: 'close_session_order: If prompt_started=False return[] even when audio marker exists, leaving it unchanged.
+    Otherwise optional contentEnd removes audio marker,then promptEnd with promptName,then sessionEnd{},set prompt_started=False.
+    Do not reset client_audio_streamed or allocate new UUIDs; repeated close becomes[].'
   proof:
   - case-close-session-order
   - oracle
   - helper-python
-- text: >-
-    unknown client event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/unknown-client-event.yaml.
+- text: 'unknown_client_event: decode_realtime_client_input JSON syntax failure warns Invalid JSON message: {first
+    200 source characters} and returns[]; betterlite suppresses raw text per deviation. Valid nondict JSON fails
+    .get outside that catch. Dispatch exactly session.update to B661, audio append/commit,conversation.item.create,response.create,response.cancel;
+    any other/missing type warns Unknown message type: {type} then[]. Ignore model and previous session_configuration_request
+    arguments.'
   proof:
   - case-unknown-client-event
   - oracle
@@ -134,50 +188,106 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'audio_sample_rate_transition: When audio marker exists and saved sample rate differs from current input
+    rate, emit contentEnd for old audio_content_name,clear marker,allocate new UUID audio_content_name,then contentStart+audioInput
+    at newrate. Commit alone does not allocate a fresh content name, so same-name reopen after commit is preserved.'
+  proof:
+  - case-audio-sample-rate-transition
+  - oracle
+  - helper-python
+- text: 'conversation_tool_result: Only function_call_output routes to tool result: fresh content UUID; contentStart
+    typeTOOL,roleTOOL,interactiveFalse,toolResultInputConfiguration toolUseId=call_id defaultempty,typeTEXT,textInputConfiguration.mediaType
+    text/plain. toolResult.content is output unchanged ifstring elsejson.dumps(output),defaultempty; finish contentEnd.
+    No tool registry validation or supplied item id reuse.'
+  proof:
+  - case-conversation-tool-result
+  - oracle
+  - helper-python
+- text: 'ready_trigger_fixture: Copy pinned decompressed PCM as crates/betterlite-bedrock/src/realtime_input/ready_trigger.pcm
+    and include_bytes!, with15990bytes and SHA256 961653bfc4a99686cca3f2d64f10c9fa5589cfb511098508ca916c7f20a826bd.
+    Oracle calls cached ready_trigger_pcm (lru_cache maxsize1), not synthesizedaudio. Prepend16000zero bytes (0.5s)
+    and append96000zero bytes (3s), yielding127990bytes. Split1024-byte chunks,base64 each independently,125audioInput
+    frames,last1014bytes. No Polly/download/audio codec dependency. Count the source opaque literal separately from
+    executable logic in budget reasoning.'
+  proof:
+  - case-ready-trigger-fixture
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-audio-append-before-after-session
-    why: The audio-append-before-after-session behavior is missing or differs from its pinned fixture.
+    why: 'Set client_audio_streamed=True before any other operation, regardless of prompt_started/audio validity.
+      Open audio content if marker absent: contentStart typeAUDIO,interactiveTrue,roleUSER with B661 input media/rate/bits/channel/audioType/encoding.
+      Then always audioInput content=json_message.audio defaultempty, preservingNone/nonbase64 strings; no decoder
+      or prompt-start check. Same-rate subsequent append emits only audioInput.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_audio_append_before_after_session$/)'
   - id: case-audio-commit
-    why: The audio-commit behavior is missing or differs from its pinned fixture.
+    why: If audio marker present emit one contentEnd then delete marker; otherwise[]. Do not reset client_audio_streamed,prompt_started,savedrate
+      or audio_content_name.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_audio_commit$/)'
   - id: case-conversation-text-item
-    why: The conversation-text-item behavior is missing or differs from its pinned fixture.
+    why: Only item.type=message walks content default[]. Each input_text block emits fresh-content UUID start/text/end
+      in order,typeTEXT,interactiveTrue,roleUSER even if caller item.role differs,textInputConfiguration text/plain,text
+      defaultempty. Other block/item types silently ignored; malformed shapes retain errors. No prompt_started guard.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_conversation_text_item$/)'
   - id: case-response-create-ready-audio
-    why: The response-create-ready-audio behavior is missing or differs from its pinned fixture.
+    why: If not prompt_started OR client_audio_streamed return[]. Otherwise ensure open audio content at trigger
+      rate16000 with same input media/bits/channel/encoding and typeAUDIO interactiveTrue roleUSER; an already open
+      marker is reused without rate recheck. Then emit trigger PCM chunks, without contentEnd. Repeated response.create
+      repeats trigger audio because this synthetic injection does not set client_audio_streamed.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_response_create_ready_audio$/)'
   - id: case-response-cancel
-    why: The response-cancel behavior is missing or differs from its pinned fixture.
+    why: Return[] and only debug Handling response.cancel; no interrupt or state reset is sent.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_response_cancel$/)'
   - id: case-close-session-order
-    why: The close-session-order behavior is missing or differs from its pinned fixture.
+    why: If prompt_started=False return[] even when audio marker exists, leaving it unchanged. Otherwise optional
+      contentEnd removes audio marker,then promptEnd with promptName,then sessionEnd{},set prompt_started=False.
+      Do not reset client_audio_streamed or allocate new UUIDs; repeated close becomes[].
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_close_session_order$/)'
   - id: case-unknown-client-event
-    why: The unknown-client-event behavior is missing or differs from its pinned fixture.
+    why: 'decode_realtime_client_input JSON syntax failure warns Invalid JSON message: {first 200 source characters}
+      and returns[]; betterlite suppresses raw text per deviation. Valid nondict JSON fails .get outside that catch.
+      Dispatch exactly session.update to B661, audio append/commit,conversation.item.create,response.create,response.cancel;
+      any other/missing type warns Unknown message type: {type} then[]. Ignore model and previous session_configuration_request
+      arguments.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_unknown_client_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_input.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_input.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_input*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_input*")"
       && grep -lq 'bedrock_services_realtime_input' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_input*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_input$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_input)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_input)"
       && grep -q 'decode_realtime_client_input' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_input.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_input_corpus$/)'
+  - id: case-audio-sample-rate-transition
+    why: When audio marker exists and saved sample rate differs from current input rate, emit contentEnd for old
+      audio_content_name,clear marker,allocate new UUID audio_content_name,then contentStart+audioInput at newrate.
+      Commit alone does not allocate a fresh content name, so same-name reopen after commit is preserved.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_audio_sample_rate_transition$/)'
+  - id: case-conversation-tool-result
+    why: 'Only function_call_output routes to tool result: fresh content UUID; contentStart typeTOOL,roleTOOL,interactiveFalse,toolResultInputConfiguration
+      toolUseId=call_id defaultempty,typeTEXT,textInputConfiguration.mediaType text/plain. toolResult.content is
+      output unchanged ifstring elsejson.dumps(output),defaultempty; finish contentEnd. No tool registry validation
+      or supplied item id reuse.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_conversation_tool_result$/)'
+  - id: case-ready-trigger-fixture
+    why: Copy pinned decompressed PCM as crates/betterlite-bedrock/src/realtime_input/ready_trigger.pcm and include_bytes!,
+      with15990bytes and SHA256 961653bfc4a99686cca3f2d64f10c9fa5589cfb511098508ca916c7f20a826bd. Oracle calls cached
+      ready_trigger_pcm (lru_cache maxsize1), not synthesizedaudio. Prepend16000zero bytes (0.5s) and append96000zero
+      bytes (3s), yielding127990bytes. Split1024-byte chunks,base64 each independently,125audioInput frames,last1014bytes.
+      No Polly/download/audio codec dependency. Count the source opaque literal separately from executable logic
+      in budget reasoning.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_ready_trigger_fixture$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/audio-append-before-after-session.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/audio-commit.yaml
@@ -186,39 +296,43 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/response-cancel.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/close-session-order.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/unknown-client-event.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/audio-sample-rate-transition.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/conversation-tool-result.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-input/ready-trigger-fixture.yaml
+deviations:
+- what: Invalid client JSON warnings omit the raw first200 message characters; the warning category and empty outbound
+    result are preserved.
+  why: Repository redaction rules prohibit exposing client audio/text through malformed request logs.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L645-L649
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event L709-L820;
-  BedrockRealtimeConfig._parse_generation_stage L823-L831; BedrockRealtimeConfig._current_user_item_id L833-L837;
-  BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event L849-L852;
-  BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__
+  L83-L124; BedrockRealtimeConfig.get_error_class L126-L132; BedrockRealtimeConfig.validate_environment L134-L136;
+  BedrockRealtimeConfig.get_complete_url L138-L140; BedrockRealtimeConfig.requires_session_configuration L142-L144;
+  BedrockRealtimeConfig.session_configuration_request L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format
+  L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate L216-L233; BedrockRealtimeConfig.transform_session_update_event
+  L235-L356; BedrockRealtimeConfig._session_object L670-L682; BedrockRealtimeConfig.session_created_event L684-L694;
+  BedrockRealtimeConfig.session_updated_event L696-L707 belong to B661.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event
+  L709-L820; BedrockRealtimeConfig._parse_generation_stage L822-L831; BedrockRealtimeConfig._current_user_item_id
+  L833-L837; BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event
+  L849-L852; BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
   L909-L922; BedrockRealtimeConfig.transform_text_output_event L924-L964; BedrockRealtimeConfig.transform_audio_output_event
-  L966-L999 belong to B663; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta L854-L875; BedrockRealtimeConfig.leftover_usage_done_events
-  L877-L893; BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
-  L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
-  L1159-L1210 belong to B664; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response L1275-L1415
-  belong to B665; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
-  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
-  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
-  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
-  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
-  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
-  L696-L707 belong to B661; reuse that implementation or its injected typed boundary.
+  L966-L999 belong to B663.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta
+  L854-L875; BedrockRealtimeConfig.leftover_usage_done_events L877-L893; BedrockRealtimeConfig.transform_content_end_event
+  L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event L1103-L1127; BedrockRealtimeConfig._response_done_events
+  L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event L1159-L1210 belong to B664.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
+  L1275-L1415 belong to B665.'
 pitfalls:
-- Preserve prompt/content state and the pinned precomputed PCM ready trigger bytes; copy them as a fixture, not
-  an audio synthesis dependency.
+- A client append marks the session as having audio even when its content is empty, permanently disabling the synthetic
+  ready trigger for that session.
+- Committing audio closes the current content but does not change its contentName before a later append.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

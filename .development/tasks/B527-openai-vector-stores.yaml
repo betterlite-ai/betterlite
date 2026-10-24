@@ -19,8 +19,37 @@ description: >-
   L155-L163; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_response L165-L177; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_request
   L179-L187; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_response L189-L201; OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_request
   L203-L220; OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_response L222-L234; OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_request
-  L236-L244; OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_response L246-L258. litellm/utils.py:
-  add_openai_metadata L10292-L10324.
+  L236-L244; OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_response L246-L258. Reuse B668 add_openai_metadata;
+  this task does not own litellm/utils.py.
+
+
+  Named case contracts: store_create: POST body retains name, file_ids, expires_after, chunking_strategy and metadata,
+  with None defaults; B668 strips hidden_params and non-string values before keeping the first 16 metadata entries.
+  search_ranking_filter: Search body keeps query plus filters, max_num_results, ranking_options and rewrite_query,
+  each defaulting to None; extra_body is unused. file_update_attributes: Update retains None fields while create
+  and list drop them; dictionary attributes use B668 string-only 16-key projection, while nondictionary attributes
+  pass through unchanged. assistants_beta_default: For both store and attached-file configs add OpenAI-Beta: assistants=v2
+  only when that exact header key is absent; preserve a caller value, including an empty value. credential_precedence:
+  Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY in order; overwrite Authorization
+  and Content-Type with Bearer {key} and application/json, including Bearer None when unresolved. auth_key_required:
+  get_auth_credentials rejects None with ValueError (api_key is required), but accepts an empty string and returns
+  Authorization: Bearer . base_url_precedence: Use explicit api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE,
+  then https://api.openai.com/v1; strip all trailing slashes before /vector_stores and encoded store id /files suffixes.
+  encoded_ids_query: B171 encodes vector_store_id and file_id as single path segments; search inserts /{id}/search
+  before an existing query string, while retrieve/content/update/delete append their file suffix to the prepared
+  base. endpoint_permissions: Return the exact GET search read endpoint and POST store write endpoint; attached-file
+  read endpoints are list, retrieve and /content, writes are POST attach, POST update and DELETE detach under /vector_stores/{vector_store_id}/files.
+  invalid_reply_status_headers: Malformed JSON in every response adapter preserves response.status_code and response.headers
+  through the inherited error class; file adapters cast parsed JSON rather than enforcing additional field validation.
+
+
+  Write standalone Rust test openai_vector_stores_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_vector_stores_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-openai/src/vector_stores.rs with adjacent tests under vector_stores/. Keep each Rust
@@ -38,9 +67,10 @@ description: >-
 
   Write rstest function vector_stores_cases in betterlite-openai with these exact named cases (one per oracle file):
   store_create, search_ranking_filter, file_create_chunking, file_list_pagination, file_retrieve_content, file_update_attributes,
-  file_delete. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
-  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
-  retain route registration; this task must not register a duplicate axum route.
+  file_delete, assistants_beta_default, credential_precedence, auth_key_required, base_url_precedence, encoded_ids_query,
+  endpoint_permissions, invalid_reply_status_headers. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_vector_stores* using HelperCase: kind:
@@ -57,10 +87,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 346 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 365 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 636 planned, 650 maximum changed lines.
+  Budget from 320 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 335 production lines, 200 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 735 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -82,15 +112,13 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L34-L159
-  why: >-
-    Own OpenAIVectorStoreConfig.get_auth_credentials, OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type,
+  why: Own OpenAIVectorStoreConfig.get_auth_credentials, OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type,
     OpenAIVectorStoreConfig.validate_environment, OpenAIVectorStoreConfig.get_complete_url, OpenAIVectorStoreConfig.transform_search_vector_store_request,
     OpenAIVectorStoreConfig.transform_search_vector_store_response, OpenAIVectorStoreConfig.transform_create_vector_store_request,
     OpenAIVectorStoreConfig.transform_create_vector_store_response. Other functions in this file remain with the
     owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L26-L258
-  why: >-
-    Own _clean_dict, OpenAIVectorStoreFilesConfig.get_auth_credentials, OpenAIVectorStoreFilesConfig.get_vector_store_file_endpoints_by_type,
+  why: Own _clean_dict, OpenAIVectorStoreFilesConfig.get_auth_credentials, OpenAIVectorStoreFilesConfig.get_vector_store_file_endpoints_by_type,
     OpenAIVectorStoreFilesConfig.validate_environment, OpenAIVectorStoreFilesConfig.get_complete_url, OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_request,
     OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_response, OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_request,
     OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_response, OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_request,
@@ -99,15 +127,15 @@ references:
     OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_response, OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_request,
     OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_response. Other functions in this file remain
     with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10292-L10324
-  why: Own add_openai_metadata. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'store create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/store-create.yaml.'
+- text: 'store_create: POST body retains name, file_ids, expires_after, chunking_strategy and metadata, with None
+    defaults; B668 strips hidden_params and non-string values before keeping the first 16 metadata entries.'
   proof:
   - case-store-create
   - oracle
   - helper-python
-- text: 'search ranking filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/search-ranking-filter.yaml.'
+- text: 'search_ranking_filter: Search body keeps query plus filters, max_num_results, ranking_options and rewrite_query,
+    each defaulting to None; extra_body is unused.'
   proof:
   - case-search-ranking-filter
   - oracle
@@ -127,8 +155,8 @@ dod:
   - case-file-retrieve-content
   - oracle
   - helper-python
-- text: >-
-    file update attributes: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-update-attributes.yaml.
+- text: 'file_update_attributes: Update retains None fields while create and list drop them; dictionary attributes
+    use B668 string-only 16-key projection, while nondictionary attributes pass through unchanged.'
   proof:
   - case-file-update-attributes
   - oracle
@@ -145,50 +173,136 @@ dod:
 - text: decode_vector_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'assistants_beta_default: For both store and attached-file configs add OpenAI-Beta: assistants=v2 only when
+    that exact header key is absent; preserve a caller value, including an empty value.'
+  proof:
+  - case-assistants-beta-default
+  - oracle
+  - helper-python
+- text: 'credential_precedence: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY
+    in order; overwrite Authorization and Content-Type with Bearer {key} and application/json, including Bearer
+    None when unresolved.'
+  proof:
+  - case-credential-precedence
+  - oracle
+  - helper-python
+- text: 'auth_key_required: get_auth_credentials rejects None with ValueError (api_key is required), but accepts
+    an empty string and returns Authorization: Bearer .'
+  proof:
+  - case-auth-key-required
+  - oracle
+  - helper-python
+- text: 'base_url_precedence: Use explicit api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE, then https://api.openai.com/v1;
+    strip all trailing slashes before /vector_stores and encoded store id /files suffixes.'
+  proof:
+  - case-base-url-precedence
+  - oracle
+  - helper-python
+- text: 'encoded_ids_query: B171 encodes vector_store_id and file_id as single path segments; search inserts /{id}/search
+    before an existing query string, while retrieve/content/update/delete append their file suffix to the prepared
+    base.'
+  proof:
+  - case-encoded-ids-query
+  - oracle
+  - helper-python
+- text: 'endpoint_permissions: Return the exact GET search read endpoint and POST store write endpoint; attached-file
+    read endpoints are list, retrieve and /content, writes are POST attach, POST update and DELETE detach under
+    /vector_stores/{vector_store_id}/files.'
+  proof:
+  - case-endpoint-permissions
+  - oracle
+  - helper-python
+- text: 'invalid_reply_status_headers: Malformed JSON in every response adapter preserves response.status_code and
+    response.headers through the inherited error class; file adapters cast parsed JSON rather than enforcing additional
+    field validation.'
+  proof:
+  - case-invalid-reply-status-headers
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-store-create
-    why: The store-create behavior is missing or differs from its pinned fixture.
+    why: POST body retains name, file_ids, expires_after, chunking_strategy and metadata, with None defaults; B668
+      strips hidden_params and non-string values before keeping the first 16 metadata entries.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_store_create$/)'
   - id: case-search-ranking-filter
-    why: The search-ranking-filter behavior is missing or differs from its pinned fixture.
+    why: Search body keeps query plus filters, max_num_results, ranking_options and rewrite_query, each defaulting
+      to None; extra_body is unused.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_search_ranking_filter$/)'
   - id: case-file-create-chunking
-    why: The file-create-chunking behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-create-chunking.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_create_chunking$/)'
   - id: case-file-list-pagination
-    why: The file-list-pagination behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-list-pagination.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_list_pagination$/)'
   - id: case-file-retrieve-content
-    why: The file-retrieve-content behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-retrieve-content.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_retrieve_content$/)'
   - id: case-file-update-attributes
-    why: The file-update-attributes behavior is missing or differs from its pinned fixture.
+    why: Update retains None fields while create and list drop them; dictionary attributes use B668 string-only
+      16-key projection, while nondictionary attributes pass through unchanged.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_update_attributes$/)'
   - id: case-file-delete
-    why: The file-delete behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-delete.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_delete$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_vector_stores.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_vector_stores.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_vector_stores*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_vector_stores*")"
       && grep -lq 'openai_vector_stores' tools/oracle/fuzz/corpus/helper_case/openai_vector_stores* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_vector_stores$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_vector_stores)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_vector_stores)"
       && grep -q 'decode_vector_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_vector_stores.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_vector_stores_corpus$/)'
+  - id: case-assistants-beta-default
+    why: 'For both store and attached-file configs add OpenAI-Beta: assistants=v2 only when that exact header key
+      is absent; preserve a caller value, including an empty value.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_assistants_beta_default$/)'
+  - id: case-credential-precedence
+    why: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY in order; overwrite
+      Authorization and Content-Type with Bearer {key} and application/json, including Bearer None when unresolved.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_credential_precedence$/)'
+  - id: case-auth-key-required
+    why: 'get_auth_credentials rejects None with ValueError (api_key is required), but accepts an empty string and
+      returns Authorization: Bearer .'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_auth_key_required$/)'
+  - id: case-base-url-precedence
+    why: Use explicit api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE, then https://api.openai.com/v1;
+      strip all trailing slashes before /vector_stores and encoded store id /files suffixes.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_base_url_precedence$/)'
+  - id: case-encoded-ids-query
+    why: B171 encodes vector_store_id and file_id as single path segments; search inserts /{id}/search before an
+      existing query string, while retrieve/content/update/delete append their file suffix to the prepared base.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_encoded_ids_query$/)'
+  - id: case-endpoint-permissions
+    why: Return the exact GET search read endpoint and POST store write endpoint; attached-file read endpoints are
+      list, retrieve and /content, writes are POST attach, POST update and DELETE detach under /vector_stores/{vector_store_id}/files.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_endpoint_permissions$/)'
+  - id: case-invalid-reply-status-headers
+    why: Malformed JSON in every response adapter preserves response.status_code and response.headers through the
+      inherited error class; file adapters cast parsed JSON rather than enforcing additional field validation.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_invalid_reply_status_headers$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_vector_stores_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_vector_stores_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-vector-stores/store-create.yaml
 - tools/oracle/cases/helpers/providers/openai-vector-stores/search-ranking-filter.yaml
@@ -197,6 +311,13 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-vector-stores/file-retrieve-content.yaml
 - tools/oracle/cases/helpers/providers/openai-vector-stores/file-update-attributes.yaml
 - tools/oracle/cases/helpers/providers/openai-vector-stores/file-delete.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/assistants-beta-default.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/credential-precedence.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/auth-key-required.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/base-url-precedence.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/encoded-ids-query.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/endpoint-permissions.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/invalid-reply-status-headers.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -207,8 +328,7 @@ out_of_scope:
   typed boundary.'
 - 'litellm/utils.py: extract_duration_from_srt_or_vtt L10168-L10194 belong to B515; reuse that implementation or
   its injected typed boundary.'
-- >-
-  litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class L118-L126; _snapshot_exception_for_hook
+- 'litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class L118-L126; _snapshot_exception_for_hook
   L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response L168-L179; _get_cached_llm_caching_handler
   L182-L193; _get_cached_audio_utils L201-L212; print_verbose L544-L559; _print_verbose_is_active L562-L567; custom_llm_setup
   L572-L581; _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks
@@ -278,10 +398,8 @@ out_of_scope:
   L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
   L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
   L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
-  is_cached_message L8055-L8101; is_base64_encoded L8104-L8120; get_base64_str L8123-L8129; has_tool_call_blocks
-  L8132-L8141; any_assistant_message_has_thinking_blocks L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks
-  L8165-L8194; add_dummy_tool L8197-L8215; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252;
-  validate_and_fix_openai_messages L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param
+  is_cached_message L8055-L8101; is_base64_encoded L8104-L8120; convert_to_dict L8228-L8243; convert_list_message_to_dict
+  L8246-L8252; validate_and_fix_openai_messages L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param
   L8289-L8311; cleanup_none_field_in_message L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice
   L8365-L8396; validate_openai_optional_params L8399-L8415; _get_bundled_model_cost_map L8419-L8424; _get_model_cost_entry_for_provider_config
   L8427-L8442; ProviderConfigManager._build_provider_config_map L8452-L8625; ProviderConfigManager._get_azure_config
@@ -305,14 +423,13 @@ out_of_scope:
   L9860-L9916; ProviderConfigManager.get_provider_sandbox_config L9919-L9934; ProviderConfigManager.get_provider_harness_config
   L9937-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9968-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
   L10036-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
-  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; _add_path_to_api_base L10197-L10232; get_standard_openai_params
-  L10235-L10236; get_non_default_completion_params L10239-L10240; peek_reasoning_summary_aliases L10243-L10258;
-  strip_reasoning_summary_aliases_from_optional_params L10261-L10283; get_non_default_transcription_params L10286-L10289;
-  return_raw_request L10344-L10389; jsonify_tools L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion
-  L10417-L10424; __getattr__ L10427-L10439 belong to B157; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer L2518-L2532; create_tokenizer
-  L2535-L2547 belong to B195; reuse that implementation or its injected typed boundary.
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; get_standard_openai_params L10235-L10236; get_non_default_completion_params
+  L10239-L10240; peek_reasoning_summary_aliases L10243-L10258; strip_reasoning_summary_aliases_from_optional_params
+  L10261-L10283; get_non_default_transcription_params L10286-L10289; return_raw_request L10344-L10389; jsonify_tools
+  L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion L10417-L10424; __getattr__ L10427-L10439
+  belong to B157; reuse that implementation or its injected typed boundary.'
+- 'litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer L2518-L2532; create_tokenizer
+  L2535-L2547 belong to B195; reuse that implementation or its injected typed boundary.'
 - 'litellm/utils.py: token_counter L2550-L2586 belong to B196; reuse that implementation or its injected typed boundary.'
 - 'litellm/utils.py: get_optional_params L4434-L5043 belong to B175; reuse that implementation or its injected typed
   boundary.'
@@ -320,9 +437,20 @@ out_of_scope:
   or its injected typed boundary.'
 - 'litellm/utils.py: function_to_dict L6530-L6616 belong to B178; reuse that implementation or its injected typed
   boundary.'
+- 'litellm/utils.py: add_openai_metadata L10292-L10324 belongs to B668; use its ordered string-only metadata projection
+  for store metadata and file attributes.'
+- 'litellm/utils.py: _add_path_to_api_base L10197-L10232 belongs to B668; share its query-preserving path-overlap
+  implementation.'
+- 'litellm/utils.py: has_tool_call_blocks L8132-L8141; any_assistant_message_has_thinking_blocks L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks
+  L8165-L8194; add_dummy_tool L8197-L8215 belong to B2202.'
+- 'litellm/utils.py: get_base64_str L8123-L8129 belongs to B183.'
 pitfalls:
-- Preserve chunking strategy, attributes, ranking filters and pagination.
+- get_auth_credentials checks is None while validate_environment uses truthiness, so an empty key has different
+  outcomes at those seams.
+- 'File update does not call _clean_dict: copying create payload cleaning into update would erase explicit nulls.'
+- Search preserves the query suffix before adding its path; the attached-file helpers do not use that partition
+  step.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 750
   max_new_expects: 0
-review_level: standard
+review_level: security

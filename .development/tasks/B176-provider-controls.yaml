@@ -2,7 +2,7 @@ id: B176
 title: Trusted controls, provider headers and affinity
 description: >-
   Add provider control extraction, safe extra-body/multipart normalization, outbound request extra_headers selection
-  scoped by custom_llm_provider and session-affinity helpers. Put them in betterlite-provider/controls and /headers..
+  scoped by custom_llm_provider and session-affinity helpers. Put them in betterlite-models/controls and /headers..
   Use typed trusted controls whose constructors are only called by config/server code, separate from request metadata;
   no request field may impersonate deployment credentials or internal metadata. Support the config keys these implemented
   helpers consume and reject the rest through B002. Preserve arbitrary provider payload only inside the existing
@@ -17,17 +17,22 @@ description: >-
   behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations provider_controls,
   provider_affinity, multipart_fields, provider_headers in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
+
+
+  These pure policies live in betterlite-models below the executable provider dispatcher. Use catalog/wire DTOs
+  and closed config tags or caller-supplied policy projections, never an executable provider client. B010 reexports
+  ProviderId and composes the provider enum; do not import betterlite-provider or betterlite-core here.
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
-  - crates/betterlite-provider/src/controls.rs
-  - crates/betterlite-provider/src/controls/**
-  - crates/betterlite-provider/src/headers.rs
-  - crates/betterlite-provider/src/headers/**
-  - crates/betterlite-provider/fuzz/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/controls.rs
+  - crates/betterlite-models/src/controls/**
+  - crates/betterlite-models/src/headers.rs
+  - crates/betterlite-models/src/headers/**
+  - crates/betterlite-models/fuzz/**
   - crates/betterlite-config/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
@@ -37,28 +42,22 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L96-L120
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L96-L120
   why: Validated control options and storage.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L134-L270
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L134-L270
   why: Control extraction and trusted credentials.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L16-L133
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L16-L133
   why: Multipart flattening and JSON extra_body identity.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/provider_affinity.py#L33-L98
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/provider_affinity.py#L33-L98
   why: Forbidden headers, stable session identity and injection prevention.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_provider_specific_headers.py#L7-L39
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_provider_specific_headers.py#L7-L39
   why: Provider-specific header extraction.
 dod:
 - text: The listed controls, affinity, multipart and scoped outbound-header cases match pinned helper outputs.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Client metadata cannot override credentials or a configured destination, and CR/LF/NUL values cannot become
+- text: Client metadata cannot override credentials or a configured destination, and CR/LF/NUL values cannot become
     HTTP headers.
   proof:
   - provider-controls-tests
@@ -69,8 +68,7 @@ dod:
   proof:
   - config-yaml-corpus
   - chat-request-corpus
-- text: >-
-    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -79,32 +77,27 @@ checks:
   commands:
   - id: provider-controls-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-provider -p betterlite-config --no-tests=fail -E 'test(/::b176_provider_controls_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(/::b176_provider_controls_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
       && grep -rlq 'provider_affinity_header' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
       && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
       && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'provider_controls' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'provider_affinity' tools/oracle/fuzz/corpus/helper_case
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'provider_controls' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'provider_affinity' tools/oracle/fuzz/corpus/helper_case
       && grep -rlq 'multipart_fields' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'provider_headers' tools/oracle/fuzz/corpus/helper_case
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -121,16 +114,13 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - Provider-specific signing and secret-manager lookups belong to provider tasks and B129.
-- >-
-  A request cannot supply arbitrary environment-variable references or outbound headers that bypass the typed policy.
-- >-
-  dot_notation_indexing.py is B213 (shared with JWT auth); pick_cheapest_chat_models_from_llm_provider is B019;
+- A request cannot supply arbitrary environment-variable references or outbound headers that bypass the typed policy.
+- dot_notation_indexing.py is B213 (shared with JWT auth); pick_cheapest_chat_models_from_llm_provider is B019;
   get_proxy_server_request_headers is B206; non-JSON Langfuse object conversion is B164.
 pitfalls:
 - A generated session identifier is not a stable affinity key.
 - Header names are case insensitive, including duplicate detection.
-- >-
-  Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.
+- Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.
 review_level: security
 budget:
   max_changed_lines: 800

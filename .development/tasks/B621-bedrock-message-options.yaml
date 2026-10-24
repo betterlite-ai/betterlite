@@ -1,17 +1,15 @@
 id: B621
 title: Bedrock Messages cache thinking and beta policy
 description: >-
-  Add BedrockMessagesOptions normalization over native Anthropic records. Preserve model-specific TTL removal, clear-thinking
-  budget/effort synthesis, context-management filtering, tool-search betas, unsupported web-search rejection and
-  field dropping with diagnostics. Parent AnthropicMessagesConfig normalization stays B081; this leaf accepts already
-  prepared native messages/options and the oracle isolates only the listed overrides with a normalized-input superclass
-  seam.
+  Add BedrockMessagesOptions normalization over native Anthropic records. Preserve model-specific TTL removal and
+  clear-thinking budget/effort synthesis. This leaf transforms parsed native records directly; parent request assembly
+  and B692 beta/context policy remain outside its ownership.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
-  AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock
-  L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management L250-L320;
-  AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L323-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
+  AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock L389-L401; AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control
+  L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management
+  L250-L320; AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L323-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
   L332-L339; AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking L341-L368; AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock
   L657-L674.
 
@@ -28,6 +26,35 @@ description: >-
   functions listed below.
 
 
+  Named case contracts: cache_ttl_model_policy: The local _is_claude_4_5_on_bedrock wrapper calls B690 is_claude_4_5_on_bedrock.
+  Only call it for a truthy model; otherwise TTL support is false. Mutate cache_control dictionaries on tools, system
+  list items and message content list items, without recursively descending into nested tool results. Always remove
+  scope; retain ttl only for supported models and exact 5m or 1h. Preserve type and unrelated fields, even unsupported
+  ones. Ignore non-dict cache_control and content items, but do not invent guards for malformed noniterable tools/messages
+  containers. No warning accompanies field removal. clear_thinking_budget: Inject only for context_management dict
+  with edits list containing a dict whose type is clear_thinking_20251015, and an extended-thinking-supported model.
+  Existing thinking.type=adaptive returns False untouched; enabled on a nonadaptive model also returns False. Enabled
+  on an adaptive model converts its budget through int, preserving explicit 0/negative/string integers and defaulting
+  only None to BEDROCK_MIN_THINKING_BUDGET_TOKENS=1024. This enabled-to-adaptive branch bypasses the max_tokens
+  safety check. adaptive_clear_thinking: Adaptive injection keeps a dict output_config or replaces other types with
+  {}. setdefault effort means existing None/empty/other values win; absent effort is xhigh for budget>=DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET=8192,
+  high for >=HIGH=4096, medium for >=MEDIUM=2048, else low. B688 loads the exact DEFAULT_REASONING_EFFORT_*_THINKING_BUDGET
+  environment names and minimum above. Replace thinking with {type:adaptive}, preserving display only when its existing
+  value is not None, including empty/False; discard other thinking fields. Debug-log Bedrock clear_thinking_20251015:
+  injected adaptive thinking with effort=%s for model=%s. This helper does not clamp the derived effort itself.
+  effort_clamp: Use the same raw-effort cases as B618: only adaptive Bedrock models with string reasoning_effort
+  call B690 normalization on {effort:value}, then update the original options. Nonadaptive,nonstring and unknown/no-ceiling
+  values remain as the shared helper specifies. extended_thinking_support: B688 adaptive-thinking capability for
+  provider bedrock wins first. Otherwise lowercase the model and accept any substring from opus-4.5,opus_4.5,opus-4-5,opus_4_5,opus-4.1,opus_4.1,opus-4-1,opus_4_1,opus-4,opus_4,sonnet-4,sonnet_4.
+  This is substring matching without version boundaries, so future suffixes matching opus-4 also pass; other families
+  do not. clear_thinking_injection_limit: For other thinking dictionaries, debug-log Bedrock clear_thinking_20251015:
+  replacing thinking=%s with minimal thinking config. Use the configured minimum budget, then if max_tokens is a
+  Python int (including bool) and <= budget, emit warning Bedrock clear_thinking_20251015: max_tokens=%s is not
+  greater than minimum thinking budget (%s); cannot inject thinking safely and return False without replacing thinking.
+  Missing,non-int or larger max_tokens permit injection. Nonadaptive models get exactly {type:enabled,budget_tokens:budget},
+  debug-log Bedrock clear_thinking_20251015: injected thinking with budget_tokens=%s, and return True.
+
+
   Implement crates/betterlite-bedrock/src/message_options.rs with adjacent tests under message_options/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -42,10 +69,10 @@ description: >-
 
 
   Write rstest function message_options_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): cache_ttl_model_policy, clear_thinking_budget, adaptive_clear_thinking, effort_clamp. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  file): cache_ttl_model_policy, clear_thinking_budget, adaptive_clear_thinking, effort_clamp, extended_thinking_support,
+  clear_thinking_injection_limit. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_message_options* using HelperCase: kind:
@@ -60,10 +87,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 195 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 220 production lines, 81 behavior/config-test lines,
-  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 397 planned, 400 maximum changed lines.
+  Budget from 205 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 220 production lines, 250 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 600 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -81,37 +108,49 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_message_options*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L158-L368
-  why: >-
-    Own AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control, AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L158-L368
+  why: Own AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control, AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock,
     AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management, AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens,
     AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget, AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L657-L674
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L657-L674
   why: Own AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock. Other functions in
     this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L389-L401
+  why: Own AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock below its direct callers.
 dod:
-- text: >-
-    cache ttl model policy: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-message-options/cache-ttl-model-policy.yaml.
+- text: 'cache_ttl_model_policy: The local _is_claude_4_5_on_bedrock wrapper calls B690 is_claude_4_5_on_bedrock.
+    Only call it for a truthy model; otherwise TTL support is false. Mutate cache_control dictionaries on tools,
+    system list items and message content list items, without recursively descending into nested tool results. Always
+    remove scope; retain ttl only for supported models and exact 5m or 1h. Preserve type and unrelated fields, even
+    unsupported ones. Ignore non-dict cache_control and content items, but do not invent guards for malformed noniterable
+    tools/messages containers. No warning accompanies field removal.'
   proof:
   - case-cache-ttl-model-policy
   - oracle
   - helper-python
-- text: >-
-    clear thinking budget: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-message-options/clear-thinking-budget.yaml.
+- text: 'clear_thinking_budget: Inject only for context_management dict with edits list containing a dict whose
+    type is clear_thinking_20251015, and an extended-thinking-supported model. Existing thinking.type=adaptive returns
+    False untouched; enabled on a nonadaptive model also returns False. Enabled on an adaptive model converts its
+    budget through int, preserving explicit 0/negative/string integers and defaulting only None to BEDROCK_MIN_THINKING_BUDGET_TOKENS=1024.
+    This enabled-to-adaptive branch bypasses the max_tokens safety check.'
   proof:
   - case-clear-thinking-budget
   - oracle
   - helper-python
-- text: >-
-    adaptive clear thinking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-message-options/adaptive-clear-thinking.yaml.
+- text: 'adaptive_clear_thinking: Adaptive injection keeps a dict output_config or replaces other types with {}.
+    setdefault effort means existing None/empty/other values win; absent effort is xhigh for budget>=DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET=8192,
+    high for >=HIGH=4096, medium for >=MEDIUM=2048, else low. B688 loads the exact DEFAULT_REASONING_EFFORT_*_THINKING_BUDGET
+    environment names and minimum above. Replace thinking with {type:adaptive}, preserving display only when its
+    existing value is not None, including empty/False; discard other thinking fields. Debug-log Bedrock clear_thinking_20251015:
+    injected adaptive thinking with effort=%s for model=%s. This helper does not clamp the derived effort itself.'
   proof:
   - case-adaptive-clear-thinking
   - oracle
   - helper-python
-- text: 'effort clamp: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-message-options/effort-clamp.yaml.'
+- text: 'effort_clamp: Use the same raw-effort cases as B618: only adaptive Bedrock models with string reasoning_effort
+    call B690 normalization on {effort:value}, then update the original options. Nonadaptive,nonstring and unknown/no-ceiling
+    values remain as the shared helper specifies.'
   proof:
   - case-effort-clamp
   - oracle
@@ -120,75 +159,120 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'extended_thinking_support: B688 adaptive-thinking capability for provider bedrock wins first. Otherwise
+    lowercase the model and accept any substring from opus-4.5,opus_4.5,opus-4-5,opus_4_5,opus-4.1,opus_4.1,opus-4-1,opus_4_1,opus-4,opus_4,sonnet-4,sonnet_4.
+    This is substring matching without version boundaries, so future suffixes matching opus-4 also pass; other families
+    do not.'
+  proof:
+  - case-extended-thinking-support
+  - oracle
+  - helper-python
+- text: 'clear_thinking_injection_limit: For other thinking dictionaries, debug-log Bedrock clear_thinking_20251015:
+    replacing thinking=%s with minimal thinking config. Use the configured minimum budget, then if max_tokens is
+    a Python int (including bool) and <= budget, emit warning Bedrock clear_thinking_20251015: max_tokens=%s is
+    not greater than minimum thinking budget (%s); cannot inject thinking safely and return False without replacing
+    thinking. Missing,non-int or larger max_tokens permit injection. Nonadaptive models get exactly {type:enabled,budget_tokens:budget},
+    debug-log Bedrock clear_thinking_20251015: injected thinking with budget_tokens=%s, and return True.'
+  proof:
+  - case-clear-thinking-injection-limit
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-cache-ttl-model-policy
-    why: The cache-ttl-model-policy behavior is missing or differs from its pinned fixture.
+    why: The local _is_claude_4_5_on_bedrock wrapper calls B690 is_claude_4_5_on_bedrock. Only call it for a truthy
+      model; otherwise TTL support is false. Mutate cache_control dictionaries on tools, system list items and message
+      content list items, without recursively descending into nested tool results. Always remove scope; retain ttl
+      only for supported models and exact 5m or 1h. Preserve type and unrelated fields, even unsupported ones. Ignore
+      non-dict cache_control and content items, but do not invent guards for malformed noniterable tools/messages
+      containers. No warning accompanies field removal.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_cache_ttl_model_policy$/)'
   - id: case-clear-thinking-budget
-    why: The clear-thinking-budget behavior is missing or differs from its pinned fixture.
+    why: Inject only for context_management dict with edits list containing a dict whose type is clear_thinking_20251015,
+      and an extended-thinking-supported model. Existing thinking.type=adaptive returns False untouched; enabled
+      on a nonadaptive model also returns False. Enabled on an adaptive model converts its budget through int, preserving
+      explicit 0/negative/string integers and defaulting only None to BEDROCK_MIN_THINKING_BUDGET_TOKENS=1024. This
+      enabled-to-adaptive branch bypasses the max_tokens safety check.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_clear_thinking_budget$/)'
   - id: case-adaptive-clear-thinking
-    why: The adaptive-clear-thinking behavior is missing or differs from its pinned fixture.
+    why: 'Adaptive injection keeps a dict output_config or replaces other types with {}. setdefault effort means
+      existing None/empty/other values win; absent effort is xhigh for budget>=DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET=8192,
+      high for >=HIGH=4096, medium for >=MEDIUM=2048, else low. B688 loads the exact DEFAULT_REASONING_EFFORT_*_THINKING_BUDGET
+      environment names and minimum above. Replace thinking with {type:adaptive}, preserving display only when its
+      existing value is not None, including empty/False; discard other thinking fields. Debug-log Bedrock clear_thinking_20251015:
+      injected adaptive thinking with effort=%s for model=%s. This helper does not clamp the derived effort itself.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_adaptive_clear_thinking$/)'
   - id: case-effort-clamp
-    why: The effort-clamp behavior is missing or differs from its pinned fixture.
+    why: 'Use the same raw-effort cases as B618: only adaptive Bedrock models with string reasoning_effort call
+      B690 normalization on {effort:value}, then update the original options. Nonadaptive,nonstring and unknown/no-ceiling
+      values remain as the shared helper specifies.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_effort_clamp$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_message_options.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_message_options.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_message_options*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_message_options*")"
       && grep -lq 'bedrock_message_options' tools/oracle/fuzz/corpus/helper_case/bedrock_message_options* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_message_options$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-extended-thinking-support
+    why: B688 adaptive-thinking capability for provider bedrock wins first. Otherwise lowercase the model and accept
+      any substring from opus-4.5,opus_4.5,opus-4-5,opus_4_5,opus-4.1,opus_4.1,opus-4-1,opus_4_1,opus-4,opus_4,sonnet-4,sonnet_4.
+      This is substring matching without version boundaries, so future suffixes matching opus-4 also pass; other
+      families do not.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_extended_thinking_support$/)'
+  - id: case-clear-thinking-injection-limit
+    why: 'For other thinking dictionaries, debug-log Bedrock clear_thinking_20251015: replacing thinking=%s with
+      minimal thinking config. Use the configured minimum budget, then if max_tokens is a Python int (including
+      bool) and <= budget, emit warning Bedrock clear_thinking_20251015: max_tokens=%s is not greater than minimum
+      thinking budget (%s); cannot inject thinking safely and return False without replacing thinking. Missing,non-int
+      or larger max_tokens permit injection. Nonadaptive models get exactly {type:enabled,budget_tokens:budget},
+      debug-log Bedrock clear_thinking_20251015: injected thinking with budget_tokens=%s, and return True.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::message_options_cases::case_[0-9]+_clear_thinking_injection_limit$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-message-options/cache-ttl-model-policy.yaml
 - tools/oracle/cases/helpers/providers/bedrock-message-options/clear-thinking-budget.yaml
 - tools/oracle/cases/helpers/providers/bedrock-message-options/adaptive-clear-thinking.yaml
 - tools/oracle/cases/helpers/providers/bedrock-message-options/effort-clamp.yaml
+- tools/oracle/cases/helpers/providers/bedrock-message-options/extended-thinking-support.yaml
+- tools/oracle/cases/helpers/providers/bedrock-message-options/clear-thinking-injection-limit.yaml
 deviations: []
 out_of_scope:
-- >-
-  B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
+- B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
   this task implements only its listed provider overrides on prepared native records.
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig.custom_llm_provider
-  L82-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider L86-L87; AmazonAnthropicClaudeMessagesConfig.get_error_class
-  L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__ L99-L101; AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment
-  L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request L116-L137; AmazonAnthropicClaudeMessagesConfig.get_complete_url
-  L139-L156; AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request L676-L795; AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator
-  L797-L815; AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper L817-L854 belong to B622; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage
-  L857-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage L878-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser
-  L956-L991 belong to B623; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
-  L370-L387 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock
-  L389-L401; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock
-  L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke L471-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers
-  L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools L605-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields
-  L643-L654 belong to B692; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
+  L370-L387 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig.get_error_class L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__ L99-L101;
+  AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request
+  L116-L137; AmazonAnthropicClaudeMessagesConfig.get_complete_url L139-L156; AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request
+  L676-L795; AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator L797-L815; AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper
+  L817-L854 belong to B622.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage L856-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage
+  L877-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser L956-L991 belong to B623.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig.custom_llm_provider L81-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider
+  L85-L87; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock
+  L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke L470-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers
+  L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools L604-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields
+  L643-L654 belong to B692.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5 L370-L387 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- >-
-  Preserve model-specific TTL removal, clear-thinking budget/effort synthesis, context-management filtering, tool-search
-  betas, unsupported web-search rejection and field dropping with diagnostics.
+- The enabled-to-adaptive conversion returns before the max_tokens safety check.
+- The TTL sanitizer removes scope but preserves unrelated cache_control keys.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: standard

@@ -1,13 +1,51 @@
 id: B685
-title: Azure chat streams and content-filter errors
+title: Azure chat streaming adapters
 description: >-
-  Port Azure sync/async streaming as one owned async stream path and extract structured content-filter failures.
-  B533 calls this path after the same Azure request preparation; reuse OpenAI SSE decoding and response wire records.
+  Port Azure sync/async streaming through a shared native transport while preserving their observable preparation,
+  header and error differences. B2215 owns structured content-policy extraction; this task does not classify finish_reason
+  or choices. B533 calls this path after the same Azure request preparation; reuse OpenAI SSE decoding and response
+  wire records.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/azure.py: AzureChatCompletion.streaming
-  L500-L575; AzureChatCompletion.async_streaming L577-L652. litellm/llms/azure/exception_mapping.py: AzureOpenAIExceptionMapping.create_content_policy_violation_error
-  L12-L52; AzureOpenAIExceptionMapping._extract_azure_error L55-L83.
+  L500-L575; AzureChatCompletion.async_streaming L577-L652.
+
+
+  The shared raw-send wrappers make_sync_azure_openai_chat_completion_request L140-L162 and make_azure_openai_chat_completion_request
+  L164-L194 in azure.py belong to B505, not B533. Reuse B529 process_azure_headers and B530 get_azure_ad_token_from_oidc
+  directly.
+
+
+  Named case contracts: stream_request: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided
+  client,_is_async and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function
+  does not force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI.
+  Native typed handles and Python bridge B159 preserve these facade errors. stream_options: Return B005 CustomStreamWrapper
+  immediately with model, provider azure, logging_obj and data.get(stream_options,None), retaining explicit None/{};
+  do not hide opening failures in a lazy async generator. Store raw response headers in logging_obj.model_call_details.response_headers.
+  stream_http_failure: Sync has no catch: opening/send errors propagate. Async wraps every exception as B673 AzureOpenAIError
+  using status_code attribute default500, message attribute or str only when absent, body attribute defaultNone,
+  and headers attribute; only headers is None plus truthy response falls back to response.headers. Explicit empty
+  headers suppress fallback; explicit None message/status attributes are not defaulted. stream_header_difference:
+  Sync passes B529 process_azure_headers output to the wrapper; async passes raw headers. Keep fixture rows for
+  each facade and header absence/case variants; do not normalize both paths into the sync behavior. sync_unused_preparation:
+  Sync first assembles client params with api_version,azure_endpoint,azure_deployment,litellm.client_session,max_retries,timeout
+  and calls B2200 select_azure_base_url_or_endpoint. Credential choice uses api_key is-not-None, then azure_ad_token
+  is-not-None (oidc/ invokes B530), then azure_ad_token_provider. This locally assembled map is NOT passed to get_azure_openai_client,
+  but the OIDC side effect/failure still occurs. dynamic_params is unused. stream_logging: B249 pre_call receives
+  data.messages, selected client.api_key and additional headers api_key/azure_ad_token plus api_base,acompletion=True,complete_input_dict=data;
+  sync logs any OIDC-replaced token. Keep structured credential redaction through B187. No post_call is added here.
+  stream_wrong_client: Sync wrong class raises AzureOpenAIError500 azure_client is not an instance of AzureOpenAI
+  or OpenAI before pre_call. Async wrong class raises ValueError Azure client is not an instance of AsyncAzureOpenAI
+  or AsyncOpenAI inside the catch, becoming AzureOpenAIError500 with that message.
+
+
+  Write standalone Rust test azure_chat_streams_credential_identity_isolation in betterlite-azure: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test azure_chat_streams_secret_safe_failure in betterlite-azure: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-azure/src/azure_stream_errors.rs with adjacent tests under azure_stream_errors/. Keep
@@ -24,10 +62,10 @@ description: >-
 
 
   Write rstest function azure_stream_errors_cases in betterlite-azure with these exact named cases (one per oracle
-  file): stream_request, stream_options, content_filter_prompt, content_filter_completion, stream_http_failure.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): stream_request, stream_options, stream_http_failure, stream_header_difference, sync_unused_preparation,
+  stream_logging, stream_wrong_client. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_stream_errors* using HelperCase: kind:
@@ -44,10 +82,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 200 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 225 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 485 planned, 500 maximum changed lines.
+  Budget from 144 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 185 production lines, 250 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 590 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -71,33 +109,26 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L500-L652
   why: Own AzureChatCompletion.streaming, AzureChatCompletion.async_streaming. Other functions in this file remain
     with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L12-L83
-  why: >-
-    Own AzureOpenAIExceptionMapping.create_content_policy_violation_error, AzureOpenAIExceptionMapping._extract_azure_error.
-    Other functions in this file remain with the owners listed below.
 dod:
-- text: 'stream request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-stream-errors/stream-request.yaml.'
+- text: 'stream_request: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided
+    client,_is_async and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function
+    does not force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI.
+    Native typed handles and Python bridge B159 preserve these facade errors.'
   proof:
   - case-stream-request
   - oracle
   - helper-python
-- text: 'stream options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-stream-errors/stream-options.yaml.'
+- text: 'stream_options: Return B005 CustomStreamWrapper immediately with model, provider azure, logging_obj and
+    data.get(stream_options,None), retaining explicit None/{}; do not hide opening failures in a lazy async generator.
+    Store raw response headers in logging_obj.model_call_details.response_headers.'
   proof:
   - case-stream-options
   - oracle
   - helper-python
-- text: 'content filter prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-stream-errors/content-filter-prompt.yaml.'
-  proof:
-  - case-content-filter-prompt
-  - oracle
-  - helper-python
-- text: >-
-    content filter completion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-stream-errors/content-filter-completion.yaml.
-  proof:
-  - case-content-filter-completion
-  - oracle
-  - helper-python
-- text: 'stream http failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-stream-errors/stream-http-failure.yaml.'
+- text: 'stream_http_failure: Sync has no catch: opening/send errors propagate. Async wraps every exception as B673
+    AzureOpenAIError using status_code attribute default500, message attribute or str only when absent, body attribute
+    defaultNone, and headers attribute; only headers is None plus truthy response falls back to response.headers.
+    Explicit empty headers suppress fallback; explicit None message/status attributes are not defaulted.'
   proof:
   - case-stream-http-failure
   - oracle
@@ -110,80 +141,136 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'stream_header_difference: Sync passes B529 process_azure_headers output to the wrapper; async passes raw
+    headers. Keep fixture rows for each facade and header absence/case variants; do not normalize both paths into
+    the sync behavior.'
+  proof:
+  - case-stream-header-difference
+  - oracle
+  - helper-python
+- text: 'sync_unused_preparation: Sync first assembles client params with api_version,azure_endpoint,azure_deployment,litellm.client_session,max_retries,timeout
+    and calls B2200 select_azure_base_url_or_endpoint. Credential choice uses api_key is-not-None, then azure_ad_token
+    is-not-None (oidc/ invokes B530), then azure_ad_token_provider. This locally assembled map is NOT passed to
+    get_azure_openai_client, but the OIDC side effect/failure still occurs. dynamic_params is unused.'
+  proof:
+  - case-sync-unused-preparation
+  - oracle
+  - helper-python
+- text: 'stream_logging: B249 pre_call receives data.messages, selected client.api_key and additional headers api_key/azure_ad_token
+    plus api_base,acompletion=True,complete_input_dict=data; sync logs any OIDC-replaced token. Keep structured
+    credential redaction through B187. No post_call is added here.'
+  proof:
+  - case-stream-logging
+  - oracle
+  - helper-python
+- text: 'stream_wrong_client: Sync wrong class raises AzureOpenAIError500 azure_client is not an instance of AzureOpenAI
+    or OpenAI before pre_call. Async wrong class raises ValueError Azure client is not an instance of AsyncAzureOpenAI
+    or AsyncOpenAI inside the catch, becoming AzureOpenAIError500 with that message.'
+  proof:
+  - case-stream-wrong-client
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-stream-request
-    why: The stream-request behavior is missing or differs from its pinned fixture.
+    why: Obtain client from B531 get_azure_openai_client with api_version,api_base,api_key,model,provided client,_is_async
+      and litellm_params; call B505 raw-send with the supplied timeout and unchanged data. This function does not
+      force data.stream=True. Sync requires AzureOpenAI/OpenAI; async requires AsyncAzureOpenAI/AsyncOpenAI. Native
+      typed handles and Python bridge B159 preserve these facade errors.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_request$/)'
   - id: case-stream-options
-    why: The stream-options behavior is missing or differs from its pinned fixture.
+    why: Return B005 CustomStreamWrapper immediately with model, provider azure, logging_obj and data.get(stream_options,None),
+      retaining explicit None/{}; do not hide opening failures in a lazy async generator. Store raw response headers
+      in logging_obj.model_call_details.response_headers.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_options$/)'
-  - id: case-content-filter-prompt
-    why: The content-filter-prompt behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_content_filter_prompt$/)'
-  - id: case-content-filter-completion
-    why: The content-filter-completion behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_content_filter_completion$/)'
   - id: case-stream-http-failure
-    why: The stream-http-failure behavior is missing or differs from its pinned fixture.
+    why: 'Sync has no catch: opening/send errors propagate. Async wraps every exception as B673 AzureOpenAIError
+      using status_code attribute default500, message attribute or str only when absent, body attribute defaultNone,
+      and headers attribute; only headers is None plus truthy response falls back to response.headers. Explicit
+      empty headers suppress fallback; explicit None message/status attributes are not defaulted.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_http_failure$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_stream_errors.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_stream_errors.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_stream_errors*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_stream_errors*")"
       && grep -lq 'azure_stream_errors' tools/oracle/fuzz/corpus/helper_case/azure_stream_errors* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_stream_errors$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_stream_errors)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_stream_errors)"
       && grep -q 'decode_content_filter_error' crates/betterlite-azure/fuzz/fuzz_targets/azure_stream_errors.rs
       && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_stream_errors_corpus$/)'
+  - id: case-stream-header-difference
+    why: Sync passes B529 process_azure_headers output to the wrapper; async passes raw headers. Keep fixture rows
+      for each facade and header absence/case variants; do not normalize both paths into the sync behavior.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_header_difference$/)'
+  - id: case-sync-unused-preparation
+    why: Sync first assembles client params with api_version,azure_endpoint,azure_deployment,litellm.client_session,max_retries,timeout
+      and calls B2200 select_azure_base_url_or_endpoint. Credential choice uses api_key is-not-None, then azure_ad_token
+      is-not-None (oidc/ invokes B530), then azure_ad_token_provider. This locally assembled map is NOT passed to
+      get_azure_openai_client, but the OIDC side effect/failure still occurs. dynamic_params is unused.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_sync_unused_preparation$/)'
+  - id: case-stream-logging
+    why: B249 pre_call receives data.messages, selected client.api_key and additional headers api_key/azure_ad_token
+      plus api_base,acompletion=True,complete_input_dict=data; sync logs any OIDC-replaced token. Keep structured
+      credential redaction through B187. No post_call is added here.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_logging$/)'
+  - id: case-stream-wrong-client
+    why: Sync wrong class raises AzureOpenAIError500 azure_client is not an instance of AzureOpenAI or OpenAI before
+      pre_call. Async wrong class raises ValueError Azure client is not an instance of AsyncAzureOpenAI or AsyncOpenAI
+      inside the catch, becoming AzureOpenAIError500 with that message.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_wrong_client$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_streams_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_streams_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-stream-errors/stream-request.yaml
 - tools/oracle/cases/helpers/providers/azure-stream-errors/stream-options.yaml
-- tools/oracle/cases/helpers/providers/azure-stream-errors/content-filter-prompt.yaml
-- tools/oracle/cases/helpers/providers/azure-stream-errors/content-filter-completion.yaml
 - tools/oracle/cases/helpers/providers/azure-stream-errors/stream-http-failure.yaml
+- tools/oracle/cases/helpers/providers/azure-stream-errors/stream-header-difference.yaml
+- tools/oracle/cases/helpers/providers/azure-stream-errors/sync-unused-preparation.yaml
+- tools/oracle/cases/helpers/providers/azure-stream-errors/stream-logging.yaml
+- tools/oracle/cases/helpers/providers/azure-stream-errors/stream-wrong-client.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
-  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
-  belong to B534; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
-  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
-  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
-  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
-  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
-  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
-  typed boundary.
+- AzureOpenAIExceptionMapping.create_content_policy_violation_error L12-L52 and _extract_azure_error L55-L83 moved
+  to B2215; generic classifier B237 calls that lower helper. These stream functions never call it directly.
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194 belong to B505.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
 pitfalls:
-- Content-filter responses can have empty choices; they still need the Azure-specific error projection.
+- The sync branch performs an OIDC exchange in a client-parameter map that it later does not use.
+- Async keeps raw response headers where sync calls process_azure_headers.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

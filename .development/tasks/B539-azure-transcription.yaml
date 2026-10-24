@@ -22,6 +22,41 @@ description: >-
   Reuse extract_duration_from_srt_or_vtt from B515 (litellm/utils.py); its implementation remains with that prerequisite.
 
 
+  Named case contracts: cognitive_stt_base: Exact api.cognitive.microsoft.com or its dot suffix converts to https://<region>.stt.speech.microsoft.com,
+  including the bare-domain case with no region. An STT host retains parsed scheme and hostname only, dropping port/path/query;
+  custom bases retain their trimmed original string. regional_stt_host: Append /speech/recognition/conversation/cognitiveservices/v1
+  and URL-encoded language/format. language defaults en-US only when absent; verbose_json maps detailed and every
+  other format maps simple. Map only language/response_format from non_default_params into options, ignoring drop_params.
+  native_json_text_extraction: RecognitionStatus missing/None or Success is accepted; every other value raises AzureSpeechAudioTranscriptionException
+  with raw response status/headers and Azure AI Speech transcription failed with RecognitionStatus=<value>. Prefer
+  string DisplayText even empty; otherwise first NBest dict Display or Lexical or empty. Preserve the whole JSON
+  in _hidden_params. verbose_transcript: Sync calls audio.transcriptions.create and projects BaseModel.model_dump
+  or text. Async uses with_raw_response, preserves headers and for a string adds _audio_transcription_duration through
+  B515 SRT/VTT extraction. Both supply hidden model/custom_llm_provider; async rejects a wrong projected type with
+  AzureOpenAIError 500 response is not an instance of TranscriptionResponse and otherwise rethrows original failures.
+  file_language_prompt: Native request uses B1001 process_audio_file bytes and content_type with files=None, not
+  multipart. OpenAI-compatible request builds {model,file,**options}, allowing option overrides, and delegates client
+  construction to B531; separate azure_ad_token/max_retries arguments are not forwarded there. native_transcription_headers:
+  Key resolves explicit api_key or AZURE_SPEECH_API_KEY; falsy result raises AzureSpeechAudioTranscriptionException
+  401 api_key is required for Azure AI Speech transcription. Copy headers, overwrite Ocp-Apim-Subscription-Key and
+  Accept=application/json, preserve exact Content-Type if present otherwise audio/wav. native_transcription_url_errors:
+  Base resolves explicit api_base or AZURE_SPEECH_API_BASE; None raises AzureSpeechAudioTranscriptionException 400
+  with required-base diagnostic and Cognitive Services/STT domain examples. A hostname ending .openai.azure.com
+  raises 400 Azure AI Speech transcription requires a Cognitive Services or STT Speech endpoint, not an Azure OpenAI
+  endpoint. azure_transcription_async_version: The public atranscription=True branch does not pass api_version to
+  its async helper, so it defaults None there; sync forwards it. Exact SDK checks reject standard v1 OpenAI clients
+  with AzureOpenAIError 500 azure_client is not an instance of AzureOpenAI or async_azure_client is not an instance
+  of AsyncAzureOpenAI.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2202. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-azure/src/transcription.rs with adjacent tests under transcription/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -37,9 +72,9 @@ description: >-
 
   Write rstest function transcription_cases in betterlite-azure with these exact named cases (one per oracle file):
   openai_transcription_route, cognitive_stt_base, regional_stt_host, native_json_text_extraction, verbose_transcript,
-  file_language_prompt. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file_language_prompt, native_transcription_headers, native_transcription_url_errors, azure_transcription_async_version.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_transcription* using HelperCase: kind:
@@ -81,9 +116,9 @@ description: >-
 
 
   Budget from 306 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 325 production lines, 143 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 31 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 658 planned, 675 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 330 production lines, 235 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 40 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 800 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -118,8 +153,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L44-L207
-  why: >-
-    Own AzureSpeechAudioTranscriptionConfig.get_supported_openai_params, AzureSpeechAudioTranscriptionConfig.map_openai_params,
+  why: Own AzureSpeechAudioTranscriptionConfig.get_supported_openai_params, AzureSpeechAudioTranscriptionConfig.map_openai_params,
     AzureSpeechAudioTranscriptionConfig.validate_environment, AzureSpeechAudioTranscriptionConfig.get_complete_url,
     AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_request, AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_response,
     AzureSpeechAudioTranscriptionConfig.get_error_class, AzureSpeechAudioTranscriptionConfig._resolve_stt_base_url,
@@ -129,38 +163,49 @@ references:
     AzureSpeechAudioTranscriptionConfig._extract_text. Other functions in this file remain with the owners listed
     below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L24-L205
-  why: >-
-    Own AzureAudioTranscription.audio_transcriptions, AzureAudioTranscription.async_audio_transcriptions. Other
+  why: Own AzureAudioTranscription.audio_transcriptions, AzureAudioTranscription.async_audio_transcriptions. Other
     functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L27-L42
+  why: Native exception subtype and exact endpoint/default constants.
 dod:
-- text: >-
-    openai transcription route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml.
+- text: 'openai transcription route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml.'
   proof:
   - case-openai-transcription-route
   - oracle
   - helper-python
-- text: 'cognitive stt base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/cognitive-stt-base.yaml.'
+- text: 'cognitive_stt_base: Exact api.cognitive.microsoft.com or its dot suffix converts to https://<region>.stt.speech.microsoft.com,
+    including the bare-domain case with no region. An STT host retains parsed scheme and hostname only, dropping
+    port/path/query; custom bases retain their trimmed original string.'
   proof:
   - case-cognitive-stt-base
   - oracle
   - helper-python
-- text: 'regional stt host: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/regional-stt-host.yaml.'
+- text: 'regional_stt_host: Append /speech/recognition/conversation/cognitiveservices/v1 and URL-encoded language/format.
+    language defaults en-US only when absent; verbose_json maps detailed and every other format maps simple. Map
+    only language/response_format from non_default_params into options, ignoring drop_params.'
   proof:
   - case-regional-stt-host
   - oracle
   - helper-python
-- text: >-
-    native json text extraction: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/native-json-text-extraction.yaml.
+- text: 'native_json_text_extraction: RecognitionStatus missing/None or Success is accepted; every other value raises
+    AzureSpeechAudioTranscriptionException with raw response status/headers and Azure AI Speech transcription failed
+    with RecognitionStatus=<value>. Prefer string DisplayText even empty; otherwise first NBest dict Display or
+    Lexical or empty. Preserve the whole JSON in _hidden_params.'
   proof:
   - case-native-json-text-extraction
   - oracle
   - helper-python
-- text: 'verbose transcript: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/verbose-transcript.yaml.'
+- text: 'verbose_transcript: Sync calls audio.transcriptions.create and projects BaseModel.model_dump or text. Async
+    uses with_raw_response, preserves headers and for a string adds _audio_transcription_duration through B515 SRT/VTT
+    extraction. Both supply hidden model/custom_llm_provider; async rejects a wrong projected type with AzureOpenAIError
+    500 response is not an instance of TranscriptionResponse and otherwise rethrows original failures.'
   proof:
   - case-verbose-transcript
   - oracle
   - helper-python
-- text: 'file language prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/file-language-prompt.yaml.'
+- text: 'file_language_prompt: Native request uses B1001 process_audio_file bytes and content_type with files=None,
+    not multipart. OpenAI-compatible request builds {model,file,**options}, allowing option overrides, and delegates
+    client construction to B531; separate azure_ad_token/max_retries arguments are not forwarded there.'
   proof:
   - case-file-language-prompt
   - oracle
@@ -190,64 +235,94 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'native_transcription_headers: Key resolves explicit api_key or AZURE_SPEECH_API_KEY; falsy result raises
+    AzureSpeechAudioTranscriptionException 401 api_key is required for Azure AI Speech transcription. Copy headers,
+    overwrite Ocp-Apim-Subscription-Key and Accept=application/json, preserve exact Content-Type if present otherwise
+    audio/wav.'
+  proof:
+  - case-native-transcription-headers
+  - oracle
+  - helper-python
+- text: 'native_transcription_url_errors: Base resolves explicit api_base or AZURE_SPEECH_API_BASE; None raises
+    AzureSpeechAudioTranscriptionException 400 with required-base diagnostic and Cognitive Services/STT domain examples.
+    A hostname ending .openai.azure.com raises 400 Azure AI Speech transcription requires a Cognitive Services or
+    STT Speech endpoint, not an Azure OpenAI endpoint.'
+  proof:
+  - case-native-transcription-url-errors
+  - oracle
+  - helper-python
+- text: 'azure_transcription_async_version: The public atranscription=True branch does not pass api_version to its
+    async helper, so it defaults None there; sync forwards it. Exact SDK checks reject standard v1 OpenAI clients
+    with AzureOpenAIError 500 azure_client is not an instance of AzureOpenAI or async_azure_client is not an instance
+    of AsyncAzureOpenAI.'
+  proof:
+  - case-azure-transcription-async-version
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-openai-transcription-route
-    why: The openai-transcription-route behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_openai_transcription_route$/)'
   - id: case-cognitive-stt-base
-    why: The cognitive-stt-base behavior is missing or differs from its pinned fixture.
+    why: Exact api.cognitive.microsoft.com or its dot suffix converts to https://<region>.stt.speech.microsoft.com,
+      including the bare-domain case with no region. An STT host retains parsed scheme and hostname only, dropping
+      port/path/query; custom bases retain their trimmed original string.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_cognitive_stt_base$/)'
   - id: case-regional-stt-host
-    why: The regional-stt-host behavior is missing or differs from its pinned fixture.
+    why: Append /speech/recognition/conversation/cognitiveservices/v1 and URL-encoded language/format. language
+      defaults en-US only when absent; verbose_json maps detailed and every other format maps simple. Map only language/response_format
+      from non_default_params into options, ignoring drop_params.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_regional_stt_host$/)'
   - id: case-native-json-text-extraction
-    why: The native-json-text-extraction behavior is missing or differs from its pinned fixture.
+    why: RecognitionStatus missing/None or Success is accepted; every other value raises AzureSpeechAudioTranscriptionException
+      with raw response status/headers and Azure AI Speech transcription failed with RecognitionStatus=<value>.
+      Prefer string DisplayText even empty; otherwise first NBest dict Display or Lexical or empty. Preserve the
+      whole JSON in _hidden_params.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_native_json_text_extraction$/)'
   - id: case-verbose-transcript
-    why: The verbose-transcript behavior is missing or differs from its pinned fixture.
+    why: Sync calls audio.transcriptions.create and projects BaseModel.model_dump or text. Async uses with_raw_response,
+      preserves headers and for a string adds _audio_transcription_duration through B515 SRT/VTT extraction. Both
+      supply hidden model/custom_llm_provider; async rejects a wrong projected type with AzureOpenAIError 500 response
+      is not an instance of TranscriptionResponse and otherwise rethrows original failures.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_verbose_transcript$/)'
   - id: case-file-language-prompt
-    why: The file-language-prompt behavior is missing or differs from its pinned fixture.
+    why: Native request uses B1001 process_audio_file bytes and content_type with files=None, not multipart. OpenAI-compatible
+      request builds {model,file,**options}, allowing option overrides, and delegates client construction to B531;
+      separate azure_ad_token/max_retries arguments are not forwarded there.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_file_language_prompt$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_transcription.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_transcription.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_transcription*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_transcription*")"
       && grep -lq 'azure_transcription' tools/oracle/fuzz/corpus/helper_case/azure_transcription* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_transcription$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_transcription)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_transcription)"
       && grep -q 'decode_native_transcription' crates/betterlite-azure/fuzz/fuzz_targets/azure_transcription.rs
       && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_transcription_corpus$/)'
   - id: config-azure-speech-api-base
     why: The AZURE_SPEECH_API_BASE setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_base$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_base$/)'
       && grep -lq 'AZURE_SPEECH_API_BASE' crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*
   - id: config-azure-speech-api-key
     why: The AZURE_SPEECH_API_KEY setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_key$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_key$/)'
       && grep -lq 'AZURE_SPEECH_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
@@ -255,6 +330,22 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_transcription_secret_safe_failure$/)'
+  - id: case-native-transcription-headers
+    why: Key resolves explicit api_key or AZURE_SPEECH_API_KEY; falsy result raises AzureSpeechAudioTranscriptionException
+      401 api_key is required for Azure AI Speech transcription. Copy headers, overwrite Ocp-Apim-Subscription-Key
+      and Accept=application/json, preserve exact Content-Type if present otherwise audio/wav.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_native_transcription_headers$/)'
+  - id: case-native-transcription-url-errors
+    why: Base resolves explicit api_base or AZURE_SPEECH_API_BASE; None raises AzureSpeechAudioTranscriptionException
+      400 with required-base diagnostic and Cognitive Services/STT domain examples. A hostname ending .openai.azure.com
+      raises 400 Azure AI Speech transcription requires a Cognitive Services or STT Speech endpoint, not an Azure
+      OpenAI endpoint.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_native_transcription_url_errors$/)'
+  - id: case-azure-transcription-async-version
+    why: The public atranscription=True branch does not pass api_version to its async helper, so it defaults None
+      there; sync forwards it. Exact SDK checks reject standard v1 OpenAI clients with AzureOpenAIError 500 azure_client
+      is not an instance of AzureOpenAI or async_azure_client is not an instance of AsyncAzureOpenAI.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_azure_transcription_async_version$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml
 - tools/oracle/cases/helpers/providers/azure-transcription/cognitive-stt-base.yaml
@@ -262,6 +353,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-transcription/native-json-text-extraction.yaml
 - tools/oracle/cases/helpers/providers/azure-transcription/verbose-transcript.yaml
 - tools/oracle/cases/helpers/providers/azure-transcription/file-language-prompt.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/native-transcription-headers.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/native-transcription-url-errors.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/azure-transcription-async-version.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -269,10 +363,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- >-
-  Preserve region inference, response-format projection and text extraction from the native reply; share multipart
-  upload descriptors and error handling with OpenAI transcription.
+- A failed RecognitionStatus can carry HTTP status 200 because the source preserves the raw status instead of inventing
+  an error status.
+- The top-level async transcription branch loses api_version; a shared sync/async call builder must retain that
+  asymmetry.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

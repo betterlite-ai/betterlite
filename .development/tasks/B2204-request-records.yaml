@@ -1,0 +1,333 @@
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+checks:
+  commands:
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/request_records.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/request_records*")"
+      && grep -lq 'request_records' tools/oracle/fuzz/corpus/helper_case/request_records* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_request_records$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: case-safe-copy-mode-and-fallback
+    why: litellm_settings.safe_memory_mode defaultsfalse; only literal True returns original record unchanged with
+      no span rewriting. Otherwise deepcopy each top-level value independently, preserving original reference for
+      a value whose copy fails; non-dict copies once with whole-object fallback. Native serializable fields clone,
+      opaque typed handles preserve identity; Python fixtures provide real uncopyable objects to the pinned helper,
+      not a copied algorithm.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_safe_copy_mode_and_fallback$/)'
+  - id: case-safe-copy-span-order
+    why: For dict input, metadata then litellm_metadata containing litellm_parent_otel_span each pop the span and
+      write literal placeholder before copying. One saved variable is overwritten by the later bucket. If saved
+      span is non-None, restore that last span to every original bucket that has the key; copied output retains
+      placeholder. If saved spanNone, original placeholders remain too. Invalid nonmapping metadata preserves source
+      membership/mutation failure. Do not turn this into independent_snapshot, which has different alias/restoration
+      semantics.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_safe_copy_span_order$/)'
+  - id: case-independent-snapshot
+    why: Always attempt per-key deepcopy even when safe_memory_mode true. Sanitize only dict metadata/litellm_metadata
+      by replacing span with placeholder without mutating originals; each copied metadata restores its own original
+      span identity. Failed top-level copy uses original value for that key. No whole-map alias and no cross-bucket
+      span overwrite.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_independent_snapshot$/)'
+  - id: case-parameter-filter-null-and-depth
+    why: filter_exceptions_from_params defaults max_depth20; <=0 returns the input unchanged before inspecting its
+      kind. Otherwise omit Exception instances, callable instances except class objects, and objects whose exact
+      type name is Logging,LiteLLMLoggingObj,Router. Traverse dict/list values in order with depth-1, dropping items
+      whose filtered result isNone (including ordinary JSON null) and values that raise during filtering. Direct
+      exception/callable children are skipped before depth recursion, even at cutoff; preserve class objects and
+      other scalars/typed handles. No tuple traversal. Implement iteration with the same depth semantics.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_parameter_filter_null_and_depth$/)'
+  - id: case-internal-parameter-names
+    why: filter_internal_params returns non-dict unchanged; dict produces a new map excluding exact skip_mcp_handler,mcp_handler_context,_skip_mcp_handler
+      plus truthy additional_internal_params set. Preserve other underscore keys, nested copies/values and None;
+      no recursive key filtering or warning.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_internal_parameter_names$/)'
+  - id: case-gateway-injection-bucket
+    why: added<=0 returns without changes. Choose first dict bucket from litellm_metadata then metadata, including
+      empty dict; if none, return without creating one. If bucket.litellm_gateway_injected_cache equals empty string
+      sentinel, preserve it. injected_for_every_deployment truthy sets marker empty string; otherwise model_info
+      dict supplies id with defaultempty string, retaining explicitNone/false/zero, and nondict model_info usesempty
+      string. Per-deployment marks overwrite earlier deployment marks, but never narrow the every-deployment sentinel.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_gateway_injection_bucket$/)'
+  - id: case-gateway-injection-attempt-scope
+    why: 'Exercise retries/fallbacks sharing metadata: adding a breakpoint for deploymentA credits onlyA, laterB
+      placement overwritesA, zero/negative reentry preserves previous marker; an earlier every-deployment marker
+      remains universal. Calling with no metadata bucket must not create metadata and collide with an explicit Responses
+      metadata argument. This helper records identity, not a count or a permission flag.'
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::request_records_cases::case_[0-9]+_gateway_injection_attempt_scope$/)'
+  - id: config-safe-memory-mode
+    why: safe_memory_mode lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::request_records_config_cases::case_[0-9]+_loads_safe_memory_mode$/)'
+  optional:
+  - mutants
+description: >-
+  Implement RequestRecordProjection and GatewayCacheAttribution in betterlite-context below provider assembly, hook
+  and core callers. Preserve JSON null filtering, internal-key removal, copy/alias behavior and attempt-scoped attribution.
+  Python runtime object construction remains B166; typed internal handles carry a closed kind and identity without
+  accepting arbitrary Python objects or allowing HTTP callers to forge internal kinds.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/litellm_core_utils/core_helpers.py:
+  safe_deep_copy L514-L563; independent_snapshot L566-L617; filter_exceptions_from_params L620-L680; filter_internal_params
+  L683-L712. litellm/integrations/anthropic_cache_control_hook.py: AnthropicCacheControlHook.record_gateway_injection
+  L864-L936.
+
+
+  Named case contracts: safe_copy_mode_and_fallback: litellm_settings.safe_memory_mode defaultsfalse; only literal
+  True returns original record unchanged with no span rewriting. Otherwise deepcopy each top-level value independently,
+  preserving original reference for a value whose copy fails; non-dict copies once with whole-object fallback. Native
+  serializable fields clone, opaque typed handles preserve identity; Python fixtures provide real uncopyable objects
+  to the pinned helper, not a copied algorithm. safe_copy_span_order: For dict input, metadata then litellm_metadata
+  containing litellm_parent_otel_span each pop the span and write literal placeholder before copying. One saved
+  variable is overwritten by the later bucket. If saved span is non-None, restore that last span to every original
+  bucket that has the key; copied output retains placeholder. If saved spanNone, original placeholders remain too.
+  Invalid nonmapping metadata preserves source membership/mutation failure. Do not turn this into independent_snapshot,
+  which has different alias/restoration semantics. independent_snapshot: Always attempt per-key deepcopy even when
+  safe_memory_mode true. Sanitize only dict metadata/litellm_metadata by replacing span with placeholder without
+  mutating originals; each copied metadata restores its own original span identity. Failed top-level copy uses original
+  value for that key. No whole-map alias and no cross-bucket span overwrite. parameter_filter_null_and_depth: filter_exceptions_from_params
+  defaults max_depth20; <=0 returns the input unchanged before inspecting its kind. Otherwise omit Exception instances,
+  callable instances except class objects, and objects whose exact type name is Logging,LiteLLMLoggingObj,Router.
+  Traverse dict/list values in order with depth-1, dropping items whose filtered result isNone (including ordinary
+  JSON null) and values that raise during filtering. Direct exception/callable children are skipped before depth
+  recursion, even at cutoff; preserve class objects and other scalars/typed handles. No tuple traversal. Implement
+  iteration with the same depth semantics. internal_parameter_names: filter_internal_params returns non-dict unchanged;
+  dict produces a new map excluding exact skip_mcp_handler,mcp_handler_context,_skip_mcp_handler plus truthy additional_internal_params
+  set. Preserve other underscore keys, nested copies/values and None; no recursive key filtering or warning. gateway_injection_bucket:
+  added<=0 returns without changes. Choose first dict bucket from litellm_metadata then metadata, including empty
+  dict; if none, return without creating one. If bucket.litellm_gateway_injected_cache equals empty string sentinel,
+  preserve it. injected_for_every_deployment truthy sets marker empty string; otherwise model_info dict supplies
+  id with defaultempty string, retaining explicitNone/false/zero, and nondict model_info usesempty string. Per-deployment
+  marks overwrite earlier deployment marks, but never narrow the every-deployment sentinel. gateway_injection_attempt_scope:
+  Exercise retries/fallbacks sharing metadata: adding a breakpoint for deploymentA credits onlyA, laterB placement
+  overwritesA, zero/negative reentry preserves previous marker; an earlier every-deployment marker remains universal.
+  Calling with no metadata bucket must not create metadata and collide with an explicit Responses metadata argument.
+  This helper records identity, not a count or a permission flag.
+
+
+  Load safe_memory_mode through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest request_records_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Implement crates/betterlite-context/src/request_records.rs with adjacent tests under request_records/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation request_records in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function request_records_cases in betterlite-context with these exact named cases (one per oracle
+  file): safe_copy_mode_and_fallback, safe_copy_span_order, independent_snapshot, parameter_filter_null_and_depth,
+  internal_parameter_names, gateway_injection_bucket, gateway_injection_attempt_scope. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/request_records* using HelperCase: kind: helper
+  and the externally tagged request_records variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_request_records that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 225 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 240 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 655 planned, 675 maximum changed lines.
+deviations: []
+dod:
+- proof:
+  - helper-case-corpus
+  text: New request_records seeds parse as the intended call variant and replay through the shared production parser.
+- text: 'safe_copy_mode_and_fallback: litellm_settings.safe_memory_mode defaultsfalse; only literal True returns
+    original record unchanged with no span rewriting. Otherwise deepcopy each top-level value independently, preserving
+    original reference for a value whose copy fails; non-dict copies once with whole-object fallback. Native serializable
+    fields clone, opaque typed handles preserve identity; Python fixtures provide real uncopyable objects to the
+    pinned helper, not a copied algorithm.'
+  proof:
+  - case-safe-copy-mode-and-fallback
+  - oracle
+  - helper-python
+- text: 'safe_copy_span_order: For dict input, metadata then litellm_metadata containing litellm_parent_otel_span
+    each pop the span and write literal placeholder before copying. One saved variable is overwritten by the later
+    bucket. If saved span is non-None, restore that last span to every original bucket that has the key; copied
+    output retains placeholder. If saved spanNone, original placeholders remain too. Invalid nonmapping metadata
+    preserves source membership/mutation failure. Do not turn this into independent_snapshot, which has different
+    alias/restoration semantics.'
+  proof:
+  - case-safe-copy-span-order
+  - oracle
+  - helper-python
+- text: 'independent_snapshot: Always attempt per-key deepcopy even when safe_memory_mode true. Sanitize only dict
+    metadata/litellm_metadata by replacing span with placeholder without mutating originals; each copied metadata
+    restores its own original span identity. Failed top-level copy uses original value for that key. No whole-map
+    alias and no cross-bucket span overwrite.'
+  proof:
+  - case-independent-snapshot
+  - oracle
+  - helper-python
+- text: 'parameter_filter_null_and_depth: filter_exceptions_from_params defaults max_depth20; <=0 returns the input
+    unchanged before inspecting its kind. Otherwise omit Exception instances, callable instances except class objects,
+    and objects whose exact type name is Logging,LiteLLMLoggingObj,Router. Traverse dict/list values in order with
+    depth-1, dropping items whose filtered result isNone (including ordinary JSON null) and values that raise during
+    filtering. Direct exception/callable children are skipped before depth recursion, even at cutoff; preserve class
+    objects and other scalars/typed handles. No tuple traversal. Implement iteration with the same depth semantics.'
+  proof:
+  - case-parameter-filter-null-and-depth
+  - oracle
+  - helper-python
+- text: 'internal_parameter_names: filter_internal_params returns non-dict unchanged; dict produces a new map excluding
+    exact skip_mcp_handler,mcp_handler_context,_skip_mcp_handler plus truthy additional_internal_params set. Preserve
+    other underscore keys, nested copies/values and None; no recursive key filtering or warning.'
+  proof:
+  - case-internal-parameter-names
+  - oracle
+  - helper-python
+- text: 'gateway_injection_bucket: added<=0 returns without changes. Choose first dict bucket from litellm_metadata
+    then metadata, including empty dict; if none, return without creating one. If bucket.litellm_gateway_injected_cache
+    equals empty string sentinel, preserve it. injected_for_every_deployment truthy sets marker empty string; otherwise
+    model_info dict supplies id with defaultempty string, retaining explicitNone/false/zero, and nondict model_info
+    usesempty string. Per-deployment marks overwrite earlier deployment marks, but never narrow the every-deployment
+    sentinel.'
+  proof:
+  - case-gateway-injection-bucket
+  - oracle
+  - helper-python
+- text: 'gateway_injection_attempt_scope: Exercise retries/fallbacks sharing metadata: adding a breakpoint for deploymentA
+    credits onlyA, laterB placement overwritesA, zero/negative reentry preserves previous marker; an earlier every-deployment
+    marker remains universal. Calling with no metadata bucket must not create metadata and collide with an explicit
+    Responses metadata argument. This helper records identity, not a count or a permission flag.'
+  proof:
+  - case-gateway-injection-attempt-scope
+  - oracle
+  - helper-python
+- text: The real config loader resolves safe_memory_mode, including its default and precedence.
+  proof:
+  - config-safe-memory-mode
+id: B2204
+oracle_cases:
+- tools/oracle/cases/helpers/providers/request-records/safe-copy-mode-and-fallback.yaml
+- tools/oracle/cases/helpers/providers/request-records/safe-copy-span-order.yaml
+- tools/oracle/cases/helpers/providers/request-records/independent-snapshot.yaml
+- tools/oracle/cases/helpers/providers/request-records/parameter-filter-null-and-depth.yaml
+- tools/oracle/cases/helpers/providers/request-records/internal-parameter-names.yaml
+- tools/oracle/cases/helpers/providers/request-records/gateway-injection-bucket.yaml
+- tools/oracle/cases/helpers/providers/request-records/gateway-injection-attempt-scope.yaml
+out_of_scope:
+- 'Function ownership inventory litellm/integrations/anthropic_cache_control_hook.py: _validated_object_mapping
+  L78-L82; _validated_object_list L85-L89; supports_openai_prompt_cache_breakpoint L92-L100; _model_map_prompt_cache_breakpoint_flag
+  L103-L108; targets_openai_api L111-L121; _carries_cache_breakpoint L124-L125; _tool_carries_cache_breakpoint L128-L131;
+  _chat_transform_drops_tool_cache_control L134-L135; _accepts_prompt_cache_breakpoint L138-L139; AnthropicCacheControlHook._request_value
+  L152-L157; AnthropicCacheControlHook._request_user_agent L159-L173; AnthropicCacheControlHook._request_system
+  L175-L180; AnthropicCacheControlHook.get_chat_completion_prompt L182-L280; AnthropicCacheControlHook._targets_openai_prompt_cache_breakpoint
+  L282-L293; AnthropicCacheControlHook._resolve_provider L295-L304; AnthropicCacheControlHook.count_request_cache_breakpoints
+  L306-L311; AnthropicCacheControlHook.count_external_cache_breakpoints L313-L336; AnthropicCacheControlHook.count_external_cache_breakpoints_on_messages_route
+  L338-L352; AnthropicCacheControlHook._blocks_reserved_outside_messages L354-L367; AnthropicCacheControlHook._points_with_a_slot_left
+  L369-L377; AnthropicCacheControlHook._apply_message_injections L379-L431; AnthropicCacheControlHook._resolve_target_indices
+  L433-L470; AnthropicCacheControlHook._count_cache_control_blocks L472-L480; AnthropicCacheControlHook._message_has_cache_control
+  L482-L485; AnthropicCacheControlHook._safe_insert_cache_control_in_message L487-L514; AnthropicCacheControlHook._insert_prompt_cache_breakpoint_in_message
+  L516-L542; AnthropicCacheControlHook._system_block_with_breakpoint L544-L553; AnthropicCacheControlHook.apply_to_anthropic_messages_request
+  L555-L631; AnthropicCacheControlHook._default_control L633-L645; AnthropicCacheControlHook._stamped_for_prompt_hook
+  L647-L667; AnthropicCacheControlHook._stamped_with_dialect L669-L685; AnthropicCacheControlHook._stamped L687-L689;
+  AnthropicCacheControlHook._request_has_cache_control L691-L715; AnthropicCacheControlHook.get_default_injection_points
+  L717-L763; AnthropicCacheControlHook.messages_with_default_injections L765-L812; AnthropicCacheControlHook.maybe_seed_default_injection_points
+  L814-L862; AnthropicCacheControlHook.maybe_inject_cache_control L938-L1008; AnthropicCacheControlHook.integration_name
+  L1010-L1013; AnthropicCacheControlHook.should_run_prompt_management L1015-L1022; AnthropicCacheControlHook._compile_prompt_helper
+  L1024-L1040; AnthropicCacheControlHook.async_compile_prompt_helper L1042-L1059; AnthropicCacheControlHook.async_get_chat_completion_prompt
+  L1061-L1090; AnthropicCacheControlHook.should_use_anthropic_cache_control_hook L1092-L1096; AnthropicCacheControlHook.get_custom_logger_for_anthropic_cache_control_hook
+  L1098-L1112 belong to B119.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: max_retries_per_request_hit L313-L320
+  belong to B017.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: is_codex_user_agent L29-L30 belong to
+  B024.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _budget_reservation_on_auth_object L369-L372;
+  budget_reservation_from_metadata L375-L380; _stamp_budget_reservation_callback_bound L383-L390; bind_budget_reservation_to_callbacks
+  L393-L401; unbind_budget_reservation_from_callbacks L404-L406; set_response_cost_in_hidden_params L762-L772 belong
+  to B069.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: redact_nested_match_and_regex_keys L715-L751
+  belong to B104.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _get_parent_otel_span_from_kwargs L429-L450
+  belong to B110.'
+- 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: safe_divide_seconds L33-L48; normalize_drop_params
+  L54-L60; drop_params_flag L63-L67; drop_params_env_flag L73-L83; safe_divide L86-L104; _is_litellm_limit_rejection
+  L107-L113; _is_proxy_rejection L116-L123; _is_provider_originated L126-L133; is_expected_client_error L136-L165;
+  coerce_token_limit L168-L194; map_finish_reason L253-L258; remove_index_from_tool_calls L261-L270; remove_items_at_indices
+  L273-L279; add_missing_spend_metadata_to_litellm_metadata L282-L293; get_metadata_variable_name_from_kwargs L296-L310;
+  get_or_create_metadata_bucket L323-L339; proxy_stamped_used_client_oauth_token L342-L346; get_litellm_metadata_from_kwargs
+  L349-L366; reconstruct_model_name L409-L425; process_response_headers L453-L498; preserve_upstream_non_openai_attributes
+  L501-L511; set_provider_response_headers_in_hidden_params L779-L790; get_provider_response_headers_from_hidden_params
+  L793-L799 belong to B206.'
+pitfalls:
+- Filtering drops ordinary JSON null values as well as nonserializable objects; replacing it with a no-op typed
+  clone changes provider bodies.
+- safe_deep_copy and independent_snapshot restore span identities differently when both metadata buckets exist.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L514-L563
+  why: Own safe_deep_copy below provider/core/hook callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L566-L617
+  why: Own independent_snapshot below provider/core/hook callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L620-L680
+  why: Own filter_exceptions_from_params below provider/core/hook callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L683-L712
+  why: Own filter_internal_params below provider/core/hook callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L865-L936
+  why: Own AnthropicCacheControlHook.record_gateway_injection below provider/core/hook callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L514-L563
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L566-L617
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L620-L680
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L683-L712
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L864-L936
+  why: Owned function body checked against the pinned checkout.
+review_level: security
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/request_records.rs
+  - crates/betterlite-context/src/request_records/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/request_records.rs
+  - tools/oracle/src/helpers/request_records/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/request_records.py
+  - tools/oracle/cases/helpers/providers/request-records/**
+  - tools/oracle/fuzz/corpus/helper_case/request_records*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/shared.rs
+  - crates/betterlite-config/src/providers/shared/request_records.rs
+  - crates/betterlite-config/src/providers/shared/request_records/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/request_records_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/request_records*
+title: Shared request record filtering and cache attribution

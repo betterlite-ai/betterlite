@@ -17,15 +17,15 @@ description: >-
   L227-L257.
 
 
-  litellm_params.aws_bedrock_project_id becomes OpenAI-Project; the request-scoped typed setting belongs here. service_tier
-  outside auto/default and reasoning.summary other than auto raise UnsupportedParamsError status 400 when drop_params
-  is false; otherwise warn and drop. B907 supplies hoist_additional_tools, normalize_codex_input_items and drop_unsupported_tools
-  through an injected normalized-input seam from composition, never a leaf dependency on betterlite-core.
+  litellm_params.aws_bedrock_project_id becomes OpenAI-Project; B598 owns the shared request-scoped setting and
+  loader. service_tier outside auto/default and reasoning.summary other than auto raise UnsupportedParamsError status
+  400 when drop_params is false; otherwise warn and drop. B907 supplies hoist_additional_tools, normalize_codex_input_items
+  and drop_unsupported_tools through its lower typed helper implementation, with a direct dependency by id.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
-  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
-  and no copied helper algorithm is permitted.
+  with direct dependencies. Provider leaves must never import betterlite-core, and no copied helper algorithm is
+  permitted.
 
 
   Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
@@ -34,6 +34,65 @@ description: >-
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: mantle_responses_url: Constructor calls the B2202 no-op base Responses initializer, keeps
+  a truthy injected aws_signer or creates B590 BaseAWSLLM, and stores use_openai_path default True. Provider identity
+  is BEDROCK_MANTLE. Resolve region through B2207 with litellm_params copied and api_base overwritten even when
+  None. Choose truthy explicit base, BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws, strip
+  trailing slashes, and remove only the first matching suffix: /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1.
+  A recognized Mantle hostname is replaced by canonical https://bedrock-mantle.{resolved_region}.api.aws, discarding
+  its remaining path; custom hosts retain theirs. Append /openai/v1/responses when use_openai_path is truthy, otherwise
+  /v1/responses. mantle_response_options: First call B506 parent option mapping, then service-tier handling, then
+  reasoning-summary handling. Missing or None service_tier and exact auto/default pass unchanged. Set membership
+  is not string validation: an unhashable value fails before the UnsupportedParamsError branch. Only on use_openai_path
+  with a dict reasoning record inspect reasoning.summary; missing/None or exact string auto pass unchanged. The
+  standard /v1 path preserves all summary values. Use the supplied drop_params argument, whose configured default/precedence
+  remains B2201/B176, without another global read. mantle_model_name: _model_map_lookup_name takes the last slash-separated
+  segment and removes one leading openai.; empty/trailing-slash inputs can therefore produce an empty lookup name.
+  This catalog lookup hook does not rewrite the outbound model argument passed to B507. unsupported_params_400:
+  With drop_params falsey, an unsupported hashable service tier raises UnsupportedParamsError 400 and exact message
+  bedrock_mantle does not support service_tier={value!r}; the Bedrock Mantle Responses API only accepts 'auto' or
+  'default'. Set `drop_params: true` (litellm_settings or this deployment's litellm_params) to have LiteLLM drop
+  it, or remove service_tier from the client (Codex CLI sends it when a speed tier is set in ~/.codex/config.toml).
+  For an unsupported summary on the OpenAI path, raise UnsupportedParamsError 400 and bedrock_mantle does not support
+  reasoning.summary={summary!r} for {model!r}; the Bedrock Mantle OpenAI Responses path only accepts 'auto'. Set
+  `drop_params: true` (litellm_settings or this deployment's litellm_params) to have LiteLLM drop it, or set `model_reasoning_summary
+  = "auto"` in the client (Codex CLI: ~/.codex/config.toml). Preserve Python repr and service-tier-first failure
+  order. mantle_response_auth: Missing/falsey litellm_params becomes an empty GenericLiteLLMParams. Resolve api_key
+  through B2207; a truthy bearer overwrites exact Authorization with Bearer {token}. No bearer leaves any existing
+  Authorization header untouched here; B625 signing later removes it before SigV4. get_error_class preserves supplied
+  message/status/headers through B682. supports_native_file_search and supports_native_websocket are both False,
+  independent of the model. unsupported_params_warn_drop: With truthy drop_params, unsupported tier warns Bedrock
+  Mantle Responses API: dropping unsupported service_tier %r (supported: %s). using the value and ['auto', 'default'],
+  then returns a copy without service_tier. Unsupported summary warns Bedrock Mantle Responses API: dropping unsupported
+  reasoning.summary %r (supported: %s). with ['auto']; remove only summary, retaining other reasoning fields, or
+  remove reasoning entirely when empty. Neither helper mutates its input while dropping. openai_project_header:
+  A truthy litellm_params.aws_bedrock_project_id overwrites exact OpenAI-Project on the same headers map and otherwise
+  leaves it unchanged. Differently cased caller keys are not removed here. Reuse the B598 default-None loader and
+  the B625 project-header cases. mantle_tool_filter: Allow exactly function,mcp,custom,namespace,tool_search,web_search
+  through B907 drop_unsupported_tools; retain nondict tool entries and their order. Unsupported types, including
+  absent type displayed as None, are reported as a sorted unique list; if nonempty warn Bedrock Mantle Responses
+  API: dropping unsupported tool type(s) %s (supported: %s). with sorted allowed names ['custom','function','mcp','namespace','tool_search','web_search'].
+  This drop happens regardless of drop_params. In map_openai_params, falsey tools pass unchanged, a list is used
+  directly and any other truthy value is wrapped as one item. Assign the filtered list or pop tools if no entries
+  remain. mantle_input_hoisting: Request transformation first calls B907 hoist_additional_tools on input and params.tools,
+  then normalize_codex_input_items on hoisted.input. If rewritten types are nonempty, warn Bedrock Mantle Responses
+  API: rewrote Codex input item type(s) %s that Mantle rejects. using the sorted type list, including types whose
+  empty records were dropped. Only when hoisted.hoisted is truthy copy params and filter the combined hoisted.tools
+  with the same allowlist; set tools when any remain, otherwise remove it. If no tools were actually hoisted, reuse
+  the original optional-params record even if empty additional_tools items were removed from input. Delegate B507
+  transform_responses_api_request with the original model, normalized input and selected params; preserve its body/error
+  behavior.
+
+
+  Write standalone Rust test mantle_responses_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test mantle_responses_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/mantle_responses.rs with adjacent tests under mantle_responses/. Keep
@@ -51,10 +110,9 @@ description: >-
 
   Write rstest function mantle_responses_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): mantle_responses_url, mantle_response_options, mantle_model_name, unsupported_params_400, mantle_response_auth,
-  unsupported_params_warn_drop, openai_project_header. Each case exercises its named outcome independently; use
-  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
-  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  unsupported_params_warn_drop, openai_project_header, mantle_tool_filter, mantle_input_hoisting. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses* using HelperCase: kind:
@@ -70,9 +128,9 @@ description: >-
 
 
   Budget from 171 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 200 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 416 planned, 425 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 220 production lines, 295 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 660 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -91,8 +149,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/responses/transformation.py#L63-L257
-  why: >-
-    Own BedrockMantleResponsesAPIConfig.__init__, BedrockMantleResponsesAPIConfig.custom_llm_provider, BedrockMantleResponsesAPIConfig.get_error_class,
+  why: Own BedrockMantleResponsesAPIConfig.__init__, BedrockMantleResponsesAPIConfig.custom_llm_provider, BedrockMantleResponsesAPIConfig.get_error_class,
     BedrockMantleResponsesAPIConfig.get_complete_url, BedrockMantleResponsesAPIConfig.validate_environment, BedrockMantleResponsesAPIConfig.supports_native_file_search,
     BedrockMantleResponsesAPIConfig.supports_native_websocket, BedrockMantleResponsesAPIConfig._filter_unsupported_tools,
     BedrockMantleResponsesAPIConfig._handle_unsupported_service_tier, BedrockMantleResponsesAPIConfig._handle_unsupported_reasoning_summary,
@@ -100,43 +157,68 @@ references:
     BedrockMantleResponsesAPIConfig._model_map_lookup_name, BedrockMantleResponsesAPIConfig.map_openai_params. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    mantle responses url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-responses-url.yaml.
+- text: 'mantle_responses_url: Constructor calls the B2202 no-op base Responses initializer, keeps a truthy injected
+    aws_signer or creates B590 BaseAWSLLM, and stores use_openai_path default True. Provider identity is BEDROCK_MANTLE.
+    Resolve region through B2207 with litellm_params copied and api_base overwritten even when None. Choose truthy
+    explicit base, BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws, strip trailing slashes,
+    and remove only the first matching suffix: /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1. A recognized
+    Mantle hostname is replaced by canonical https://bedrock-mantle.{resolved_region}.api.aws, discarding its remaining
+    path; custom hosts retain theirs. Append /openai/v1/responses when use_openai_path is truthy, otherwise /v1/responses.'
   proof:
   - case-mantle-responses-url
   - oracle
   - helper-python
-- text: >-
-    mantle response options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-options.yaml.
+- text: 'mantle_response_options: First call B506 parent option mapping, then service-tier handling, then reasoning-summary
+    handling. Missing or None service_tier and exact auto/default pass unchanged. Set membership is not string validation:
+    an unhashable value fails before the UnsupportedParamsError branch. Only on use_openai_path with a dict reasoning
+    record inspect reasoning.summary; missing/None or exact string auto pass unchanged. The standard /v1 path preserves
+    all summary values. Use the supplied drop_params argument, whose configured default/precedence remains B2201/B176,
+    without another global read.'
   proof:
   - case-mantle-response-options
   - oracle
   - helper-python
-- text: 'mantle model name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-model-name.yaml.'
+- text: 'mantle_model_name: _model_map_lookup_name takes the last slash-separated segment and removes one leading
+    openai.; empty/trailing-slash inputs can therefore produce an empty lookup name. This catalog lookup hook does
+    not rewrite the outbound model argument passed to B507.'
   proof:
   - case-mantle-model-name
   - oracle
   - helper-python
-- text: >-
-    unsupported params 400: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-400.yaml.
+- text: 'unsupported_params_400: With drop_params falsey, an unsupported hashable service tier raises UnsupportedParamsError
+    400 and exact message bedrock_mantle does not support service_tier={value!r}; the Bedrock Mantle Responses API
+    only accepts ''auto'' or ''default''. Set `drop_params: true` (litellm_settings or this deployment''s litellm_params)
+    to have LiteLLM drop it, or remove service_tier from the client (Codex CLI sends it when a speed tier is set
+    in ~/.codex/config.toml). For an unsupported summary on the OpenAI path, raise UnsupportedParamsError 400 and
+    bedrock_mantle does not support reasoning.summary={summary!r} for {model!r}; the Bedrock Mantle OpenAI Responses
+    path only accepts ''auto''. Set `drop_params: true` (litellm_settings or this deployment''s litellm_params)
+    to have LiteLLM drop it, or set `model_reasoning_summary = "auto"` in the client (Codex CLI: ~/.codex/config.toml).
+    Preserve Python repr and service-tier-first failure order.'
   proof:
   - case-unsupported-params-400
   - oracle
   - helper-python
-- text: >-
-    mantle response auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-auth.yaml.
+- text: 'mantle_response_auth: Missing/falsey litellm_params becomes an empty GenericLiteLLMParams. Resolve api_key
+    through B2207; a truthy bearer overwrites exact Authorization with Bearer {token}. No bearer leaves any existing
+    Authorization header untouched here; B625 signing later removes it before SigV4. get_error_class preserves supplied
+    message/status/headers through B682. supports_native_file_search and supports_native_websocket are both False,
+    independent of the model.'
   proof:
   - case-mantle-response-auth
   - oracle
   - helper-python
-- text: >-
-    unsupported params warn drop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-warn-drop.yaml.
+- text: 'unsupported_params_warn_drop: With truthy drop_params, unsupported tier warns Bedrock Mantle Responses
+    API: dropping unsupported service_tier %r (supported: %s). using the value and [''auto'', ''default''], then
+    returns a copy without service_tier. Unsupported summary warns Bedrock Mantle Responses API: dropping unsupported
+    reasoning.summary %r (supported: %s). with [''auto'']; remove only summary, retaining other reasoning fields,
+    or remove reasoning entirely when empty. Neither helper mutates its input while dropping.'
   proof:
   - case-unsupported-params-warn-drop
   - oracle
   - helper-python
-- text: >-
-    openai project header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/openai-project-header.yaml.
+- text: 'openai_project_header: A truthy litellm_params.aws_bedrock_project_id overwrites exact OpenAI-Project on
+    the same headers map and otherwise leaves it unchanged. Differently cased caller keys are not removed here.
+    Reuse the B598 default-None loader and the B625 project-header cases.'
   proof:
   - case-openai-project-header
   - oracle
@@ -145,44 +227,127 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'mantle_tool_filter: Allow exactly function,mcp,custom,namespace,tool_search,web_search through B907 drop_unsupported_tools;
+    retain nondict tool entries and their order. Unsupported types, including absent type displayed as None, are
+    reported as a sorted unique list; if nonempty warn Bedrock Mantle Responses API: dropping unsupported tool type(s)
+    %s (supported: %s). with sorted allowed names [''custom'',''function'',''mcp'',''namespace'',''tool_search'',''web_search''].
+    This drop happens regardless of drop_params. In map_openai_params, falsey tools pass unchanged, a list is used
+    directly and any other truthy value is wrapped as one item. Assign the filtered list or pop tools if no entries
+    remain.'
+  proof:
+  - case-mantle-tool-filter
+  - oracle
+  - helper-python
+- text: 'mantle_input_hoisting: Request transformation first calls B907 hoist_additional_tools on input and params.tools,
+    then normalize_codex_input_items on hoisted.input. If rewritten types are nonempty, warn Bedrock Mantle Responses
+    API: rewrote Codex input item type(s) %s that Mantle rejects. using the sorted type list, including types whose
+    empty records were dropped. Only when hoisted.hoisted is truthy copy params and filter the combined hoisted.tools
+    with the same allowlist; set tools when any remain, otherwise remove it. If no tools were actually hoisted,
+    reuse the original optional-params record even if empty additional_tools items were removed from input. Delegate
+    B507 transform_responses_api_request with the original model, normalized input and selected params; preserve
+    its body/error behavior.'
+  proof:
+  - case-mantle-input-hoisting
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-mantle-responses-url
-    why: The mantle-responses-url behavior is missing or differs from its pinned fixture.
+    why: 'Constructor calls the B2202 no-op base Responses initializer, keeps a truthy injected aws_signer or creates
+      B590 BaseAWSLLM, and stores use_openai_path default True. Provider identity is BEDROCK_MANTLE. Resolve region
+      through B2207 with litellm_params copied and api_base overwritten even when None. Choose truthy explicit base,
+      BEDROCK_MANTLE_API_BASE, then https://bedrock-mantle.{region}.api.aws, strip trailing slashes, and remove
+      only the first matching suffix: /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1. A recognized
+      Mantle hostname is replaced by canonical https://bedrock-mantle.{resolved_region}.api.aws, discarding its
+      remaining path; custom hosts retain theirs. Append /openai/v1/responses when use_openai_path is truthy, otherwise
+      /v1/responses.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_responses_url$/)'
   - id: case-mantle-response-options
-    why: The mantle-response-options behavior is missing or differs from its pinned fixture.
+    why: 'First call B506 parent option mapping, then service-tier handling, then reasoning-summary handling. Missing
+      or None service_tier and exact auto/default pass unchanged. Set membership is not string validation: an unhashable
+      value fails before the UnsupportedParamsError branch. Only on use_openai_path with a dict reasoning record
+      inspect reasoning.summary; missing/None or exact string auto pass unchanged. The standard /v1 path preserves
+      all summary values. Use the supplied drop_params argument, whose configured default/precedence remains B2201/B176,
+      without another global read.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_response_options$/)'
   - id: case-mantle-model-name
-    why: The mantle-model-name behavior is missing or differs from its pinned fixture.
+    why: _model_map_lookup_name takes the last slash-separated segment and removes one leading openai.; empty/trailing-slash
+      inputs can therefore produce an empty lookup name. This catalog lookup hook does not rewrite the outbound
+      model argument passed to B507.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_model_name$/)'
   - id: case-unsupported-params-400
-    why: The unsupported-params-400 behavior is missing or differs from its pinned fixture.
+    why: 'With drop_params falsey, an unsupported hashable service tier raises UnsupportedParamsError 400 and exact
+      message bedrock_mantle does not support service_tier={value!r}; the Bedrock Mantle Responses API only accepts
+      ''auto'' or ''default''. Set `drop_params: true` (litellm_settings or this deployment''s litellm_params) to
+      have LiteLLM drop it, or remove service_tier from the client (Codex CLI sends it when a speed tier is set
+      in ~/.codex/config.toml). For an unsupported summary on the OpenAI path, raise UnsupportedParamsError 400
+      and bedrock_mantle does not support reasoning.summary={summary!r} for {model!r}; the Bedrock Mantle OpenAI
+      Responses path only accepts ''auto''. Set `drop_params: true` (litellm_settings or this deployment''s litellm_params)
+      to have LiteLLM drop it, or set `model_reasoning_summary = "auto"` in the client (Codex CLI: ~/.codex/config.toml).
+      Preserve Python repr and service-tier-first failure order.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_unsupported_params_400$/)'
   - id: case-mantle-response-auth
-    why: The mantle-response-auth behavior is missing or differs from its pinned fixture.
+    why: Missing/falsey litellm_params becomes an empty GenericLiteLLMParams. Resolve api_key through B2207; a truthy
+      bearer overwrites exact Authorization with Bearer {token}. No bearer leaves any existing Authorization header
+      untouched here; B625 signing later removes it before SigV4. get_error_class preserves supplied message/status/headers
+      through B682. supports_native_file_search and supports_native_websocket are both False, independent of the
+      model.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_response_auth$/)'
   - id: case-unsupported-params-warn-drop
-    why: The unsupported-params-warn-drop behavior is missing or differs from its pinned fixture.
+    why: 'With truthy drop_params, unsupported tier warns Bedrock Mantle Responses API: dropping unsupported service_tier
+      %r (supported: %s). using the value and [''auto'', ''default''], then returns a copy without service_tier.
+      Unsupported summary warns Bedrock Mantle Responses API: dropping unsupported reasoning.summary %r (supported:
+      %s). with [''auto'']; remove only summary, retaining other reasoning fields, or remove reasoning entirely
+      when empty. Neither helper mutates its input while dropping.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_unsupported_params_warn_drop$/)'
   - id: case-openai-project-header
-    why: The openai-project-header behavior is missing or differs from its pinned fixture.
+    why: A truthy litellm_params.aws_bedrock_project_id overwrites exact OpenAI-Project on the same headers map
+      and otherwise leaves it unchanged. Differently cased caller keys are not removed here. Reuse the B598 default-None
+      loader and the B625 project-header cases.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_openai_project_header$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_responses.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_responses.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*")"
       && grep -lq 'bedrock_mantle_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_responses$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-mantle-tool-filter
+    why: 'Allow exactly function,mcp,custom,namespace,tool_search,web_search through B907 drop_unsupported_tools;
+      retain nondict tool entries and their order. Unsupported types, including absent type displayed as None, are
+      reported as a sorted unique list; if nonempty warn Bedrock Mantle Responses API: dropping unsupported tool
+      type(s) %s (supported: %s). with sorted allowed names [''custom'',''function'',''mcp'',''namespace'',''tool_search'',''web_search''].
+      This drop happens regardless of drop_params. In map_openai_params, falsey tools pass unchanged, a list is
+      used directly and any other truthy value is wrapped as one item. Assign the filtered list or pop tools if
+      no entries remain.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_tool_filter$/)'
+  - id: case-mantle-input-hoisting
+    why: 'Request transformation first calls B907 hoist_additional_tools on input and params.tools, then normalize_codex_input_items
+      on hoisted.input. If rewritten types are nonempty, warn Bedrock Mantle Responses API: rewrote Codex input
+      item type(s) %s that Mantle rejects. using the sorted type list, including types whose empty records were
+      dropped. Only when hoisted.hoisted is truthy copy params and filter the combined hoisted.tools with the same
+      allowlist; set tools when any remain, otherwise remove it. If no tools were actually hoisted, reuse the original
+      optional-params record even if empty additional_tools items were removed from input. Delegate B507 transform_responses_api_request
+      with the original model, normalized input and selected params; preserve its body/error behavior.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_input_hoisting$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-responses-url.yaml
 - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-options.yaml
@@ -191,6 +356,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-auth.yaml
 - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-warn-drop.yaml
 - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/openai-project-header.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-tool-filter.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-input-hoisting.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -198,8 +365,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- aws_bedrock_project_id is the source of OpenAI-Project, not organization or a generic metadata field.
+- The service-tier membership test can fail on an unhashable value before the intended 400 error is constructed.
+- An additional_tools item containing no valid tools changes input but does not trigger this adapter's hoisted-tool
+  filter.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

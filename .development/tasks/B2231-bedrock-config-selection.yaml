@@ -1,0 +1,242 @@
+id: B2231
+title: Bedrock config selection tags
+description: >-
+  Provide the pure Bedrock config-selection stage below provider factories, metadata capability queries and passthrough
+  logging. Return a closed config tag with its constructor arguments; executable adapter construction is performed
+  by the caller using the already owned provider implementation. In the Python oracle capture constructor identity/arguments
+  at that boundary while executing the real selector. This task owns selection, not a second implementation of any
+  selected provider.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
+  BedrockModelInfo.get_bedrock_provider_config_for_messages_api selection L1518-L1560; get_bedrock_chat_config selection
+  L1563-L1636. litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py: get_legacy_anthropic_model_names
+  L62-L68.
+
+
+  Named case contracts: native_messages_route: Native Messages config precedence is explicit claude_platform ->
+  B656, explicit converse -> None (chat bridge), explicit mantle -> B625, then case-sensitive claude anywhere ->
+  B622, otherwise None. It does not treat uppercase Claude as this final match. chat_config_selector: Compute route
+  B598, invoke-provider B591 and base B2203 before selection. Routes claude_platform, converse/converse_like, openai,
+  chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively. Otherwise amazon
+  -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615; meta/llama -> B613;
+  ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 -> B618; twelvelabs -> B617;
+  everything else -> B611 AmazonInvokeConfig. legacy_anthropic_names: The exact legacy list is anthropic.claude-v2,
+  anthropic.claude-instant-v1, anthropic.claude-v2:1 in that order. Membership uses the B2203 base model, not arbitrary
+  substring/version inference. No environment or user-editable whitelist is read here. selection_without_construction:
+  Each selected tag is a zero-argument construction request. Record None for native Messages bridge routes; do not
+  instantiate HTTP clients or execute transformation methods in this stage. Constructor failures occur when the
+  caller performs the selected construction, in the same position before its provider request.
+
+
+  Implement crates/betterlite-context/src/bedrock_config_selection.rs with adjacent tests under bedrock_config_selection/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_config_selection in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function bedrock_config_selection_cases in betterlite-context with these exact named cases (one per
+  oracle file): native_messages_route, chat_config_selector, legacy_anthropic_names, selection_without_construction.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection* using HelperCase: kind:
+  helper and the externally tagged bedrock_config_selection variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_config_selection that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 91 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 160 production lines, 210 behavior/config-test lines, 105 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 510 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/bedrock_config_selection.rs
+  - crates/betterlite-context/src/bedrock_config_selection/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_config_selection.rs
+  - tools/oracle/src/helpers/bedrock_config_selection/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_config_selection.py
+  - tools/oracle/cases/helpers/providers/bedrock-config-selection/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1518-L1560
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1563-L1636
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py#L62-L68
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New bedrock_config_selection seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'native_messages_route: Native Messages config precedence is explicit claude_platform -> B656, explicit
+    converse -> None (chat bridge), explicit mantle -> B625, then case-sensitive claude anywhere -> B622, otherwise
+    None. It does not treat uppercase Claude as this final match.'
+  proof:
+  - case-native-messages-route
+  - oracle
+  - helper-python
+- text: 'chat_config_selector: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes
+    claude_platform, converse/converse_like, openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625
+    respectively. Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else
+    Claude B615; meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2
+    -> B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.'
+  proof:
+  - case-chat-config-selector
+  - oracle
+  - helper-python
+- text: 'legacy_anthropic_names: The exact legacy list is anthropic.claude-v2, anthropic.claude-instant-v1, anthropic.claude-v2:1
+    in that order. Membership uses the B2203 base model, not arbitrary substring/version inference. No environment
+    or user-editable whitelist is read here.'
+  proof:
+  - case-legacy-anthropic-names
+  - oracle
+  - helper-python
+- text: 'selection_without_construction: Each selected tag is a zero-argument construction request. Record None
+    for native Messages bridge routes; do not instantiate HTTP clients or execute transformation methods in this
+    stage. Constructor failures occur when the caller performs the selected construction, in the same position before
+    its provider request.'
+  proof:
+  - case-selection-without-construction
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_config_selection.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection*")"
+      && grep -lq 'bedrock_config_selection' tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_config_selection$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-native-messages-route
+    why: Native Messages config precedence is explicit claude_platform -> B656, explicit converse -> None (chat
+      bridge), explicit mantle -> B625, then case-sensitive claude anywhere -> B622, otherwise None. It does not
+      treat uppercase Claude as this final match.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::bedrock_config_selection_cases::case_[0-9]+_native_messages_route$/)'
+  - id: case-chat-config-selector
+    why: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes claude_platform, converse/converse_like,
+      openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively.
+      Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615;
+      meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 ->
+      B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::bedrock_config_selection_cases::case_[0-9]+_chat_config_selector$/)'
+  - id: case-legacy-anthropic-names
+    why: The exact legacy list is anthropic.claude-v2, anthropic.claude-instant-v1, anthropic.claude-v2:1 in that
+      order. Membership uses the B2203 base model, not arbitrary substring/version inference. No environment or
+      user-editable whitelist is read here.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::bedrock_config_selection_cases::case_[0-9]+_legacy_anthropic_names$/)'
+  - id: case-selection-without-construction
+    why: Each selected tag is a zero-argument construction request. Record None for native Messages bridge routes;
+      do not instantiate HTTP clients or execute transformation methods in this stage. Constructor failures occur
+      when the caller performs the selected construction, in the same position before its provider request.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::bedrock_config_selection_cases::case_[0-9]+_selection_without_construction$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-config-selection/native-messages-route.yaml
+- tools/oracle/cases/helpers/providers/bedrock-config-selection/chat-config-selector.yaml
+- tools/oracle/cases/helpers/providers/bedrock-config-selection/legacy-anthropic-names.yaml
+- tools/oracle/cases/helpers/providers/bedrock-config-selection/selection-without-construction.yaml
+deviations: []
+out_of_scope:
+- Concrete constructors and transforms remain B599/B611/B613-B620/B622/B625/B652/B653/B656; the caller composes
+  the selected tag with those installed implementations. This task ports only the condition/return selection stage,
+  as B668 does for OpenAI family tags. Other Bedrock common_utils functions retain their named owners.
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py:
+  AmazonAnthropicConfig.__init__ L30-L42; AmazonAnthropicConfig.get_config L44-L60; AmazonAnthropicConfig.get_supported_openai_params
+  L70-L78; AmazonAnthropicConfig.map_openai_params L80-L98 belong to B613.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
+  _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
+  L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
+  L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
+  L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
+  bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
+  L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
+  normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
+pitfalls:
+- Provider/base extraction happens before the explicit route branches, so an extraction error is not bypassed by
+  an explicit route.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

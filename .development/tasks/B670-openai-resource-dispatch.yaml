@@ -19,6 +19,22 @@ description: >-
   the resulting request or reply; accept already normalized settings and reuse leaf errors.
 
 
+  Named case contracts: files: Parameterize B516 create, retrieve, delete, list, buffered content and streaming
+  content; retain byte streams and pagination parameters. batches: Parameterize B517 create, retrieve, cancel and
+  list; preserve its endpoint/completion_window and leaf errors. fine_tuning: Parameterize B518 create, retrieve,
+  cancel and list with its normalized SDK response. containers: Parameterize B522 container create/list/retrieve/delete
+  and container-file list/content; preserve binary file content and path IDs. evals: Parameterize B523 eval create/list/get/update/delete/cancel
+  and run create/list/get/cancel/delete, including their different ID paths. vector_stores: Parameterize every B527
+  search/create/store lifecycle and attached-file operation listed in that leaf, including OpenAI-Beta and its metadata
+  sanitation; use the actual leaf implementation.
+
+
+  Each parameterized operation uses a distinct fixture row in the named case file and reaches the existing leaf
+  production entry point. The composition layer introduces no new defaults, headers, errors, parsers or config keys:
+  leaf-owned outcomes and warnings pass through unchanged. Test at least one leaf error per family to detect accidental
+  conversion to unsupported_operation. No HTTP route is registered or called by these helper cases.
+
+
   Implement crates/betterlite-provider/src/openai_resource_dispatch.rs with adjacent tests under openai_resource_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -34,9 +50,8 @@ description: >-
 
   Write rstest function openai_resource_dispatch_cases in betterlite-provider with these exact named cases (one
   per oracle file): files, batches, fine_tuning, containers, evals, vector_stores. Each case exercises its named
-  outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy
-  and assert both client response and captured upstream request. Existing API tasks retain route registration; this
-  task must not register a duplicate axum route.
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_resource_dispatch* using HelperCase: kind:
@@ -56,9 +71,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 114 behavior/config-test lines, 109 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 145 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 408 planned, 425 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 550 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -99,32 +114,37 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L34-L42
   why: Operation contract delegated to B527; only native dispatcher wiring is added here.
 dod:
-- text: 'files: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/files.yaml.'
+- text: 'files: Parameterize B516 create, retrieve, delete, list, buffered content and streaming content; retain
+    byte streams and pagination parameters.'
   proof:
   - case-files
   - oracle
   - helper-python
-- text: 'batches: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/batches.yaml.'
+- text: 'batches: Parameterize B517 create, retrieve, cancel and list; preserve its endpoint/completion_window and
+    leaf errors.'
   proof:
   - case-batches
   - oracle
   - helper-python
-- text: 'fine tuning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/fine-tuning.yaml.'
+- text: 'fine_tuning: Parameterize B518 create, retrieve, cancel and list with its normalized SDK response.'
   proof:
   - case-fine-tuning
   - oracle
   - helper-python
-- text: 'containers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/containers.yaml.'
+- text: 'containers: Parameterize B522 container create/list/retrieve/delete and container-file list/content; preserve
+    binary file content and path IDs.'
   proof:
   - case-containers
   - oracle
   - helper-python
-- text: 'evals: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/evals.yaml.'
+- text: 'evals: Parameterize B523 eval create/list/get/update/delete/cancel and run create/list/get/cancel/delete,
+    including their different ID paths.'
   proof:
   - case-evals
   - oracle
   - helper-python
-- text: 'vector stores: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-resource-dispatch/vector-stores.yaml.'
+- text: 'vector_stores: Parameterize every B527 search/create/store lifecycle and attached-file operation listed
+    in that leaf, including OpenAI-Beta and its metadata sanitation; use the actual leaf implementation.'
   proof:
   - case-vector-stores
   - oracle
@@ -141,33 +161,35 @@ checks:
   - mutants
   commands:
   - id: case-files
-    why: The files behavior is missing or differs from its pinned fixture.
+    why: Parameterize B516 create, retrieve, delete, list, buffered content and streaming content; retain byte streams
+      and pagination parameters.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_files$/)'
   - id: case-batches
-    why: The batches behavior is missing or differs from its pinned fixture.
+    why: Parameterize B517 create, retrieve, cancel and list; preserve its endpoint/completion_window and leaf errors.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_batches$/)'
   - id: case-fine-tuning
-    why: The fine-tuning behavior is missing or differs from its pinned fixture.
+    why: Parameterize B518 create, retrieve, cancel and list with its normalized SDK response.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_fine_tuning$/)'
   - id: case-containers
-    why: The containers behavior is missing or differs from its pinned fixture.
+    why: Parameterize B522 container create/list/retrieve/delete and container-file list/content; preserve binary
+      file content and path IDs.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_containers$/)'
   - id: case-evals
-    why: The evals behavior is missing or differs from its pinned fixture.
+    why: Parameterize B523 eval create/list/get/update/delete/cancel and run create/list/get/cancel/delete, including
+      their different ID paths.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_evals$/)'
   - id: case-vector-stores
-    why: The vector-stores behavior is missing or differs from its pinned fixture.
+    why: Parameterize every B527 search/create/store lifecycle and attached-file operation listed in that leaf,
+      including OpenAI-Beta and its metadata sanitation; use the actual leaf implementation.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_resource_dispatch_cases::case_[0-9]+_vector_stores$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_resource_dispatch.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_resource_dispatch.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_resource_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_resource_dispatch*")"
       && grep -lq 'openai_resource_dispatch' tools/oracle/fuzz/corpus/helper_case/openai_resource_dispatch* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_resource_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -183,94 +205,20 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-resource-dispatch/vector-stores.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
-  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
-  belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
-  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
-  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
-  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
-  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
-  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
-  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
-  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
-  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
-  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
-  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
-  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
-  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
-  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069;
-  OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
-  L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
-  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
-  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
-  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2343-L2353; OpenAIAssistantsAPI.get_assistants L2356-L2366; OpenAIAssistantsAPI.get_assistants
-  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
-  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
-  to B519; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
-  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
-  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
-  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
-  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
-  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
-  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
 - 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
   port them.'
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
-  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
-  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params
-  L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages
-  L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request
-  L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator
-  L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser L329-L336 belong to B668; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/fine_tuning/handler.py: _normalize_fine_tuning_job_dict L24-L48; _litellm_fine_tuning_job_from_response
-  L51-L52; OpenAIFineTuningAPI.__init__ L60-L61; OpenAIFineTuningAPI.get_openai_client L63-L93; OpenAIFineTuningAPI.acreate_fine_tuning_job
-  L95-L102; OpenAIFineTuningAPI.create_fine_tuning_job L104-L142; OpenAIFineTuningAPI.acancel_fine_tuning_job L144-L150;
-  OpenAIFineTuningAPI.cancel_fine_tuning_job L152-L190; OpenAIFineTuningAPI.alist_fine_tuning_jobs L192-L199; OpenAIFineTuningAPI.list_fine_tuning_jobs
-  L201-L241; OpenAIFineTuningAPI.aretrieve_fine_tuning_job L243-L249; OpenAIFineTuningAPI.retrieve_fine_tuning_job
-  L251-L289 belong to B518; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/containers/transformation.py: OpenAIContainerConfig.__init__ L82-L83; OpenAIContainerConfig.get_supported_openai_params
-  L85-L92; OpenAIContainerConfig.map_openai_params L94-L100; OpenAIContainerConfig.validate_environment L102-L113;
-  OpenAIContainerConfig.get_complete_url L115-L129; OpenAIContainerConfig.transform_container_create_request L131-L150;
-  OpenAIContainerConfig.transform_container_create_response L152-L174; OpenAIContainerConfig.transform_container_list_request
+- 'Function ownership inventory litellm/llms/openai/containers/transformation.py: OpenAIContainerConfig.__init__
+  L82-L83; OpenAIContainerConfig.get_supported_openai_params L85-L92; OpenAIContainerConfig.map_openai_params L94-L100;
+  OpenAIContainerConfig.validate_environment L102-L113; OpenAIContainerConfig.get_complete_url L115-L129; OpenAIContainerConfig.transform_container_create_request
+  L131-L150; OpenAIContainerConfig.transform_container_create_response L152-L174; OpenAIContainerConfig.transform_container_list_request
   L176-L207; OpenAIContainerConfig.transform_container_list_response L209-L217; OpenAIContainerConfig.transform_container_retrieve_request
   L219-L234; OpenAIContainerConfig.transform_container_retrieve_response L236-L244; OpenAIContainerConfig.transform_container_delete_request
   L246-L265; OpenAIContainerConfig.transform_container_delete_response L267-L275; OpenAIContainerConfig.transform_container_file_list_request
   L277-L310; OpenAIContainerConfig.transform_container_file_list_response L312-L320; OpenAIContainerConfig.transform_container_file_content_request
   L322-L343; OpenAIContainerConfig.transform_container_file_content_response L345-L354; OpenAIContainerConfig.get_error_class
-  L356-L368 belong to B522; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/evals/transformation.py: _parsed_response_json L35-L36; OpenAIEvalsConfig.custom_llm_provider
-  L43-L44; OpenAIEvalsConfig.validate_environment L46-L65; OpenAIEvalsConfig.get_complete_url L67-L80; OpenAIEvalsConfig.transform_create_eval_request
+  L356-L368 belong to B522.'
+- 'Function ownership inventory litellm/llms/openai/evals/transformation.py: _parsed_response_json L35-L36; OpenAIEvalsConfig.custom_llm_provider
+  L42-L44; OpenAIEvalsConfig.validate_environment L46-L65; OpenAIEvalsConfig.get_complete_url L67-L80; OpenAIEvalsConfig.transform_create_eval_request
   L82-L94; OpenAIEvalsConfig.transform_create_eval_response L96-L105; OpenAIEvalsConfig.transform_list_evals_request
   L107-L138; OpenAIEvalsConfig.transform_list_evals_response L140-L149; OpenAIEvalsConfig.transform_get_eval_request
   L151-L163; OpenAIEvalsConfig.transform_get_eval_response L165-L174; OpenAIEvalsConfig.transform_update_eval_request
@@ -281,18 +229,74 @@ out_of_scope:
   L292-L323; OpenAIEvalsConfig.transform_list_runs_response L325-L334; OpenAIEvalsConfig.transform_get_run_request
   L336-L351; OpenAIEvalsConfig.transform_get_run_response L353-L362; OpenAIEvalsConfig.transform_cancel_run_request
   L364-L382; OpenAIEvalsConfig.transform_cancel_run_response L384-L393; OpenAIEvalsConfig.transform_delete_run_request
-  L395-L413; OpenAIEvalsConfig.transform_delete_run_response L415-L424 belong to B523; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/vector_stores/transformation.py: OpenAIVectorStoreConfig.get_auth_credentials L34-L42; OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type
-  L44-L48; OpenAIVectorStoreConfig.validate_environment L50-L70; OpenAIVectorStoreConfig.get_complete_url L72-L91;
-  OpenAIVectorStoreConfig.transform_search_vector_store_request L93-L115; OpenAIVectorStoreConfig.transform_search_vector_store_response
-  L117-L128; OpenAIVectorStoreConfig.transform_create_vector_store_request L130-L148; OpenAIVectorStoreConfig.transform_create_vector_store_response
-  L150-L159 belong to B527; reuse that implementation or its injected typed boundary.
+  L395-L413; OpenAIEvalsConfig.transform_delete_run_response L415-L424 belong to B523.'
+- 'Function ownership inventory litellm/llms/openai/fine_tuning/handler.py: _normalize_fine_tuning_job_dict L24-L48;
+  _litellm_fine_tuning_job_from_response L51-L52; OpenAIFineTuningAPI.__init__ L60-L61; OpenAIFineTuningAPI.get_openai_client
+  L63-L93; OpenAIFineTuningAPI.acreate_fine_tuning_job L95-L102; OpenAIFineTuningAPI.create_fine_tuning_job L104-L142;
+  OpenAIFineTuningAPI.acancel_fine_tuning_job L144-L150; OpenAIFineTuningAPI.cancel_fine_tuning_job L152-L190; OpenAIFineTuningAPI.alist_fine_tuning_jobs
+  L192-L199; OpenAIFineTuningAPI.list_fine_tuning_jobs L201-L241; OpenAIFineTuningAPI.aretrieve_fine_tuning_job
+  L243-L249; OpenAIFineTuningAPI.retrieve_fine_tuning_job L251-L289 belong to B518.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
+  L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
+  L889-L1011 belong to B004.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
+  OpenAIChatCompletion.make_openai_embedding_request L1200-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request
+  L1217-L1232; OpenAIChatCompletion.aembedding L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to
+  B006.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config
+  L81-L98; MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params
+  L105-L109 belong to B036.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454;
+  OpenAIChatCompletion.image_generation L1456-L1554 belong to B511.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client
+  L1683-L1711; OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
+  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
+  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
+  L1986-L2026 belong to B516.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client
+  L2041-L2069; OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
+  L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
+  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
+  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
+  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2342-L2353; OpenAIAssistantsAPI.get_assistants L2355-L2366; OpenAIAssistantsAPI.get_assistants
+  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
+  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
+  to B519.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2567-L2580; OpenAIAssistantsAPI.add_message L2582-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2669-L2681; OpenAIAssistantsAPI.get_messages L2683-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2772-L2785;
+  OpenAIAssistantsAPI.create_thread L2787-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2891-L2903; OpenAIAssistantsAPI.get_thread L2905-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3073-L3093; OpenAIAssistantsAPI.run_thread
+  L3095-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config
+  L174-L176; OpenAIConfig.get_supported_openai_params L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params
+  L207-L212; OpenAIConfig._transform_messages L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class
+  L254-L259; OpenAIConfig.transform_request L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment
+  L300-L313; OpenAIConfig.get_model_response_iterator L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser
+  L329-L336 belong to B668.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
+  no caller at the pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/llms/openai/vector_stores/transformation.py: OpenAIVectorStoreConfig.get_auth_credentials
+  L34-L42; OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type L44-L48; OpenAIVectorStoreConfig.validate_environment
+  L50-L70; OpenAIVectorStoreConfig.get_complete_url L72-L91; OpenAIVectorStoreConfig.transform_search_vector_store_request
+  L93-L115; OpenAIVectorStoreConfig.transform_search_vector_store_response L117-L128; OpenAIVectorStoreConfig.transform_create_vector_store_request
+  L130-L148; OpenAIVectorStoreConfig.transform_create_vector_store_response L150-L159 belong to B527.'
 pitfalls:
 - Container and vector-store file operations have different paths and must not collapse into the ordinary Files
   API.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

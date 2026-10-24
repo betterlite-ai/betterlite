@@ -21,6 +21,43 @@ description: >-
   and no copied helper algorithm is permitted.
 
 
+  Named case contracts: ws_wss_scheme: Default websocket base is https://api.openai.com/. Replace https:// with
+  wss:// and http:// with ws://, then replace the entire path with /v1/realtime; preserve existing query only when
+  the supplied query mapping is empty. query_model_or_explicit: query_params=None becomes {model:<requested model>};
+  any supplied mapping, including {}, suppresses that fallback. A truthy mapping replaces the whole original query.
+  intent=transcription passes the requested model as force_transcription_model; other intents pass None. beta_header_only_when_client_sends:
+  Send Authorization: Bearer <api_key>; add OpenAI-Beta: realtime=v1 only when B1004 client_sent_openai_beta_realtime_header
+  reports it. The default normalizer is None. Websocket api_key=None raises ValueError api_key is required for OpenAI
+  realtime calls before the connection try; empty key is permitted. http_session_paths: HTTP base resolves explicit
+  api_base, litellm.api_base, OPENAI_API_BASE, then https://api.openai.com (not OPENAI_BASE_URL). Strip trailing
+  slashes and one trailing /v1, then append /v1/realtime/client_secrets, /v1/realtime/calls or /v1/realtime/transcription_sessions.
+  api_version/model do not affect these paths. redacted_close_reason: Other connection/forwarding exceptions close
+  with code 1011 and redacted reason Internal server error: <error>. Ignore RuntimeError close failures containing
+  already completed or websocket.close; otherwise raise Exception Unexpected error while closing WebSocket: <close_error>.
+  Handshake InvalidStatus instead delegates its response.status_code to the existing refusal helper. realtime_ssl_and_size:
+  ws:// uses no TLS context; wss delegates to the shared realtime SSL context, translating False to websockets ssl=True
+  as the source library requires. Connect receives max_size from REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES, parsed
+  as int when set and None/unlimited otherwise; invalid numeric environment text fails loading. realtime_http_auth:
+  HTTP key resolves explicit api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY, then empty string. Validation
+  returns copied headers overwritten with Authorization: Bearer <key-or-empty> and Content-Type: application/json.
+
+
+  Load REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES through betterlite-config, with injected environment lookup and
+  the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest openai_realtime_config_cases; each named loads_<key> case invokes the real B002 loader, checks
+  explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  Apply the same 16 MiB Rust websocket default as Azure B545; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES explicitly
+  overrides it. The pinned None/unlimited default is reference behavior, not the Rust default. Compare connect fixtures
+  with an explicit size setting; add standalone Rust message_cap_closes_1009 for the default and override, never
+  an oracle case for the differing default.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-openai/src/realtime.rs with adjacent tests under realtime/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -36,10 +73,9 @@ description: >-
 
   Write rstest function realtime_cases in betterlite-openai with these exact named cases (one per oracle file):
   ws_wss_scheme, replace_path_with_v1_realtime, query_model_or_explicit, beta_header_only_when_client_sends, http_session_paths,
-  missing_api_key, handshake_refusal, redacted_close_reason. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  missing_api_key, handshake_refusal, redacted_close_reason, realtime_ssl_and_size, realtime_http_auth. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API
+  tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_realtime* using HelperCase: kind: helper
@@ -54,9 +90,9 @@ description: >-
 
 
   Budget from 154 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 180 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 409 planned, 425 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 195 production lines, 240 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 45 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -72,42 +108,62 @@ scope:
   - tools/oracle/helpers/openai_realtime.py
   - tools/oracle/cases/helpers/providers/openai-realtime/**
   - tools/oracle/fuzz/corpus/helper_case/openai_realtime*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/openai.rs
+  - crates/betterlite-config/src/providers/openai/openai_realtime.rs
+  - crates/betterlite-config/src/providers/openai/openai_realtime/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/openai_realtime_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/openai_realtime*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L35-L190
-  why: >-
-    Own OpenAIRealtime._get_default_api_base, OpenAIRealtime._get_additional_headers, OpenAIRealtime._get_ssl_config,
+  why: Own OpenAIRealtime._get_default_api_base, OpenAIRealtime._get_additional_headers, OpenAIRealtime._get_ssl_config,
     OpenAIRealtime._construct_url, OpenAIRealtime._make_event_normalizer, OpenAIRealtime.async_realtime. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/http_transformation.py#L9-L40
-  why: >-
-    Own OpenAIRealtimeHTTPConfig.get_api_base, OpenAIRealtimeHTTPConfig.get_api_key, OpenAIRealtimeHTTPConfig.get_complete_url,
+  why: Own OpenAIRealtimeHTTPConfig.get_api_base, OpenAIRealtimeHTTPConfig.get_api_key, OpenAIRealtimeHTTPConfig.get_complete_url,
     OpenAIRealtimeHTTPConfig.get_realtime_calls_url, OpenAIRealtimeHTTPConfig.get_transcription_session_url, OpenAIRealtimeHTTPConfig.validate_environment.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L338-L339
+  why: Websocket maximum message size environment parsing; unset means no limit.
 dod:
-- text: 'ws wss scheme: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/ws-wss-scheme.yaml.'
+- text: 'ws_wss_scheme: Default websocket base is https://api.openai.com/. Replace https:// with wss:// and http://
+    with ws://, then replace the entire path with /v1/realtime; preserve existing query only when the supplied query
+    mapping is empty.'
   proof:
   - case-ws-wss-scheme
   - oracle
   - helper-python
-- text: >-
-    replace path with v1 realtime: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/replace-path-with-v1-realtime.yaml.
+- text: 'replace path with v1 realtime: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/replace-path-with-v1-realtime.yaml.'
   proof:
   - case-replace-path-with-v1-realtime
   - oracle
   - helper-python
-- text: 'query model or explicit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/query-model-or-explicit.yaml.'
+- text: 'query_model_or_explicit: query_params=None becomes {model:<requested model>}; any supplied mapping, including
+    {}, suppresses that fallback. A truthy mapping replaces the whole original query. intent=transcription passes
+    the requested model as force_transcription_model; other intents pass None.'
   proof:
   - case-query-model-or-explicit
   - oracle
   - helper-python
-- text: >-
-    beta header only when client sends: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/beta-header-only-when-client-sends.yaml.
+- text: 'beta_header_only_when_client_sends: Send Authorization: Bearer <api_key>; add OpenAI-Beta: realtime=v1
+    only when B1004 client_sent_openai_beta_realtime_header reports it. The default normalizer is None. Websocket
+    api_key=None raises ValueError api_key is required for OpenAI realtime calls before the connection try; empty
+    key is permitted.'
   proof:
   - case-beta-header-only-when-client-sends
   - oracle
   - helper-python
-- text: 'http session paths: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/http-session-paths.yaml.'
+- text: 'http_session_paths: HTTP base resolves explicit api_base, litellm.api_base, OPENAI_API_BASE, then https://api.openai.com
+    (not OPENAI_BASE_URL). Strip trailing slashes and one trailing /v1, then append /v1/realtime/client_secrets,
+    /v1/realtime/calls or /v1/realtime/transcription_sessions. api_version/model do not affect these paths.'
   proof:
   - case-http-session-paths
   - oracle
@@ -122,7 +178,10 @@ dod:
   - case-handshake-refusal
   - oracle
   - helper-python
-- text: 'redacted close reason: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/redacted-close-reason.yaml.'
+- text: 'redacted_close_reason: Other connection/forwarding exceptions close with code 1011 and redacted reason
+    Internal server error: <error>. Ignore RuntimeError close failures containing already completed or websocket.close;
+    otherwise raise Exception Unexpected error while closing WebSocket: <close_error>. Handshake InvalidStatus instead
+    delegates its response.status_code to the existing refusal helper.'
   proof:
   - case-redacted-close-reason
   - oracle
@@ -130,47 +189,92 @@ dod:
 - text: New openai_realtime seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'realtime_ssl_and_size: ws:// uses no TLS context; wss delegates to the shared realtime SSL context, translating
+    False to websockets ssl=True as the source library requires. Connect receives max_size from REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES,
+    parsed as int when set and None/unlimited otherwise; invalid numeric environment text fails loading.'
+  proof:
+  - case-realtime-ssl-and-size
+  - oracle
+  - helper-python
+- text: 'realtime_http_auth: HTTP key resolves explicit api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY,
+    then empty string. Validation returns copied headers overwritten with Authorization: Bearer <key-or-empty> and
+    Content-Type: application/json.'
+  proof:
+  - case-realtime-http-auth
+  - oracle
+  - helper-python
+- text: The real config loader resolves REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES, including its default and precedence.
+  proof:
+  - config-realtime-websocket-max-message-size-bytes
+- text: The default 16 MiB and explicit override enforce the documented 1009 close deviation.
+  proof:
+  - message-cap
 checks:
   optional:
   - mutants
   commands:
   - id: case-ws-wss-scheme
-    why: The ws-wss-scheme behavior is missing or differs from its pinned fixture.
+    why: Default websocket base is https://api.openai.com/. Replace https:// with wss:// and http:// with ws://,
+      then replace the entire path with /v1/realtime; preserve existing query only when the supplied query mapping
+      is empty.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_ws_wss_scheme$/)'
   - id: case-replace-path-with-v1-realtime
-    why: The replace-path-with-v1-realtime behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/replace-path-with-v1-realtime.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_replace_path_with_v1_realtime$/)'
   - id: case-query-model-or-explicit
-    why: The query-model-or-explicit behavior is missing or differs from its pinned fixture.
+    why: query_params=None becomes {model:<requested model>}; any supplied mapping, including {}, suppresses that
+      fallback. A truthy mapping replaces the whole original query. intent=transcription passes the requested model
+      as force_transcription_model; other intents pass None.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_query_model_or_explicit$/)'
   - id: case-beta-header-only-when-client-sends
-    why: The beta-header-only-when-client-sends behavior is missing or differs from its pinned fixture.
+    why: 'Send Authorization: Bearer <api_key>; add OpenAI-Beta: realtime=v1 only when B1004 client_sent_openai_beta_realtime_header
+      reports it. The default normalizer is None. Websocket api_key=None raises ValueError api_key is required for
+      OpenAI realtime calls before the connection try; empty key is permitted.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_beta_header_only_when_client_sends$/)'
   - id: case-http-session-paths
-    why: The http-session-paths behavior is missing or differs from its pinned fixture.
+    why: HTTP base resolves explicit api_base, litellm.api_base, OPENAI_API_BASE, then https://api.openai.com (not
+      OPENAI_BASE_URL). Strip trailing slashes and one trailing /v1, then append /v1/realtime/client_secrets, /v1/realtime/calls
+      or /v1/realtime/transcription_sessions. api_version/model do not affect these paths.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_http_session_paths$/)'
   - id: case-missing-api-key
-    why: The missing-api-key behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/missing-api-key.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_missing_api_key$/)'
   - id: case-handshake-refusal
-    why: The handshake-refusal behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-realtime/handshake-refusal.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_handshake_refusal$/)'
   - id: case-redacted-close-reason
-    why: The redacted-close-reason behavior is missing or differs from its pinned fixture.
+    why: 'Other connection/forwarding exceptions close with code 1011 and redacted reason Internal server error:
+      <error>. Ignore RuntimeError close failures containing already completed or websocket.close; otherwise raise
+      Exception Unexpected error while closing WebSocket: <close_error>. Handshake InvalidStatus instead delegates
+      its response.status_code to the existing refusal helper.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_redacted_close_reason$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_realtime.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_realtime.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_realtime*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_realtime*")"
       && grep -lq 'openai_realtime' tools/oracle/fuzz/corpus/helper_case/openai_realtime* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_realtime$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-realtime-ssl-and-size
+    why: ws:// uses no TLS context; wss delegates to the shared realtime SSL context, translating False to websockets
+      ssl=True as the source library requires. Connect receives max_size from REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES,
+      parsed as int when set and None/unlimited otherwise; invalid numeric environment text fails loading.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_realtime_ssl_and_size$/)'
+  - id: case-realtime-http-auth
+    why: 'HTTP key resolves explicit api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY, then empty string.
+      Validation returns copied headers overwritten with Authorization: Bearer <key-or-empty> and Content-Type:
+      application/json.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_realtime_http_auth$/)'
+  - id: config-realtime-websocket-max-message-size-bytes
+    why: REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_realtime_config_cases::case_[0-9]+_loads_realtime_websocket_max_message_size_bytes$/)'
+  - id: message-cap
+    why: The explicit bounded default or override does not close oversized messages.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::message_cap_closes_1009$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-realtime/ws-wss-scheme.yaml
 - tools/oracle/cases/helpers/providers/openai-realtime/replace-path-with-v1-realtime.yaml
@@ -180,15 +284,25 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-realtime/missing-api-key.yaml
 - tools/oracle/cases/helpers/providers/openai-realtime/handshake-refusal.yaml
 - tools/oracle/cases/helpers/providers/openai-realtime/redacted-close-reason.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/openai-realtime/realtime-ssl-and-size.yaml
+- tools/oracle/cases/helpers/providers/openai-realtime/realtime-http-auth.yaml
+deviations:
+- what: Websocket messages are capped at 16 MiB by default; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides
+    the cap. LiteLLM defaults this variable to None, allowing unlimited frames; excess messages close with websocket
+    code 1009.
+  why: Bounded external buffers are required; this names the visible default difference rather than assuming LiteLLM
+    already caps messages.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Compare connection preparation by intercepting the Python connect seam, never opening a live socket.
+- timeout and client are accepted but not passed to websockets.connect; adding either as an oracle-visible connect
+  option changes the pin.
+- Empty query_params preserves an existing base query while suppressing the model fallback.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: standard

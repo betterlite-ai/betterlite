@@ -1,0 +1,300 @@
+id: B2213
+title: Azure Arc managed-identity challenge protocol
+description: >-
+  Implement the Azure Arc credential protocol reached through azure-identity 1.25.2 and MSAL 1.37.0, the versions
+  in the pinned LiteLLM uv.lock. Inject host platform, environment, file metadata/reader, transport and clock; the
+  challenge may select only a basename under the operator host token directory.
+
+
+  This slice adds native composition or ports the SDK protocol called by the parent; it owns no additional LiteLLM
+  function body. The references and concrete operations below bound that work.
+
+
+  Named case contracts: arc_endpoint_selection: MSAL uses IDENTITY_ENDPOINT when both that key and IMDS_ENDPOINT
+  exist, including empty values. Otherwise an installed /opt/azcmagent/bin/himds on linux or ${ProgramFiles}\AzureConnectedMachineAgent\himds.exe
+  on win32 enables http://localhost:40342/metadata/identity/oauth2/token. No process is executed. Preserve hosted-protocol
+  precedence in caller B699/B676. arc_challenge_request: GET endpoint with api-version=2020-06-01, resource and
+  Metadata: true; parse WWW-Authenticate case-insensitively regardless of first-response status. Require exactly
+  one = and left side case-insensitive basic realm, with no trimming or quote removal. Missing/malformed header
+  raises ManagedIdentityError Unrecognizable WWW-Authenticate header: {headers}, wrapped by the SDK as ClientAuthenticationError
+  with Azure Arc managed identity configuration not found in environment. prefix. arc_restricted_key: Resolve only
+  basename(challenge value), remove its last extension and add .key under /var/opt/azcmagent/tokens on linux or
+  expanded %ProgramData%\AzureConnectedMachineAgent\Tokens on win32. Do not open the supplied directory, do not
+  require its original suffix to be .key. Check stat size before read: 4096 bytes allowed, larger raises Local key
+  file shall not be larger than 4KB. Preserve file-not-found/read errors and unsupported platform error Platform
+  {platform} was undefined and unsupported. arc_second_request: Read the entire key file as text without stripping
+  newline; make one further GET with the same query plus Authorization: Basic {secret} (no base64 encoding). Never
+  put the secret in query, error or debug output. No arbitrary request URL or file path is fetched. arc_token_reply:
+  Truthy access_token and expires_in yield integer expiry duration, token_type default Bearer and optional resource;
+  SDK computes expiry from its clock. Missing/falsey fields or malformed JSON produce error invalid_request and
+  response.text; outer SDK returns CredentialUnavailableError with Token request error: (invalid_request) {text}.
+  Preserve negative and numeric-string durations. arc_user_identity: MSAL rejects user-assigned identity before
+  sending: Invalid managed_identity parameter. Azure Arc supports only system-assigned managed identity, See also
+  https://learn.microsoft.com/en-us/azure/service-fabric/configure-existing-cluster-enable-managed-identity-token-service;
+  SDK wraps it as ClientAuthenticationError, not an unavailable fallthrough.
+
+
+  Load PROGRAMDATA, ProgramFiles through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest azure_arc_identity_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  PROGRAMDATA/ProgramFiles default absent and are operator environment inputs used only for Windows path expansion;
+  fixtures inject the platform and path expansion. These are not request body fields.
+
+
+  Implement crates/betterlite-azure/src/azure_arc_identity.rs with adjacent tests under azure_arc_identity/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_arc_identity in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function azure_arc_identity_cases in betterlite-azure with these exact named cases (one per oracle
+  file): arc_endpoint_selection, arc_challenge_request, arc_restricted_key, arc_second_request, arc_token_reply,
+  arc_user_identity. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_arc_identity* using HelperCase: kind: helper
+  and the externally tagged azure_arc_identity variant inside call. Do not put the Python stdin operation field
+  in a HelperCase. Add oracle test helper_seeds_select_azure_arc_identity that parses every prefixed seed with the
+  production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_arc_identity_reply consumes Arc challenge header bytes and JSON token reply bytes
+  in crates/betterlite-azure/src/azure_arc_identity.rs (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_arc_identity.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_arc_identity.
+  The adjacent test replays_the_azure_arc_identity_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_arc_identity_credential_identity_isolation in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Write standalone azure_arc_identity_secret_safe_failure in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 205 production lines, 215 behavior/config-test lines, 105 combined
+  Rust/Python adapter lines, 65 parser target/replay lines, 25 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines. The production allowance includes 310 lines for the referenced
+  SDK protocol that LiteLLM delegates.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-azure/src/azure_arc_identity.rs
+  - crates/betterlite-azure/src/azure_arc_identity/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_arc_identity.rs
+  - tools/oracle/src/helpers/azure_arc_identity/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_arc_identity.py
+  - tools/oracle/cases/helpers/providers/azure-arc-identity/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_arc_identity*
+  - crates/betterlite-azure/fuzz/Cargo.toml
+  - crates/betterlite-azure/fuzz/fuzz_targets/azure_arc_identity.rs
+  - crates/betterlite-azure/fuzz/corpus/azure_arc_identity/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/azure_arc_identity.rs
+  - crates/betterlite-config/src/providers/azure/azure_arc_identity/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_arc_identity_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_arc_identity*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L86-L127
+  why: LiteLLM delegates managed identity acquisition to this SDK protocol.
+- url: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L370-L381
+  why: Arc endpoint detection.
+- url: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L637-L700
+  why: Active challenge, basename restriction, file bound and token reply.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/msal_managed_identity_client.py#L49-L73
+  why: CredentialUnavailableError mapping and clock.
+dod:
+- text: New azure_arc_identity seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_hosted_identity_token has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+- text: 'arc_endpoint_selection: MSAL uses IDENTITY_ENDPOINT when both that key and IMDS_ENDPOINT exist, including
+    empty values. Otherwise an installed /opt/azcmagent/bin/himds on linux or ${ProgramFiles}\AzureConnectedMachineAgent\himds.exe
+    on win32 enables http://localhost:40342/metadata/identity/oauth2/token. No process is executed. Preserve hosted-protocol
+    precedence in caller B699/B676.'
+  proof:
+  - case-arc-endpoint-selection
+  - oracle
+  - helper-python
+- text: 'arc_challenge_request: GET endpoint with api-version=2020-06-01, resource and Metadata: true; parse WWW-Authenticate
+    case-insensitively regardless of first-response status. Require exactly one = and left side case-insensitive
+    basic realm, with no trimming or quote removal. Missing/malformed header raises ManagedIdentityError Unrecognizable
+    WWW-Authenticate header: {headers}, wrapped by the SDK as ClientAuthenticationError with Azure Arc managed identity
+    configuration not found in environment. prefix.'
+  proof:
+  - case-arc-challenge-request
+  - oracle
+  - helper-python
+- text: 'arc_restricted_key: Resolve only basename(challenge value), remove its last extension and add .key under
+    /var/opt/azcmagent/tokens on linux or expanded %ProgramData%\AzureConnectedMachineAgent\Tokens on win32. Do
+    not open the supplied directory, do not require its original suffix to be .key. Check stat size before read:
+    4096 bytes allowed, larger raises Local key file shall not be larger than 4KB. Preserve file-not-found/read
+    errors and unsupported platform error Platform {platform} was undefined and unsupported.'
+  proof:
+  - case-arc-restricted-key
+  - oracle
+  - helper-python
+- text: 'arc_second_request: Read the entire key file as text without stripping newline; make one further GET with
+    the same query plus Authorization: Basic {secret} (no base64 encoding). Never put the secret in query, error
+    or debug output. No arbitrary request URL or file path is fetched.'
+  proof:
+  - case-arc-second-request
+  - oracle
+  - helper-python
+- text: 'arc_token_reply: Truthy access_token and expires_in yield integer expiry duration, token_type default Bearer
+    and optional resource; SDK computes expiry from its clock. Missing/falsey fields or malformed JSON produce error
+    invalid_request and response.text; outer SDK returns CredentialUnavailableError with Token request error: (invalid_request)
+    {text}. Preserve negative and numeric-string durations.'
+  proof:
+  - case-arc-token-reply
+  - oracle
+  - helper-python
+- text: 'arc_user_identity: MSAL rejects user-assigned identity before sending: Invalid managed_identity parameter.
+    Azure Arc supports only system-assigned managed identity, See also https://learn.microsoft.com/en-us/azure/service-fabric/configure-existing-cluster-enable-managed-identity-token-service;
+    SDK wraps it as ClientAuthenticationError, not an unavailable fallthrough.'
+  proof:
+  - case-arc-user-identity
+  - oracle
+  - helper-python
+- text: The real config loader resolves PROGRAMDATA, including its default and precedence.
+  proof:
+  - config-programdata
+- text: The real config loader resolves ProgramFiles, including its default and precedence.
+  proof:
+  - config-programfiles
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_arc_identity.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_arc_identity*")"
+      && grep -lq 'azure_arc_identity' tools/oracle/fuzz/corpus/helper_case/azure_arc_identity* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_arc_identity$/)' &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_arc_identity)"
+      && grep -q 'decode_hosted_identity_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_arc_identity.rs
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_arc_identity_corpus$/)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_secret_safe_failure$/)'
+  - id: case-arc-endpoint-selection
+    why: MSAL uses IDENTITY_ENDPOINT when both that key and IMDS_ENDPOINT exist, including empty values. Otherwise
+      an installed /opt/azcmagent/bin/himds on linux or ${ProgramFiles}\AzureConnectedMachineAgent\himds.exe on
+      win32 enables http://localhost:40342/metadata/identity/oauth2/token. No process is executed. Preserve hosted-protocol
+      precedence in caller B699/B676.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_endpoint_selection$/)'
+  - id: case-arc-challenge-request
+    why: 'GET endpoint with api-version=2020-06-01, resource and Metadata: true; parse WWW-Authenticate case-insensitively
+      regardless of first-response status. Require exactly one = and left side case-insensitive basic realm, with
+      no trimming or quote removal. Missing/malformed header raises ManagedIdentityError Unrecognizable WWW-Authenticate
+      header: {headers}, wrapped by the SDK as ClientAuthenticationError with Azure Arc managed identity configuration
+      not found in environment. prefix.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_challenge_request$/)'
+  - id: case-arc-restricted-key
+    why: 'Resolve only basename(challenge value), remove its last extension and add .key under /var/opt/azcmagent/tokens
+      on linux or expanded %ProgramData%\AzureConnectedMachineAgent\Tokens on win32. Do not open the supplied directory,
+      do not require its original suffix to be .key. Check stat size before read: 4096 bytes allowed, larger raises
+      Local key file shall not be larger than 4KB. Preserve file-not-found/read errors and unsupported platform
+      error Platform {platform} was undefined and unsupported.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_restricted_key$/)'
+  - id: case-arc-second-request
+    why: 'Read the entire key file as text without stripping newline; make one further GET with the same query plus
+      Authorization: Basic {secret} (no base64 encoding). Never put the secret in query, error or debug output.
+      No arbitrary request URL or file path is fetched.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_second_request$/)'
+  - id: case-arc-token-reply
+    why: 'Truthy access_token and expires_in yield integer expiry duration, token_type default Bearer and optional
+      resource; SDK computes expiry from its clock. Missing/falsey fields or malformed JSON produce error invalid_request
+      and response.text; outer SDK returns CredentialUnavailableError with Token request error: (invalid_request)
+      {text}. Preserve negative and numeric-string durations.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_token_reply$/)'
+  - id: case-arc-user-identity
+    why: 'MSAL rejects user-assigned identity before sending: Invalid managed_identity parameter. Azure Arc supports
+      only system-assigned managed identity, See also https://learn.microsoft.com/en-us/azure/service-fabric/configure-existing-cluster-enable-managed-identity-token-service;
+      SDK wraps it as ClientAuthenticationError, not an unavailable fallthrough.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_arc_identity_cases::case_[0-9]+_arc_user_identity$/)'
+  - id: config-programdata
+    why: PROGRAMDATA lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_arc_identity_config_cases::case_[0-9]+_loads_programdata$/)'
+  - id: config-programfiles
+    why: ProgramFiles lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_arc_identity_config_cases::case_[0-9]+_loads_programfiles$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-endpoint-selection.yaml
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-challenge-request.yaml
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-restricted-key.yaml
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-second-request.yaml
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-token-reply.yaml
+- tools/oracle/cases/helpers/providers/azure-arc-identity/arc-user-identity.yaml
+deviations: []
+out_of_scope:
+- B676 owns ManagedIdentityCredential selection/IMDS and hosted environment config; B699 owns App Service, Azure
+  ML, Cloud Shell and Service Fabric. Legacy azure.identity._credentials.azure_arc ArcChallengeAuthPolicy/_validate_key_file
+  are not called by the selected MsalManagedIdentityClient; do not port their different status gate/path checks.
+- The Python package bridge is B159. This native protocol uses the lower HTTP pool B173 and redaction B187, not
+  the Python SDK at runtime.
+- 'Function ownership inventory litellm/secret_managers/get_azure_ad_token_provider.py: infer_credential_type_from_environment
+  L11-L34; get_azure_ad_token_provider L37-L135 belong to B677.'
+pitfalls:
+- The active Arc path does not require the first reply to be 401 before reading WWW-Authenticate.
+- The challenge path contributes only its basename, and an arbitrary extension is replaced with .key.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

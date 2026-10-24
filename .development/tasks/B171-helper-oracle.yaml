@@ -27,6 +27,10 @@ description: >-
   each operation has its own Rust and Python adapter file and corpus seed. Place the runner behavior tests under
   helpers:: and encoder tests under url_path:: so both crate-specific checks must find behavior tests. Budget 330
   runner/encoders, 90 adapters, 250 tests, 80 fuzz/replay and 50 tooling/wiring (800 total).
+
+
+  The existing encode_url_path_segment ownership also covers litellm/litellm_core_utils/url_utils.py; provider callers
+  depend directly on B171 for this shared encoder.
 scope:
   paths:
   - Cargo.toml
@@ -81,31 +85,26 @@ checks:
   commands:
   - id: helper-runner-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::/) - test(/replays_the_/)'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::/) - test(/replays_the_/)'
       && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^url_path::/) - test(/replays_the_/)'
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'url_path' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'url_path' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-lock
     why: the Python helper tool dependencies are not locked
-    run: >-
-      test -f tools/oracle/helpers/ruff.toml && test -f tools/oracle/helpers/pyrightconfig.json && grep -q ruff
+    run: test -f tools/oracle/helpers/ruff.toml && test -f tools/oracle/helpers/pyrightconfig.json && grep -q ruff
       tools/oracle/litellm/pyproject.toml && grep -q basedpyright tools/oracle/litellm/pyproject.toml && uv lock
       --check --project tools/oracle/litellm
   - id: http-self-check
     why: the helper mode broke the existing HTTP mode
-    run: >-
-      test -f tools/oracle/helpers/dispatch.py && test -f tools/oracle/src/helpers/mod.rs && cargo run --locked
+    run: test -f tools/oracle/helpers/dispatch.py && test -f tools/oracle/src/helpers/mod.rs && cargo run --locked
       --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/health tools/oracle/cases/chat
 oracle_cases:
 - tools/oracle/cases/helpers/url-path/single-reserved.yaml
@@ -117,6 +116,16 @@ deviations: []
 out_of_scope:
 - Provider resolution, pricing, logging and other helper operations are added by their owning tasks.
 - Do not implement an embedded Python runtime or a gateway-only diagnostic endpoint.
+- 'Function ownership inventory litellm/litellm_core_utils/url_utils.py: _UrlFetcher.get L47-L53; _AsyncUrlFetcher.get
+  L59-L65; _is_blocked_ip L132-L148; _normalize_host L151-L153; _default_port_for_scheme L156-L157; _parse_url_destination_allowlist_entry
+  L160-L191; provider_url_destination_candidates L194-L200; is_url_destination_allowed_by_host L203-L239; _format_host_header
+  L242-L247; _sockaddr_host L250-L263; _is_host_allowlisted L266-L280; validate_url L283-L364; assert_same_origin
+  L367-L405; _extract_redirect_url L411-L418; safe_get L421-L461; async_safe_get L464-L487 belong to B009.'
+- 'Function ownership inventory litellm/llms/custom_httpx/asgi_handler.py: _dispatch L26-L28; get_async_asgi_client
+  L34-L46 belong to B100.'
+- 'Function ownership inventory litellm/llms/custom_httpx/mock_transport.py: _mock_id L21-L22; _chat_completion_json
+  L25-L47; MockOpenAITransport._parse_request L66-L74; MockOpenAITransport.handle_async_request L76-L83; MockOpenAITransport.handle_request
+  L85-L92 belong to B2236.'
 pitfalls:
 - Do not compare a fixture to itself or let --self-check substitute for the normal Rust-versus-Python run.
 - B001's existing crate-level untyped fixture allowance can be reused; production path encoders remain typed.

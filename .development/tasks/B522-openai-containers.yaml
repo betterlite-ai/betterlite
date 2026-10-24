@@ -2,8 +2,9 @@ id: B522
 title: OpenAI containers and container files
 description: >-
   Add typed ContainerCreate/ContainerReply/ContainerFile records and provider create/list/retrieve/delete, file
-  list and content methods. Use the source join helper rather than adding /v1 twice, and preserve cursor/order fields.
-  Container file uploads and public handlers are B094.
+  list and content methods. Use the source query-preserving path join for resource IDs; the initial get_complete_url
+  unconditionally appends /containers. Preserve cursor/order fields. Container file uploads and public handlers
+  are B094.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/containers/transformation.py:
@@ -23,6 +24,37 @@ description: >-
   do not implement billing arithmetic here.
 
 
+  Named case contracts: base_with_v1: join_container_api_base_path appends a leading-slash suffix to the existing
+  URL path with its trailing slashes stripped, preserving query and fragment through httpx.URL. It never adds a
+  /v1 segment; cover an Azure /openai/v1/containers?api-version=v1 base. base_with_containers: Resolve api_base
+  then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE then https://api.openai.com/v1 using truthiness.
+  Strip trailing slashes and append /containers even if the base already ends in /containers; do not deduplicate
+  the collection suffix. create_expires_after: Advertise name, expires_after, file_ids, extra_headers; map params
+  by copying all keys regardless of drop_params. Create removes only extra_headers; an optional name overrides the
+  required name because options are expanded last. list_limit_order: Collection list uses api_base unchanged; resource
+  file list appends encoded container_id/files. Include after, limit and order when not None, stringify limit, then
+  let extra_query override any key; empty strings and zero survive. container_auth_chain: Resolve api_key then litellm.api_key
+  then litellm.openai_key then OPENAI_API_KEY using truthiness; overwrite the exact Authorization key with Bearer
+  <resolved key>, including Bearer None when unresolved. container_cost_header: Only create adds B068 code-interpreter
+  cost for sessions=1/provider=openai under _hidden_params.additional_headers.llm_provider-x-litellm-response-cost,
+  preserving existing hidden entries. container_response_error: Metadata responses validate the operation-specific
+  ContainerObject, ContainerListResponse, DeleteContainerResult or ContainerFileListResponse. Content returns raw_response.content
+  unchanged; get_error_class raises BaseLLMException with the supplied status/message/headers.
+
+
+  Reuse B500 config loading and B129 secret resolution for the key/base chains; B171 owns encode_url_path_segment
+  and B2202 owns BaseLLMException.
+
+
+  Write standalone Rust test openai_containers_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_containers_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-openai/src/containers.rs with adjacent tests under containers/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -37,10 +69,10 @@ description: >-
 
 
   Write rstest function containers_cases in betterlite-openai with these exact named cases (one per oracle file):
-  base_with_v1, base_with_containers, create_expires_after, list_limit_order, retrieve_delete_id, file_list_and_content.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  base_with_v1, base_with_containers, create_expires_after, list_limit_order, retrieve_delete_id, file_list_and_content,
+  container_auth_chain, container_cost_header, container_response_error. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_containers* using HelperCase: kind: helper
@@ -57,9 +89,9 @@ description: >-
 
 
   Budget from 237 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 260 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 518 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 270 production lines, 220 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 675 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -81,8 +113,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L82-L368
-  why: >-
-    Own OpenAIContainerConfig.__init__, OpenAIContainerConfig.get_supported_openai_params, OpenAIContainerConfig.map_openai_params,
+  why: Own OpenAIContainerConfig.__init__, OpenAIContainerConfig.get_supported_openai_params, OpenAIContainerConfig.map_openai_params,
     OpenAIContainerConfig.validate_environment, OpenAIContainerConfig.get_complete_url, OpenAIContainerConfig.transform_container_create_request,
     OpenAIContainerConfig.transform_container_create_response, OpenAIContainerConfig.transform_container_list_request,
     OpenAIContainerConfig.transform_container_list_response, OpenAIContainerConfig.transform_container_retrieve_request,
@@ -94,22 +125,30 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/utils.py#L8-L20
   why: Own join_container_api_base_path. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'base with v1: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/base-with-v1.yaml.'
+- text: 'base_with_v1: join_container_api_base_path appends a leading-slash suffix to the existing URL path with
+    its trailing slashes stripped, preserving query and fragment through httpx.URL. It never adds a /v1 segment;
+    cover an Azure /openai/v1/containers?api-version=v1 base.'
   proof:
   - case-base-with-v1
   - oracle
   - helper-python
-- text: 'base with containers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/base-with-containers.yaml.'
+- text: 'base_with_containers: Resolve api_base then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE
+    then https://api.openai.com/v1 using truthiness. Strip trailing slashes and append /containers even if the base
+    already ends in /containers; do not deduplicate the collection suffix.'
   proof:
   - case-base-with-containers
   - oracle
   - helper-python
-- text: 'create expires after: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/create-expires-after.yaml.'
+- text: 'create_expires_after: Advertise name, expires_after, file_ids, extra_headers; map params by copying all
+    keys regardless of drop_params. Create removes only extra_headers; an optional name overrides the required name
+    because options are expanded last.'
   proof:
   - case-create-expires-after
   - oracle
   - helper-python
-- text: 'list limit order: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/list-limit-order.yaml.'
+- text: 'list_limit_order: Collection list uses api_base unchanged; resource file list appends encoded container_id/files.
+    Include after, limit and order when not None, stringify limit, then let extra_query override any key; empty
+    strings and zero survive.'
   proof:
   - case-list-limit-order
   - oracle
@@ -131,47 +170,97 @@ dod:
 - text: decode_container_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'container_auth_chain: Resolve api_key then litellm.api_key then litellm.openai_key then OPENAI_API_KEY
+    using truthiness; overwrite the exact Authorization key with Bearer <resolved key>, including Bearer None when
+    unresolved.'
+  proof:
+  - case-container-auth-chain
+  - oracle
+  - helper-python
+- text: 'container_cost_header: Only create adds B068 code-interpreter cost for sessions=1/provider=openai under
+    _hidden_params.additional_headers.llm_provider-x-litellm-response-cost, preserving existing hidden entries.'
+  proof:
+  - case-container-cost-header
+  - oracle
+  - helper-python
+- text: 'container_response_error: Metadata responses validate the operation-specific ContainerObject, ContainerListResponse,
+    DeleteContainerResult or ContainerFileListResponse. Content returns raw_response.content unchanged; get_error_class
+    raises BaseLLMException with the supplied status/message/headers.'
+  proof:
+  - case-container-response-error
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-base-with-v1
-    why: The base-with-v1 behavior is missing or differs from its pinned fixture.
+    why: join_container_api_base_path appends a leading-slash suffix to the existing URL path with its trailing
+      slashes stripped, preserving query and fragment through httpx.URL. It never adds a /v1 segment; cover an Azure
+      /openai/v1/containers?api-version=v1 base.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_base_with_v1$/)'
   - id: case-base-with-containers
-    why: The base-with-containers behavior is missing or differs from its pinned fixture.
+    why: Resolve api_base then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE then https://api.openai.com/v1
+      using truthiness. Strip trailing slashes and append /containers even if the base already ends in /containers;
+      do not deduplicate the collection suffix.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_base_with_containers$/)'
   - id: case-create-expires-after
-    why: The create-expires-after behavior is missing or differs from its pinned fixture.
+    why: Advertise name, expires_after, file_ids, extra_headers; map params by copying all keys regardless of drop_params.
+      Create removes only extra_headers; an optional name overrides the required name because options are expanded
+      last.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_create_expires_after$/)'
   - id: case-list-limit-order
-    why: The list-limit-order behavior is missing or differs from its pinned fixture.
+    why: Collection list uses api_base unchanged; resource file list appends encoded container_id/files. Include
+      after, limit and order when not None, stringify limit, then let extra_query override any key; empty strings
+      and zero survive.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_list_limit_order$/)'
   - id: case-retrieve-delete-id
-    why: The retrieve-delete-id behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/retrieve-delete-id.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_retrieve_delete_id$/)'
   - id: case-file-list-and-content
-    why: The file-list-and-content behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/file-list-and-content.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_file_list_and_content$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_containers.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_containers.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_containers*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_containers*")"
       && grep -lq 'openai_containers' tools/oracle/fuzz/corpus/helper_case/openai_containers* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_containers$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_containers)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_containers)"
       && grep -q 'decode_container_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus$/)'
+  - id: case-container-auth-chain
+    why: Resolve api_key then litellm.api_key then litellm.openai_key then OPENAI_API_KEY using truthiness; overwrite
+      the exact Authorization key with Bearer <resolved key>, including Bearer None when unresolved.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_container_auth_chain$/)'
+  - id: case-container-cost-header
+    why: Only create adds B068 code-interpreter cost for sessions=1/provider=openai under _hidden_params.additional_headers.llm_provider-x-litellm-response-cost,
+      preserving existing hidden entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_container_cost_header$/)'
+  - id: case-container-response-error
+    why: Metadata responses validate the operation-specific ContainerObject, ContainerListResponse, DeleteContainerResult
+      or ContainerFileListResponse. Content returns raw_response.content unchanged; get_error_class raises BaseLLMException
+      with the supplied status/message/headers.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_container_response_error$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_containers_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_containers_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-containers/base-with-v1.yaml
 - tools/oracle/cases/helpers/providers/openai-containers/base-with-containers.yaml
@@ -179,6 +268,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-containers/list-limit-order.yaml
 - tools/oracle/cases/helpers/providers/openai-containers/retrieve-delete-id.yaml
 - tools/oracle/cases/helpers/providers/openai-containers/file-list-and-content.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/container-auth-chain.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/container-cost-header.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/container-response-error.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -186,8 +278,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Container paths already containing /v1 must not acquire a second /v1 segment.
+- The initial /containers suffix builder is plain string concatenation, unlike the resource join that preserves
+  api-version in the query.
+- extra_query overrides the stringified limit, so converting it after the merge would change its type.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

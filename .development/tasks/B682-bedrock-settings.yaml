@@ -7,7 +7,20 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
-  BedrockError.__init__ L79-L102.
+  error_response_text L59-L63; _synthesize_error_response L66-L75; BedrockError.__init__ L79-L102.
+
+
+  Named case contracts: empty_bearer: AWS_BEARER_TOKEN_BEDROCK unset remains None, explicitly empty remains empty
+  in AwsSettings; B590 later converts empty selected token to no bearer rather than falling back to another identity.
+  No default secret is fabricated. session_tags: Store aws_session_tags unmodified as optional deployment input,
+  with None default; B590 validates Key/Value entries and orders them. The config layer must not silently discard
+  invalid session tags before that validator can reject them. bedrock_error_response: If response is absent and
+  headers truthy, synthesize a response with supplied status and supplied truthy request or POST https://docs.litellm.ai/docs.
+  Preserve httpx.Headers unchanged; dict headers keep only str/bytes values, dropping int/bool/None. An existing
+  response suppresses synthesis. Delegate BaseLLMException to B2202, preserving status_code_is_synthesized defaultfalse,
+  body, headers, message, status and absent type/param/code. error_text_unread: error_response_text returns response.text,
+  except ResponseNotRead returns reason_phrase; do not read/consume the body or catch unrelated text exceptions.
+  Exercise the same supplied/absent response and nonstring-header cases through BedrockError and downstream B691.
 
 
   Implement crates/betterlite-bedrock/src/bedrock_settings.rs with adjacent tests under bedrock_settings/. Keep
@@ -24,10 +37,9 @@ description: >-
 
 
   Write rstest function bedrock_settings_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): deployment_before_env, empty_bearer, session_tags, irsa_config. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  file): deployment_before_env, empty_bearer, session_tags, irsa_config, bedrock_error_response, error_text_unread.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_settings* using HelperCase: kind: helper
@@ -69,10 +81,10 @@ description: >-
   it is not a Python oracle case.
 
 
-  Budget from 24 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 60 production lines, 209 behavior/config-test lines, 71 combined
-  Rust/Python adapter lines, 0 parser target/replay lines, 67 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 447 planned, 450 maximum changed lines.
+  Budget from 39 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 110 production lines, 245 behavior/config-test lines, 100 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 90 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 585 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -107,18 +119,26 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L79-L102
   why: Own BedrockError.__init__. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L59-L63
+  why: Own error_response_text below authentication and stream callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L66-L75
+  why: Own _synthesize_error_response below authentication and stream callers.
 dod:
 - text: 'deployment before env: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-settings/deployment-before-env.yaml.'
   proof:
   - case-deployment-before-env
   - oracle
   - helper-python
-- text: 'empty bearer: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-settings/empty-bearer.yaml.'
+- text: 'empty_bearer: AWS_BEARER_TOKEN_BEDROCK unset remains None, explicitly empty remains empty in AwsSettings;
+    B590 later converts empty selected token to no bearer rather than falling back to another identity. No default
+    secret is fabricated.'
   proof:
   - case-empty-bearer
   - oracle
   - helper-python
-- text: 'session tags: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-settings/session-tags.yaml.'
+- text: 'session_tags: Store aws_session_tags unmodified as optional deployment input, with None default; B590 validates
+    Key/Value entries and orders them. The config layer must not silently discard invalid session tags before that
+    validator can reject them.'
   proof:
   - case-session-tags
   - oracle
@@ -196,112 +216,114 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'bedrock_error_response: If response is absent and headers truthy, synthesize a response with supplied status
+    and supplied truthy request or POST https://docs.litellm.ai/docs. Preserve httpx.Headers unchanged; dict headers
+    keep only str/bytes values, dropping int/bool/None. An existing response suppresses synthesis. Delegate BaseLLMException
+    to B2202, preserving status_code_is_synthesized defaultfalse, body, headers, message, status and absent type/param/code.'
+  proof:
+  - case-bedrock-error-response
+  - oracle
+  - helper-python
+- text: 'error_text_unread: error_response_text returns response.text, except ResponseNotRead returns reason_phrase;
+    do not read/consume the body or catch unrelated text exceptions. Exercise the same supplied/absent response
+    and nonstring-header cases through BedrockError and downstream B691.'
+  proof:
+  - case-error-text-unread
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-deployment-before-env
-    why: The deployment-before-env behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-settings/deployment-before-env.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_deployment_before_env$/)'
   - id: case-empty-bearer
-    why: The empty-bearer behavior is missing or differs from its pinned fixture.
+    why: AWS_BEARER_TOKEN_BEDROCK unset remains None, explicitly empty remains empty in AwsSettings; B590 later
+      converts empty selected token to no bearer rather than falling back to another identity. No default secret
+      is fabricated.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_empty_bearer$/)'
   - id: case-session-tags
-    why: The session-tags behavior is missing or differs from its pinned fixture.
+    why: Store aws_session_tags unmodified as optional deployment input, with None default; B590 validates Key/Value
+      entries and orders them. The config layer must not silently discard invalid session tags before that validator
+      can reject them.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_session_tags$/)'
   - id: case-irsa-config
-    why: The irsa-config behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-settings/irsa-config.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_irsa_config$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_settings.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_settings.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_settings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_settings*")"
       && grep -lq 'bedrock_settings' tools/oracle/fuzz/corpus/helper_case/bedrock_settings* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_settings$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-aws-access-key-id
     why: The AWS_ACCESS_KEY_ID setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_access_key_id$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_access_key_id$/)'
       && grep -lq 'AWS_ACCESS_KEY_ID' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-secret-access-key
     why: The AWS_SECRET_ACCESS_KEY setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_secret_access_key$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_secret_access_key$/)'
       && grep -lq 'AWS_SECRET_ACCESS_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-session-token
     why: The AWS_SESSION_TOKEN setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_token$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_token$/)'
       && grep -lq 'AWS_SESSION_TOKEN' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-region-name
     why: The AWS_REGION_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_region_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_region_name$/)'
       && grep -lq 'AWS_REGION_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-session-name
     why: The AWS_SESSION_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_name$/)'
       && grep -lq 'AWS_SESSION_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-profile-name
     why: The AWS_PROFILE_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_profile_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_profile_name$/)'
       && grep -lq 'AWS_PROFILE_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-role-name
     why: The AWS_ROLE_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_role_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_role_name$/)'
       && grep -lq 'AWS_ROLE_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-web-identity-token
     why: The AWS_WEB_IDENTITY_TOKEN setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_web_identity_token$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_web_identity_token$/)'
       && grep -lq 'AWS_WEB_IDENTITY_TOKEN' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-sts-endpoint
     why: The AWS_STS_ENDPOINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_sts_endpoint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_sts_endpoint$/)'
       && grep -lq 'AWS_STS_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-external-id
     why: The AWS_EXTERNAL_ID setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_external_id$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_external_id$/)'
       && grep -lq 'AWS_EXTERNAL_ID' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-role-arn
     why: The AWS_ROLE_ARN setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_role_arn$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_role_arn$/)'
       && grep -lq 'AWS_ROLE_ARN' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-web-identity-token-file
     why: The AWS_WEB_IDENTITY_TOKEN_FILE setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_web_identity_token_file$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_web_identity_token_file$/)'
       && grep -lq 'AWS_WEB_IDENTITY_TOKEN_FILE' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-bearer-token-bedrock
     why: The AWS_BEARER_TOKEN_BEDROCK setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_bearer_token_bedrock$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_bearer_token_bedrock$/)'
       && grep -lq 'AWS_BEARER_TOKEN_BEDROCK' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-aws-session-tags
     why: The aws_session_tags setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_tags$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_loads_aws_session_tags$/)'
       && grep -lq 'aws_session_tags' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_settings_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_settings*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
@@ -309,84 +331,97 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_secret_safe_failure$/)'
+  - id: case-bedrock-error-response
+    why: If response is absent and headers truthy, synthesize a response with supplied status and supplied truthy
+      request or POST https://docs.litellm.ai/docs. Preserve httpx.Headers unchanged; dict headers keep only str/bytes
+      values, dropping int/bool/None. An existing response suppresses synthesis. Delegate BaseLLMException to B2202,
+      preserving status_code_is_synthesized defaultfalse, body, headers, message, status and absent type/param/code.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_bedrock_error_response$/)'
+  - id: case-error-text-unread
+    why: error_response_text returns response.text, except ResponseNotRead returns reason_phrase; do not read/consume
+      the body or catch unrelated text exceptions. Exercise the same supplied/absent response and nonstring-header
+      cases through BedrockError and downstream B691.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_settings_cases::case_[0-9]+_error_text_unread$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-settings/deployment-before-env.yaml
 - tools/oracle/cases/helpers/providers/bedrock-settings/empty-bearer.yaml
 - tools/oracle/cases/helpers/providers/bedrock-settings/session-tags.yaml
 - tools/oracle/cases/helpers/providers/bedrock-settings/irsa-config.yaml
+- tools/oracle/cases/helpers/providers/bedrock-settings/bedrock-error-response.yaml
+- tools/oracle/cases/helpers/providers/bedrock-settings/error-text-unread.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- A missing bearer token and an explicitly empty bearer token must stay distinct in the resolved settings record.
+- A truthy headers mapping containing only nonstring values still triggers response synthesis, even though the synthesized
+  response has none of those headers.
+- An explicit response bypasses synthesis; error_response_text must not consume an unread streaming body.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

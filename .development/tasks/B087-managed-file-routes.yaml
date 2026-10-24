@@ -12,6 +12,10 @@ description: >-
   out of scope.
 
 
+  Reuse B2208 cloud-storage URI/credential authorization directly where the owned native storage path calls cloud_storage_security;
+  B1021 supplies the trusted deployment snapshot.
+
+
   Implement crates/betterlite-server/src/api/managed_file_routes.rs, crates/betterlite-core/src/api/managed_file_routes.rs.
   Use ManagedFileRoutesInput and ManagedFileRoutesResult with typed nested records; inject only the clock, repositories,
   transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce

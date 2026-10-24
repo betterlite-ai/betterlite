@@ -17,6 +17,44 @@ description: >-
   that prerequisite.
 
 
+  Named case contracts: pegasus_media_source: Choose truthy mediaSource or media_source; if the resulting value
+  is a dict, return it unchanged, including an empty dict selected as the second value. A truthy non-dict first
+  value prevents using a later dict alias but allows the next source branch. Then choose truthy video_base64 or
+  base64_string, wrap B183 get_base64_str as base64String without decoding/validation. Finally choose truthy video_s3_uri,s3_uri,media_source_s3_uri
+  in order, and optional truthy video_s3_bucket_owner,s3_bucket_owner,media_source_bucket_owner as bucketOwner inside
+  s3Location. No source yields None; never download S3 or other descriptors. text_video_prompt: Default missing
+  role to user and content to empty string, retaining explicit None through Python string formatting. For list content
+  join fragments with spaces: dict text uses text default empty, image_url/video_url/audio_url become <image>/<video>/<audio>,
+  string items pass through, other items/types drop. Build {role}: {content} for each message, join with newline
+  and strip the complete result; keep role prefixes even for empty content. Content URLs are placeholders only,
+  with no outbound access. response_format_json: For a dict, json_schema key presence wins even when jsonSchema
+  also exists: use json_schema.schema when that nested key exists, otherwise the complete json_schema value, under
+  jsonSchema. This discards name/type and unrelated envelope fields. Dicts without json_schema pass unchanged, including
+  jsonSchema and {}. Non-dicts call B2202 type_to_response_format_param and use its truthy result or the original
+  value; Python class-object schema conversion belongs to B160 and is out of scope for HTTP JSON records. segments_and_response:
+  Use only the message field for visible text and mapped finishReason for the first choice. Ignore segments,response
+  and any body usage; those aliases are not handled in this owned implementation. Preserve other response choices
+  and id. usage_and_finish_reason: Use the same header-count cases as B612: x-amzn-bedrock-input-token-count and
+  x-amzn-bedrock-output-token-count truthy values go through int, including "0" and negatives; empty/missing values
+  call B196 token_counter(messages=...) or token_counter(text=reply,count_response_tokens=True). Errors occur outside
+  the content catch. Set created to integer epoch seconds, model to the request model, and usage total to input
+  plus output. pegasus_options: Supported names are exactly max_tokens,max_completion_tokens,temperature,response_format.
+  Both token aliases write maxOutputTokens in input order, temperature copies unchanged, response_format writes
+  normalized responseFormat; ignore other names. Build inputPrompt first, then mediaSource if present, temperature/maxOutputTokens
+  by key presence including None, and responseFormat only when its normalized value is truthy. Do not mutate options
+  or send unrelated keys. pegasus_reply_errors: decode_pegasus_reply parses raw JSON. Decode errors raise B682 BedrockError
+  with upstream status/headers and Error parsing response: {raw_text}, error: {error}. The decoded record is debug-logged
+  with indent=4/default=str. Read message default empty and finishReason default stop, mapping through B206; explicit
+  None is not replaced by the defaults. Require truthy message plus choices[0].message with tool_calls None; even
+  [] tool_calls fails with Unable to set message content. The assignment catch uses original status/headers and
+  Error setting response content: {error}. Response: {completion_response}. Nonobject JSON and finish mapping failures
+  before that catch propagate separately.
+
+
+  B183 get_base64_str is a parsed-string projection only. This task introduces no media decoder or pixel validation;
+  the only new outside-byte decoder is the existing decode_pegasus_reply named below.
+
+
   Implement crates/betterlite-bedrock/src/pegasus.rs with adjacent tests under pegasus/. Keep each Rust module at
   most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -31,10 +69,10 @@ description: >-
 
 
   Write rstest function pegasus_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  pegasus_media_source, text_video_prompt, response_format_json, segments_and_response, usage_and_finish_reason.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  pegasus_media_source, text_video_prompt, response_format_json, segments_and_response, usage_and_finish_reason,
+  pegasus_options, pegasus_reply_errors. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus* using HelperCase: kind: helper
@@ -51,9 +89,9 @@ description: >-
 
 
   Budget from 189 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 215 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 460 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 225 production lines, 235 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -74,35 +112,52 @@ scope:
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L46-L270
-  why: >-
-    Own AmazonTwelveLabsPegasusConfig.get_supported_openai_params, AmazonTwelveLabsPegasusConfig.map_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L46-L270
+  why: Own AmazonTwelveLabsPegasusConfig.get_supported_openai_params, AmazonTwelveLabsPegasusConfig.map_openai_params,
     AmazonTwelveLabsPegasusConfig._normalize_response_format, AmazonTwelveLabsPegasusConfig.transform_request, AmazonTwelveLabsPegasusConfig._build_media_source,
     AmazonTwelveLabsPegasusConfig._convert_messages_to_prompt, AmazonTwelveLabsPegasusConfig.transform_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'pegasus media source: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-media-source.yaml.'
+- text: 'pegasus_media_source: Choose truthy mediaSource or media_source; if the resulting value is a dict, return
+    it unchanged, including an empty dict selected as the second value. A truthy non-dict first value prevents using
+    a later dict alias but allows the next source branch. Then choose truthy video_base64 or base64_string, wrap
+    B183 get_base64_str as base64String without decoding/validation. Finally choose truthy video_s3_uri,s3_uri,media_source_s3_uri
+    in order, and optional truthy video_s3_bucket_owner,s3_bucket_owner,media_source_bucket_owner as bucketOwner
+    inside s3Location. No source yields None; never download S3 or other descriptors.'
   proof:
   - case-pegasus-media-source
   - oracle
   - helper-python
-- text: 'text video prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/text-video-prompt.yaml.'
+- text: 'text_video_prompt: Default missing role to user and content to empty string, retaining explicit None through
+    Python string formatting. For list content join fragments with spaces: dict text uses text default empty, image_url/video_url/audio_url
+    become <image>/<video>/<audio>, string items pass through, other items/types drop. Build {role}: {content} for
+    each message, join with newline and strip the complete result; keep role prefixes even for empty content. Content
+    URLs are placeholders only, with no outbound access.'
   proof:
   - case-text-video-prompt
   - oracle
   - helper-python
-- text: 'response format json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/response-format-json.yaml.'
+- text: 'response_format_json: For a dict, json_schema key presence wins even when jsonSchema also exists: use json_schema.schema
+    when that nested key exists, otherwise the complete json_schema value, under jsonSchema. This discards name/type
+    and unrelated envelope fields. Dicts without json_schema pass unchanged, including jsonSchema and {}. Non-dicts
+    call B2202 type_to_response_format_param and use its truthy result or the original value; Python class-object
+    schema conversion belongs to B160 and is out of scope for HTTP JSON records.'
   proof:
   - case-response-format-json
   - oracle
   - helper-python
-- text: 'segments and response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/segments-and-response.yaml.'
+- text: 'segments_and_response: Use only the message field for visible text and mapped finishReason for the first
+    choice. Ignore segments,response and any body usage; those aliases are not handled in this owned implementation.
+    Preserve other response choices and id.'
   proof:
   - case-segments-and-response
   - oracle
   - helper-python
-- text: 'usage and finish reason: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/usage-and-finish-reason.yaml.'
+- text: 'usage_and_finish_reason: Use the same header-count cases as B612: x-amzn-bedrock-input-token-count and
+    x-amzn-bedrock-output-token-count truthy values go through int, including "0" and negatives; empty/missing values
+    call B196 token_counter(messages=...) or token_counter(text=reply,count_response_tokens=True). Errors occur
+    outside the content catch. Set created to integer epoch seconds, model to the request model, and usage total
+    to input plus output.'
   proof:
   - case-usage-and-finish-reason
   - oracle
@@ -113,61 +168,115 @@ dod:
 - text: decode_pegasus_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'pegasus_options: Supported names are exactly max_tokens,max_completion_tokens,temperature,response_format.
+    Both token aliases write maxOutputTokens in input order, temperature copies unchanged, response_format writes
+    normalized responseFormat; ignore other names. Build inputPrompt first, then mediaSource if present, temperature/maxOutputTokens
+    by key presence including None, and responseFormat only when its normalized value is truthy. Do not mutate options
+    or send unrelated keys.'
+  proof:
+  - case-pegasus-options
+  - oracle
+  - helper-python
+- text: 'pegasus_reply_errors: decode_pegasus_reply parses raw JSON. Decode errors raise B682 BedrockError with
+    upstream status/headers and Error parsing response: {raw_text}, error: {error}. The decoded record is debug-logged
+    with indent=4/default=str. Read message default empty and finishReason default stop, mapping through B206; explicit
+    None is not replaced by the defaults. Require truthy message plus choices[0].message with tool_calls None; even
+    [] tool_calls fails with Unable to set message content. The assignment catch uses original status/headers and
+    Error setting response content: {error}. Response: {completion_response}. Nonobject JSON and finish mapping
+    failures before that catch propagate separately.'
+  proof:
+  - case-pegasus-reply-errors
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-pegasus-media-source
-    why: The pegasus-media-source behavior is missing or differs from its pinned fixture.
+    why: Choose truthy mediaSource or media_source; if the resulting value is a dict, return it unchanged, including
+      an empty dict selected as the second value. A truthy non-dict first value prevents using a later dict alias
+      but allows the next source branch. Then choose truthy video_base64 or base64_string, wrap B183 get_base64_str
+      as base64String without decoding/validation. Finally choose truthy video_s3_uri,s3_uri,media_source_s3_uri
+      in order, and optional truthy video_s3_bucket_owner,s3_bucket_owner,media_source_bucket_owner as bucketOwner
+      inside s3Location. No source yields None; never download S3 or other descriptors.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_pegasus_media_source$/)'
   - id: case-text-video-prompt
-    why: The text-video-prompt behavior is missing or differs from its pinned fixture.
+    why: 'Default missing role to user and content to empty string, retaining explicit None through Python string
+      formatting. For list content join fragments with spaces: dict text uses text default empty, image_url/video_url/audio_url
+      become <image>/<video>/<audio>, string items pass through, other items/types drop. Build {role}: {content}
+      for each message, join with newline and strip the complete result; keep role prefixes even for empty content.
+      Content URLs are placeholders only, with no outbound access.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_text_video_prompt$/)'
   - id: case-response-format-json
-    why: The response-format-json behavior is missing or differs from its pinned fixture.
+    why: 'For a dict, json_schema key presence wins even when jsonSchema also exists: use json_schema.schema when
+      that nested key exists, otherwise the complete json_schema value, under jsonSchema. This discards name/type
+      and unrelated envelope fields. Dicts without json_schema pass unchanged, including jsonSchema and {}. Non-dicts
+      call B2202 type_to_response_format_param and use its truthy result or the original value; Python class-object
+      schema conversion belongs to B160 and is out of scope for HTTP JSON records.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_response_format_json$/)'
   - id: case-segments-and-response
-    why: The segments-and-response behavior is missing or differs from its pinned fixture.
+    why: Use only the message field for visible text and mapped finishReason for the first choice. Ignore segments,response
+      and any body usage; those aliases are not handled in this owned implementation. Preserve other response choices
+      and id.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_segments_and_response$/)'
   - id: case-usage-and-finish-reason
-    why: The usage-and-finish-reason behavior is missing or differs from its pinned fixture.
+    why: 'Use the same header-count cases as B612: x-amzn-bedrock-input-token-count and x-amzn-bedrock-output-token-count
+      truthy values go through int, including "0" and negatives; empty/missing values call B196 token_counter(messages=...)
+      or token_counter(text=reply,count_response_tokens=True). Errors occur outside the content catch. Set created
+      to integer epoch seconds, model to the request model, and usage total to input plus output.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_usage_and_finish_reason$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_pegasus.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_pegasus.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus*")"
       && grep -lq 'bedrock_pegasus' tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_pegasus$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus)"
       && grep -q 'decode_pegasus_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_pegasus.rs && cargo
       nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_pegasus_corpus$/)'
+  - id: case-pegasus-options
+    why: Supported names are exactly max_tokens,max_completion_tokens,temperature,response_format. Both token aliases
+      write maxOutputTokens in input order, temperature copies unchanged, response_format writes normalized responseFormat;
+      ignore other names. Build inputPrompt first, then mediaSource if present, temperature/maxOutputTokens by key
+      presence including None, and responseFormat only when its normalized value is truthy. Do not mutate options
+      or send unrelated keys.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_pegasus_options$/)'
+  - id: case-pegasus-reply-errors
+    why: 'decode_pegasus_reply parses raw JSON. Decode errors raise B682 BedrockError with upstream status/headers
+      and Error parsing response: {raw_text}, error: {error}. The decoded record is debug-logged with indent=4/default=str.
+      Read message default empty and finishReason default stop, mapping through B206; explicit None is not replaced
+      by the defaults. Require truthy message plus choices[0].message with tool_calls None; even [] tool_calls fails
+      with Unable to set message content. The assignment catch uses original status/headers and Error setting response
+      content: {error}. Response: {completion_response}. Nonobject JSON and finish mapping failures before that
+      catch propagate separately.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_pegasus_reply_errors$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-media-source.yaml
 - tools/oracle/cases/helpers/providers/bedrock-pegasus/text-video-prompt.yaml
 - tools/oracle/cases/helpers/providers/bedrock-pegasus/response-format-json.yaml
 - tools/oracle/cases/helpers/providers/bedrock-pegasus/segments-and-response.yaml
 - tools/oracle/cases/helpers/providers/bedrock-pegasus/usage-and-finish-reason.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-reply-errors.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- 'litellm/llms/base_llm/base_utils.py: type_to_response_format_param Python class-object conversion L193-L211 belongs
+  to B160; B2202 owns the parsed None/dict branches. Python SDK classes are converted before this HTTP-record adapter.'
 pitfalls:
-- >-
-  Preserve provider-supported S3 references as descriptors without downloading them at request transformation time;
-  supplied inline bytes use the bounded media helper.
+- A truthy mediaSource of the wrong type shadows media_source before fallback to base64/S3.
+- The response-format normalizer looks for json_schema regardless of the supplied type field.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

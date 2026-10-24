@@ -21,6 +21,14 @@ description: >-
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations call_context, aws_partition, env_integer in tools/oracle/src/helpers/mod.rs
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+
+
+  Also own main.py _provider_config_items L1236-L1237, _locals_snapshot L1240-L1241 and _dispatch_metadata/_dispatch_client_http/_dispatch_client_azure/_dispatch_client_openai
+  L1320-L1335. These 13 nonblank source lines are views: items preserves mapping iteration and values; locals_snapshot
+  returns the same mapping; dispatch views return the exact stored optional metadata/client without filtering, conversion
+  or environment reads. Represent them as borrowed typed context fields, not Python SDK object downcasts. Add standalone
+  Rust tests dispatch_views_preserve_absence_and_identity and provider_items_preserve_explicit_none and matching
+  call_context helper cases. Add 15 production, 25 test and 10 adapter lines to the prior 730-line budget (780 total).
 scope:
   paths:
   - Cargo.toml
@@ -34,69 +42,76 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L15-L54
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L15-L54
   why: Internal-call, phase and pinned billing context.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_uuid.py#L1-L15
   why: Call ID generation boundary.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L6-L55
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L6-L55
   why: Region partition, DNS suffix and ARN helpers.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
   why: Existing timeout defaults, not a reason to add global state.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L10-L59
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L10-L59
   why: Integer parsing fallbacks and optional outcomes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1320-L1335
+  why: Lower shared view functions called by provider umbrellas.
 dod:
 - text: Explicit context/phase/billing-time projections and AWS partition helpers match listed oracle cases.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Concurrent calls and children cannot overwrite settings, IDs or billing time, and request metadata cannot forge
-    internal-call provenance.
+- text: Concurrent calls and children cannot overwrite settings, IDs or billing time, and request metadata cannot
+    forge internal-call provenance.
   proof:
   - call-context-tests
-- text: >-
-    Every environment-dependent setting is resolved by config and unsupported settings still fail by complete key
-    path.
+- text: Every environment-dependent setting is resolved by config and unsupported settings still fail by complete
+    key path.
   proof:
   - call-context-tests
   - config-yaml-corpus
-- text: >-
-    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
+- text: dispatch_views_preserve_absence_and_identity preserves the source identity/absence contract.
+  proof:
+  - dispatch-views-preserve-absence-and-identity
+  - oracle
+  - helper-python
+- text: provider_items_preserve_explicit_none preserves the source identity/absence contract.
+  proof:
+  - provider-items-preserve-explicit-none
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: call-context-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-context -p betterlite-config --no-tests=fail -E 'test(/::b198_call_context_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-context -p betterlite-config --no-tests=fail -E 'test(/::b198_call_context_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
       && grep -rlq 'request_timeout' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
       && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'call_context' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'aws_partition' tools/oracle/fuzz/corpus/helper_case
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'call_context' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'aws_partition' tools/oracle/fuzz/corpus/helper_case
       && grep -rlq 'env_integer' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: dispatch-views-preserve-absence-and-identity
+    why: The shared dispatch view changes the stored value.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::dispatch_views_preserve_absence_and_identity$/)'
+  - id: provider-items-preserve-explicit-none
+    why: The shared dispatch view changes the stored value.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::provider_items_preserve_explicit_none$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/call-context/phase-nesting.yaml
 - tools/oracle/cases/helpers/call-context/pinned-billing-time.yaml
@@ -110,13 +125,12 @@ oracle_cases:
 - tools/oracle/cases/helpers/call-context/optional-int-none.yaml
 deviations: []
 out_of_scope:
-- >-
-  Python module globals, import caches, sync/async reflection and version API are B157-B166; native code exposes
+- Python module globals, import caches, sync/async reflection and version API are B157-B166; native code exposes
   explicit settings instead.
 - Duration and calendar parsing is B199, batch scheduling B201 and call execution B014.
-- >-
-  All remaining constants belong to their consuming feature tasks; core_helpers drop_params flags are B206, not
+- All remaining constants belong to their consuming feature tasks; core_helpers drop_params flags are B206, not
   this leaf context task.
+- All other main.py functions keep their existing owners; B024-B028 own their provider dispatch branches.
 pitfalls:
 - The current billing time is fixed for a call even if pricing crosses a time window during execution.
 - An SDK sync wrapper must not start a nested Tokio runtime inside an async call.

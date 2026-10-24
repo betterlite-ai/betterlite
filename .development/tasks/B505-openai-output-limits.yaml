@@ -10,7 +10,37 @@ description: >-
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/common_utils.py:
   drop_params_from_unprocessable_entity_error L89-L130; is_output_token_limit_error L138-L145; _output_token_limit_completion
   L148-L162; _output_token_limit_chunk L165-L178; _iter_once L181-L182; _aiter_once L185-L186; build_output_token_limit_response
-  L189-L203.
+  L189-L203. litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request L140-L162;
+  AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194.
+
+
+  Named case contracts: two_element_loc: Use SDK e.body or HTTPStatusError response.json().error; decode a string
+  message as JSON, falling back to {detail: original string} on JSONDecodeError. Remove input keys matching loc[1]
+  only for a truthy two-element list loc, preserving the caller data map. malformed_detail_keeps_fields: Absent/non-dictionary
+  body or a false message does not drop fields; empty/nonlist detail and a first nondictionary detail entry do not
+  trigger iteration. output_limit_case_insensitive: Match the complete lowercase marker could not finish the message
+  because max_tokens or model output limit was reached as a substring, independent of model name; shorter phrases
+  and unrelated 400 errors are not recovered. empty_length_completion: Return original response headers, id chatcmpl-{uuid},
+  integer injected clock time, object chat.completion, one assistant choice at index 0 with empty content and finish_reason
+  length; completion_tokens=0 and total_tokens=prompt_tokens. single_length_stream_chunk: For truthy data.stream
+  return exactly one sync/async chunk with object chat.completion.chunk, index 0, assistant delta with empty content
+  and finish_reason length; omit usage even though token counting was performed. prompt_token_count: Convert model
+  through str(data.get(model, empty string)); call B196 token_counter only when messages is a list, otherwise use
+  zero. Preserve the upstream error response headers. malformed_nested_error_failure: A truthy non-object decoded
+  message raises its attribute-access failure; after a dictionary first detail item a later nondictionary item also
+  fails rather than being silently skipped. Invalid HTTP response JSON propagates parsing failure. azure_raw_send_headers:
+  Both Azure wrappers unconditionally use chat.completions.with_raw_response.create(**data, timeout=timeout), parse
+  the response and return raw headers with it; the return_response_headers docstring is stale. azure_output_limit_recovery:
+  Both wrappers recover only the full output-limit BadRequestError marker through build_output_token_limit_response
+  with their sync/async flag; other BadRequestError values propagate. azure_async_timeout: Only the async Azure
+  wrapper appends timeout value and elapsed seconds rounded to two decimals to APITimeoutError before rethrowing;
+  compare error class/status/type/param/code and ignore message wording.
+
+
+  Also own the small Azure raw-send wrappers as shared raw-chat result handling in this lower OpenAI module: accept
+  a prepared sync/async SDK transport interface and preserve raw response headers. B533 buffered calls and B685
+  streams both reuse this implementation; it needs no Azure client construction or Azure crate dependency. B190
+  supplies track_llm_api_timing.
 
 
   Implement crates/betterlite-openai/src/output_limits.rs with adjacent tests under output_limits/. Keep each Rust
@@ -28,9 +58,10 @@ description: >-
 
   Write rstest function output_limits_cases in betterlite-openai with these exact named cases (one per oracle file):
   two_element_loc, malformed_detail_keeps_fields, output_limit_case_insensitive, empty_length_completion, single_length_stream_chunk,
-  prompt_token_count, unrelated_error, openai_output_limit_buffered, openai_output_limit_stream, openai_422_drop_retry.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  prompt_token_count, unrelated_error, openai_output_limit_buffered, openai_output_limit_stream, openai_422_drop_retry,
+  malformed_nested_error_failure, azure_raw_send_headers, azure_output_limit_recovery, azure_async_timeout. Each
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
+  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
   route registration; this task must not register a duplicate axum route.
 
 
@@ -48,10 +79,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 91 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 125 production lines, 135 behavior/config-test lines, 95 combined
-  Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 435 planned, 450 maximum changed lines.
+  Budget from 143 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 225 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 645 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -83,41 +114,48 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1070-L1187
   why: Streaming repair caller owned by B005.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L89-L203
-  why: >-
-    Own drop_params_from_unprocessable_entity_error, is_output_token_limit_error, _output_token_limit_completion,
+  why: Own drop_params_from_unprocessable_entity_error, is_output_token_limit_error, _output_token_limit_completion,
     _output_token_limit_chunk, _iter_once, _aiter_once, build_output_token_limit_response. Other functions in this
     file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L140-L194
+  why: Own both shared raw-send wrappers, including the async timing decorator at L164.
 dod:
-- text: 'two element loc: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/two-element-loc.yaml.'
+- text: 'two_element_loc: Use SDK e.body or HTTPStatusError response.json().error; decode a string message as JSON,
+    falling back to {detail: original string} on JSONDecodeError. Remove input keys matching loc[1] only for a truthy
+    two-element list loc, preserving the caller data map.'
   proof:
   - case-two-element-loc
   - oracle
   - helper-python
-- text: >-
-    malformed detail keeps fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/malformed-detail-keeps-fields.yaml.
+- text: 'malformed_detail_keeps_fields: Absent/non-dictionary body or a false message does not drop fields; empty/nonlist
+    detail and a first nondictionary detail entry do not trigger iteration.'
   proof:
   - case-malformed-detail-keeps-fields
   - oracle
   - helper-python
-- text: >-
-    output limit case insensitive: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/output-limit-case-insensitive.yaml.
+- text: 'output_limit_case_insensitive: Match the complete lowercase marker could not finish the message because
+    max_tokens or model output limit was reached as a substring, independent of model name; shorter phrases and
+    unrelated 400 errors are not recovered.'
   proof:
   - case-output-limit-case-insensitive
   - oracle
   - helper-python
-- text: >-
-    empty length completion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/empty-length-completion.yaml.
+- text: 'empty_length_completion: Return original response headers, id chatcmpl-{uuid}, integer injected clock time,
+    object chat.completion, one assistant choice at index 0 with empty content and finish_reason length; completion_tokens=0
+    and total_tokens=prompt_tokens.'
   proof:
   - case-empty-length-completion
   - oracle
   - helper-python
-- text: >-
-    single length stream chunk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/single-length-stream-chunk.yaml.
+- text: 'single_length_stream_chunk: For truthy data.stream return exactly one sync/async chunk with object chat.completion.chunk,
+    index 0, assistant delta with empty content and finish_reason length; omit usage even though token counting
+    was performed.'
   proof:
   - case-single-length-stream-chunk
   - oracle
   - helper-python
-- text: 'prompt token count: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/prompt-token-count.yaml.'
+- text: 'prompt_token_count: Convert model through str(data.get(model, empty string)); call B196 token_counter only
+    when messages is a list, otherwise use zero. Preserve the upstream error response headers.'
   proof:
   - case-prompt-token-count
   - oracle
@@ -146,59 +184,107 @@ dod:
 - text: decode_rejected_fields has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'malformed_nested_error_failure: A truthy non-object decoded message raises its attribute-access failure;
+    after a dictionary first detail item a later nondictionary item also fails rather than being silently skipped.
+    Invalid HTTP response JSON propagates parsing failure.'
+  proof:
+  - case-malformed-nested-error-failure
+  - oracle
+  - helper-python
+- text: 'azure_raw_send_headers: Both Azure wrappers unconditionally use chat.completions.with_raw_response.create(**data,
+    timeout=timeout), parse the response and return raw headers with it; the return_response_headers docstring is
+    stale.'
+  proof:
+  - case-azure-raw-send-headers
+  - oracle
+  - helper-python
+- text: 'azure_output_limit_recovery: Both wrappers recover only the full output-limit BadRequestError marker through
+    build_output_token_limit_response with their sync/async flag; other BadRequestError values propagate.'
+  proof:
+  - case-azure-output-limit-recovery
+  - oracle
+  - helper-python
+- text: 'azure_async_timeout: Only the async Azure wrapper appends timeout value and elapsed seconds rounded to
+    two decimals to APITimeoutError before rethrowing; compare error class/status/type/param/code and ignore message
+    wording.'
+  proof:
+  - case-azure-async-timeout
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-two-element-loc
-    why: The two-element-loc behavior is missing or differs from its pinned fixture.
+    why: 'Use SDK e.body or HTTPStatusError response.json().error; decode a string message as JSON, falling back
+      to {detail: original string} on JSONDecodeError. Remove input keys matching loc[1] only for a truthy two-element
+      list loc, preserving the caller data map.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_two_element_loc$/)'
   - id: case-malformed-detail-keeps-fields
-    why: The malformed-detail-keeps-fields behavior is missing or differs from its pinned fixture.
+    why: Absent/non-dictionary body or a false message does not drop fields; empty/nonlist detail and a first nondictionary
+      detail entry do not trigger iteration.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_malformed_detail_keeps_fields$/)'
   - id: case-output-limit-case-insensitive
-    why: The output-limit-case-insensitive behavior is missing or differs from its pinned fixture.
+    why: Match the complete lowercase marker could not finish the message because max_tokens or model output limit
+      was reached as a substring, independent of model name; shorter phrases and unrelated 400 errors are not recovered.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_output_limit_case_insensitive$/)'
   - id: case-empty-length-completion
-    why: The empty-length-completion behavior is missing or differs from its pinned fixture.
+    why: Return original response headers, id chatcmpl-{uuid}, integer injected clock time, object chat.completion,
+      one assistant choice at index 0 with empty content and finish_reason length; completion_tokens=0 and total_tokens=prompt_tokens.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_empty_length_completion$/)'
   - id: case-single-length-stream-chunk
-    why: The single-length-stream-chunk behavior is missing or differs from its pinned fixture.
+    why: For truthy data.stream return exactly one sync/async chunk with object chat.completion.chunk, index 0,
+      assistant delta with empty content and finish_reason length; omit usage even though token counting was performed.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_single_length_stream_chunk$/)'
   - id: case-prompt-token-count
-    why: The prompt-token-count behavior is missing or differs from its pinned fixture.
+    why: Convert model through str(data.get(model, empty string)); call B196 token_counter only when messages is
+      a list, otherwise use zero. Preserve the upstream error response headers.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_prompt_token_count$/)'
   - id: case-unrelated-error
-    why: The unrelated-error behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-output-limits/unrelated-error.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_unrelated_error$/)'
   - id: case-openai-output-limit-buffered
-    why: The openai-output-limit-buffered behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/openai-output-limit-buffered.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_openai_output_limit_buffered$/)'
   - id: case-openai-output-limit-stream
-    why: The openai-output-limit-stream behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/openai-output-limit-stream.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_openai_output_limit_stream$/)'
   - id: case-openai-422-drop-retry
-    why: The openai-422-drop-retry behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/openai-422-drop-retry.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_openai_422_drop_retry$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_output_limits.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_output_limits.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_output_limits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_output_limits*")"
       && grep -lq 'openai_output_limits' tools/oracle/fuzz/corpus/helper_case/openai_output_limits* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_output_limits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_output_limits)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_output_limits)"
       && grep -q 'decode_rejected_fields' crates/betterlite-openai/fuzz/fuzz_targets/openai_output_limits.rs &&
       cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_output_limits_corpus$/)'
+  - id: case-malformed-nested-error-failure
+    why: A truthy non-object decoded message raises its attribute-access failure; after a dictionary first detail
+      item a later nondictionary item also fails rather than being silently skipped. Invalid HTTP response JSON
+      propagates parsing failure.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_malformed_nested_error_failure$/)'
+  - id: case-azure-raw-send-headers
+    why: Both Azure wrappers unconditionally use chat.completions.with_raw_response.create(**data, timeout=timeout),
+      parse the response and return raw headers with it; the return_response_headers docstring is stale.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_azure_raw_send_headers$/)'
+  - id: case-azure-output-limit-recovery
+    why: Both wrappers recover only the full output-limit BadRequestError marker through build_output_token_limit_response
+      with their sync/async flag; other BadRequestError values propagate.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_azure_output_limit_recovery$/)'
+  - id: case-azure-async-timeout
+    why: Only the async Azure wrapper appends timeout value and elapsed seconds rounded to two decimals to APITimeoutError
+      before rethrowing; compare error class/status/type/param/code and ignore message wording.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_azure_async_timeout$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-output-limits/two-element-loc.yaml
 - tools/oracle/cases/helpers/providers/openai-output-limits/malformed-detail-keeps-fields.yaml
@@ -210,27 +296,45 @@ oracle_cases:
 - tools/oracle/cases/chat/openai-output-limit-buffered.yaml
 - tools/oracle/cases/chat/openai-output-limit-stream.yaml
 - tools/oracle/cases/chat/openai-422-drop-retry.yaml
+- tools/oracle/cases/helpers/providers/openai-output-limits/malformed-nested-error-failure.yaml
+- tools/oracle/cases/helpers/providers/openai-output-limits/azure-raw-send-headers.yaml
+- tools/oracle/cases/helpers/providers/openai-output-limits/azure-output-limit-recovery.yaml
+- tools/oracle/cases/helpers/providers/openai-output-limits/azure-async-timeout.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/common_utils.py: _get_client_init_params L39-L41; BaseOpenAILLM.get_cached_openai_client L212-L221;
-  BaseOpenAILLM.owns_wrapped_http_client L224-L236; BaseOpenAILLM.set_cached_openai_client L239-L259; BaseOpenAILLM.get_openai_client_cache_key
-  L262-L292; BaseOpenAILLM.get_openai_client_initialization_param_fields L295-L302; BaseOpenAILLM._get_async_http_client
-  L305-L330; BaseOpenAILLM._get_sync_http_client L333-L349 belong to B173; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/common_utils.py: is_openai_backed_api_base L51-L53; get_openai_credentials L358-L377 belong
-  to B500; reuse that implementation or its injected typed boundary.
-- 'litellm/llms/openai/common_utils.py: OpenAIError.__init__ L57-L84 belong to B668; reuse that implementation or
-  its injected typed boundary.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
+  L577-L652 belong to B685.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: _get_client_init_params L39-L41; BaseOpenAILLM.get_cached_openai_client
+  L211-L221; BaseOpenAILLM.owns_wrapped_http_client L223-L236; BaseOpenAILLM.set_cached_openai_client L238-L259;
+  BaseOpenAILLM.get_openai_client_cache_key L261-L292; BaseOpenAILLM.get_openai_client_initialization_param_fields
+  L294-L302; BaseOpenAILLM._get_async_http_client L304-L330; BaseOpenAILLM._get_sync_http_client L332-L349 belong
+  to B173.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: is_openai_backed_api_base L51-L53; get_openai_credentials
+  L358-L377 belong to B500.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: OpenAIError.__init__ L57-L84 belong to B668.'
 pitfalls:
-- Parse bounded structured 422 detail locations and synthesize a terminal completion/chunk only for the pinned output-limit
-  marker.
+- The decoder validates only detail[0] before iterating every entry, so a later scalar must not be silently ignored.
+- Recovery is based on the complete message marker, with no GPT-5 model-name guard despite its motivating example.
+- Streaming recovery still calls token_counter before returning its one chunk, although that chunk contains no usage.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

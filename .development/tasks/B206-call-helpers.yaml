@@ -1,33 +1,37 @@
 id: B206
 title: Common call metadata and response helpers
 description: >-
-  Implement the common pure metadata/response helpers in betterlite-core/helpers using existing typed requests,
+  Implement the common pure metadata/response helpers in betterlite-models/call_helpers using existing typed requests,
   errors and B198 context. Cover finish-reason normalization, checked token-limit coercion, expected-client-error
   classification, metadata bucket choice, trusted flags, model-name reconstruction, response header projection and
-  independent snapshots. Preserve optional billing/provider fields for their future consumers without calculating
-  costs or activating budget reservations. Replace Python deep-copy/filtering of arbitrary callables/exceptions
-  with explicit typed record projections; Python object convenience remains in B166. Add call_helpers helper cases
-  for each pure operation and injection/isolation tests for internal fields, reusing the chat parser for external
-  metadata.  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
-  parser. process_response_headers forwards every provider header as llm_provider-<name>, keeps OPENAI_RESPONSE_HEADERS
-  bare too, and preserves bare x-litellm-* only from a typed trusted internally-owned map. Raw upstream x-litellm-*
-  are prefixed so they cannot spoof trusted markers. Apply B184 cookie/CORS security drops in both forms; keep all
-  other provider headers. Include normalize_drop_params/drop_params_flag/drop_params_env_flag with config-resolved
-  LITELLM_DROP_PARAMS (unset/blank false; malformed nonblank warns and true, unlike malformed request flags which
-  warn and false), plus Decimal safe_divide/safe_divide_seconds preserving their zero/nonpositive-denominator defaults.
-  No process environment read belongs here. Write the behavior rstest functions b206_call_helper_tests_behavior
-  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations call_helpers in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
-  each operation has its own Rust and Python adapter file and corpus seed. Budget 310 pure helpers, 110 adapters,
-  260 tests and 90 config/replay wiring (770 total).
+  B2204 independent snapshots. Preserve optional billing/provider fields for their future consumers without calculating
+  costs or activating budget reservations. Reuse B2204 request-record projection for copying/filtering; Python object
+  construction/classification convenience remains in B166. Add call_helpers helper cases for each pure operation
+  and injection/isolation tests for internal fields, reusing the chat parser for external metadata.  Seed B171's
+  shared helper_case corpus with every added operation and replay it through the common typed parser. process_response_headers
+  forwards every provider header as llm_provider-<name>, keeps OPENAI_RESPONSE_HEADERS bare too, and preserves bare
+  x-litellm-* only from a typed trusted internally-owned map. Raw upstream x-litellm-* are prefixed so they cannot
+  spoof trusted markers. Apply B184 cookie/CORS security drops in both forms; keep all other provider headers. Include
+  normalize_drop_params/drop_params_flag/drop_params_env_flag with config-resolved LITELLM_DROP_PARAMS (unset/blank
+  false; malformed nonblank warns and true, unlike malformed request flags which warn and false), plus Decimal safe_divide/safe_divide_seconds
+  preserving their zero/nonpositive-denominator defaults. No process environment read belongs here. Write the behavior
+  rstest functions b206_call_helper_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations call_helpers in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Budget 310 pure helpers, 110 adapters, 260 tests and 90 config/replay wiring (770 total).
+
+
+  These pure helpers live in betterlite-models alongside B175 metadata. Upper betterlite-core callers import this
+  implementation; provider leaves never import betterlite-core for finish reasons or header projection. B198 remains
+  a context-only leaf.
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/helpers.rs
-  - crates/betterlite-core/src/helpers/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/call_helpers.rs
+  - crates/betterlite-models/src/call_helpers/**
   - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
@@ -37,35 +41,29 @@ scope:
   - crates/betterlite-config/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L194
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L194
   why: Settings, arithmetic, expected failures and token-limit coercion.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L425
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L425
   why: Finish reasons, metadata provenance and model reconstruction.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L799
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L799
   why: Headers, snapshots and internal parameter filtering.
 dod:
 - text: Every listed pure helper matches pinned outputs, including overflow, finish reasons and metadata precedence.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Snapshots are independent and trusted flags/internal headers cannot be forged; ordinary provider headers survive
-    prefixing while B184 cookie/CORS exclusions hold.
+- text: Snapshots are independent and trusted flags/internal headers cannot be forged; ordinary provider headers
+    survive prefixing while B184 cookie/CORS exclusions hold.
   proof:
   - call-helper-tests
 - text: Any added external metadata fields replay through the chat corpus.
   proof:
   - chat-request-corpus
-- text: >-
-    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
-- text: >-
-    Injected LITELLM_DROP_PARAMS input has a new config corpus seed; malformed values use the source-specific warning
-    fallback.
+- text: Injected LITELLM_DROP_PARAMS input has a new config corpus seed; malformed values use the source-specific
+    warning fallback.
   proof:
   - config-yaml-corpus
   - call-helper-tests
@@ -75,31 +73,26 @@ checks:
   commands:
   - id: call-helper-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b206_call_helper_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b206_call_helper_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"
       && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'call_helpers' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'call_helpers' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-yaml-corpus
     why: the required new behavior or its evidence is missing
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
       && grep -rlq 'LITELLM_DROP_PARAMS' crates/betterlite-config/fuzz/corpus/config_yaml && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
@@ -120,27 +113,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/call-helpers/request-headers.yaml
 deviations: []
 out_of_scope:
-- >-
-  Cost calculations and reservation behavior are B068-B069; this part carries their typed optional metadata only.
+- Cost calculations and reservation behavior are B068-B069; this part carries their typed optional metadata only.
 - Python deep-copy of arbitrary object graphs and callable filtering are B166.
-- >-
-  max_retries_per_request_hit is B017; redact_nested_match_and_regex_keys is B104 guardrail compliance logging;
+- max_retries_per_request_hit is B017; redact_nested_match_and_regex_keys is B104 guardrail compliance logging;
   is_codex_user_agent is B024 OpenAI client compatibility.
-- >-
-  get_proxy_server_request_headers from llm_request_utils.py is implemented here as a typed request-header projection;
+- get_proxy_server_request_headers from llm_request_utils.py is implemented here as a typed request-header projection;
   pick_cheapest_chat_models_from_llm_provider remains B019.
-- >-
-  Budget reservation helpers 369-406 and response cost setters 758-772 belong to B069; parent OpenTelemetry span
+- Budget reservation helpers 369-406 and response cost setters 758-772 belong to B069; parent OpenTelemetry span
   extraction 429-450 is B110. remove_index_from_tool_calls, remove_items_at_indices, add_missing_spend_metadata_to_litellm_metadata,
   get_metadata_variable_name_from_kwargs, get_or_create_metadata_bucket, proxy_stamped_used_client_oauth_token,
   get_litellm_metadata_from_kwargs, reconstruct_model_name and response hidden-header accessors are built here as
-  pure typed projections. safe_deep_copy/filter_exceptions_from_params are Python-object behavior owned by B166;
-  independent_snapshot/filter_internal_params are explicit typed record projections here.
+  pure typed projections. safe_deep_copy,filter_exceptions_from_params,independent_snapshot,filter_internal_params
+  belong to B2204 below provider and core callers; B166 owns Python wrapper object classification.
 pitfalls:
 - A typed source exception is retained inside Rust even when omitted from a serializable logging projection.
 - Do not let a request set the proxy-stamped OAuth or budget reservation markers.
-- >-
-  Provider headers are broadly forwarded with prefixing; an allowlist would wrongly drop rate-limit and vendor metadata.
+- Provider headers are broadly forwarded with prefixing; an allowlist would wrongly drop rate-limit and vendor metadata.
 review_level: security
 budget:
   max_changed_lines: 800

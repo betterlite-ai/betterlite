@@ -7,9 +7,8 @@ description: >-
   no interim uninstalled-agent error is introduced.
 
 
-  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
-  BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560; get_bedrock_chat_config L1563-L1636.
-  litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304.
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: _complete_bedrock_mantle
+  L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304.
 
 
   The claude_platform branches select B656 for native chat/Messages; InvokeAgent belongs to B652 and AgentCore request
@@ -39,9 +38,60 @@ description: >-
   oracle operation for it.
 
 
+  Named case contracts: converse_route_dispatch: Parse non-None additional_drop_params with the existing typed adapter,
+  then select route from model, request_params and that value through B598. Converse strips the B2203 route prefix
+  and calls B610 with caller-or-global custom_prompt_dict, supplied extra_headers, client, base and key; it does
+  not discard merged headers. invoke_route_dispatch: Other routes use B010 HTTP completion with provider bedrock
+  and the original model. Converse_like removes every occurrence of converse_like/ using string replace and calls
+  HTTP composition with provider bedrock. Neither branch passes shared_session or ctx.provider_config; preserve
+  the actual omissions. runtime_chat_route: The runtime OpenAI/chat-completions families selected by the config
+  selector invoke installed B619/B620 through HTTP composition; preserve their distinct transformed bodies and stream
+  conversion rather than routing them through Converse. native_messages_route: Native Messages config precedence
+  is explicit claude_platform -> B656, explicit converse -> None (chat bridge), explicit mantle -> B625, then case-sensitive
+  claude anywhere -> B622, otherwise None. It does not treat uppercase Claude as this final match. mantle_provider_route:
+  The separate bedrock_mantle main branch chooses base explicit/global/BEDROCK_MANTLE_API_BASE and key explicit/global/BEDROCK_MANTLE_API_KEY,
+  headers supplied-truthy/global, then merges B625 config defaults only for absent optional keys. Call B010 with
+  original provider, stream/shared_session and B196 encoding, without injecting extra_headers. nova_provider_route:
+  The separate amazon_nova main branch chooses key explicit, litellm.amazon_nova_api_key, AMAZON_NOVA_API_KEY, then
+  litellm.api_key; base explicit, global, AMAZON_NOVA_API_BASE, https://api.nova.amazon.com/v1. Call the OpenAI-like
+  B038 handler with ctx.custom_prompt_dict and original optional map; no owned headers/client/acompletion argument
+  is added. installed_agent_operation: Config tags agent and agentcore select B652 and B653; claude_platform resolves
+  its config before stripping its model route via B598 and passes that config explicitly to HTTP completion, including
+  shared_session. Do not introduce an interim unsupported-agent error. unknown_model_invoke_fallback: Unknown invoke-provider
+  families select AmazonInvokeConfig and keep the invoke fallback; do not reject because a model is absent from
+  whitelisted_bedrock_models.txt, which has only test callers. chat_config_selector: Compute route B598, invoke-provider
+  B591 and base B2203 before selection. Routes claude_platform, converse/converse_like, openai, chat_completions,
+  agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively. Otherwise amazon -> Titan B614;
+  anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615; meta/llama -> B613; ai21/cohere/mistral
+  -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 -> B618; twelvelabs -> B617; everything else
+  -> B611 AmazonInvokeConfig. legacy_boto_credentials: When optional aws_bedrock_client is present, warn exactly:
+  'aws_bedrock_client' is a deprecated param. Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
+  Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
+  falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining empty
+  strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.
+
+
+  Write standalone Rust test bedrock_provider_credential_identity_isolation in betterlite-provider: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test bedrock_provider_secret_safe_failure in betterlite-provider: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  B2231 now owns both Bedrock config selectors and the legacy model list. This umbrella consumes their tags and
+  constructs the already installed concrete adapters; keep the named selector composition cases here as end-to-end
+  parity cases.
+
+
+  ProviderConfigManager.get_provider_chat_config selection is B2230. Consume its closed tag and call the selected
+  existing provider constructor at this composition boundary; do not call B157.
+
+
   Implement crates/betterlite-provider/src/bedrock_dispatch.rs with adjacent tests under bedrock_dispatch/. Keep
-  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
-  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; leaf
+  crates remain below this dispatcher and never import it. The production function is the only Rust implementation
   used by tests and oracle adapters.
 
 
@@ -54,10 +104,11 @@ description: >-
 
   Write rstest function bedrock_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
   file): converse_route_dispatch, invoke_route_dispatch, runtime_chat_route, native_messages_route, mantle_provider_route,
-  nova_provider_route, installed_agent_operation, unknown_model_invoke_fallback, bedrock_provider_dispatch_http.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  nova_provider_route, installed_agent_operation, unknown_model_invoke_fallback, bedrock_provider_dispatch_http,
+  chat_config_selector, legacy_boto_credentials. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_provider* using HelperCase: kind: helper
@@ -75,10 +126,10 @@ description: >-
   it is not a Python oracle case.
 
 
-  Budget from 281 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 300 production lines, 141 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 557 planned, 575 maximum changed lines.
+  Budget from 197 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 285 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 660 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
@@ -120,44 +171,61 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4178-L4304
   why: Own _complete_bedrock. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'converse route dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/converse-route-dispatch.yaml.'
+- text: 'converse_route_dispatch: Parse non-None additional_drop_params with the existing typed adapter, then select
+    route from model, request_params and that value through B598. Converse strips the B2203 route prefix and calls
+    B610 with caller-or-global custom_prompt_dict, supplied extra_headers, client, base and key; it does not discard
+    merged headers.'
   proof:
   - case-converse-route-dispatch
   - oracle
   - helper-python
-- text: 'invoke route dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/invoke-route-dispatch.yaml.'
+- text: 'invoke_route_dispatch: Other routes use B010 HTTP completion with provider bedrock and the original model.
+    Converse_like removes every occurrence of converse_like/ using string replace and calls HTTP composition with
+    provider bedrock. Neither branch passes shared_session or ctx.provider_config; preserve the actual omissions.'
   proof:
   - case-invoke-route-dispatch
   - oracle
   - helper-python
-- text: 'runtime chat route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/runtime-chat-route.yaml.'
+- text: 'runtime_chat_route: The runtime OpenAI/chat-completions families selected by the config selector invoke
+    installed B619/B620 through HTTP composition; preserve their distinct transformed bodies and stream conversion
+    rather than routing them through Converse.'
   proof:
   - case-runtime-chat-route
   - oracle
   - helper-python
-- text: 'native messages route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/native-messages-route.yaml.'
+- text: 'native_messages_route: Native Messages config precedence is explicit claude_platform -> B656, explicit
+    converse -> None (chat bridge), explicit mantle -> B625, then case-sensitive claude anywhere -> B622, otherwise
+    None. It does not treat uppercase Claude as this final match.'
   proof:
   - case-native-messages-route
   - oracle
   - helper-python
-- text: 'mantle provider route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/mantle-provider-route.yaml.'
+- text: 'mantle_provider_route: The separate bedrock_mantle main branch chooses base explicit/global/BEDROCK_MANTLE_API_BASE
+    and key explicit/global/BEDROCK_MANTLE_API_KEY, headers supplied-truthy/global, then merges B625 config defaults
+    only for absent optional keys. Call B010 with original provider, stream/shared_session and B196 encoding, without
+    injecting extra_headers.'
   proof:
   - case-mantle-provider-route
   - oracle
   - helper-python
-- text: 'nova provider route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/nova-provider-route.yaml.'
+- text: 'nova_provider_route: The separate amazon_nova main branch chooses key explicit, litellm.amazon_nova_api_key,
+    AMAZON_NOVA_API_KEY, then litellm.api_key; base explicit, global, AMAZON_NOVA_API_BASE, https://api.nova.amazon.com/v1.
+    Call the OpenAI-like B038 handler with ctx.custom_prompt_dict and original optional map; no owned headers/client/acompletion
+    argument is added.'
   proof:
   - case-nova-provider-route
   - oracle
   - helper-python
-- text: >-
-    installed agent operation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/installed-agent-operation.yaml.
+- text: 'installed_agent_operation: Config tags agent and agentcore select B652 and B653; claude_platform resolves
+    its config before stripping its model route via B598 and passes that config explicitly to HTTP completion, including
+    shared_session. Do not introduce an interim unsupported-agent error.'
   proof:
   - case-installed-agent-operation
   - oracle
   - helper-python
-- text: >-
-    unknown model invoke fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-provider/unknown-model-invoke-fallback.yaml.
+- text: 'unknown_model_invoke_fallback: Unknown invoke-provider families select AmazonInvokeConfig and keep the
+    invoke fallback; do not reject because a model is absent from whitelisted_bedrock_models.txt, which has only
+    test callers.'
   proof:
   - case-unknown-model-invoke-fallback
   - oracle
@@ -172,53 +240,111 @@ dod:
 - text: unsupported operation holds at this task’s owned boundary.
   proof:
   - unsupported-operation
+- text: 'chat_config_selector: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes
+    claude_platform, converse/converse_like, openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625
+    respectively. Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else
+    Claude B615; meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2
+    -> B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.'
+  proof:
+  - case-chat-config-selector
+  - oracle
+  - helper-python
+- text: 'legacy_boto_credentials: When optional aws_bedrock_client is present, warn exactly: ''aws_bedrock_client''
+    is a deprecated param. Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
+    Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
+    falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining
+    empty strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.'
+  proof:
+  - case-legacy-boto-credentials
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-converse-route-dispatch
-    why: The converse-route-dispatch behavior is missing or differs from its pinned fixture.
+    why: Parse non-None additional_drop_params with the existing typed adapter, then select route from model, request_params
+      and that value through B598. Converse strips the B2203 route prefix and calls B610 with caller-or-global custom_prompt_dict,
+      supplied extra_headers, client, base and key; it does not discard merged headers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_converse_route_dispatch$/)'
   - id: case-invoke-route-dispatch
-    why: The invoke-route-dispatch behavior is missing or differs from its pinned fixture.
+    why: Other routes use B010 HTTP completion with provider bedrock and the original model. Converse_like removes
+      every occurrence of converse_like/ using string replace and calls HTTP composition with provider bedrock.
+      Neither branch passes shared_session or ctx.provider_config; preserve the actual omissions.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_invoke_route_dispatch$/)'
   - id: case-runtime-chat-route
-    why: The runtime-chat-route behavior is missing or differs from its pinned fixture.
+    why: The runtime OpenAI/chat-completions families selected by the config selector invoke installed B619/B620
+      through HTTP composition; preserve their distinct transformed bodies and stream conversion rather than routing
+      them through Converse.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_runtime_chat_route$/)'
   - id: case-native-messages-route
-    why: The native-messages-route behavior is missing or differs from its pinned fixture.
+    why: Native Messages config precedence is explicit claude_platform -> B656, explicit converse -> None (chat
+      bridge), explicit mantle -> B625, then case-sensitive claude anywhere -> B622, otherwise None. It does not
+      treat uppercase Claude as this final match.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_native_messages_route$/)'
   - id: case-mantle-provider-route
-    why: The mantle-provider-route behavior is missing or differs from its pinned fixture.
+    why: The separate bedrock_mantle main branch chooses base explicit/global/BEDROCK_MANTLE_API_BASE and key explicit/global/BEDROCK_MANTLE_API_KEY,
+      headers supplied-truthy/global, then merges B625 config defaults only for absent optional keys. Call B010
+      with original provider, stream/shared_session and B196 encoding, without injecting extra_headers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_mantle_provider_route$/)'
   - id: case-nova-provider-route
-    why: The nova-provider-route behavior is missing or differs from its pinned fixture.
+    why: The separate amazon_nova main branch chooses key explicit, litellm.amazon_nova_api_key, AMAZON_NOVA_API_KEY,
+      then litellm.api_key; base explicit, global, AMAZON_NOVA_API_BASE, https://api.nova.amazon.com/v1. Call the
+      OpenAI-like B038 handler with ctx.custom_prompt_dict and original optional map; no owned headers/client/acompletion
+      argument is added.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_nova_provider_route$/)'
   - id: case-installed-agent-operation
-    why: The installed-agent-operation behavior is missing or differs from its pinned fixture.
+    why: Config tags agent and agentcore select B652 and B653; claude_platform resolves its config before stripping
+      its model route via B598 and passes that config explicitly to HTTP completion, including shared_session. Do
+      not introduce an interim unsupported-agent error.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_installed_agent_operation$/)'
   - id: case-unknown-model-invoke-fallback
-    why: The unknown-model-invoke-fallback behavior is missing or differs from its pinned fixture.
+    why: Unknown invoke-provider families select AmazonInvokeConfig and keep the invoke fallback; do not reject
+      because a model is absent from whitelisted_bedrock_models.txt, which has only test callers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_unknown_model_invoke_fallback$/)'
   - id: case-bedrock-provider-dispatch-http
-    why: The bedrock_provider-dispatch-http behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/bedrock_provider-dispatch-http.yaml.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_bedrock_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_provider.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_provider.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_provider*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_provider*")"
       && grep -lq 'bedrock_provider' tools/oracle/fuzz/corpus/helper_case/bedrock_provider* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_provider$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: unsupported-operation
     why: The unsupported operation invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_provider_unsupported_operation$/)'
+  - id: case-chat-config-selector
+    why: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes claude_platform, converse/converse_like,
+      openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively.
+      Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615;
+      meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 ->
+      B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_chat_config_selector$/)'
+  - id: case-legacy-boto-credentials
+    why: 'When optional aws_bedrock_client is present, warn exactly: ''aws_bedrock_client'' is a deprecated param.
+      Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
+      Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
+      falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining
+      empty strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.'
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_legacy_boto_credentials$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_provider_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_provider_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-provider/converse-route-dispatch.yaml
 - tools/oracle/cases/helpers/providers/bedrock-provider/invoke-route-dispatch.yaml
@@ -229,159 +355,150 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-provider/installed-agent-operation.yaml
 - tools/oracle/cases/helpers/providers/bedrock-provider/unknown-model-invoke-fallback.yaml
 - tools/oracle/cases/chat/bedrock_provider-dispatch-http.yaml
+- tools/oracle/cases/helpers/providers/bedrock-provider/chat-config-selector.yaml
+- tools/oracle/cases/helpers/providers/bedrock-provider/legacy-boto-credentials.yaml
 deviations: []
 out_of_scope:
-- >-
-  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+- B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 - 'litellm/llms/bedrock/whitelisted_bedrock_models.txt: test data only; no production reader at the pin.'
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
+- 'litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129; AmazonBedrockGlobalConfig.get_mapped_special_auth_params
+  L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params L465-L470; ModelResponseIterator.__init__ L728-L730;
+  ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__ L736-L740; ModelResponseIterator.__aiter__
+  L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596; reuse that implementation or its injected
+  typed boundary.'
 - 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
   or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
 - 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
   or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
+- 'litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
   L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
   L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
   L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
   L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route L1417-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model L1431-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix L1473-L1486;
+  BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or its injected
+  typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
+  belong to B690; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that
+  implementation or its injected typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
   L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
   L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
+  that implementation or its injected typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
   _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
   L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai L2590-L2728 belong to B024;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong to B025; reuse that implementation
-  or its injected typed boundary.'
-- 'litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026; reuse that implementation or its injected typed
-  boundary.'
-- 'litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945 belong to B027; reuse
-  that implementation or its injected typed boundary.'
-- >-
-  litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375; Chat.__init__ L379-L385; Completions.__init__
-  L389-L391; Completions.create L393-L401; AsyncCompletions.__init__ L405-L407; AsyncCompletions.create L409-L417;
-  acompletion L422-L740; _resolve_dispatched_chat_response L743-L746; _model_response_from_cached_dict L749-L750;
-  _transcription_response_from_cached_dict L753-L754; _async_streaming L757-L771; _handle_mock_potential_exceptions
-  L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async L831-L842; _sleep_for_timeout L845-L851;
-  _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883; admitted_prompt_token_counter L886-L889;
-  mock_completion L892-L1057; _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base L1069-L1080; responses_api_bridge_check
-  L1083-L1194; _is_claude_tool_target L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys
-  L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229; _proxy_auth_headers L1232-L1233; _provider_config_items
-  L1236-L1237; _locals_snapshot L1240-L1241; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
-  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _dispatch_metadata L1320-L1321; _dispatch_client_http
-  L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai L1334-L1335; _custom_api_first_output
-  L4909-L4910; completion L5145-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136;
-  responses_with_retries L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6196-L6250; embedding L6257-L6278;
-  embedding L6283-L6304; embedding L6310-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
-  L7385-L7386; atext_completion L7390-L7456; text_completion L7460-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
-  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7793-L7864; atranscription L7871-L7929;
-  transcription L7933-L8195; aspeech L8199-L8234; speech L8238-L8719; ahealth_check L8725-L8831; print_verbose L8836-L8842;
-  config_completion L8845-L8853; stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+  typed boundary.'
+- 'litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963 belong to B595.'
+- 'litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name L1965-L1984 belong to B649.'
+- 'litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B650.'
+- 'litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339; get_cached_model_info L156-L169; _get_local_model_cost_map
+  L173-L176; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
+  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
+  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527 belong to B2203.'
+- 'litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75 belong
+  to B682.'
+- 'litellm/llms/bedrock/common_utils.py: AmazonBedrockGlobalConfig.__init__ L456-L457 belongs to B2203. add_custom_header
+  L530-L538 and _get_bedrock_client_ssl_verify L541-L552 have no live caller at the pin outside unused init_bedrock_client.'
+- 'litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324 belongs to B641.'
+- Bedrock common_utils.py get_bedrock_provider_config_for_messages_api and get_bedrock_chat_config selection stages
+  are B2231; this task owns main.py dispatch and selected-adapter composition.
+- 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
+  L2590-L2728 belong to B024.'
+- 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
+  to B025.'
+- 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
+- 'Function ownership inventory litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945
+  belong to B027.'
+- 'Function ownership inventory litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933
+  belong to B031.'
+- 'Function ownership inventory litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036.'
+- 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
+- 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
+  L4045-L4106 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
+  _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+- 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
+  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
+  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
+  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
+- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
+  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
+  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
+  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
+  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
+  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+- 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
+  _complete_custom_providers L4982-L5042 belong to B044.'
+- 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
+- 'Function ownership inventory litellm/main.py: _complete_ragflow L2010-L2057 belong to B049.'
+- 'Function ownership inventory litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow
+  L5094-L5140 belong to B050.'
+- 'Function ownership inventory litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375;
+  Chat.__init__ L379-L385; Completions.__init__ L389-L391; Completions.create L393-L401; AsyncCompletions.__init__
+  L405-L407; AsyncCompletions.create L409-L417; acompletion L420-L740; _resolve_dispatched_chat_response L743-L746;
+  _model_response_from_cached_dict L749-L750; _transcription_response_from_cached_dict L753-L754; _async_streaming
+  L757-L771; _handle_mock_potential_exceptions L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async
+  L831-L842; _sleep_for_timeout L845-L851; _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883;
+  admitted_prompt_token_counter L886-L889; mock_completion L892-L1057; responses_api_bridge_check L1083-L1194; _is_claude_tool_target
+  L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers
+  L1229-L1229; _proxy_auth_headers L1232-L1233; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _custom_api_first_output L4909-L4910; completion
+  L5143-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136; responses_with_retries
+  L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6195-L6250; embedding L6256-L6278; embedding L6282-L6304;
+  embedding L6309-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
+  transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+- 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
+- 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
+  to B196.'
+- 'Function ownership inventory litellm/main.py: _provider_config_items L1236-L1237; _locals_snapshot L1240-L1241;
+  _dispatch_metadata L1320-L1321; _dispatch_client_http L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai
+  L1334-L1335 belong to B198.'
+- 'Function ownership inventory litellm/main.py: stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
   L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
   L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
-  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271;
-  acount_tokens L9277-L9372; _load_module_encoding L9379-L9382; _get_encoding L9385-L9391; _load_default_encoding
-  L9394-L9397; __getattr__ L9400-L9411 belong to B158; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception L4045-L4106 belong to B038;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957; _complete_groq L2111-L2170;
-  _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface L3181-L3221; _complete_openrouter
-  L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649; _complete_predibase L3936-L3992;
-  _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci L3224-L3256; _complete_databricks
-  L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker L4146-L4171;
-  _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake L4655-L4705; _complete_gdc
-  L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_ragflow L2010-L2057 belong to B049; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
-  L3995-L4042 belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow L5094-L5140 belong
-  to B050; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995; _complete_aleph_alpha L2998-L3044;
-  _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir L3521-L3545; _complete_gradient_ai
-  L4708-L4740 belong to B043; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979; _complete_custom_providers
-  L4982-L5042 belong to B044; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_minimax L2500-L2543 belong to B039; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332; _complete_vllm L4421-L4455;
-  _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton L4540-L4573; _complete_petals
-  L4615-L4652; _complete_lemonade L4822-L4859 belong to B040; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037; reuse that implementation or its injected
-  typed boundary.'
-- 'litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046; reuse that implementation or its injected typed
-  boundary.'
-- 'litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933 belong to B031; reuse
-  that implementation or its injected typed boundary.'
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271
+  belong to B2227.'
+- 'Function ownership inventory litellm/main.py: print_verbose L8836-L8842 belong to B2239.'
+- 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
+  L1069-L1080 belong to B500.'
 pitfalls:
-- Preserve configured whitelist/model metadata, explicit versus inferred route selection and unsupported operations.
+- Legacy aws_bedrock_client credential extraction removes the optional client before it can fail.
+- Native Messages treats explicit converse as a bridge request before checking whether the model contains claude.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

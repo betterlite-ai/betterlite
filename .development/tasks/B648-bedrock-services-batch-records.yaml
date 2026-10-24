@@ -3,11 +3,10 @@ title: Bedrock batch chat text and Responses records
 description: >-
   Add typed OpenAiBatchRecord to Bedrock recordId/modelInput JSONL conversion for chat, text completions, Responses
   and embeddings. Reuse provider transformers and an injected alias map rather than bypassing router identity; preserve
-  target-model fallback and CALL0000000 default record ids. JSONL framing has a committed fuzz corpus and errors
-  identify the record index without logging content. The leaf receives an injected batch-model resolver returning
-  provider-local ResolvedBatchModel and preserves its warning/fallback outcome; B030 wires the upper B174 resolver,
-  so this leaf never imports betterlite-provider. Likewise inject the option-mapping callback over native request
-  records; B030 adapts B175 ParameterMapping at the upper boundary.
+  target-model fallback and CALL0000000 default record ids. JSONL framing uses decode_batch_input_line and preserves
+  the original JSON/UTF-8 failure category; it does not invent a record-index error wrapper. Call the lower B643
+  routing-prefix helpers and B175 parameter mapper directly through their typed interfaces. B030 composes this leaf;
+  it does not supply a second resolver algorithm.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
@@ -26,6 +25,72 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: chat_batch_record: Missing messages defaults [], and developer-role rewriting uses the shared
+  base helper. Remove only model/messages from optional fields. provider anthropic uses B618 constructor/request
+  and B175 get_optional_params with invoke/ routing model, custom_llm_provider bedrock and rewritten messages. Filter
+  LiteLLM-owned kwargs except allowed_openai_params; strip json_mode from mapped output. Pass litellm_params={}
+  and headers={} to the request transformer. Reuse B618 request cases for its body/header/default outcomes. text_completion_to_chat:
+  Missing/None prompt raises ValueError Batch record for /v1/completions is missing required `prompt` field: model={body
+  model default empty}. Otherwise remove prompt, preserve remaining keys, and append messages from B218 text_completion_prompt_to_messages;
+  this overwrites an existing messages key in the B643 frozen mapping. Exercise string/list/token prompt fixtures
+  through the shared helper. responses_to_chat: Delegate the full body to B1025 responses_batch_body_to_chat_body
+  and run its input/instructions/max_output_tokens/tool projection fixtures here. Explicit embedding kind passed
+  to the chat normalizer raises ValueError Embedding batch records do not have a chat-completion equivalent; chat
+  returns its body unchanged. embedding_batch_record: Classify each original record with B647 before conversion;
+  embeddings call its mapper directly with the selected model. Preserve all B647 URL precedence, Titan schema, input-shape
+  errors and mapping cases through this composition. alias_and_target_model: Read litellm.model_alias_map default
+  {} once per record-model lookup, with original model fallback. B643 strips routing prefix only to identify the
+  invoke provider via B2205; return the original resolved record model if its provider is known or target_model
+  is falsey. Only when target has a known provider does it replace an unknown record model. Do not rewrite each
+  body model or recursively resolve aliases. default_record_id: Missing custom_id produces CALL plus zero-based
+  index padded to seven digits, e.g. CALL0000000; explicit empty or None is preserved, and wide indices are not
+  truncated. Emit only recordId and modelInput, discarding method,url and other outer keys. Stop on the first failing
+  row; no partial successful upload. jsonl_blank_lines: Extract B235 file data; file None -> ValueError file is
+  required, content None -> file content is required. Use B1015 is_batch_jsonl_file (purpose/content_type policy),
+  B644 content extraction and strict JSON for each nonblank splitlines row. Join transformed rows with newline and
+  no trailing newline using Python-compatible JSON serialization. Empty input emits empty text. malformed_jsonl_line:
+  Malformed JSON and strict UTF-8 failures propagate their original parse error, without added row-index text. Non-object
+  rows/body values retain the source wrong-shape failure instead of silently skipping. Nonbatch bytes decode UTF-8,
+  strings remain unchanged, any other extracted type -> ValueError Unsupported file content type. nova_batch_record:
+  Only provider nova uses B600 constructor/map_openai_params with drop_params=False, then B604 transform_request
+  with empty litellm_params/headers. Reuse its image blocks, inferenceConfig, defaults and strict unsupported-parameter
+  cases. Other providers, including openai/qwen/deepseek and None, return messages plus remaining optional fields
+  unchanged; do not run the general Invoke dispatcher B611. upload_signing_handoff: Target model is truthy explicit
+  model, else litellm_params.model only if string, else empty. After conversion call B644 get_complete_file_url
+  (which may parse original data again), merge credentials B596, then truthy litellm_params.s3_region_name or optional_params.s3_region_name
+  overwrites aws_region_name unconditionally. Resolve KMS through B643 and call B644 _sign_s3_request. Only after
+  success set litellm_params.upload_url and _s3_upload_content_length to UTF-8 byte length, not codepoints. Return
+  method PUT,url,headers,data=(signed_body or file_content). Failures before signing completion leave these handoff
+  fields unchanged.
+
+
+  Load model_alias_map through betterlite-config, with injected environment lookup and the defaults/precedence stated
+  here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest batch_records_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Global litellm_settings.model_alias_map defaults to an empty map. Reuse the configured trusted credential/region
+  loaders from B590/B643/B644; no batch-local credential cache.
+
+
+  Write standalone Rust test batch_records_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test batch_records_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Use B2228 is_litellm_owned_kwarg and its declared wire-name registry, not B1035 or a duplicate filter list; B2214
+  owns shared developer-role conversion.
+
+
+  Direct constructor/helper prerequisites used by this slice: B591. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-bedrock/src/batch_records.rs with adjacent tests under batch_records/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -41,10 +106,9 @@ description: >-
 
   Write rstest function batch_records_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   chat_batch_record, text_completion_to_chat, responses_to_chat, embedding_batch_record, alias_and_target_model,
-  default_record_id, jsonl_blank_lines, malformed_jsonl_line. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  default_record_id, jsonl_blank_lines, malformed_jsonl_line, nova_batch_record, upload_signing_handoff. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API
+  tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_records* using HelperCase:
@@ -62,9 +126,9 @@ description: >-
 
 
   Budget from 235 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 260 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 544 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 290 production lines, 270 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 40 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -83,59 +147,85 @@ scope:
   - crates/betterlite-bedrock/fuzz/Cargo.toml
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_records.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/batch_records.rs
+  - crates/betterlite-config/src/providers/bedrock/batch_records/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/batch_records_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/batch_records*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L822-L1108
-  why: >-
-    Own BedrockFilesConfig._transform_text_completion_body_to_chat_body, BedrockFilesConfig._transform_responses_body_to_chat_body,
+  why: Own BedrockFilesConfig._transform_text_completion_body_to_chat_body, BedrockFilesConfig._transform_responses_body_to_chat_body,
     BedrockFilesConfig._transform_batch_body_to_chat_body, BedrockFilesConfig._map_openai_to_bedrock_params, BedrockFilesConfig._resolve_batch_record_model_and_provider,
     BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content, BedrockFilesConfig.transform_create_file_request.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    chat batch record: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/chat-batch-record.yaml.
+- text: 'chat_batch_record: Missing messages defaults [], and developer-role rewriting uses the shared base helper.
+    Remove only model/messages from optional fields. provider anthropic uses B618 constructor/request and B175 get_optional_params
+    with invoke/ routing model, custom_llm_provider bedrock and rewritten messages. Filter LiteLLM-owned kwargs
+    except allowed_openai_params; strip json_mode from mapped output. Pass litellm_params={} and headers={} to the
+    request transformer. Reuse B618 request cases for its body/header/default outcomes.'
   proof:
   - case-chat-batch-record
   - oracle
   - helper-python
-- text: >-
-    text completion to chat: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/text-completion-to-chat.yaml.
+- text: 'text_completion_to_chat: Missing/None prompt raises ValueError Batch record for /v1/completions is missing
+    required `prompt` field: model={body model default empty}. Otherwise remove prompt, preserve remaining keys,
+    and append messages from B218 text_completion_prompt_to_messages; this overwrites an existing messages key in
+    the B643 frozen mapping. Exercise string/list/token prompt fixtures through the shared helper.'
   proof:
   - case-text-completion-to-chat
   - oracle
   - helper-python
-- text: >-
-    responses to chat: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/responses-to-chat.yaml.
+- text: 'responses_to_chat: Delegate the full body to B1025 responses_batch_body_to_chat_body and run its input/instructions/max_output_tokens/tool
+    projection fixtures here. Explicit embedding kind passed to the chat normalizer raises ValueError Embedding
+    batch records do not have a chat-completion equivalent; chat returns its body unchanged.'
   proof:
   - case-responses-to-chat
   - oracle
   - helper-python
-- text: >-
-    embedding batch record: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/embedding-batch-record.yaml.
+- text: 'embedding_batch_record: Classify each original record with B647 before conversion; embeddings call its
+    mapper directly with the selected model. Preserve all B647 URL precedence, Titan schema, input-shape errors
+    and mapping cases through this composition.'
   proof:
   - case-embedding-batch-record
   - oracle
   - helper-python
-- text: >-
-    alias and target model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/alias-and-target-model.yaml.
+- text: 'alias_and_target_model: Read litellm.model_alias_map default {} once per record-model lookup, with original
+    model fallback. B643 strips routing prefix only to identify the invoke provider via B2205; return the original
+    resolved record model if its provider is known or target_model is falsey. Only when target has a known provider
+    does it replace an unknown record model. Do not rewrite each body model or recursively resolve aliases.'
   proof:
   - case-alias-and-target-model
   - oracle
   - helper-python
-- text: >-
-    default record id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/default-record-id.yaml.
+- text: 'default_record_id: Missing custom_id produces CALL plus zero-based index padded to seven digits, e.g. CALL0000000;
+    explicit empty or None is preserved, and wide indices are not truncated. Emit only recordId and modelInput,
+    discarding method,url and other outer keys. Stop on the first failing row; no partial successful upload.'
   proof:
   - case-default-record-id
   - oracle
   - helper-python
-- text: >-
-    jsonl blank lines: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/jsonl-blank-lines.yaml.
+- text: 'jsonl_blank_lines: Extract B235 file data; file None -> ValueError file is required, content None -> file
+    content is required. Use B1015 is_batch_jsonl_file (purpose/content_type policy), B644 content extraction and
+    strict JSON for each nonblank splitlines row. Join transformed rows with newline and no trailing newline using
+    Python-compatible JSON serialization. Empty input emits empty text.'
   proof:
   - case-jsonl-blank-lines
   - oracle
   - helper-python
-- text: >-
-    malformed jsonl line: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-records/malformed-jsonl-line.yaml.
+- text: 'malformed_jsonl_line: Malformed JSON and strict UTF-8 failures propagate their original parse error, without
+    added row-index text. Non-object rows/body values retain the source wrong-shape failure instead of silently
+    skipping. Nonbatch bytes decode UTF-8, strings remain unchanged, any other extracted type -> ValueError Unsupported
+    file content type.'
   proof:
   - case-malformed-jsonl-line
   - oracle
@@ -147,53 +237,122 @@ dod:
 - text: decode_batch_input_line has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'nova_batch_record: Only provider nova uses B600 constructor/map_openai_params with drop_params=False, then
+    B604 transform_request with empty litellm_params/headers. Reuse its image blocks, inferenceConfig, defaults
+    and strict unsupported-parameter cases. Other providers, including openai/qwen/deepseek and None, return messages
+    plus remaining optional fields unchanged; do not run the general Invoke dispatcher B611.'
+  proof:
+  - case-nova-batch-record
+  - oracle
+  - helper-python
+- text: 'upload_signing_handoff: Target model is truthy explicit model, else litellm_params.model only if string,
+    else empty. After conversion call B644 get_complete_file_url (which may parse original data again), merge credentials
+    B596, then truthy litellm_params.s3_region_name or optional_params.s3_region_name overwrites aws_region_name
+    unconditionally. Resolve KMS through B643 and call B644 _sign_s3_request. Only after success set litellm_params.upload_url
+    and _s3_upload_content_length to UTF-8 byte length, not codepoints. Return method PUT,url,headers,data=(signed_body
+    or file_content). Failures before signing completion leave these handoff fields unchanged.'
+  proof:
+  - case-upload-signing-handoff
+  - oracle
+  - helper-python
+- text: The real config loader resolves model_alias_map, including its default and precedence.
+  proof:
+  - config-model-alias-map
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-chat-batch-record
-    why: The chat-batch-record behavior is missing or differs from its pinned fixture.
+    why: Missing messages defaults [], and developer-role rewriting uses the shared base helper. Remove only model/messages
+      from optional fields. provider anthropic uses B618 constructor/request and B175 get_optional_params with invoke/
+      routing model, custom_llm_provider bedrock and rewritten messages. Filter LiteLLM-owned kwargs except allowed_openai_params;
+      strip json_mode from mapped output. Pass litellm_params={} and headers={} to the request transformer. Reuse
+      B618 request cases for its body/header/default outcomes.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_chat_batch_record$/)'
   - id: case-text-completion-to-chat
-    why: The text-completion-to-chat behavior is missing or differs from its pinned fixture.
+    why: 'Missing/None prompt raises ValueError Batch record for /v1/completions is missing required `prompt` field:
+      model={body model default empty}. Otherwise remove prompt, preserve remaining keys, and append messages from
+      B218 text_completion_prompt_to_messages; this overwrites an existing messages key in the B643 frozen mapping.
+      Exercise string/list/token prompt fixtures through the shared helper.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_text_completion_to_chat$/)'
   - id: case-responses-to-chat
-    why: The responses-to-chat behavior is missing or differs from its pinned fixture.
+    why: Delegate the full body to B1025 responses_batch_body_to_chat_body and run its input/instructions/max_output_tokens/tool
+      projection fixtures here. Explicit embedding kind passed to the chat normalizer raises ValueError Embedding
+      batch records do not have a chat-completion equivalent; chat returns its body unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_responses_to_chat$/)'
   - id: case-embedding-batch-record
-    why: The embedding-batch-record behavior is missing or differs from its pinned fixture.
+    why: Classify each original record with B647 before conversion; embeddings call its mapper directly with the
+      selected model. Preserve all B647 URL precedence, Titan schema, input-shape errors and mapping cases through
+      this composition.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_embedding_batch_record$/)'
   - id: case-alias-and-target-model
-    why: The alias-and-target-model behavior is missing or differs from its pinned fixture.
+    why: Read litellm.model_alias_map default {} once per record-model lookup, with original model fallback. B643
+      strips routing prefix only to identify the invoke provider via B2205; return the original resolved record
+      model if its provider is known or target_model is falsey. Only when target has a known provider does it replace
+      an unknown record model. Do not rewrite each body model or recursively resolve aliases.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_alias_and_target_model$/)'
   - id: case-default-record-id
-    why: The default-record-id behavior is missing or differs from its pinned fixture.
+    why: Missing custom_id produces CALL plus zero-based index padded to seven digits, e.g. CALL0000000; explicit
+      empty or None is preserved, and wide indices are not truncated. Emit only recordId and modelInput, discarding
+      method,url and other outer keys. Stop on the first failing row; no partial successful upload.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_default_record_id$/)'
   - id: case-jsonl-blank-lines
-    why: The jsonl-blank-lines behavior is missing or differs from its pinned fixture.
+    why: Extract B235 file data; file None -> ValueError file is required, content None -> file content is required.
+      Use B1015 is_batch_jsonl_file (purpose/content_type policy), B644 content extraction and strict JSON for each
+      nonblank splitlines row. Join transformed rows with newline and no trailing newline using Python-compatible
+      JSON serialization. Empty input emits empty text.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_jsonl_blank_lines$/)'
   - id: case-malformed-jsonl-line
-    why: The malformed-jsonl-line behavior is missing or differs from its pinned fixture.
+    why: Malformed JSON and strict UTF-8 failures propagate their original parse error, without added row-index
+      text. Non-object rows/body values retain the source wrong-shape failure instead of silently skipping. Nonbatch
+      bytes decode UTF-8, strings remain unchanged, any other extracted type -> ValueError Unsupported file content
+      type.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_malformed_jsonl_line$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_records.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_records.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_records*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_records*")"
       && grep -lq 'bedrock_services_batch_records' tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_records*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_batch_records$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records)"
       && grep -q 'decode_batch_input_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_records.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_records_corpus$/)'
+  - id: case-nova-batch-record
+    why: Only provider nova uses B600 constructor/map_openai_params with drop_params=False, then B604 transform_request
+      with empty litellm_params/headers. Reuse its image blocks, inferenceConfig, defaults and strict unsupported-parameter
+      cases. Other providers, including openai/qwen/deepseek and None, return messages plus remaining optional fields
+      unchanged; do not run the general Invoke dispatcher B611.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_nova_batch_record$/)'
+  - id: case-upload-signing-handoff
+    why: Target model is truthy explicit model, else litellm_params.model only if string, else empty. After conversion
+      call B644 get_complete_file_url (which may parse original data again), merge credentials B596, then truthy
+      litellm_params.s3_region_name or optional_params.s3_region_name overwrites aws_region_name unconditionally.
+      Resolve KMS through B643 and call B644 _sign_s3_request. Only after success set litellm_params.upload_url
+      and _s3_upload_content_length to UTF-8 byte length, not codepoints. Return method PUT,url,headers,data=(signed_body
+      or file_content). Failures before signing completion leave these handoff fields unchanged.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_upload_signing_handoff$/)'
+  - id: config-model-alias-map
+    why: model_alias_map lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::batch_records_config_cases::case_[0-9]+_loads_model_alias_map$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/chat-batch-record.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/text-completion-to-chat.yaml
@@ -203,55 +362,55 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/default-record-id.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/jsonl-blank-lines.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-records/malformed-jsonl-line.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-records/nova-batch-record.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-records/upload-signing-handoff.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
-  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
-  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
-  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
-  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
-  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
-  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
-  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
-  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394;
-  BedrockFilesConfig.custom_llm_provider L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment
-  L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
-  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
-  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
-  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
-  L1265-L1266 belong to B644; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
-  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
-  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
-  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
-  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+- 'litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
-  no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
-  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
-  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
-  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
-  boundary.
+  no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model
+  L95-L96; _strip_llm_routing_prefix L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials
+  L192-L198; get_configured_s3_bucket_name L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets
+  L233-L250; _rejected_file_id L256-L266; _resolve_managed_s3_object L269-L279 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__
+  L392-L394; BedrockFilesConfig.custom_llm_provider L396-L398; BedrockFilesConfig.file_upload_http_method L400-L405;
+  BedrockFilesConfig.validate_environment L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460;
+  BedrockFilesConfig._get_s3_object_name_from_batch_jsonl L462-L478; BedrockFilesConfig.get_object_name L480-L504;
+  BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params L549-L550;
+  BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
+  L1265-L1266 belong to B644.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298;
+  _listing_query L301-L305; _requested_listing_purpose L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted
+  L318-L321; _listing_bucket_name L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372;
+  BedrockFilesConfig.transform_retrieve_file_request L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response
+  L1276-L1282; BedrockFilesConfig.transform_delete_file_request L1284-L1292; BedrockFilesConfig.transform_delete_file_response
+  L1294-L1307; BedrockFilesConfig.transform_list_files_request L1309-L1317; BedrockFilesConfig.transform_list_files_next_request
+  L1319-L1335; BedrockFilesConfig._signed_listing_request L1337-L1361; BedrockFilesConfig.transform_list_files_response
+  L1363-L1391; BedrockFilesConfig.transform_file_content_request L1393-L1412; BedrockFilesConfig._transform_s3_file_request
+  L1414-L1432; BedrockFilesConfig._s3_request_target L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body
+  L1459-L1488 belong to B645.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response
+  L1490-L1503; BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537;
+  BedrockJsonlFilesTransformation._get_s3_object_name L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file
+  L1555-L1590 belong to B646.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record
+  L574-L614; BedrockFilesConfig._is_titan_v2_embed_model L638-L681; BedrockFilesConfig._lookup_provider_specific_field
+  L683-L715; BedrockFilesConfig._coerce_embedding_input_to_string L717-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params
+  L773-L819 belong to B647.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- Reuse provider transformers and an injected alias map rather than bypassing router identity; preserve target-model
-  fallback and CALL0000000 default record ids.
+- The URL/name pass reads the original upload again after conversion; a consumed file-like stream must retain the
+  pinned behavior rather than silently rewinding.
+- The upload length is recorded after conversion and signing, so it differs from the uploaded input-file byte length.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
-review_level: standard
+review_level: security
