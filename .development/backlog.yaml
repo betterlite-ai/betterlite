@@ -178,12 +178,13 @@ tasks:
     - B010
     - B300
     - B301
+    - B302
     file: null
     covers:
+    - litellm/router_utils/{common_utils,client_initalization_utils,clientside_credential_handler,handle_error,pattern_match_deployments,response_headers,add_retry_fallback_headers,routing_read_batch}.py
     - litellm/router.py
     - litellm/types/router.py
     - litellm/router_strategy/base_routing_strategy.py
-    - litellm/router_utils/{common_utils,client_initalization_utils,clientside_credential_handler,handle_error,pattern_match_deployments,response_headers,add_retry_fallback_headers,routing_read_batch}.py
     - litellm/router_utils/router_callbacks/**
   - id: B017
     milestone: M2 routing
@@ -1852,3 +1853,15 @@ tasks:
     - B008
     file: tasks/B301-routing-component-oracle.yaml
     covers: []
+
+  - id: B302
+    milestone: M2 routing
+    title: Deployment catalog, aliases and wildcard routes
+    status: todo
+    depends_on:
+    - B008
+    - B010
+    - B301
+    file: tasks/B302-deployment-catalog.yaml
+    covers:
+    - litellm/router_utils/pattern_match_deployments.py
