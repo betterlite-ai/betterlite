@@ -5,13 +5,24 @@ description: >-
   non-price metadata and B193 assembles whole entries. Model every cost/rate/multiplier and nested tier/off-peak/search-context
   pricing field appearing in the pinned schema or actual bundled map; keep long wire names through serde renames
   while Rust names meet the 30-character rule. Use explicit typed groups or enums for known pricing dimensions,
-  never a free string-to-float map. Copy the pinned JSON schema and representative whole-map excerpts into fixtures,
-  derive the field inventory from the actual map as well as the schema, and fail tests if any observed monetary
-  field lacks a typed representation. Parse monetary JSON number lexemes directly into Decimal without passing through
-  f64; null/absence remain distinct where the source permits them. Add price_fields helper cases that compare canonical
-  decimal strings derived from Python Decimal parsing of the same pinned values; add price_fields fuzz target and
-  corpus replay. Budget 380 types/decimal adapter lines, 60 wiring and 300 tests. Seed B171's shared helper_case
-  corpus with every added operation and replay it through the common typed parser.
+  never a free string-to-float map. Copy the pinned JSON schema and the full pinned map into fixtures, derive the
+  field inventory from the actual map as well as the schema, and fail tests if any observed monetary field lacks
+  a typed representation. Parse monetary JSON number lexemes directly into Decimal without passing through f64;
+  absence becomes None; null is a typed field error because the pinned schema uses plain numbers and the map contains
+  no null prices. Add price_fields helper cases that compare canonical decimal strings derived from Python Decimal
+  parsing of the same pinned values; add price_fields fuzz target and corpus replay.  Seed B171's shared helper_case
+  corpus with every added operation and replay it through the common typed parser. Actual model-entry top-level
+  keys are covered by the 212-property schema. Inspect nested provider_specific_entry.us/.fast Decimal multipliers,
+  guardrail_cost_per_unit arbitrary unit-name Decimal entries, metadata.original_pricing_per_hour/original_pricing_per_minute,
+  and sample_spec-only computer_use_input_cost_per_1k_tokens, computer_use_output_cost_per_1k_tokens, file_search_cost_per_1k_calls,
+  file_search_cost_per_gb_per_day, vector_store_cost_per_gb_per_day. Keep sample_spec documentation out of executable
+  model enumeration. Copy the complete pinned map as a budget-exempt fixture here for coverage tests; B193 reuses
+  it. Workspace serde_json arbitrary_precision preserves original numeric lexemes, and B015 reuses the same exact
+  bounded decimal parser. Budget 350 types/parser, 100 adapters, 290 tests/fuzz and 50 wiring (790 total). Write
+  the behavior rstest functions b204_price_field_tests_behavior in adjacent tests.rs files, with a named case for
+  each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations price_fields
+  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -24,27 +35,34 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
   why: Catalog contract and special top-level entries; inspect all modelEntry properties.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
   why: Bundled map is the source of raw prices.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L1-L140
-  why: Actual pinned fields, which include prices omitted from the schema.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L1-L140
+  why: Full pinned map supplies nested and sample_spec-only monetary examples.
 dod:
-- text: All observed monetary keys have typed coverage and canonical values preserve small fractions and exponent
-    notation exactly.
+- text: >-
+    All observed monetary keys have typed coverage and canonical values preserve small fractions and exponent notation
+    exactly.
   proof:
   - price-field-tests
   - oracle
-- text: No price is converted through a float and overprecision/overflow/malformed values fail with a typed field
-    path.
+  - helper-python
+- text: >-
+    No price is converted through a float and overprecision/overflow/malformed values fail with a typed field path.
   proof:
   - price-field-tests
 - text: The schema fixture matches its pinned SHA-256 and the price parser has corpus replay.
   proof:
   - price-schema-pin
   - price-fields-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  - price-map-pin
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -53,17 +71,20 @@ checks:
   commands:
   - id: price-field-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/price_field/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b204_price_field_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: price-fields-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-models/fuzz/fuzz_targets/price_fields.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/price_fields)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/price_fields)"
+      && test -f crates/betterlite-models/fuzz/fuzz_targets/price_fields.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/price_fields)"
       && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_price_fields_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: price-schema-pin
     why: the copied price schema differs from the pinned source
     run: >-
@@ -72,22 +93,37 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'price_fields' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: price-map-pin
+    why: the required new behavior or its evidence is missing
+    run: >-
+      echo '329113e5820834dc2a206500db9ec7861a17c74b86fe79601dec05478c06327e  crates/betterlite-models/fixtures/model_prices_and_context_window.json'
+      | sha256sum --check --quiet
 oracle_cases:
 - tools/oracle/cases/helpers/price-fields/fraction.yaml
 - tools/oracle/cases/helpers/price-fields/exponent.yaml
-- tools/oracle/cases/helpers/price-fields/null-absent.yaml
+- tools/oracle/cases/helpers/price-fields/absent-optional.yaml
 - tools/oracle/cases/helpers/price-fields/nested-tier.yaml
 - tools/oracle/cases/helpers/price-fields/off-peak.yaml
-- tools/oracle/cases/helpers/price-fields/schema-extra-prices.yaml
-deviations: []
+- tools/oracle/cases/helpers/price-fields/nested-and-sample-prices.yaml
+deviations:
+- what: >-
+    Prices and calculated costs use exact Decimal rather than binary floats, so final digits can differ from LiteLLM.
+  why: >-
+    The money-is-decimal rule requires exact parsing and arithmetic; the Python adapter parses the same source lexeme
+    with Decimal and explicitly documents that projection.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
 out_of_scope:
 - Token-cost multiplication and spend accounting are B068-B069.
 - Whole-entry parsing, aliases and loading are B193-B194.
 pitfalls:
-- The actual pinned map contains monetary keys absent from its 212-property schema, so schema-only generation drops
-  prices.
+- >-
+  Model-entry top-level keys are schema-covered; untyped monetary dimensions are nested or sample_spec-only, so
+  schema-only shallow generation still misses prices.
 - Decimal must receive the original JSON numeric lexeme, not a number already rounded by serde_json.
 - Only raw fixture assets use the fixture budget exemption; generated Rust fields count toward 800 lines.
 review_level: security
