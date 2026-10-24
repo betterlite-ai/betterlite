@@ -186,6 +186,7 @@ tasks:
     - B302
     - B303
     - B304
+    - B360
     file: tasks/B016-router-core.yaml
     covers:
     - litellm/router.py
@@ -2631,3 +2632,14 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
     - litellm/router_strategy/complexity_router/stall_detector.py
+
+  - id: B360
+    milestone: M2 routing
+    title: Typed local and Redis routing state
+    status: todo
+    depends_on:
+    - B302
+    - B009
+    file: tasks/B360-routing-state-store.yaml
+    covers:
+    - litellm/router_strategy/base_routing_strategy.py

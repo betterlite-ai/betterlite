@@ -1,0 +1,105 @@
+id: B360
+title: Typed local and Redis routing state
+description: Create the injected typed store used by B304 and all routing state owners, with a bounded
+  in-memory implementation and a maintained Rust Redis client. Support TTL reads, batched reads, integer/Decimal
+  increments and compare-and-set operations with bounded keys and values. Reuse B002's Redis configuration
+  and secret handling; keep this transport independent of future B125/B126 response caching to avoid their
+  dependency on B016. Add idempotent flush-batch IDs with bounded retention so a lost Redis response does
+  not cause double application when B304 retries; use the client's atomic transaction/script support rather
+  than a Redis protocol parser. Do not add general cache features. Use the existing Rust crate boundaries
+  from B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
+  unsupported keys still fail by full path. Add a cargo-fuzz target routing_state_value under crates/betterlite-router/fuzz
+  and a normal replays_the_routing_state_value_corpus test using the production parser. Keep the implementation,
+  adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/routing-state-store/**
+  - tools/oracle/src/router_probes/routing-state-store/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/routing_state_store.py
+  - tools/oracle/litellm/probes/registry.py
+  - Cargo.toml
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L66-L102
+  why: Local increment and TTL contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L124-L245
+  why: Shared counter merge and failure behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1-L80
+  why: Existing Redis transport dependency, owned in full by B126.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(routing_state_store)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/routing_state_value.rs && test -n "$(ls -A
+      crates/betterlite-router/fuzz/corpus/routing_state_value)" && cargo nextest run --locked -p betterlite-router
+      --no-tests=fail -E 'test(replays_the_routing_state_value_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-state-store/typed-store-expiry.yaml
+- tools/oracle/cases/routing/routing-state-store/atomic-increments-two-workers.yaml
+- tools/oracle/cases/routing/routing-state-store/compare-and-set-first-writer.yaml
+- tools/oracle/cases/routing/routing-state-store/ordered-batch-missing-values.yaml
+- tools/oracle/cases/routing/routing-state-store/memory-bound-evicts-expired.yaml
+- tools/oracle/cases/routing/routing-state-store/redis-reconnect.yaml
+- tools/oracle/cases/routing/routing-state-store/redis-credential-redaction.yaml
+deviations:
+- what: Add bounded retry-batch deduplication for router counter writes.
+  why: The pinned batch path can drop deltas after a write error; retaining and retrying them safely needs
+    protection against an already-applied write.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L124-L175
+out_of_scope:
+- Response caching, discovery, general-purpose Redis APIs and the later Valkey platform features.
+pitfalls:
+- Redis transport failures must remain distinguishable from missing values.
+- The architect must approve retry-batch retention and queue bounds before dispatch; safe retries cannot
+  outlive deduplication retention.
+- Use a test-owned Redis process with a deadline, clean shutdown and a failing check if the required integration
+  test did not run.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
