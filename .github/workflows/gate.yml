@@ -88,6 +88,11 @@ jobs:
             .development/gate -> target
             . -> target
 
+      - name: Check whitespace in the change
+        env:
+          BASE: ${{ steps.find.outputs.base }}
+        run: git diff --check "$BASE" HEAD
+
       - name: Validate the specs
         run: cargo gate validate
 
