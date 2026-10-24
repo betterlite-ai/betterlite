@@ -215,10 +215,11 @@ tasks:
     - B311
     - B312
     - B313
-    file: null
+    - B051
+    - B052
+    - B066
+    file: tasks/B018-fallback-management.yaml
     covers:
-    - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
-    - litellm/litellm_core_utils/{fallback_utils,fallback_generalizations}.py
     - litellm/proxy/management_endpoints/fallback_management_endpoints.py
   - id: B019
     milestone: M2 routing
