@@ -11,9 +11,9 @@ description: Add POST /auto_router/validate_complexity_router_config, /auto_rout
   matching adapters to B301's component runner where state is not observable over HTTP; adapters call
   production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
   for comparisons, and separate seeded distribution tests for random choices. Add a cargo-fuzz target
-  auto_router_preview under crates/betterlite-server/fuzz and a normal replays_the_route_probe_corpus
-  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
-  fixtures and oracle cases are budget-excluded by checks.yaml.
+  route_probe under crates/betterlite-server/fuzz and a normal replays_the_route_probe_corpus test using
+  the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
+  and oracle cases are budget-excluded by checks.yaml.
 scope:
   paths:
   - crates/betterlite-router/**
@@ -59,9 +59,8 @@ checks:
       -E 'test(auto_router_preview)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/route_probe.rs && test -n "$(ls -A
-      crates/betterlite-server/fuzz/corpus/route_probe)" && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/route_probe.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/route_probe)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
