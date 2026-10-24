@@ -53,7 +53,7 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_provider_specific_headers.py#L7-L39
   why: Provider-specific header extraction.
 dod:
-- text: The listed controls, affinity, multipart and path cases match pinned helper outputs.
+- text: The listed controls, affinity, multipart and scoped outbound-header cases match pinned helper outputs.
   proof:
   - oracle
   - helper-python
