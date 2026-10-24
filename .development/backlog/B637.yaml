@@ -1,0 +1,8 @@
+id: B637
+milestone: M3 providers
+title: Bedrock Stability image edit transformations
+status: todo
+depends_on: [B004, B171, B068, B682, B159, B2202, B046]
+file: tasks/B637-bedrock-other-stability-edits.yaml
+covers:
+  - "litellm/llms/bedrock/image_edit/stability_transformation.py"

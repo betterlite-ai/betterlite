@@ -1,0 +1,9 @@
+id: B1722
+milestone: M4 keys, spend and management
+title: Expose exception charts, spend resets and end-user diagnostics
+status: todo
+depends_on: [B003, B052, B198, B204, B700, B710, B722, B724, B726, B732, B860]
+file: tasks/B1722-spend-diagnostics.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
+  - "litellm/proxy/_types.py"

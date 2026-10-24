@@ -1,0 +1,10 @@
+id: B712
+milestone: M4 keys, spend and management
+title: RDS IAM and Azure database token authentication
+status: todo
+depends_on: [B002, B171, B700, B710, B856]
+file: tasks/B712-database-tokens.yaml
+covers:
+  - "litellm/proxy/db/token_auth.py"
+  - "litellm/proxy/auth/rds_iam_token.py"
+  - "litellm/proxy/db/db_url_settings.py"

@@ -1,0 +1,11 @@
+id: B165
+milestone: M12 python
+title: Embedded Python in the proxy for callbacks, hooks and providers that config.yaml names
+status: todo
+depends_on: [B164, B124]
+file: null
+covers:
+  - "litellm/proxy/types_utils/**"
+  - "litellm/proxy/{custom_auth_auto,custom_validate,custom_sso,custom_prompt_management}.py"
+  - "litellm/proxy/custom_hooks/**"
+  - "litellm/proxy/guardrails/guardrail_hooks/custom_code/**"

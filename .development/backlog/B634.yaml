@@ -1,0 +1,8 @@
+id: B634
+milestone: M3 providers
+title: Bedrock image generation execution
+status: todo
+depends_on: [B633, B591, B595, B173, B171, B590, B682, B249]
+file: tasks/B634-bedrock-other-image-call.yaml
+covers:
+  - "litellm/llms/bedrock/image_generation/image_handler.py"

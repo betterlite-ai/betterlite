@@ -1,0 +1,8 @@
+id: B161
+milestone: M12 python
+title: Python files, batches, fine-tuning, vector stores, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime and passthrough functions
+status: todo
+depends_on: [B158]
+file: null
+covers:
+  - "litellm/{files,batches,fine_tuning,vector_stores,vector_store_files,assistants,containers,videos,skills,evals,search,ocr,rag,realtime_api,passthrough,decisions,sandbox,systemone}/**"

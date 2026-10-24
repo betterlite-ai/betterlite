@@ -1,0 +1,9 @@
+id: B366
+milestone: M2 routing
+title: Complexity classification and placement composition
+status: todo
+depends_on: [B331, B332, B333, B353, B358, B334, B335, B336, B337, B352, B354, B363, B301]
+file: tasks/B366-complexity-pipeline.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/complexity_router.py"
+  - "litellm/router_utils/add_retry_fallback_headers.py"

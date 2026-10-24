@@ -1,0 +1,8 @@
+id: B2417
+milestone: M5 API families
+title: Responses delete and cancel HTTP transport
+status: todo
+depends_on: [B173, B1114, B509, B249, B2402, B2401]
+file: tasks/B2417-responses-write-transport.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

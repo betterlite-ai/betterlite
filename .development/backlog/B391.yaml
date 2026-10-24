@@ -1,0 +1,7 @@
+id: B391
+milestone: M2 routing
+title: Scripted routing mock replies and trace capture
+status: todo
+depends_on: [B001]
+file: tasks/B391-routing-mock-scripts.yaml
+covers: []

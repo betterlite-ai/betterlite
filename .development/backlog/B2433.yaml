@@ -1,0 +1,8 @@
+id: B2433
+milestone: M5 API families
+title: Messages reasoning route policy
+status: todo
+depends_on: [B171, B174, B205, B962, B158]
+file: tasks/B2433-messages-reasoning-route.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/handler.py"

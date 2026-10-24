@@ -1,0 +1,8 @@
+id: B1123
+milestone: M5 API families
+title: Realtime transcription protocol
+status: todo
+depends_on: [B171, B1087]
+file: tasks/B1123-realtime-transcription-protocol.yaml
+covers:
+  - "litellm/llms/base_llm/realtime/transcription_protocol.py"

@@ -1,0 +1,8 @@
+id: B1708
+milestone: M4 keys, spend and management
+title: Deliver spend events to the local collector with explicit outage behavior
+status: todo
+depends_on: [B002, B012, B171, B198]
+file: tasks/B1708-collector-producer.yaml
+covers:
+  - "litellm/proxy/spend_tracking/{spend_event_producer,spend_log_error_logger}.py"

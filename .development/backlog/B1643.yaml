@@ -1,0 +1,8 @@
+id: B1643
+milestone: M4 keys, spend and management
+title: Inspect and merge SCIM placeholder accounts without losing team access
+status: todo
+depends_on: [B003, B052, B124, B722, B723, B860, B1632, B1633, B1634, B1635, B1637, B1638, B1644]
+file: tasks/B1643-scim-placeholder-repair.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"

@@ -1,0 +1,9 @@
+id: B2487
+milestone: M5 API families
+title: Fine-tuning and assistant SDK settings and timeout policy
+status: todo
+depends_on: [B002, B171]
+file: tasks/B2487-resource-sdk-settings.yaml
+covers:
+  - "litellm/fine_tuning/main.py"
+  - "litellm/utils.py"

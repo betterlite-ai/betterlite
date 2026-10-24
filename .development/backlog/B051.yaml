@@ -1,0 +1,12 @@
+id: B051
+milestone: M4 keys, spend and management
+title: Database startup, migration jobs and readiness
+status: todo
+depends_on: [B002, B003, B710, B711, B712, B713, B714, B715, B716, B717, B718, B719, B731, B854, B856, B857, B860, B1232]
+file: tasks/B051-database-startup.yaml
+covers:
+  - "litellm/proxy/db/prisma_client.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
+  - "migrations/run.py"
+  - "litellm/proxy/prisma_migration.py"

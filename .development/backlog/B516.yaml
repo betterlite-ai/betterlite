@@ -1,0 +1,8 @@
+id: B516
+milestone: M3 providers
+title: OpenAI file lifecycle and streaming content
+status: todo
+depends_on: [B500, B173, B171, B185]
+file: tasks/B516-openai-files.yaml
+covers:
+  - "litellm/llms/openai/openai.py"

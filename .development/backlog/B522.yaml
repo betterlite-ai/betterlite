@@ -1,0 +1,9 @@
+id: B522
+milestone: M3 providers
+title: OpenAI containers and container files
+status: todo
+depends_on: [B500, B173, B171, B068, B206, B129, B2202]
+file: tasks/B522-openai-containers.yaml
+covers:
+  - "litellm/llms/openai/containers/transformation.py"
+  - "litellm/llms/openai/containers/utils.py"

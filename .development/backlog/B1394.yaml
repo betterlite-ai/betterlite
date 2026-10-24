@@ -1,0 +1,8 @@
+id: B1394
+milestone: M3 providers
+title: Gemini Live tool turn event sequence
+status: todo
+depends_on: [B1378, B1379, B1381, B1322, B1115, B1004, B171]
+file: tasks/B1394-gemini-live-tool-turn.yaml
+covers:
+  - "litellm/llms/gemini/realtime/transformation.py"

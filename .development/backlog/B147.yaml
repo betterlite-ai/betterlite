@@ -1,0 +1,12 @@
+id: B147
+milestone: M10 admin ui
+title: Admin UI pages for logs, usage, cost, Lens and ROI working against betterlite
+status: todo
+depends_on: [B144, B074, B132]
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{logs,usage,old-usage,cost-tracking,cost-optimization,lens,roi-calculator}/**"
+  - "ui/litellm-dashboard/src/components/{view_logs,UsagePage,EntityUsageExport,CloudZeroCostTracking,llm_calls}/**"
+  - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity,view_user_spend,cloudzero_export_modal}.*"
+  - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity}.test.*"
+  - "ui/litellm-dashboard/src/components/cloudzero_export_modal.integration.test.*"

@@ -1,0 +1,8 @@
+id: B033
+milestone: M3 providers
+title: Vertex AI embeddings, images, speech, transcription, video, realtime and rerank
+status: todo
+depends_on: [B010, B678, B1301, B1395, B1349, B1345, B1346, B1347, B1348, B1352, B1353, B1354, B1355, B1357, B1360, B1361, B1362, B1365, B1379, B1381, B1382, B006, B082, B083, B085, B1125, B998, B999, B1135, B1122, B1001, B1003, B1120, B1115, B1008, B1014, B901]
+file: tasks/B033-vertex-multimodal-provider.yaml
+covers:
+  - "litellm/llms/vertex_ai/text_to_speech/transformation.py"

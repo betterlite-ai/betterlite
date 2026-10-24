@@ -1,0 +1,8 @@
+id: B1115
+milestone: M5 API families
+title: Responses output detail conversion
+status: todo
+depends_on: [B004, B902, B1138, B171]
+file: tasks/B1115-responses-output-details.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

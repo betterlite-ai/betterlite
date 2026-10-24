@@ -1,0 +1,10 @@
+id: B735
+milestone: M4 keys, spend and management
+title: Batch identity and permission prefetch
+status: todo
+depends_on: [B002, B171, B700, B715, B732, B733, B856, B860]
+file: tasks/B735-auth-prefetch.yaml
+covers:
+  - "litellm/proxy/auth/auth_object_prefetch.py"
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"

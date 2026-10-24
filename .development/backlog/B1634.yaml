@@ -1,0 +1,8 @@
+id: B1634
+milestone: M4 keys, spend and management
+title: Resolve SCIM members without granting access to ambiguous accounts
+status: todo
+depends_on: [B171, B723, B724, B860, B1632, B1633]
+file: tasks/B1634-scim-member-identity.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"

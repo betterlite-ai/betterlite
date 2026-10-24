@@ -1,0 +1,8 @@
+id: B638
+milestone: M3 providers
+title: Bedrock image edit execution
+status: todo
+depends_on: [B635, B636, B637, B634, B591, B595, B590, B173, B682, B249, B2202, B171]
+file: tasks/B638-bedrock-other-image-edits.yaml
+covers:
+  - "litellm/llms/bedrock/image_edit/handler.py"

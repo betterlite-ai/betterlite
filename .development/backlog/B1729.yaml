@@ -1,0 +1,8 @@
+id: B1729
+milestone: M4 keys, spend and management
+title: Resolve authorized request bodies from logs and cold storage
+status: todo
+depends_on: [B002, B003, B052, B115, B171, B189, B204, B726, B732, B860, B1704, B1714]
+file: tasks/B1729-spend-log-payload.yaml
+covers:
+  - "litellm/proxy/spend_tracking/{spend_management_endpoints,cold_storage_handler}.py"

@@ -1,0 +1,8 @@
+id: B1737
+milestone: M4 keys, spend and management
+title: Decode Redis spend batches and park capped request logs
+status: todo
+depends_on: [B002, B012, B126, B171, B192, B204, B710, B1690, B1706, B1733, B1734]
+file: tasks/B1737-redis-spend-drain.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/redis_update_buffer.py"

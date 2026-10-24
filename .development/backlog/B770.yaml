@@ -1,0 +1,11 @@
+id: B770
+milestone: M4 keys, spend and management
+title: Key request fields and policy projections
+status: todo
+depends_on: [B003, B171, B199, B720, B732, B856, B1224]
+file: tasks/B770-key-fields.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/proxy/management_helpers/key_settings_audit.py"
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/proxy/_types.py"

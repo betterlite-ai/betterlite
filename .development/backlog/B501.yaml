@@ -1,0 +1,8 @@
+id: B501
+milestone: M3 providers
+title: OpenAI workload identity credentials
+status: todo
+depends_on: [B500, B173, B171, B002, B668, B129]
+file: tasks/B501-openai-workload-identity.yaml
+covers:
+  - "litellm/llms/openai/workload_identity.py"

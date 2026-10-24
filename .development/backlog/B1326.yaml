@@ -1,0 +1,9 @@
+id: B1326
+milestone: M3 providers
+title: Decode Gemini complete responses and served model metadata
+status: todo
+depends_on: [B1314, B1322, B171]
+file: tasks/B1326-gemini-response-envelope.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - "litellm/types/llms/vertex_ai.py"

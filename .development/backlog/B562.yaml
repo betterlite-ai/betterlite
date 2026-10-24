@@ -1,0 +1,9 @@
+id: B562
+milestone: M3 providers
+title: Foundry model-router metadata and selection
+status: todo
+depends_on: [B549, B550, B171, B565, B2200, B129, B2202, B2220, B2230]
+file: tasks/B562-foundry-model-router.yaml
+covers:
+  - "litellm/llms/azure_ai/common_utils.py"
+  - "litellm/llms/azure_ai/azure_model_router/transformation.py"

@@ -1,0 +1,8 @@
+id: B156
+milestone: M11 distribution
+title: LiteLLM's VS Code extension working against betterlite
+status: todo
+depends_on: [B081, B007]
+file: null
+covers:
+  - "vscode-extension/**"

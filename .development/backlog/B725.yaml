@@ -1,0 +1,12 @@
+id: B725
+milestone: M4 keys, spend and management
+title: Model, permissions, budget and config repositories
+status: todo
+depends_on: [B171, B700, B714, B720, B721, B856, B860]
+file: tasks/B725-resource-repository.yaml
+covers:
+  - "litellm/repositories/model_repository.py"
+  - "litellm/repositories/budget_repository.py"
+  - "litellm/repositories/object_permission_repository.py"
+  - "litellm/repositories/config_repository.py"
+  - "litellm/repositories/credentials_repository.py"

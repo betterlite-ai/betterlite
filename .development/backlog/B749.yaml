@@ -1,0 +1,8 @@
+id: B749
+milestone: M4 keys, spend and management
+title: Search and vector-store permission checks
+status: todo
+depends_on: [B001, B002, B003, B171, B700, B725, B732, B733, B735, B747, B856, B860]
+file: tasks/B749-auth-resource-grants.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"

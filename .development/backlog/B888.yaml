@@ -1,0 +1,9 @@
+id: B888
+milestone: M4 keys, spend and management
+title: Guardrail tool and token-inherited auth policy
+status: todo
+depends_on: [B001, B003, B732, B736, B737, B753, B856, B860, B879, B1217]
+file: tasks/B888-auth-policy-support.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"

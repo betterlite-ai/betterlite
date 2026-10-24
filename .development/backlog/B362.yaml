@@ -1,0 +1,9 @@
+id: B362
+milestone: M2 routing
+title: Tagged automatic-router registry and alias bindings
+status: todo
+depends_on: [B016, B327, B334, B338, B339, B321, B343, B360, B301, B400, B002]
+file: tasks/B362-pre-routing-registry.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"

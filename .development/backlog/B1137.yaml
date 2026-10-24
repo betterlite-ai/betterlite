@@ -1,0 +1,8 @@
+id: B1137
+milestone: M5 API families
+title: Request intake and safe snapshots
+status: todo
+depends_on: [B1100, B1104, B1105, B1109, B1102, B732, B171, B1087, B1106, B002, B004, B855, B1139, B1107, B1108]
+file: tasks/B1137-request-intake.yaml
+covers:
+  - "litellm/proxy/litellm_pre_call_utils.py"

@@ -1,0 +1,8 @@
+id: B1081
+milestone: M5 api families
+title: Vector file mutation routes
+status: todo
+depends_on: [B004, B1072, B1074, B1075, B1100, B732, B1061, B003]
+file: tasks/B1081-vector-file-mutation-routes.yaml
+covers:
+  - "litellm/proxy/vector_store_files_endpoints/endpoints.py"

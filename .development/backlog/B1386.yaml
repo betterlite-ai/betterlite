@@ -1,0 +1,8 @@
+id: B1386
+milestone: M3 providers
+title: Vertex Agent Engine query preparation and buffered answers
+status: todo
+depends_on: [B1301, B1302, B1305, B218, B196, B171]
+file: tasks/B1386-vertex-agent-engine-records.yaml
+covers:
+  - "litellm/llms/vertex_ai/agent_engine/transformation.py"

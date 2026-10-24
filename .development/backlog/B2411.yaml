@@ -1,0 +1,8 @@
+id: B2411
+milestone: M5 API families
+title: Responses input content and instruction conversion
+status: todo
+depends_on: [B004, B171]
+file: tasks/B2411-responses-input-content.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

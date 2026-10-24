@@ -1,0 +1,8 @@
+id: B870
+milestone: M4 keys, spend and management
+title: Resolve keys to principals through injected stores
+status: todo
+depends_on: [B001, B003, B700, B720, B722, B732, B733, B856, B860]
+file: tasks/B870-identity-store.yaml
+covers:
+  - "litellm/proxy/auth/resolvers/store.py"

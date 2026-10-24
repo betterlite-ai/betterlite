@@ -1,0 +1,8 @@
+id: B238
+milestone: M1 openai data plane
+title: Anthropic and Replicate error classifiers
+status: todo
+depends_on: [B184, B187, B236]
+file: tasks/B238-anthropic-replicate-errors.yaml
+covers:
+  - "litellm/litellm_core_utils/exception_mapping_utils.py"

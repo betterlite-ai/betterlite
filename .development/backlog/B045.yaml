@@ -1,0 +1,9 @@
+id: B045
+milestone: M3 providers
+title: Subscription-backed providers, ChatGPT and GitHub Copilot
+status: todo
+depends_on: [B024]
+file: null
+covers:
+  - "litellm/llms/{chatgpt,github_copilot}/**"
+  - "litellm/main.py"

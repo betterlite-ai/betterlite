@@ -1,0 +1,8 @@
+id: B1395
+milestone: M3 providers
+title: Vertex embedding alias resolution and native API selection
+status: todo
+depends_on: [B010, B678, B1301, B1341, B1344, B193, B002, B006]
+file: tasks/B1395-vertex-embedding-dispatch.yaml
+covers:
+  - "litellm/main.py"

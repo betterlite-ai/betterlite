@@ -1,0 +1,8 @@
+id: B812
+milestone: M4 keys, spend and management
+title: Team info, caller membership and block state
+status: todo
+depends_on: [B001, B003, B052, B171, B724, B732, B734, B748, B800, B801, B802, B803, B809, B856, B860, B865, B1208, B1209, B1231]
+file: tasks/B812-team-info.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

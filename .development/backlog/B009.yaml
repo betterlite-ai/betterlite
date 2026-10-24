@@ -1,0 +1,8 @@
+id: B009
+milestone: M1 openai data plane
+title: Outbound HTTP clients, proxies, TLS and connection reuse for every provider
+status: todo
+depends_on: [B004, B171, B172, B173]
+file: tasks/B009-http-boundaries.yaml
+covers:
+  - "litellm/litellm_core_utils/url_utils.py"

@@ -1,0 +1,10 @@
+id: B961
+milestone: M5 api families
+title: Messages native prepare
+status: todo
+depends_on: [B010, B171, B958, B960, B567, B571, B2221]
+file: tasks/B961-messages-native-prepare.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/transformation.py"
+  - "litellm/llms/base_llm/anthropic_messages/transformation.py"
+  - "litellm/llms/anthropic/pass_through/messages/mid_conversation_system.py"

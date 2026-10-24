@@ -1,0 +1,8 @@
+id: B1216
+milestone: M4 keys, spend and management
+title: Team query authorization and BYOK model visibility
+status: todo
+depends_on: [B725, B732, B737, B759, B800, B844, B856]
+file: tasks/B1216-model-team-scope.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"

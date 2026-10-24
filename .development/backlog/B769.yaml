@@ -1,0 +1,8 @@
+id: B769
+milestone: M4 keys, spend and management
+title: JWT login result HTML
+status: todo
+depends_on: [B003, B171, B856]
+file: tasks/B769-jwt-display.yaml
+covers:
+  - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"

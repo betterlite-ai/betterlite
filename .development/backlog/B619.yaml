@@ -1,0 +1,9 @@
+id: B619
+milestone: M3 providers
+title: Bedrock OpenAI Invoke and runtime request mapping
+status: todo
+depends_on: [B038, B503, B620, B590, B591, B595, B596, B668, B682, B688, B2201, B2203, B183, B171, B504, B2221]
+file: tasks/B619-bedrock-openai-invoke.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py"
+  - "litellm/llms/bedrock/chat/chat_completions/transformation.py"

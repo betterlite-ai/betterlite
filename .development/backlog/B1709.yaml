@@ -1,0 +1,10 @@
+id: B1709
+milestone: M4 keys, spend and management
+title: Receive collector lines and replay trusted callback payloads
+status: todo
+depends_on: [B003, B012, B051, B052, B124, B198, B247, B250, B251, B710, B711, B712, B732, B860, B1707, B1708]
+file: tasks/B1709-spend-ingress.yaml
+covers:
+  - "litellm/proxy/collector.py"
+  - "litellm/proxy/logging_endpoints/**"
+  - "litellm/types/proxy/callback_logs_endpoints.py"

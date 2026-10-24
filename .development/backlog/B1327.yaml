@@ -1,0 +1,8 @@
+id: B1327
+milestone: M3 providers
+title: Select Gemini complete and streaming execution paths
+status: todo
+depends_on: [B1302, B1304, B1321, B1316, B1326]
+file: tasks/B1327-gemini-call-selection.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"

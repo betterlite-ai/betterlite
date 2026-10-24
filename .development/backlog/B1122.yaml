@@ -1,0 +1,8 @@
+id: B1122
+milestone: M5 API families
+title: Transcription provider contract
+status: todo
+depends_on: [B010, B2202, B171]
+file: tasks/B1122-transcription-contract.yaml
+covers:
+  - "litellm/llms/base_llm/audio_transcription/transformation.py"

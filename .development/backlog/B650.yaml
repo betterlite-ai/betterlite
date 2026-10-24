@@ -1,0 +1,10 @@
+id: B650
+milestone: M3 providers
+title: Bedrock batch status and result metadata
+status: todo
+depends_on: [B643, B171, B596, B595, B198, B682, B004]
+file: tasks/B650-bedrock-services-batch-status.yaml
+covers:
+  - "litellm/llms/bedrock/batches/transformation.py"
+  - "litellm/llms/bedrock/batches/handler.py"
+  - "litellm/llms/bedrock/common_utils.py"

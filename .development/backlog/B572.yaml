@@ -1,0 +1,9 @@
+id: B572
+milestone: M3 providers
+title: Anthropic web-search replay flattening
+status: todo
+depends_on: [B171, B180]
+file: tasks/B572-anthropic-web-replay.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"
+  - "litellm/llms/anthropic/chat/transformation.py"

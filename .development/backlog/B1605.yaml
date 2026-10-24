@@ -1,0 +1,9 @@
+id: B1605
+milestone: M4 keys, spend and management
+title: Tool records, owner enrichment and policy override views
+status: todo
+depends_on: [B171, B722, B723, B725, B726, B860]
+file: tasks/B1605-tool-records.yaml
+covers:
+  - "litellm/types/tool_management.py"
+  - "litellm/proxy/db/tool_registry_writer.py"

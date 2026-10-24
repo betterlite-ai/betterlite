@@ -36,8 +36,10 @@ pub(crate) enum GateError {
     NotUnicode(&'static str),
     #[error("no base commit: set GATE_BASE or create a main branch")]
     NoBase,
-    #[error("{0} is not in .development/backlog.yaml")]
+    #[error("{0} is not in .development/backlog/")]
     UnknownTask(String),
+    #[error("the backlog is not valid: {0}")]
+    Backlog(String),
     #[error("{0} has no task file yet")]
     NoTaskFile(String),
     #[error("{0} is not an optional check in .development/checks.yaml")]

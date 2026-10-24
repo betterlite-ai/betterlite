@@ -1,0 +1,10 @@
+id: B535
+milestone: M3 providers
+title: Azure image HTTP execution and operation polling
+status: todo
+depends_on: [B173, B171, B002, B009, B673]
+file: tasks/B535-azure-image-transport.yaml
+covers:
+  - "litellm/llms/azure/azure.py"
+  - "litellm/llms/azure/image_generation/http_utils.py"
+  - "litellm/utils.py"

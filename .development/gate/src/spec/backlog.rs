@@ -1,18 +1,17 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(
-    title = "betterlite backlog",
-    description = "Every task, its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it."
-)]
+#[derive(Debug)]
 pub(crate) struct Backlog {
     pub(crate) tasks: Vec<BacklogEntry>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    title = "betterlite backlog entry",
+    description = "One task in .development/backlog/<id>.yaml: its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it."
+)]
 pub(crate) struct BacklogEntry {
     #[schemars(regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"))]
     pub(crate) id: String,

@@ -1,0 +1,9 @@
+id: B1345
+milestone: M3 providers
+title: Vertex Gemini image generation and image credential fallback
+status: todo
+depends_on: [B1301, B1302, B1305, B1334, B997, B171]
+file: tasks/B1345-vertex-gemini-images.yaml
+covers:
+  - "litellm/llms/vertex_ai/image_generation/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+  - "litellm/llms/vertex_ai/image_edit/{vertex_gemini_transformation,vertex_imagen_transformation}.py"

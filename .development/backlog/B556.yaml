@@ -1,0 +1,8 @@
+id: B556
+milestone: M3 providers
+title: Foundry rerank requests
+status: todo
+depends_on: [B549, B173, B171, B037, B668, B129]
+file: tasks/B556-foundry-rerank.yaml
+covers:
+  - "litellm/llms/azure_ai/rerank/transformation.py"

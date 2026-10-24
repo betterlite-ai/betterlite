@@ -1,0 +1,8 @@
+id: B722
+milestone: M4 keys, spend and management
+title: Verification token repository and archived keys
+status: todo
+depends_on: [B171, B700, B714, B720, B856, B860]
+file: tasks/B722-key-repository.yaml
+covers:
+  - "litellm/repositories/verification_token_repository.py"

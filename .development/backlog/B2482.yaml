@@ -1,0 +1,8 @@
+id: B2482
+milestone: M5 API families
+title: Attached-file HTTP update and deletion
+status: todo
+depends_on: [B173, B1071, B527, B012, B2402, B2401]
+file: tasks/B2482-vector-file-http-write.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

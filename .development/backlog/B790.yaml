@@ -1,0 +1,11 @@
+id: B790
+milestone: M4 keys, spend and management
+title: User mutation fields and role scope
+status: todo
+depends_on: [B001, B002, B003, B052, B171, B723, B724, B732, B736, B786, B808, B828, B856, B860, B1226]
+file: tasks/B790-user-fields.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
+  - "litellm/proxy/management/users/__init__.py"
+  - "litellm/proxy/management/users/service.py"
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"

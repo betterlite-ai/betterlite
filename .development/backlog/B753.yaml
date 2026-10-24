@@ -1,0 +1,8 @@
+id: B753
+milestone: M4 keys, spend and management
+title: Per-model auth budget checks and fallback selection
+status: todo
+depends_on: [B001, B002, B003, B171, B715, B732, B736, B746, B747, B748, B751, B856, B860, B886]
+file: tasks/B753-auth-model-budgets.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

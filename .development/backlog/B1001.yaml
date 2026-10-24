@@ -1,0 +1,9 @@
+id: B1001
+milestone: M5 api families
+title: Audio file input
+status: todo
+depends_on: [B171, B1087, B1128]
+file: tasks/B1001-audio-file-input.yaml
+covers:
+  - "litellm/litellm_core_utils/audio_utils/utils.py"
+  - "litellm/litellm_core_utils/audio_utils/audio_health_check.wav"

@@ -1,0 +1,9 @@
+id: B930
+milestone: M5 api families
+title: Responses affinity
+status: todo
+depends_on: [B171, B844, B061, B903, B904, B220]
+file: tasks/B930-responses-affinity.yaml
+covers:
+  - "litellm/router_utils/pre_call_checks/responses_api_deployment_check.py"
+  - "litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py"

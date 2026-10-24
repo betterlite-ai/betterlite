@@ -1,0 +1,8 @@
+id: B892
+milestone: M4 keys, spend and management
+title: Key route and budget delegation ceilings
+status: todo
+depends_on: [B732, B742, B770, B800, B856]
+file: tasks/B892-key-delegation.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"

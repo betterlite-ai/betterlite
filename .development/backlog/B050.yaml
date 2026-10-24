@@ -1,0 +1,10 @@
+id: B050
+milestone: M3 providers
+title: Agent platform providers
+status: todo
+depends_on: [B142, B2210]
+file: null
+covers:
+  - "litellm/llms/{a2a,langflow,langgraph,manus}/**"
+  - "litellm/types/llms/langgraph.py"
+  - "litellm/main.py"

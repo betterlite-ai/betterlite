@@ -1,0 +1,9 @@
+id: B577
+milestone: M3 providers
+title: Anthropic chat request assembly
+status: todo
+depends_on: [B576, B573, B571, B180, B221, B183, B171, B575, B568, B569, B2201, B2202, B688, B174, B206, B567, B2221]
+file: tasks/B577-anthropic-request.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"

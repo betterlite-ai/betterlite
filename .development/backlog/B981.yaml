@@ -1,0 +1,8 @@
+id: B981
+milestone: M5 api families
+title: Messages agentic stream
+status: todo
+depends_on: [B171, B978, B979, B1087]
+file: tasks/B981-messages-agentic-stream.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py"

@@ -1,0 +1,13 @@
+id: B858
+milestone: M4 keys, spend and management
+title: Typed managed-resource and analytics rows
+status: todo
+depends_on: [B171, B700, B710, B856, B860]
+file: tasks/B858-managed-resource-rows.yaml
+covers:
+  - "litellm/models/autorouter_session.py"
+  - "litellm/models/managed_files.py"
+  - "litellm/models/mcp_server.py"
+  - "litellm/models/skills.py"
+  - "litellm/models/spend_logs.py"
+  - "litellm/models/tag.py"

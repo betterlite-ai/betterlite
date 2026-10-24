@@ -1,0 +1,9 @@
+id: B162
+milestone: M12 python
+title: Python Router class
+status: todo
+depends_on: [B158, B016]
+file: null
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"

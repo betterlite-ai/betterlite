@@ -1,0 +1,8 @@
+id: B561
+milestone: M3 providers
+title: Foundry agent replies and SSE events
+status: todo
+depends_on: [B559, B005, B196, B171, B173, B2202]
+file: tasks/B561-foundry-agent-results.yaml
+covers:
+  - "litellm/llms/azure_ai/agents/handler.py"

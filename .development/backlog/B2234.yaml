@@ -1,0 +1,8 @@
+id: B2234
+milestone: M3 providers
+title: Stream text thinking and audio assembly
+status: todo
+depends_on: [B004, B171]
+file: tasks/B2234-stream-content-assembly.yaml
+covers:
+  - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"

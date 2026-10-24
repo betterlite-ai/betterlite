@@ -1,0 +1,8 @@
+id: B877
+milestone: M4 keys, spend and management
+title: Authorize JWT team selection and database fallback
+status: todo
+depends_on: [B001, B002, B003, B732, B736, B737, B742, B763, B764, B765, B856, B860, B869, B883, B891]
+file: tasks/B877-jwt-team-authorization.yaml
+covers:
+  - "litellm/proxy/auth/handle_jwt.py"

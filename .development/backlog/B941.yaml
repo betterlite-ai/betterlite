@@ -1,0 +1,8 @@
+id: B941
+milestone: M5 api families
+title: Responses ws auth
+status: todo
+depends_on: [B003, B171, B901, B943, B945, B1087, B754, B748, B756, B732, B855, B1139, B856, B002, B014, B124]
+file: tasks/B941-responses-ws-auth.yaml
+covers:
+  - "litellm/proxy/response_api_endpoints/endpoints.py"

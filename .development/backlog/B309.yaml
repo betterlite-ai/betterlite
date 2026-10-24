@@ -1,0 +1,8 @@
+id: B309
+milestone: M2 routing
+title: Resolve fallback chains and attempt identities
+status: todo
+depends_on: [B013, B011, B301, B399, B002]
+file: tasks/B309-fallback-plans.yaml
+covers:
+  - "litellm/router_utils/fallback_event_handlers.py"

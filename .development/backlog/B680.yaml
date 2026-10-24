@@ -1,0 +1,10 @@
+id: B680
+milestone: M3 providers
+title: Bedrock agent and Claude Platform composition
+status: todo
+depends_on: [B678, B652, B653, B654, B655, B656, B171, B2209]
+file: tasks/B680-bedrock-agent-dispatch.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
+  - "litellm/llms/bedrock/chat/agentcore/transformation.py"
+  - "litellm/llms/bedrock/claude_platform/common_utils.py"

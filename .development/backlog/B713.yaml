@@ -1,0 +1,9 @@
+id: B713
+milestone: M4 keys, spend and management
+title: Drain and replace native Postgres pool generations
+status: todo
+depends_on: [B171, B700, B856, B860]
+file: tasks/B713-database-refresh.yaml
+covers:
+  - "litellm/proxy/db/prisma_client.py"
+  - "litellm/proxy/db/query_engine_reaper.py"

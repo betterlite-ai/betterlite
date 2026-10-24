@@ -1,0 +1,10 @@
+id: B021
+milestone: M2 routing
+title: Compose automatic routing and its policy boundaries
+status: todo
+depends_on: [B016, B362, B366, B327, B338, B339, B080, B081, B012, B301]
+file: tasks/B021-automatic-router-pipeline.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/router_strategy/complexity_router/complexity_router.py"
+  - "litellm/litellm_core_utils/classifier_logging.py"

@@ -1,0 +1,8 @@
+id: B002
+milestone: M0 foundation
+title: Load LiteLLM config.yaml into typed config
+status: done
+depends_on: [B000]
+file: tasks/B002-config.yaml
+covers:
+  - "litellm/proxy/example_config_yaml/**"

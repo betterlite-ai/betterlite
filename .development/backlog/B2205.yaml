@@ -1,0 +1,8 @@
+id: B2205
+milestone: M3 providers
+title: Bedrock Invoke shared request primitives
+status: todo
+depends_on: [B590, B591, B595, B596, B682, B177, B182, B214, B2202, B171]
+file: tasks/B2205-bedrock-invoke-primitives.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"

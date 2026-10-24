@@ -1,0 +1,8 @@
+id: B640
+milestone: M3 providers
+title: Bedrock native count-token shapes
+status: todo
+depends_on: [B591, B171, B2203]
+file: tasks/B640-bedrock-other-count-tokens.yaml
+covers:
+  - "litellm/llms/bedrock/count_tokens/transformation.py"

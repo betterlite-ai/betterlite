@@ -1,0 +1,9 @@
+id: B549
+milestone: M3 providers
+title: Foundry endpoint and authentication settings
+status: todo
+depends_on: [B529, B530, B531, B002, B171, B173, B004, B502, B673, B675, B129, B2220]
+file: tasks/B549-foundry-credentials.yaml
+covers:
+  - "litellm/llms/azure_ai/common_utils.py"
+  - "litellm/types/llms/azure_ai.py"

@@ -1,0 +1,8 @@
+id: B2450
+milestone: M5 API families
+title: Image generation HTTP execution
+status: todo
+depends_on: [B997, B173, B2402, B206, B012, B2401]
+file: tasks/B2450-image-generation-http.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

@@ -1,0 +1,8 @@
+id: B314
+milestone: M2 routing
+title: Least-busy selection and in-flight accounting
+status: todo
+depends_on: [B016, B304, B301, B002]
+file: tasks/B314-least-busy.yaml
+covers:
+  - "litellm/router_strategy/least_busy.py"

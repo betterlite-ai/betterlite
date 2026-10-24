@@ -1,0 +1,8 @@
+id: B1116
+milestone: M5 API families
+title: Responses delete and cancel calls
+status: todo
+depends_on: [B010, B185, B186, B903, B198, B247, B157, B2417, B2401]
+file: tasks/B1116-responses-lifecycle-write.yaml
+covers:
+  - "litellm/responses/main.py"

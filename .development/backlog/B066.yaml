@@ -1,0 +1,10 @@
+id: B066
+milestone: M4 keys, spend and management
+title: Assemble settings routes and publish dashboard banners and callback metadata
+status: todo
+depends_on: [B003, B052, B065, B075, B124, B189, B726, B860, B1630, B1647, B1648, B1650, B1651, B1653, B1654, B1655, B1657, B1658, B1660, B1661, B1662, B1663]
+file: tasks/B066-settings-api.yaml
+covers:
+  - "litellm/proxy/management_endpoints/{callback_management_endpoints,common_utils}.py"
+  - "litellm/types/management_endpoints/__init__.py"
+  - "litellm/proxy/ui_crud_endpoints/{__init__,proxy_setting_endpoints,user_banner_endpoints}.py"

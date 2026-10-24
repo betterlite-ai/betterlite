@@ -1,0 +1,17 @@
+id: B732
+milestone: M4 keys, spend and management
+title: Typed authentication principals and grant resolution
+status: todo
+depends_on: [B171, B700, B720, B856, B859]
+file: tasks/B732-auth-identity.yaml
+covers:
+  - "litellm/proxy/auth/auth_method.py"
+  - "litellm/proxy/auth/roles.py"
+  - "litellm/proxy/auth/resolvers/models.py"
+  - "litellm/proxy/auth/resolvers/exceptions.py"
+  - "litellm/proxy/auth/resolvers/grants.py"
+  - "litellm/proxy/auth/resolvers/store.py"
+  - "litellm/proxy/auth/resolvers/__init__.py"
+  - "litellm/proxy/auth/team_grants.py"
+  - "litellm/types/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/auth_checks.py"

@@ -1,0 +1,8 @@
+id: B180
+milestone: M1 openai data plane
+title: Anthropic prompt and tool conversion helpers
+status: todo
+depends_on: [B178, B179, B183, B222, B223, B224, B225, B226]
+file: tasks/B180-anthropic-prompts.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

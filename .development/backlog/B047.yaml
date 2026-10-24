@@ -1,0 +1,8 @@
+id: B047
+milestone: M3 providers
+title: Speech and transcription providers
+status: todo
+depends_on: [B083]
+file: null
+covers:
+  - "litellm/llms/{elevenlabs,deepgram,aws_polly,nvidia_riva,soniox}/**"

@@ -1,0 +1,9 @@
+id: B322
+milestone: M2 routing
+title: Team-scoped deployment access and reserved windows
+status: todo
+depends_on: [B016, B302, B052, B301, B002]
+file: tasks/B322-access-windows.yaml
+covers:
+  - "litellm/router_utils/access_windows.py"
+  - "litellm/router_utils/common_utils.py"

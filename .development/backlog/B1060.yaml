@@ -1,0 +1,8 @@
+id: B1060
+milestone: M5 api families
+title: Vector store access
+status: todo
+depends_on: [B171, B1087, B137, B732, B735, B737, B1131]
+file: tasks/B1060-vector-store-access.yaml
+covers:
+  - "litellm/proxy/vector_store_endpoints/utils.py"

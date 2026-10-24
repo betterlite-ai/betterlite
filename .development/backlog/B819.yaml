@@ -1,0 +1,9 @@
+id: B819
+milestone: M4 keys, spend and management
+title: Reconcile access-group key and team membership
+status: todo
+depends_on: [B003, B171, B700, B714, B722, B724, B732, B734, B856, B860]
+file: tasks/B819-access-group-sync.yaml
+covers:
+  - "litellm/proxy/management_helpers/access_group_key_sync.py"
+  - "litellm/proxy/management_helpers/access_group_team_sync.py"

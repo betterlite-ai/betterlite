@@ -1,0 +1,8 @@
+id: B875
+milestone: M4 keys, spend and management
+title: Dispatch JWT and OAuth authentication stages
+status: todo
+depends_on: [B001, B002, B003, B732, B736, B738, B741, B742, B750, B753, B754, B755, B756, B855, B856, B860, B870, B871, B879, B881, B882]
+file: tasks/B875-auth-backend-dispatch.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

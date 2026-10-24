@@ -1,0 +1,32 @@
+id: B705
+milestone: M4 keys, spend and management
+title: Postgres migrations for identity history
+status: todo
+depends_on: [B171, B700, B704, B856, B860]
+file: tasks/B705-schema-identity-history.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251220144550_schema_update/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260102131258_add_metadata_urls_to_mcp_servers/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260105151539_add_allow_all_keys_to_mcp_servers/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260106155622_add_endpoint_to_daily_activity_tables/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260107111013_add_router_settings_to_keys_teams/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260108_add_user_email_lower_idx/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260116142756_update_deleted_keys_teams_table_routing_settings/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260123131407_add_policy_tables_and_policies_field/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260131150814_add_team_user_to_vector_stores/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260203120000_add_deprecated_verification_token_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260205091235_allow_team_guardrail_config/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260205144610_add_soft_budget_to_team_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260207093506_add_available_on_public_internet_to_mcp_servers/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260207110613_add_soft_budget_to_deleted_teams_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260209085821_add_verificationtoken_indexes/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260212103349_adjust_tags_policy_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260212143306_add_access_group_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260213105436_add_managed_vector_store_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260213170952_access_group_change_to_model_name/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260214094754_schema_sync/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260214163027_add_pipeline_to_policy_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260214185341_object_permissions_for_end_users/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260218231534_add_last_active_to_key_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260219105005_add_project_id_to_deleted_keys/migration.sql"

@@ -1,0 +1,10 @@
+id: B016
+milestone: M2 routing
+title: Router call pipeline and response metadata
+status: todo
+depends_on: [B008, B302, B303, B364, B014, B011, B301, B395, B396, B002, B2202]
+file: tasks/B016-router-core.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"
+  - "litellm/router_utils/{common_utils,handle_error,response_headers,add_retry_fallback_headers}.py"

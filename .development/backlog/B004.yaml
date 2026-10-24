@@ -1,0 +1,15 @@
+id: B004
+milestone: M1 openai data plane
+title: OpenAI chat completions without streaming
+status: todo
+depends_on: [B003, B668]
+file: tasks/B004-openai-chat.yaml
+covers:
+  - "litellm/chat_completions/**"
+  - "litellm/proxy/{route_llm_request,common_request_processing}.py"
+  - "litellm/llms/openai/{openai,common_utils}.py"
+  - "litellm/llms/openai/chat/**"
+  - "litellm/litellm_core_utils/llm_response_utils/**"
+  - "litellm/litellm_core_utils/{response_header_helpers,model_response_utils}.py"
+  - "litellm/types/llms/openai.py"
+  - "litellm/llms/openai/openai.py"

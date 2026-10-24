@@ -1,0 +1,8 @@
+id: B1632
+milestone: M4 keys, spend and management
+title: Decode SCIM resources and preserve directory attribute shapes
+status: todo
+depends_on: [B003, B171]
+file: tasks/B1632-scim-records.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/scim_v2.py"

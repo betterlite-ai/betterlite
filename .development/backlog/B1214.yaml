@@ -1,0 +1,8 @@
+id: B1214
+milestone: M4 keys, spend and management
+title: Model block and unblock persistence
+status: todo
+depends_on: [B001, B003, B052, B061, B368, B725, B732, B734, B832, B841, B856, B860, B1213]
+file: tasks/B1214-model-block.yaml
+covers:
+  - "litellm/proxy/management_endpoints/model_management_endpoints.py"

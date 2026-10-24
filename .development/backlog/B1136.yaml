@@ -1,0 +1,8 @@
+id: B1136
+milestone: M5 API families
+title: Responses chat content projection
+status: todo
+depends_on: [B004, B902, B171]
+file: tasks/B1136-response-chat-content.yaml
+covers:
+  - "litellm/completion_extras/litellm_responses_transformation/transformation.py"

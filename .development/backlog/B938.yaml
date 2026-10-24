@@ -1,0 +1,8 @@
+id: B938
+milestone: M5 api families
+title: Responses read routes
+status: todo
+depends_on: [B003, B004, B929, B933, B935, B1087, B1116, B1100, B1139, B732, B855, B756, B856]
+file: tasks/B938-responses-read-routes.yaml
+covers:
+  - "litellm/proxy/response_api_endpoints/endpoints.py"

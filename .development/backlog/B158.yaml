@@ -1,0 +1,11 @@
+id: B158
+milestone: M12 python
+title: Python completion and acompletion, streaming iterators and response objects
+status: todo
+depends_on: [B157, B005]
+file: null
+covers:
+  - "litellm/main.py"
+  - "litellm/chat_completions/**"
+  - "litellm/types/{utils,completion}.py"
+  - "litellm/litellm_core_utils/streaming_handler.py"

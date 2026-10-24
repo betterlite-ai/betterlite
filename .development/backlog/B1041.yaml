@@ -1,0 +1,8 @@
+id: B1041
+milestone: M5 api families
+title: Batch managed records
+status: todo
+depends_on: [B171, B1019, B1035, B1087, B726, B858, B002]
+file: tasks/B1041-batch-managed-records.yaml
+covers:
+  - "litellm/proxy/openai_files_endpoints/common_utils.py"

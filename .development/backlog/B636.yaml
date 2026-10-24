@@ -1,0 +1,8 @@
+id: B636
+milestone: M3 providers
+title: Bedrock Nova Canvas edit results
+status: todo
+depends_on: [B635, B004, B171, B068]
+file: tasks/B636-bedrock-other-canvas-results.yaml
+covers:
+  - "litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py"

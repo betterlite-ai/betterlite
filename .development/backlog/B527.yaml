@@ -1,0 +1,9 @@
+id: B527
+milestone: M3 providers
+title: OpenAI vector stores and attached files
+status: todo
+depends_on: [B500, B173, B171, B668]
+file: tasks/B527-openai-vector-stores.yaml
+covers:
+  - "litellm/llms/openai/vector_stores/transformation.py"
+  - "litellm/llms/openai/vector_store_files/transformation.py"

@@ -1,0 +1,10 @@
+id: B037
+milestone: M3 providers
+title: Cohere, Voyage, Jina and Infinity
+status: todo
+depends_on: [B010, B011, B182, B186, B183, B2230]
+file: null
+covers:
+  - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
+  - "litellm/types/llms/{cohere,rerank}.py"
+  - "litellm/main.py"

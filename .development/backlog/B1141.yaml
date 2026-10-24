@@ -1,0 +1,9 @@
+id: B1141
+milestone: M5 API families
+title: Fine tuning cancel call and settings
+status: todo
+depends_on: [B010, B011, B012, B171, B518, B542, B2487, B002, B2401]
+file: tasks/B1141-fine-tuning-cancel-call.yaml
+covers:
+  - "litellm/fine_tuning/main.py"
+  - "litellm/proxy/fine_tuning_endpoints/endpoints.py"

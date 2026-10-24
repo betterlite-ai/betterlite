@@ -1,0 +1,9 @@
+id: B1747
+milestone: M4 keys, spend and management
+title: Flush memory queues and finish owned spend work during shutdown
+status: todo
+depends_on: [B002, B198, B700, B860, B1606, B1690, B1699, B1708, B1733, B1734, B1735, B1744, B1745, B1746, B1749]
+file: tasks/B1747-spend-flush-lifecycle.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/utils.py"

@@ -1,0 +1,9 @@
+id: B610
+milestone: M3 providers
+title: Bedrock Converse transport
+status: todo
+depends_on: [B604, B607, B594, B591, B595, B173, B171, B590, B691, B960, B2203, B176, B190, B005, B682, B206, B249, B600]
+file: tasks/B610-bedrock-converse-call.yaml
+covers:
+  - "litellm/llms/bedrock/chat/converse_handler.py"
+  - "litellm/llms/bedrock/chat/invoke_handler.py"

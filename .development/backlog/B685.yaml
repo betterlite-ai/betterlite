@@ -1,0 +1,8 @@
+id: B685
+milestone: M3 providers
+title: Azure chat streaming adapters
+status: todo
+depends_on: [B531, B005, B171, B505, B529, B530, B2200, B673, B249, B187, B159]
+file: tasks/B685-azure-stream-errors.yaml
+covers:
+  - "litellm/llms/azure/azure.py"

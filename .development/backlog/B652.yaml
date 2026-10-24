@@ -1,0 +1,9 @@
+id: B652
+milestone: M3 providers
+title: Bedrock InvokeAgent requests and trace replies
+status: todo
+depends_on: [B591, B595, B171, B590, B682, B2202, B218, B2209, B002]
+file: tasks/B652-bedrock-services-invoke-agent.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
+  - "litellm/types/llms/bedrock_invoke_agents.py"

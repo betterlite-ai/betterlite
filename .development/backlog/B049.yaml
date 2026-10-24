@@ -1,0 +1,9 @@
+id: B049
+milestone: M3 providers
+title: Vector store, RAG and OCR providers
+status: todo
+depends_on: [B090, B092]
+file: null
+covers:
+  - "litellm/llms/{milvus,mongodb,pg_vector,s3_vectors,valkey,ragflow,reducto}/**"
+  - "litellm/main.py"

@@ -1,0 +1,9 @@
+id: B882
+milestone: M4 keys, spend and management
+title: Route template wildcard and allowlist matching
+status: todo
+depends_on: [B001, B003, B207, B732, B856, B860, B866, B867, B868]
+file: tasks/B882-route-match.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/route_checks.py"

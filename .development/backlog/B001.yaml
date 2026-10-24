@@ -1,0 +1,7 @@
+id: B001
+milestone: M0 foundation
+title: Oracle harness against the pinned LiteLLM
+status: done
+depends_on: [B000]
+file: tasks/B001-oracle.yaml
+covers: []

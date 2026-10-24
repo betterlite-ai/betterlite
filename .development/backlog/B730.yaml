@@ -1,0 +1,8 @@
+id: B730
+milestone: M4 keys, spend and management
+title: Transactional master-key ciphertext migration
+status: todo
+depends_on: [B002, B171, B700, B714, B856, B860]
+file: tasks/B730-database-reencryption.yaml
+covers:
+  - "litellm/proxy/db/master_key_migration.py"

@@ -1,0 +1,8 @@
+id: B932
+milestone: M5 api families
+title: Responses asynchronous create entry point
+status: todo
+depends_on: [B1078, B905, B931, B117, B174, B904, B185, B186, B2401]
+file: tasks/B932-responses-create-call.yaml
+covers:
+  - "litellm/responses/main.py"

@@ -1,0 +1,9 @@
+id: B1307
+milestone: M3 providers
+title: Vertex structured-output schema shaping
+status: todo
+depends_on: [B217, B1301, B171]
+file: tasks/B1307-vertex-schema-shaping.yaml
+covers:
+  - "litellm/llms/vertex_ai/common_utils.py"
+  - "litellm/types/llms/vertex_ai.py"

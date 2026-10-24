@@ -1,0 +1,8 @@
+id: B2484
+milestone: M5 API families
+title: Execute HTTP and direct vector searches
+status: todo
+depends_on: [B173, B1058, B1059, B527, B595, B012, B2402, B2401]
+file: tasks/B2484-vector-search-execution.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

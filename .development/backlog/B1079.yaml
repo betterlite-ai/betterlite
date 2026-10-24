@@ -1,0 +1,8 @@
+id: B1079
+milestone: M5 api families
+title: Complete rerank SDK dispatch
+status: todo
+depends_on: [B002, B010, B011, B012, B037, B041, B042, B157, B174, B556, B639, B1013, B2401, B2454]
+file: tasks/B1079-rerank-provider-plan.yaml
+covers:
+  - "litellm/rerank_api/main.py"

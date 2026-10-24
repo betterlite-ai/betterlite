@@ -1,0 +1,8 @@
+id: B975
+milestone: M5 api families
+title: Messages stream split
+status: todo
+depends_on: [B005, B171, B958, B963]
+file: tasks/B975-messages-stream-split.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"

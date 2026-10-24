@@ -1,0 +1,9 @@
+id: B183
+milestone: M1 openai data plane
+title: Bounded inline media conversion
+status: todo
+depends_on: [B179, B009, B234, B235]
+file: tasks/B183-inline-media.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/image_handling.py"
+  - "litellm/utils.py"

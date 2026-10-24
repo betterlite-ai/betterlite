@@ -1,0 +1,8 @@
+id: B376
+milestone: M2 routing
+title: Adaptive feedback signal detectors
+status: todo
+depends_on: [B010, B388, B301]
+file: tasks/B376-feedback-signals.yaml
+covers:
+  - "litellm/router_strategy/adaptive_router/signals.py"

@@ -1,0 +1,8 @@
+id: B654
+milestone: M3 providers
+title: Bedrock AgentCore JSON and SSE replies
+status: todo
+depends_on: [B171, B196, B2210, B682, B004]
+file: tasks/B654-bedrock-services-agentcore-response.yaml
+covers:
+  - "litellm/llms/bedrock/chat/agentcore/transformation.py"

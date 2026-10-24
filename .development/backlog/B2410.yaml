@@ -1,0 +1,9 @@
+id: B2410
+milestone: M5 API families
+title: Codex history normalization and additional tools
+status: todo
+depends_on: [B004, B171]
+file: tasks/B2410-codex-history-tools.yaml
+covers:
+  - "litellm/llms/base_llm/responses/codex_compat.py"
+  - "litellm/responses/additional_tools.py"

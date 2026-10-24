@@ -1,0 +1,8 @@
+id: B335
+milestone: M2 routing
+title: Complexity session pins and user-turn lifecycle
+status: todo
+depends_on: [B334, B359, B372, B330, B012, B301, B002]
+file: tasks/B335-complexity-sessions.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/complexity_router.py"

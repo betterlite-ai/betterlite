@@ -1,0 +1,8 @@
+id: B1207
+milestone: M4 keys, spend and management
+title: Delete one team member and associated keys
+status: todo
+depends_on: [B001, B003, B052, B724, B732, B734, B738, B777, B784, B800, B802, B807, B856, B860, B865, B878, B1231]
+file: tasks/B1207-team-member-delete.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

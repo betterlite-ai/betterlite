@@ -1,0 +1,8 @@
+id: B1705
+milestone: M4 keys, spend and management
+title: List visible spend-log users from a bounded recent-row scan
+status: todo
+depends_on: [B003, B052, B726, B732, B860, B1665, B1701, B1704]
+file: tasks/B1705-management-spend-facets.yaml
+covers:
+  - "litellm/proxy/management_endpoints/management_v1/spend_logs.py"

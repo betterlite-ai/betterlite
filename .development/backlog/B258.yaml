@@ -1,0 +1,8 @@
+id: B258
+milestone: M1 openai data plane
+title: Image token headers and geometry
+status: todo
+depends_on: [B183, B195, B171]
+file: tasks/B258-image-token-geometry.yaml
+covers:
+  - "litellm/litellm_core_utils/token_counter.py"

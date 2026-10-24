@@ -1,0 +1,13 @@
+id: B149
+milestone: M10 admin ui
+title: Admin UI pages for MCP servers, agents, skills, search tools, vector stores, memory, workflows and prompts working against betterlite
+status: todo
+depends_on: [B144, B139, B141]
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/mcp/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/{mcp-servers,agents,skills,search-tools,vector-stores,memory,workflows,prompts}/**"
+  - "ui/litellm-dashboard/src/components/{mcp_server_management,mcp_tools,agent_management,agents,search_tools,skills,vector_store_management}/**"
+  - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.*"
+  - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.test.*"
+  - "ui/litellm-dashboard/src/hooks/{mcpOAuthUtils,useMcpOAuthFlow,useMcpOAuthFlow.test,useTestMCPConnection,useToolsOAuthFlow,useToolsOAuthFlow.test,useUserMcpOAuthFlow}.*"

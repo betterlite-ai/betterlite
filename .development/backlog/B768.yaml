@@ -1,0 +1,9 @@
+id: B768
+milestone: M4 keys, spend and management
+title: OAuth2 introspection and trusted proxy identity
+status: todo
+depends_on: [B001, B002, B003, B171, B173, B732, B733, B743, B856, B860, B869]
+file: tasks/B768-oauth-tokens.yaml
+covers:
+  - "litellm/proxy/auth/oauth2_check.py"
+  - "litellm/proxy/auth/oauth2_proxy_hook.py"

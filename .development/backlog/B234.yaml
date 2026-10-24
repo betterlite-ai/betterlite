@@ -1,0 +1,8 @@
+id: B234
+milestone: M1 openai data plane
+title: Supplied model-file and vector-ID mappings
+status: todo
+depends_on: [B179, B171]
+file: tasks/B234-model-file-ids.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"

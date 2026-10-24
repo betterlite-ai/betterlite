@@ -1,0 +1,8 @@
+id: B185
+milestone: M1 openai data plane
+title: OpenAI-family error mapping
+status: todo
+depends_on: [B184, B187, B005, B236, B237, B245]
+file: tasks/B185-openai-errors.yaml
+covers:
+  - "litellm/litellm_core_utils/exception_mapping_utils.py"

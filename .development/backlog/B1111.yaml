@@ -1,0 +1,8 @@
+id: B1111
+milestone: M5 API families
+title: Vector file provider selection
+status: todo
+depends_on: [B1062, B171]
+file: tasks/B1111-vector-file-provider.yaml
+covers:
+  - "litellm/vector_store_files/main.py"

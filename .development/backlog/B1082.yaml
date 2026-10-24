@@ -1,0 +1,9 @@
+id: B1082
+milestone: M5 api families
+title: Transcription call
+status: todo
+depends_on: [B010, B174, B175, B176, B157, B011, B012, B1001, B1122, B515, B539, B2453, B002, B2401]
+file: tasks/B1082-transcription-call.yaml
+covers:
+  - "litellm/llms/base_llm/audio_transcription/transformation.py"
+  - "litellm/main.py"

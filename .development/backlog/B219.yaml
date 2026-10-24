@@ -1,0 +1,8 @@
+id: B219
+milestone: M1 openai data plane
+title: Internal message fields, system insertion and media placement
+status: todo
+depends_on: [B177, B171]
+file: tasks/B219-message-fields.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"

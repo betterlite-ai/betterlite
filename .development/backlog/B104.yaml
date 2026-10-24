@@ -1,0 +1,26 @@
+id: B104
+milestone: M6 guardrails
+title: Guardrail framework, registry and guardrail API
+status: todo
+depends_on: [B012, B052]
+file: null
+covers:
+  - "litellm/proxy/guardrails/*.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/{custom_guardrail,content_text}.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/**"
+  - "litellm/integrations/custom_guardrail.py"
+  - "litellm/llms/base_llm/guardrail_translation/**"
+  - "litellm/types/{guardrails,guardrail_base_init}.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
+  - "litellm/llms/openai/chat/guardrail_translation/handler.py"
+  - "litellm/llms/openai/completion/guardrail_translation/handler.py"
+  - "litellm/llms/openai/embeddings/guardrail_translation/handler.py"
+  - "litellm/llms/openai/image_generation/guardrail_translation/handler.py"
+  - "litellm/llms/openai/responses/guardrail_translation/handler.py"
+  - "litellm/llms/openai/responses/guardrail_translation/tool_merge.py"
+  - "litellm/llms/openai/speech/guardrail_translation/handler.py"
+  - "litellm/llms/openai/transcriptions/guardrail_translation/handler.py"
+  - "litellm/llms/openai/videos/guardrail_translation/handler.py"
+  - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
+  - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
+  - "litellm/litellm_core_utils/core_helpers.py"

@@ -1,0 +1,10 @@
+id: B711
+milestone: M4 keys, spend and management
+title: Database TLS and external pooler configuration
+status: todo
+depends_on: [B002, B171, B700, B710, B856, B860]
+file: tasks/B711-database-tls.yaml
+covers:
+  - "litellm/proxy/db/db_url_settings.py"
+  - "litellm/proxy/db/pgbouncer.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/utils.py"

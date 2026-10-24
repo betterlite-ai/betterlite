@@ -1,0 +1,8 @@
+id: B844
+milestone: M4 keys, spend and management
+title: Model catalog lookup and listing indexes
+status: todo
+depends_on: [B171, B302, B368, B856]
+file: tasks/B844-model-catalog-lookup.yaml
+covers:
+  - "litellm/router.py"

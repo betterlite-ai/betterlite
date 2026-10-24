@@ -1,0 +1,12 @@
+id: B681
+milestone: M3 providers
+title: Bedrock Responses search vector and realtime composition
+status: todo
+depends_on: [B678, B657, B658, B659, B660, B171, B666]
+file: tasks/B681-bedrock-interactive-dispatch.yaml
+covers:
+  - "litellm/llms/bedrock/responses/transformation.py"
+  - "litellm/llms/bedrock/passthrough/transformation.py"
+  - "litellm/llms/bedrock/search/transformation.py"
+  - "litellm/llms/bedrock/vector_stores/transformation.py"
+  - "litellm/llms/bedrock/realtime/handler.py"

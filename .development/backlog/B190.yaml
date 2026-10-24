@@ -1,0 +1,9 @@
+id: B190
+milestone: M1 openai data plane
+title: Typed request logging payloads
+status: todo
+depends_on: [B188, B011, B005, B006, B212, B247, B248, B249, B250, B251, B252, B253, B254]
+file: tasks/B190-logging-payloads.yaml
+covers:
+  - "litellm/litellm_core_utils/{litellm_logging,logging_utils,served_output_texts}.py"
+  - "litellm/litellm_core_utils/README.md"

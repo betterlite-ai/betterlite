@@ -1,0 +1,8 @@
+id: B1063
+milestone: M5 api families
+title: Vector tool selection
+status: todo
+depends_on: [B171, B206, B1062, B1131, B726, B858]
+file: tasks/B1063-vector-tool-selection.yaml
+covers:
+  - "litellm/vector_stores/vector_store_registry.py"

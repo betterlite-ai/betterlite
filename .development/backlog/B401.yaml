@@ -1,0 +1,9 @@
+id: B401
+milestone: M2 routing
+title: Deployment construction and stable identity
+status: todo
+depends_on: [B002, B010, B301]
+file: tasks/B401-deployment-identity.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"

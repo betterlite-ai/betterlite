@@ -1,0 +1,14 @@
+id: B709
+milestone: M4 keys, spend and management
+title: Postgres migrations for agent identity
+status: todo
+depends_on: [B171, B700, B708, B856, B860]
+file: tasks/B709-schema-agent-identity.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260921190000_agent_identity/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260923000000_add_agent_kill_switch/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260925000000_add_mcp_pinned_tools/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260928000000_add_daily_model_usage/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260930000000_agent_engine/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20261001000000_lens_run_history/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20261001100000_rename_lens/migration.sql"

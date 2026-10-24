@@ -1,0 +1,8 @@
+id: B052
+milestone: M4 keys, spend and management
+title: Wire virtual key authentication into the server
+status: todo
+depends_on: [B001, B002, B003, B004, B007, B012, B171, B732, B733, B734, B735, B736, B737, B738, B739, B740, B741, B742, B743, B744, B745, B746, B747, B748, B749, B750, B751, B752, B753, B754, B755, B756, B757, B758, B759, B760, B855, B856, B860, B870, B871, B875, B876, B881, B889]
+file: tasks/B052-virtual-key-auth.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

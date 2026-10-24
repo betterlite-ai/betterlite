@@ -1,0 +1,8 @@
+id: B918
+milestone: M5 api families
+title: Response chat request
+status: todo
+depends_on: [B171, B917, B1136, B1138, B216, B905, B002, B012, B247]
+file: tasks/B918-response-chat-request.yaml
+covers:
+  - "litellm/completion_extras/litellm_responses_transformation/transformation.py"

@@ -1,0 +1,8 @@
+id: B2225
+milestone: M3 providers
+title: Cached full model metadata queries
+status: todo
+depends_on: [B175, B2219, B2220, B2217, B002, B171]
+file: tasks/B2225-full-model-metadata.yaml
+covers:
+  - "litellm/utils.py"

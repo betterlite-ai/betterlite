@@ -1,0 +1,8 @@
+id: B867
+milestone: M4 keys, spend and management
+title: Management route permission tables
+status: todo
+depends_on: [B207, B732, B856]
+file: tasks/B867-management-routes.yaml
+covers:
+  - "litellm/proxy/_types.py"

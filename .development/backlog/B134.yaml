@@ -1,0 +1,8 @@
+id: B134
+milestone: M8 platform
+title: The litellm-proxy CLI for the management API
+status: todo
+depends_on: [B055, B057, B060]
+file: null
+covers:
+  - "litellm/proxy/client/cli/**"

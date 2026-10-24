@@ -1,0 +1,8 @@
+id: B1226
+milestone: M4 keys, spend and management
+title: Default user teams and enrollment contract
+status: todo
+depends_on: [B002, B732, B856]
+file: tasks/B1226-default-user-teams.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"

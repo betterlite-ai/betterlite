@@ -1,0 +1,11 @@
+id: B1674
+milestone: M4 keys, spend and management
+title: Price generated images from token usage, image counts or pixels
+status: todo
+depends_on: [B171, B193, B204, B1668, B1670, B1671, B1672, B1678]
+file: tasks/B1674-image-cost-usage.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"
+  - "litellm/cost_calculator.py"
+  - "litellm/llms/openai/image_generation/cost_calculator.py"
+  - "litellm/llms/azure_ai/image_generation/cost_calculator.py"

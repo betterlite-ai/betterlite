@@ -1,0 +1,8 @@
+id: B1100
+milestone: M5 API families
+title: Shared request body decoding
+status: todo
+depends_on: [B003, B171, B1087, B002]
+file: tasks/B1100-request-body.yaml
+covers:
+  - "litellm/proxy/common_utils/http_parsing_utils.py"

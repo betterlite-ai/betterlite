@@ -1,0 +1,8 @@
+id: B847
+milestone: M4 keys, spend and management
+title: Model group usage and remaining-limit metadata
+status: todo
+depends_on: [B171, B319, B365, B844, B846, B856]
+file: tasks/B847-model-group-usage.yaml
+covers:
+  - "litellm/router.py"

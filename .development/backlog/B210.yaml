@@ -1,0 +1,8 @@
+id: B210
+milestone: M1 openai data plane
+title: OpenAI-compatible defaults A
+status: todo
+depends_on: [B209, B171, B2207]
+file: tasks/B210-provider-defaults-a.yaml
+covers:
+  - "litellm/litellm_core_utils/get_llm_provider_logic.py"

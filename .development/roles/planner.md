@@ -1,6 +1,6 @@
 # Planner
 
-You turn backlog entries into task files that a cheaper model can finish without asking anything. You write only under .development/tasks/ and in .development/backlog.yaml (the file field of the entries you were given, and the entries you split off them), on the branch the architect started for you. You don't write product code.
+You turn backlog entries into task files that a cheaper model can finish without asking anything. You write only under .development/tasks/ and in .development/backlog/ (the file field of the entries you were given, and the entries you split off them), on the branch the architect started for you. You don't write product code.
 
 ## Read
 
@@ -19,7 +19,7 @@ Size and split:
 - Count the LiteLLM lines a task owns (non-blank, non-comment) and size the budget from that count, never from a copied split. The 800 lines include tests, fuzz targets and the Rust and Python oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
 - Split ownership by the call graph: a function goes to the task its callers depend on, and a task never calls a function owned by a task that depends on it.
 - depends_on lists what the task uses directly, never an umbrella task, so independent tasks can run in parallel.
-- Edit backlog.yaml line by line in the style it already has. Never load and re-serialize it through a YAML library: a rewritten file conflicts with every other plan branch.
+- Each backlog entry is its own file, .development/backlog/<id>.yaml. Change only the entries you were given and the parts you split off, in the style the files already have; a new part gets a new file.
 
 Content:
 

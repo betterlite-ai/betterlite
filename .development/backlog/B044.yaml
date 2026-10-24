@@ -1,0 +1,11 @@
+id: B044
+milestone: M3 providers
+title: litellm_proxy provider, custom providers and deprecated providers
+status: todo
+depends_on: [B024]
+file: null
+covers:
+  - "litellm/llms/custom_llm.py"
+  - "litellm/llms/{litellm_proxy,deprecated_providers}/**"
+  - "litellm/types/llms/custom_llm.py"
+  - "litellm/main.py"

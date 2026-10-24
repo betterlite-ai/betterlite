@@ -1,0 +1,8 @@
+id: B089
+milestone: M5 api families
+title: Assistant runs
+status: todo
+depends_on: [B002, B003, B004, B005, B012, B732, B1103, B2488, B2489]
+file: tasks/B089-assistant-runs.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"

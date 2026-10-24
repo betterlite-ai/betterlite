@@ -1,0 +1,8 @@
+id: B834
+milestone: M4 keys, spend and management
+title: Automatic router capability slot coordination
+status: todo
+depends_on: [B003, B171, B700, B732, B832, B841, B856, B860, B871, B1213]
+file: tasks/B834-model-capability-slot.yaml
+covers:
+  - "litellm/proxy/management_endpoints/model_management_endpoints.py"

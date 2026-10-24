@@ -1,0 +1,8 @@
+id: B506
+milestone: M3 providers
+title: OpenAI Responses options and reasoning gates
+status: todo
+depends_on: [B193, B502, B175, B171, B668, B902, B206, B2221, B2219]
+file: tasks/B506-openai-response-params.yaml
+covers:
+  - "litellm/llms/openai/responses/transformation.py"

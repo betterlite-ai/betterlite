@@ -1,0 +1,8 @@
+id: B891
+milestone: M4 keys, spend and management
+title: JWT database team fallback and membership validation
+status: todo
+depends_on: [B001, B002, B003, B723, B724, B732, B736, B737, B760, B764, B856, B860, B869, B871, B882, B883, B886]
+file: tasks/B891-jwt-db-teams.yaml
+covers:
+  - "litellm/proxy/auth/handle_jwt.py"

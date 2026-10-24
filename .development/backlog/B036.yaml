@@ -1,0 +1,11 @@
+id: B036
+milestone: M3 providers
+title: xAI, Mistral and Codestral
+status: todo
+depends_on: [B010, B011, B177, B2220]
+file: null
+covers:
+  - "litellm/llms/{xai,mistral,codestral}/**"
+  - "litellm/types/llms/{xai,mistral}.py"
+  - "litellm/llms/openai/openai.py"
+  - "litellm/main.py"

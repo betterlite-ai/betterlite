@@ -1,0 +1,21 @@
+id: B144
+milestone: M10 admin ui
+title: Keep LiteLLM's admin dashboard, rebrand it, build it and serve it from betterlite
+status: todo
+depends_on: [B056]
+file: null
+covers:
+  - "ui/*"
+  - "ui/litellm-dashboard/*"
+  - "ui/litellm-dashboard/{public,scripts,tests}/**"
+  - "ui/litellm-dashboard/src/types.ts"
+  - "ui/litellm-dashboard/src/app/{favicon.ico,globals.css,layout.tsx}"
+  - "ui/litellm-dashboard/src/app/{login,connect,onboarding}/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/*.*"
+  - "ui/litellm-dashboard/src/app/(dashboard)/{components,hooks,admin-panel,api-reference,change-password}/**"
+  - "ui/litellm-dashboard/src/components/{ui,shared,common_components,molecules,organisms,templates,Navbar,SidebarAccountMenu,ThemeToggle,liteadmin}/**"
+  - "ui/litellm-dashboard/src/components/{BetaBadge,CodeBlock,constants,DashboardHeader,DebugWarningBanner,DeprecationBanner,DocsMenu,EnvCredentialLoginWarningBanner,LicenseExpiryBanner,NoRedisWarningBanner,UpgradeBanner,UserBanner,leftnav,navbar,onboarding_link,page_metadata,page_utils,networking,SidebarUsageCard}.*"
+  - "ui/litellm-dashboard/src/components/{BetaBadge,DashboardHeader,DebugWarningBanner,DeprecationBanner,DocsMenu,EnvCredentialLoginWarningBanner,LicenseExpiryBanner,NoRedisWarningBanner,UpgradeBanner,UserBanner,leftnav,navbar,onboarding_link,page_utils,networking,networking.dailyActivity,SidebarUsageCard}.test.*"
+  - "ui/litellm-dashboard/src/{contexts,lib,utils}/**"
+  - "ui/litellm-dashboard/src/hooks/{use-safe-layout-effect,useSyntaxTheme,useSyntaxTheme.test,useUrlTab,useUrlTab.test,useVisitedTabs,useWorker}.*"
+  - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"

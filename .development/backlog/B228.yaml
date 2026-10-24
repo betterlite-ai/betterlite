@@ -1,0 +1,8 @@
+id: B228
+milestone: M1 openai data plane
+title: Bedrock tool uses and result media
+status: todo
+depends_on: [B178, B179, B183, B227]
+file: tasks/B228-bedrock-tool-results.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

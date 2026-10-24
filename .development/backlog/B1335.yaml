@@ -1,0 +1,8 @@
+id: B1335
+milestone: M3 providers
+title: Vertex OpenAI partner policies and Llama stream repair
+status: todo
+depends_on: [B1306, B668, B504, B005, B193, B002, B171]
+file: tasks/B1335-vertex-openai-partners.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_ai_partner_models/{ai21,gpt_oss,llama3,mistral}/transformation.py"

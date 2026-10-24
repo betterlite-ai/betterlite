@@ -1,0 +1,9 @@
+id: B570
+milestone: M3 providers
+title: Anthropic request headers and model discovery
+status: todo
+depends_on: [B567, B568, B171, B688]
+file: tasks/B570-anthropic-headers.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"
+  - "litellm/llms/anthropic/chat/transformation.py"

@@ -1,0 +1,8 @@
+id: B977
+milestone: M5 api families
+title: Messages chat stream
+status: todo
+depends_on: [B975, B976, B966, B2434, B005, B2401]
+file: tasks/B977-messages-chat-stream.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"

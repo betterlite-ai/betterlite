@@ -1,0 +1,8 @@
+id: B1303
+milestone: M3 providers
+title: Vertex stale-token refresh coordination
+status: todo
+depends_on: [B1301, B1302]
+file: tasks/B1303-vertex-async-refresh.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_llm_base.py"

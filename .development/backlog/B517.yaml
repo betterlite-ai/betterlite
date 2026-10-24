@@ -1,0 +1,8 @@
+id: B517
+milestone: M3 providers
+title: OpenAI batch lifecycle
+status: todo
+depends_on: [B500, B173, B171, B185]
+file: tasks/B517-openai-batches.yaml
+covers:
+  - "litellm/llms/openai/openai.py"

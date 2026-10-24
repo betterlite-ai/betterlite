@@ -1,0 +1,8 @@
+id: B775
+milestone: M4 keys, spend and management
+title: Apply single-key updates atomically
+status: todo
+depends_on: [B001, B003, B052, B171, B722, B725, B732, B734, B772, B774, B784, B816, B819, B856, B860, B865, B894, B1219, B1220, B1224]
+file: tasks/B775-key-update.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"

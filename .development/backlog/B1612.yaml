@@ -1,0 +1,9 @@
+id: B1612
+milestone: M4 keys, spend and management
+title: Render CLI verification, consent and completion pages
+status: todo
+depends_on: [B171, B1223]
+file: tasks/B1612-cli-login-pages.yaml
+covers:
+  - "litellm/proxy/management_endpoints/ui_sso.py"
+  - "litellm/proxy/common_utils/html_forms/{cli_sso_success,native_client_consent}.py"

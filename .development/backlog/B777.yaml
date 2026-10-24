@@ -1,0 +1,8 @@
+id: B777
+milestone: M4 keys, spend and management
+title: Delete keys and retain archived audit rows
+status: todo
+depends_on: [B001, B003, B052, B171, B722, B732, B734, B737, B738, B770, B771, B784, B800, B819, B856, B860, B865, B878]
+file: tasks/B777-key-delete.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"

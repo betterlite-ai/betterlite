@@ -1,0 +1,8 @@
+id: B1360
+milestone: M3 providers
+title: Vertex Discovery Engine rerank records and search-unit billing
+status: todo
+depends_on: [B1301, B1302, B1306, B171]
+file: tasks/B1360-vertex-discovery-rerank.yaml
+covers:
+  - "litellm/llms/vertex_ai/rerank/**"

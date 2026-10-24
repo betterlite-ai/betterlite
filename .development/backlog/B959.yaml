@@ -1,0 +1,9 @@
+id: B959
+milestone: M5 api families
+title: Anthropic beta config
+status: todo
+depends_on: [B002, B009, B171, B1087, B2401]
+file: tasks/B959-anthropic-beta-config.yaml
+covers:
+  - "litellm/anthropic_beta_headers_manager.py"
+  - "litellm/anthropic_beta_headers_config.json"

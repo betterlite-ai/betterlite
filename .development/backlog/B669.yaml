@@ -1,0 +1,13 @@
+id: B669
+milestone: M3 providers
+title: OpenAI media operation composition
+status: todo
+depends_on: [B511, B512, B513, B514, B515, B525, B526, B171]
+file: tasks/B669-openai-media-dispatch.yaml
+covers:
+  - "litellm/llms/openai/image_generation/__init__.py"
+  - "litellm/llms/openai/image_edit/__init__.py"
+  - "litellm/llms/openai/image_variations/handler.py"
+  - "litellm/llms/openai/openai.py"
+  - "litellm/llms/openai/transcriptions/handler.py"
+  - "litellm/llms/openai/videos/transformation.py"

@@ -1,0 +1,9 @@
+id: B388
+milestone: M2 routing
+title: Adaptive routing configuration and request types
+status: todo
+depends_on: [B010, B301, B002, B361]
+file: tasks/B388-adaptive-classification.yaml
+covers:
+  - "litellm/router_strategy/adaptive_router/classifier.py"
+  - "litellm/router_strategy/adaptive_router/config.py"

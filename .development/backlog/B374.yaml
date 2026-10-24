@@ -1,0 +1,8 @@
+id: B374
+milestone: M2 routing
+title: Custom tier and pool schema
+status: todo
+depends_on: [B328, B010, B301, B002]
+file: tasks/B374-tier-definitions.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/config.py"

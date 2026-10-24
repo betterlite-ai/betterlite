@@ -1,0 +1,9 @@
+id: B1076
+milestone: M5 api families
+title: Vector file routes
+status: todo
+depends_on: [B004, B1072, B1073, B1075, B732, B1061, B003]
+file: tasks/B1076-vector-file-routes.yaml
+covers:
+  - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
+  - "litellm/proxy/rag_endpoints/upload_security.py"

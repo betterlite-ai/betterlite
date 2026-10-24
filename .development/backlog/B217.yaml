@@ -1,0 +1,8 @@
+id: B217
+milestone: M1 openai data plane
+title: Bounded JSON Schema definition expansion
+status: todo
+depends_on: [B214, B171]
+file: tasks/B217-schema-definitions.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"

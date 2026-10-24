@@ -1,0 +1,8 @@
+id: B1313
+milestone: M3 providers
+title: Gemini response text, signatures and media parts
+status: todo
+depends_on: [B1300, B232, B171]
+file: tasks/B1313-gemini-response-parts.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"

@@ -1,0 +1,12 @@
+id: B1734
+milestone: M4 keys, spend and management
+title: Keep window increments distinct and roll up tool and model usage
+status: todo
+depends_on: [B171, B198, B204, B700, B708, B710, B860, B1690, B1716]
+file: tasks/B1734-window-and-model-queues.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/{window_spend_update_queue,tool_discovery_queue}.py"
+  - "litellm/proxy/db/{model_usage_rollup,model_insights_tasks}.py"
+  - "litellm/proxy/model_insights_tasks.json"
+  - "litellm/types/model_insights.py"
+  - "litellm/proxy/_types.py"

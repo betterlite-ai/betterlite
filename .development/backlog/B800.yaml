@@ -1,0 +1,15 @@
+id: B800
+milestone: M4 keys, spend and management
+title: Team roles and member management permissions
+status: todo
+depends_on: [B002, B003, B171, B732, B736, B737, B742, B856, B863, B882, B1200]
+file: tasks/B800-team-access.yaml
+covers:
+  - "litellm/proxy/management/__init__.py"
+  - "litellm/proxy/management/teams/__init__.py"
+  - "litellm/proxy/management/teams/access.py"
+  - "litellm/proxy/management/teams/dependencies.py"
+  - "litellm/proxy/management_helpers/team_member_permission_checks.py"
+  - "litellm/proxy/management_endpoints/team_admin_field_permissions.py"
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/proxy/management_endpoints/common_utils.py"

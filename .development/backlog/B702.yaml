@@ -1,0 +1,8 @@
+id: B702
+milestone: M4 keys, spend and management
+title: Postgres migrations for baseline
+status: todo
+depends_on: [B171, B700, B856, B860]
+file: tasks/B702-schema-baseline.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql"

@@ -1,0 +1,8 @@
+id: B984
+milestone: M5 api families
+title: Messages responses output
+status: todo
+depends_on: [B171, B906, B958, B983, B1087, B962, B963, B002]
+file: tasks/B984-messages-responses-output.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/responses_adapters/transformation.py"

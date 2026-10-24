@@ -1,0 +1,9 @@
+id: B1362
+milestone: M3 providers
+title: Vertex Veo operation results, content and usage defaults
+status: todo
+depends_on: [B1361, B1306, B1301, B002, B525, B672, B171]
+file: tasks/B1362-vertex-veo-operations.yaml
+covers:
+  - "litellm/llms/vertex_ai/videos/**"
+  - "litellm/constants.py"

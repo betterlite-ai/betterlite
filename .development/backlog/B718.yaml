@@ -1,0 +1,9 @@
+id: B718
+milestone: M4 keys, spend and management
+title: Partition-safe request log indexes
+status: todo
+depends_on: [B171, B700, B716, B856, B860]
+file: tasks/B718-request-log-indexes.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/replica_identity.py"

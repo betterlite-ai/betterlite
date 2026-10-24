@@ -1,0 +1,8 @@
+id: B520
+milestone: M3 providers
+title: OpenAI thread and message operations
+status: todo
+depends_on: [B519, B173, B171]
+file: tasks/B520-openai-threads.yaml
+covers:
+  - "litellm/llms/openai/openai.py"

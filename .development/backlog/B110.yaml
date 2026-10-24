@@ -1,0 +1,14 @@
+id: B110
+milestone: M7 observability
+title: OpenTelemetry tracing and OTel-based destinations
+status: todo
+depends_on: [B012]
+file: null
+covers:
+  - "litellm/integrations/{opentelemetry,traceloop,langtrace,logfire_logger}.py"
+  - "litellm/integrations/{opentelemetry_utils,otel,arize,agentops,levo,weave}/**"
+  - "litellm/types/integrations/{arize,arize_phoenix,langfuse_otel,weave_otel}.py"
+  - "litellm/tracing/**"
+  - "litellm/proxy/{tracing_endpoints,tracing_runtime}.py"
+  - "docker/{docker-compose.tracing.yml,tracing-config.yaml}"
+  - "litellm/litellm_core_utils/core_helpers.py"

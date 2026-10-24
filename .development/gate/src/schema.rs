@@ -6,7 +6,7 @@ use schemars::{Schema, schema_for};
 
 use crate::error::GateError;
 use crate::spec::agents::Agents;
-use crate::spec::backlog::Backlog;
+use crate::spec::backlog::BacklogEntry;
 use crate::spec::catalog::Catalog;
 use crate::spec::deviations::DeviationLog;
 use crate::spec::litellm::Litellm;
@@ -18,7 +18,7 @@ use crate::spec::task::Task;
 pub(crate) fn generate() -> Result<Vec<(&'static str, String)>, GateError> {
     let schemas: [(&'static str, Schema); 9] = [
         ("task.schema.json", schema_for!(Task)),
-        ("backlog.schema.json", schema_for!(Backlog)),
+        ("backlog.schema.json", schema_for!(BacklogEntry)),
         ("checks.schema.json", schema_for!(Catalog)),
         ("rules.schema.json", schema_for!(Rules)),
         ("agents.schema.json", schema_for!(Agents)),

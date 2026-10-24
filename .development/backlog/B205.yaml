@@ -1,0 +1,9 @@
+id: B205
+milestone: M1 openai data plane
+title: Typed model metadata and capability fields
+status: todo
+depends_on: [B204]
+file: tasks/B205-model-metadata-types.yaml
+covers:
+  - "model_prices_and_context_window.schema.json"
+  - "litellm/utils.py"

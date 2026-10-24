@@ -1,0 +1,8 @@
+id: B1117
+milestone: M5 API families
+title: Messages content primitives
+status: todo
+depends_on: [B171, B218, B216, B568, B2221]
+file: tasks/B1117-messages-content-primitives.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/transformation.py"

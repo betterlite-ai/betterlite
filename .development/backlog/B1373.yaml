@@ -1,0 +1,8 @@
+id: B1373
+milestone: M3 providers
+title: Retrieve, list and cancel native Vertex batch jobs
+status: todo
+depends_on: [B1302, B1304, B1371, B1372, B009, B173, B171]
+file: tasks/B1373-vertex-batch-lifecycle.yaml
+covers:
+  - "litellm/llms/vertex_ai/batches/handler.py"

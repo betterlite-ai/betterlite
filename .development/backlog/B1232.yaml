@@ -1,0 +1,9 @@
+id: B1232
+milestone: M4 keys, spend and management
+title: Native database administration command shell
+status: todo
+depends_on: [B000, B002, B710]
+file: tasks/B1232-database-admin-cli.yaml
+covers:
+  - "migrations/run.py"
+  - "litellm/proxy/prisma_migration.py"

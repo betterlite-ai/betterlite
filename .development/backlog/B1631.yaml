@@ -1,0 +1,8 @@
+id: B1631
+milestone: M4 keys, spend and management
+title: Sign SAML assertions for real HTTP oracle flows
+status: todo
+depends_on: [B171, B1625, B1630]
+file: tasks/B1631-saml-oracle-signer.yaml
+covers:
+  - "litellm/proxy/management_endpoints/sso/saml_sso.py"

@@ -1,0 +1,8 @@
+id: B1690
+milestone: M4 keys, spend and management
+title: Supply bounded spend queues and Redis pod leases
+status: todo
+depends_on: [B002, B012, B126, B171, B191, B700, B860]
+file: tasks/B1690-spend-queue-and-pod-lock.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/{base_update_queue,pod_lock_manager}.py"

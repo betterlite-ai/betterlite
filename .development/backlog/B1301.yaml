@@ -1,0 +1,8 @@
+id: B1301
+milestone: M3 providers
+title: Vertex credential sources and configuration precedence
+status: todo
+depends_on: [B002, B009, B171, B1300]
+file: tasks/B1301-vertex-credential-sources.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_llm_base.py"

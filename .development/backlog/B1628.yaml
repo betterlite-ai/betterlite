@@ -1,0 +1,8 @@
+id: B1628
+milestone: M4 keys, spend and management
+title: Choose the login provider and bind authorization state
+status: todo
+depends_on: [B002, B003, B124, B126, B733, B743, B799, B860, B1610, B1613, B1617, B1618, B1619, B1622, B1625, B1629, B1630]
+file: tasks/B1628-sso-login-entry.yaml
+covers:
+  - "litellm/proxy/management_endpoints/ui_sso.py"

@@ -1,0 +1,10 @@
+id: B1744
+milestone: M4 keys, spend and management
+title: Queue request usage and flush derived analytics after spend logs
+status: todo
+depends_on: [B104, B118, B171, B198, B204, B1690, B1694, B1696, B1698, B1699, B1706, B1734, B1742, B1743, B1746, B1749]
+file: tasks/B1744-request-usage-flush.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/utils.py"
+  - "litellm/proxy/hooks/autorouter_baseline_cache.py"

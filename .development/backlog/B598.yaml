@@ -1,0 +1,8 @@
+id: B598
+milestone: M3 providers
+title: Bedrock model capabilities and route selection
+status: todo
+depends_on: [B2203, B596, B193, B171]
+file: tasks/B598-bedrock-model-routes.yaml
+covers:
+  - "litellm/llms/bedrock/common_utils.py"

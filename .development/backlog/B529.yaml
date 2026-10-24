@@ -1,0 +1,11 @@
+id: B529
+milestone: M3 providers
+title: Azure configuration and credential selection
+status: todo
+depends_on: [B002, B173, B171, B673, B675, B677, B530, B129, B165, B2226]
+file: tasks/B529-azure-credentials.yaml
+covers:
+  - "litellm/llms/azure/common_utils.py"
+  - "litellm/secret_managers/get_azure_ad_token_provider.py"
+  - "litellm/types/secret_managers/get_azure_ad_token_provider.py"
+  - "litellm/types/llms/azure.py"

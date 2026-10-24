@@ -1,0 +1,12 @@
+id: B2214
+milestone: M3 providers
+title: Shared provider message and iterator primitives
+status: todo
+depends_on: [B171]
+file: tasks/B2214-provider-message-primitives.yaml
+covers:
+  - "litellm/llms/base_llm/chat/transformation.py"
+  - "litellm/llms/base_llm/base_utils.py"
+  - "litellm/llms/base_llm/base_model_iterator.py"
+  - "litellm/llms/base_llm/batches/transformation.py"
+  - "litellm/types/utils.py"

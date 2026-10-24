@@ -1,0 +1,14 @@
+id: B1004
+milestone: M5 api families
+title: Realtime contracts
+status: todo
+depends_on: [B010, B011, B171, B1087]
+file: tasks/B1004-realtime-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/realtime/transformation.py"
+  - "litellm/llms/base_llm/realtime/http_transformation.py"
+  - "litellm/llms/base_llm/realtime/transcription_protocol.py"
+  - "litellm/types/realtime.py"
+  - "litellm/litellm_core_utils/realtime_errors.py"
+  - "litellm/proxy/common_utils/realtime_utils.py"
+  - "litellm/litellm_core_utils/realtime_streaming.py"

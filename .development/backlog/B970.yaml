@@ -1,0 +1,8 @@
+id: B970
+milestone: M5 api families
+title: Summary model limits
+status: todo
+depends_on: [B072, B071, B171, B969, B732]
+file: tasks/B970-summary-model-limits.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"

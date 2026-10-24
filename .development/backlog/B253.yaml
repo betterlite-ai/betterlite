@@ -1,0 +1,8 @@
+id: B253
+milestone: M1 openai data plane
+title: Standard logging metadata and payload privacy inputs
+status: todo
+depends_on: [B188, B011, B254, B212]
+file: tasks/B253-logging-metadata.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"

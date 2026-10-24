@@ -1,0 +1,8 @@
+id: B964
+milestone: M5 api families
+title: Messages chat content
+status: todo
+depends_on: [B171, B1117, B965, B961, B571, B220]
+file: tasks/B964-messages-chat-content.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/transformation.py"

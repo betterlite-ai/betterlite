@@ -1,0 +1,8 @@
+id: B1030
+milestone: M5 api families
+title: File content stream
+status: todo
+depends_on: [B010, B012, B036, B174, B176, B500, B516, B694, B2200, B1015, B1080, B2401, B2463, B2464]
+file: tasks/B1030-file-content-stream.yaml
+covers:
+  - "litellm/files/main.py"

@@ -1,0 +1,8 @@
+id: B2430
+milestone: M5 API families
+title: Native Messages reasoning and request transformation
+status: todo
+depends_on: [B171, B961, B569, B571, B2201, B567, B688]
+file: tasks/B2430-messages-native-transform.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/transformation.py"

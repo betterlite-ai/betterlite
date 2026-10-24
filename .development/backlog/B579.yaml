@@ -1,0 +1,9 @@
+id: B579
+milestone: M3 providers
+title: Anthropic usage and cache-token normalization
+status: todo
+depends_on: [B196, B171]
+file: tasks/B579-anthropic-usage.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"

@@ -1,0 +1,9 @@
+id: B2222
+milestone: M3 providers
+title: Fireworks catalog metadata primitives
+status: todo
+depends_on: [B193, B2217, B171]
+file: tasks/B2222-fireworks-catalog-metadata.yaml
+covers:
+  - "litellm/llms/fireworks_ai/common_utils.py"
+  - "litellm/llms/fireworks_ai/chat/transformation.py"

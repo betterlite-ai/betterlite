@@ -1,0 +1,8 @@
+id: B057
+milestone: M4 keys, spend and management
+title: Team callback persistence and logging controls
+status: todo
+depends_on: [B001, B003, B052, B061, B171, B189, B246, B724, B732, B734, B800, B801, B802, B803, B804, B805, B806, B807, B808, B809, B810, B811, B812, B813, B814, B815, B856, B860, B865, B1210, B1211, B1231]
+file: tasks/B057-team-callbacks.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_callback_endpoints.py"

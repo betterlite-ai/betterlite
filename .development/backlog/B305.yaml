@@ -1,0 +1,9 @@
+id: B305
+milestone: M2 routing
+title: Resolve router and provider timeouts
+status: todo
+depends_on: [B009, B002, B005, B011, B301]
+file: tasks/B305-routing-timeouts.yaml
+covers:
+  - "litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py"
+  - "litellm/timeout.py"

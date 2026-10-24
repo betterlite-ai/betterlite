@@ -1,0 +1,8 @@
+id: B951
+milestone: M5 api families
+title: Responses mcp followup
+status: todo
+depends_on: [B012, B171, B902, B950, B1087, B932, B952]
+file: tasks/B951-responses-mcp-followup.yaml
+covers:
+  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"

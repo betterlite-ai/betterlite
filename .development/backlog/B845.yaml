@@ -1,0 +1,8 @@
+id: B845
+milestone: M4 keys, spend and management
+title: Deployment model info and configured limits
+status: todo
+depends_on: [B013, B171, B173, B174, B205, B844, B856]
+file: tasks/B845-deployment-model-info.yaml
+covers:
+  - "litellm/router.py"

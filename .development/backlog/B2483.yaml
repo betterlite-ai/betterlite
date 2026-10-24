@@ -1,0 +1,8 @@
+id: B2483
+milestone: M5 API families
+title: Shape retrieval queries, context messages and failure policy
+status: todo
+depends_on: [B002, B171, B1131]
+file: tasks/B2483-vector-context-shaping.yaml
+covers:
+  - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"

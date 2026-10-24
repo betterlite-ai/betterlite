@@ -1,0 +1,8 @@
+id: B1129
+milestone: M5 API families
+title: Batch provider list
+status: todo
+depends_on: [B010, B011, B517, B171, B1087, B002]
+file: tasks/B1129-batch-provider-list.yaml
+covers:
+  - "litellm/batches/main.py"

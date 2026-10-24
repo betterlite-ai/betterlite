@@ -1,0 +1,12 @@
+id: B633
+milestone: M3 providers
+title: Bedrock image model request and reply maps
+status: todo
+depends_on: [B004, B171, B682, B002]
+file: tasks/B633-bedrock-other-image-models.yaml
+covers:
+  - "litellm/llms/bedrock/image_generation/amazon_titan_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"
+  - "litellm/llms/bedrock/image_generation/image_handler.py"

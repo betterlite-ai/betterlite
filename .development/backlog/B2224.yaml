@@ -1,0 +1,8 @@
+id: B2224
+milestone: M3 providers
+title: Lemonade runtime model metadata
+status: todo
+depends_on: [B129, B173, B187, B002, B171]
+file: tasks/B2224-lemonade-model-metadata.yaml
+covers:
+  - "litellm/llms/lemonade/chat/transformation.py"

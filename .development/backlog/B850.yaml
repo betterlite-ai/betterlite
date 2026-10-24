@@ -1,0 +1,8 @@
+id: B850
+milestone: M4 keys, spend and management
+title: Model info v2 route
+status: todo
+depends_on: [B001, B003, B052, B171, B732, B842, B845, B848, B849, B851, B856, B860, B1216]
+file: tasks/B850-model-info-v2.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"

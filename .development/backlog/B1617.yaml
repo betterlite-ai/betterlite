@@ -1,0 +1,9 @@
+id: B1617
+milestone: M4 keys, spend and management
+title: Connect SSO identities to agent enrollment and assertion diagnostics
+status: todo
+depends_on: [B002, B137, B141, B171, B1625]
+file: tasks/B1617-sso-identity-bridge.yaml
+covers:
+  - "litellm/proxy/management_endpoints/sso/{id_jag_assertion_capture,agent_subject_enrollment}.py"
+  - "litellm/proxy/management_endpoints/ui_sso.py"

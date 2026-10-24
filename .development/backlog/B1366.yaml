@@ -1,0 +1,9 @@
+id: B1366
+milestone: M3 providers
+title: Studio interactions transcription with word timestamps
+status: todo
+depends_on: [B1331, B1354, B171]
+file: tasks/B1366-studio-transcription.yaml
+covers:
+  - "litellm/llms/gemini/audio_transcription/**"
+  - "litellm/types/llms/gemini_audio_transcription.py"

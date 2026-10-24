@@ -1,0 +1,8 @@
+id: B592
+milestone: M3 providers
+title: AWS role identity probes and credential expiry
+status: todo
+depends_on: [B590, B682, B171]
+file: tasks/B592-bedrock-assume-role.yaml
+covers:
+  - "litellm/llms/bedrock/base_aws_llm.py"

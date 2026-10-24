@@ -1,0 +1,8 @@
+id: B1059
+milestone: M5 api families
+title: Vector query embedding
+status: todo
+depends_on: [B171, B1058, B1131, B204, B2401]
+file: tasks/B1059-vector-query-embedding.yaml
+covers:
+  - "litellm/llms/base_llm/vector_store/transformation.py"

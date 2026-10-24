@@ -1,0 +1,8 @@
+id: B869
+milestone: M4 keys, spend and management
+title: JWT configuration defaults and dependent field validation
+status: todo
+depends_on: [B002, B171, B856]
+file: tasks/B869-jwt-settings.yaml
+covers:
+  - "litellm/proxy/_types.py"

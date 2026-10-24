@@ -1,0 +1,8 @@
+id: B1138
+milestone: M5 API families
+title: Responses objects and usage
+status: todo
+depends_on: [B004, B171, B902]
+file: tasks/B1138-responses-objects.yaml
+covers:
+  - "litellm/types/llms/openai.py"

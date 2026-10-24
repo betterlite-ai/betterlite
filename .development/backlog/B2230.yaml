@@ -1,0 +1,11 @@
+id: B2230
+milestone: M3 providers
+title: Shared chat config selection
+status: todo
+depends_on: [B668, B2231, B171]
+file: tasks/B2230-chat-config-selection.yaml
+covers:
+  - "litellm/utils.py"
+  - "litellm/llms/azure/chat/o_series_transformation.py"
+  - "litellm/llms/azure_ai/common_utils.py"
+  - "litellm/llms/cohere/common_utils.py"

@@ -1,0 +1,8 @@
+id: B868
+milestone: M4 keys, spend and management
+title: Public and auxiliary route permission tables
+status: todo
+depends_on: [B002, B207, B732, B856]
+file: tasks/B868-auxiliary-routes.yaml
+covers:
+  - "litellm/proxy/_types.py"

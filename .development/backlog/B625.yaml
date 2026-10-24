@@ -1,0 +1,11 @@
+id: B625
+milestone: M3 providers
+title: Bedrock Mantle standalone provider configuration
+status: todo
+depends_on: [B2207, B668, B504, B590, B591, B595, B598, B622, B658, B682, B688, B129, B171, B2221, B2214]
+file: tasks/B625-bedrock-mantle-settings.yaml
+covers:
+  - "litellm/llms/bedrock_mantle/common_utils.py"
+  - "litellm/llms/bedrock_mantle/chat/transformation.py"
+  - "litellm/llms/bedrock_mantle/messages/transformation.py"
+  - "litellm/llms/bedrock_mantle/passthrough/transformation.py"

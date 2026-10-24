@@ -1,0 +1,8 @@
+id: B688
+milestone: M3 providers
+title: Anthropic catalog capability and thinking selection
+status: todo
+depends_on: [B193, B171, B002, B2203, B2216, B174, B184, B2219, B2221]
+file: tasks/B688-anthropic-capability-catalog.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"

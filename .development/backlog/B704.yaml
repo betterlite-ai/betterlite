@@ -1,0 +1,36 @@
+id: B704
+milestone: M4 keys, spend and management
+title: Postgres migrations for managed resources
+status: todo
+depends_on: [B171, B700, B703, B856, B860]
+file: tasks/B704-schema-managed-resources.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250711220620_add_stdio_mcp/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250718125714_add_litellm_params_to_vector_stores/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250802162330_prompt_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250806095134_rename_alias_to_server_name_mcp_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250918083359_drop_spec_version_column_from_mcp_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250926194702_unnamed_migration/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251003165142_add_allowed_tools_to_mcp/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251003190954_extra_headers_to_mcp_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251006143948_add_mcp_tool_permissions/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251011084309_add_tag_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251023141814_add_search_tool_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251031181430_add_cache_config_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251101131415_add_managed_vector_store_index_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251103072422_add_static_headers/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251104220043_add_credentials_to_mcp_servers/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251113000000_add_project_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251113000001_add_project_fields/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251114173537_add_request_id_to_daily_tag_spend/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251114180624_Add_org_usage_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251114182247_agents_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251119131227_add_prompt_versioning/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251122125322_Add organization_id to spend logs/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251204124859_add_end_user_spend_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251204142718_add_agent_permissions/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251209112246_add_ui_settings_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251210125210_add_storage_backend_to_managed_files/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251210205007_add_daily_agent_spend_table/migration.sql"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251211100212_schema_sync/migration.sql"

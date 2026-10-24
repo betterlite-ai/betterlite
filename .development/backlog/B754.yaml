@@ -1,0 +1,9 @@
+id: B754
+milestone: M4 keys, spend and management
+title: Shared authenticated request policy ordering
+status: todo
+depends_on: [B001, B002, B003, B171, B732, B735, B736, B737, B739, B742, B744, B747, B748, B749, B750, B751, B752, B856, B860, B882, B885, B886, B887, B888]
+file: tasks/B754-auth-common-checks.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"

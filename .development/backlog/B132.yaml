@@ -1,0 +1,9 @@
+id: B132
+milestone: M8 platform
+title: Lens trace analysis service
+status: todo
+depends_on: [B069]
+file: null
+covers:
+  - "litellm/proxy/lens/**"
+  - "deploy/lens/**"

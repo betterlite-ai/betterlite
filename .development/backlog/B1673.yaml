@@ -1,0 +1,9 @@
+id: B1673
+milestone: M4 keys, spend and management
+title: Report billed token rates and cache savings from the same price decisions
+status: todo
+depends_on: [B171, B204, B1668, B1670, B1671, B1672, B1678]
+file: tasks/B1673-billed-token-breakdown.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"
+  - "litellm/cost_calculator.py"

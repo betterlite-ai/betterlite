@@ -1,0 +1,7 @@
+id: B674
+milestone: M3 providers
+title: Azure certificate grant
+status: todo
+depends_on: [B173, B171, B187, B673]
+file: tasks/B674-azure-certificate.yaml
+covers: []

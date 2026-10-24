@@ -1,0 +1,11 @@
+id: B005
+milestone: M1 openai data plane
+title: Streaming chat completions
+status: todo
+depends_on: [B004]
+file: tasks/B005-chat-streaming.yaml
+covers:
+  - "litellm/litellm_core_utils/{streaming_handler,streaming_chunk_builder_utils,json_fragment_accumulator}.py"
+  - "litellm/proxy/common_utils/sse_keepalive.py"
+  - "litellm/types/litellm_core_utils/**"
+  - "litellm/llms/openai/openai.py"

@@ -1,0 +1,10 @@
+id: B779
+milestone: M4 keys, spend and management
+title: Regenerate keys with bounded overlap
+status: todo
+depends_on: [B002, B003, B171, B199, B722, B732, B734, B773, B774, B784, B819, B856, B860, B895, B1224]
+file: tasks/B779-key-rotation.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/proxy/common_utils/key_rotation_manager.py"
+  - "litellm/proxy/proxy_server.py"

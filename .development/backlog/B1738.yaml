@@ -1,0 +1,8 @@
+id: B1738
+milestone: M4 keys, spend and management
+title: Publish drained spend aggregates and restore only the failed cohorts
+status: todo
+depends_on: [B192, B1690, B1733, B1734, B1737]
+file: tasks/B1738-redis-spend-publish.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/redis_update_buffer.py"

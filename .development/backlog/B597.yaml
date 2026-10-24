@@ -1,0 +1,8 @@
+id: B597
+milestone: M3 providers
+title: Bedrock Invoke structured-output and tool schemas
+status: todo
+depends_on: [B569, B171, B688, B2221]
+file: tasks/B597-bedrock-invoke-schema.yaml
+covers:
+  - "litellm/llms/bedrock/common_utils.py"

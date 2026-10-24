@@ -1,0 +1,8 @@
+id: B593
+milestone: M3 providers
+title: AWS web identity and IRSA role chains
+status: todo
+depends_on: [B590, B591, B187, B002, B171, B129]
+file: tasks/B593-bedrock-web-identity.yaml
+covers:
+  - "litellm/llms/bedrock/base_aws_llm.py"

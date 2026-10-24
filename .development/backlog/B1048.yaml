@@ -1,0 +1,8 @@
+id: B1048
+milestone: M5 api families
+title: Executed batch input
+status: todo
+depends_on: [B171, B1035, B1087, B732, B855, B756]
+file: tasks/B1048-executed-batch-input.yaml
+covers:
+  - "litellm/proxy/batches_endpoints/litellm_executed_batches.py"

@@ -1,0 +1,8 @@
+id: B364
+milestone: M2 routing
+title: Static deployment eligibility
+status: todo
+depends_on: [B302, B010, B013, B011, B301, B002]
+file: tasks/B364-static-eligibility.yaml
+covers:
+  - "litellm/router.py"

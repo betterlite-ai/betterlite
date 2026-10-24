@@ -1,0 +1,8 @@
+id: B898
+milestone: M4 keys, spend and management
+title: Key secret-manager and legacy notification sinks
+status: todo
+depends_on: [B002, B012, B732, B737, B856]
+file: tasks/B898-key-event-sinks.yaml
+covers:
+  - "litellm/proxy/hooks/key_management_event_hooks.py"

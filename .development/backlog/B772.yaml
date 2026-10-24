@@ -1,0 +1,8 @@
+id: B772
+milestone: M4 keys, spend and management
+title: Parent limits for generated and updated keys
+status: todo
+depends_on: [B002, B003, B171, B732, B736, B737, B771, B856, B879]
+file: tasks/B772-key-limit-policy.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"

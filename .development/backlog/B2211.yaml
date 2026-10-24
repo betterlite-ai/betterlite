@@ -1,0 +1,8 @@
+id: B2211
+milestone: M3 providers
+title: Claude Platform workspace and signing inputs
+status: todo
+depends_on: [B591, B595, B682, B129, B002, B171]
+file: tasks/B2211-claude-platform-inputs.yaml
+covers:
+  - "litellm/llms/bedrock/claude_platform/common_utils.py"

@@ -1,0 +1,8 @@
+id: B1221
+milestone: M4 keys, spend and management
+title: Centralized authenticated common-check composition
+status: todo
+depends_on: [B001, B002, B003, B732, B735, B736, B737, B739, B741, B750, B753, B754, B755, B756, B856, B860, B879, B880, B881, B888, B1225]
+file: tasks/B1221-central-auth-checks.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

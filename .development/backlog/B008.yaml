@@ -1,0 +1,9 @@
+id: B008
+milestone: M2 routing
+title: Load balancing across deployments of one model
+status: todo
+depends_on: [B004]
+file: tasks/B008-load-balancing.yaml
+covers:
+  - "litellm/router_strategy/simple_shuffle.py"
+  - "litellm/types/router_weights.py"

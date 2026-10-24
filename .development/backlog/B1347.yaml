@@ -1,0 +1,8 @@
+id: B1347
+milestone: M3 providers
+title: Vertex Gemini image edit JSON and local image records
+status: todo
+depends_on: [B1345, B1302, B1120, B1128, B997, B171]
+file: tasks/B1347-vertex-gemini-image-edit.yaml
+covers:
+  - "litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py"

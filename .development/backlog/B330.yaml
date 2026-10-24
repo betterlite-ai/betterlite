@@ -1,0 +1,8 @@
+id: B330
+milestone: M2 routing
+title: Build bounded classifier context from request messages
+status: todo
+depends_on: [B384, B010, B080, B081, B301, B002]
+file: tasks/B330-classifier-context.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/complexity_router.py"

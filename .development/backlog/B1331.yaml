@@ -1,0 +1,9 @@
+id: B1331
+milestone: M3 providers
+title: Google AI Studio credentials and model discovery
+status: todo
+depends_on: [B1300, B002, B009, B173, B171]
+file: tasks/B1331-studio-identity.yaml
+covers:
+  - "litellm/llms/gemini/common_utils.py"
+  - "litellm/llms/gemini/google_genai/transformation.py"

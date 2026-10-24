@@ -1,0 +1,8 @@
+id: B583
+milestone: M3 providers
+title: Anthropic SSE decoding and cancellation
+status: todo
+depends_on: [B582, B005, B173, B171, B581, B567]
+file: tasks/B583-anthropic-stream-decode.yaml
+covers:
+  - "litellm/llms/anthropic/chat/handler.py"

@@ -1,0 +1,9 @@
+id: B1131
+milestone: M5 API families
+title: Vector store wire records
+status: todo
+depends_on: [B171, B204]
+file: tasks/B1131-vector-store-records.yaml
+covers:
+  - "litellm/types/vector_stores.py"
+  - "litellm/types/integrations/rag/bedrock_knowledgebase.py"

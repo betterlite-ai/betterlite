@@ -1,0 +1,8 @@
+id: B250
+milestone: M1 openai data plane
+title: Success callback dispatch and deduplication
+status: todo
+depends_on: [B247, B248, B191, B254, B252]
+file: tasks/B250-logging-success.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"

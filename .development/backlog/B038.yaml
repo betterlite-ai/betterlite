@@ -1,0 +1,11 @@
+id: B038
+milestone: M3 providers
+title: JSON-configured OpenAI-compatible providers, A to L
+status: todo
+depends_on: [B024]
+file: null
+covers:
+  - "litellm/llms/openai_like/**"
+  - "litellm/llms/{aiml,baseten,bytez,cerebras,clarifai,cometapi,compactifai,datarobot,deepinfra,deepseek,empower,featherless_ai,friendliai,galadriel,gdc,github,gradient_ai,heroku,hyperbolic,inception,lambda_ai}/**"
+  - "litellm/types/llms/aiml.py"
+  - "litellm/main.py"

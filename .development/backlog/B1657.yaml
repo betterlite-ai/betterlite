@@ -1,0 +1,8 @@
+id: B1657
+milestone: M4 keys, spend and management
+title: Manage signup defaults and validate their existing teams and organization
+status: todo
+depends_on: [B003, B052, B124, B723, B724, B806, B860, B1608, B1616, B1621, B1656]
+file: tasks/B1657-signup-defaults-api.yaml
+covers:
+  - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"

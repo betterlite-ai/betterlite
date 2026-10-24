@@ -1,0 +1,8 @@
+id: B664
+milestone: M3 providers
+title: Bedrock realtime end events usage and tools
+status: todo
+depends_on: [B661, B1004, B171]
+file: tasks/B664-bedrock-services-realtime-completion.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/transformation.py"

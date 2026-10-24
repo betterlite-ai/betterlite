@@ -1,0 +1,8 @@
+id: B628
+milestone: M3 providers
+title: Bedrock Nova multimodal embeddings
+status: todo
+depends_on: [B006, B171]
+file: tasks/B628-bedrock-other-nova-embeddings.yaml
+covers:
+  - "litellm/llms/bedrock/embed/amazon_nova_transformation.py"

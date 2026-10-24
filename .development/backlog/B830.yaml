@@ -1,0 +1,9 @@
+id: B830
+milestone: M4 keys, spend and management
+title: Customer creation and block state
+status: todo
+depends_on: [B001, B002, B003, B052, B171, B700, B725, B732, B733, B734, B816, B829, B856, B860, B861, B878]
+file: tasks/B830-customer-create.yaml
+covers:
+  - "litellm/proxy/management_endpoints/customer_endpoints.py"
+  - "litellm/types/proxy/management_endpoints/customer_endpoints.py"

@@ -1,0 +1,8 @@
+id: B020
+milestone: M2 routing
+title: Budget-aware filtering and policy composition
+status: todo
+depends_on: [B016, B383, B326, B321, B322, B323, B324, B325, B012, B301, B361, B002]
+file: tasks/B020-routing-budgets.yaml
+covers:
+  - "litellm/router_strategy/budget_limiter.py"

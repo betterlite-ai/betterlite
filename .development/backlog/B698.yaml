@@ -1,0 +1,16 @@
+id: B698
+milestone: M3 providers
+title: Foundry resource operation composition
+status: todo
+depends_on: [B553, B554, B555, B556, B557, B558, B564, B565, B566, B171]
+file: tasks/B698-foundry-resource-dispatch.yaml
+covers:
+  - "litellm/llms/azure_ai/image_generation/__init__.py"
+  - "litellm/llms/azure_ai/image_generation/mai_transformation.py"
+  - "litellm/llms/azure_ai/image_edit/__init__.py"
+  - "litellm/llms/azure_ai/rerank/transformation.py"
+  - "litellm/llms/azure_ai/responses/transformation.py"
+  - "litellm/llms/azure_ai/vector_stores/transformation.py"
+  - "litellm/llms/azure_ai/anthropic/messages_transformation.py"
+  - "litellm/llms/azure_ai/anthropic/count_tokens/handler.py"
+  - "litellm/llms/azure_ai/passthrough/transformation.py"

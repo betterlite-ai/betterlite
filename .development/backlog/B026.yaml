@@ -1,0 +1,21 @@
+id: B026
+milestone: M3 providers
+title: Azure AI Foundry
+status: todo
+depends_on: [B010, B549, B550, B551, B552, B562, B563, B698, B182, B198, B196, B249, B187, B171, B2230, B560]
+file: tasks/B026-foundry-provider.yaml
+covers:
+  - "litellm/llms/azure_ai/README.md"
+  - "litellm/llms/azure_ai/agents/__init__.py"
+  - "litellm/llms/azure_ai/anthropic/__init__.py"
+  - "litellm/llms/azure_ai/anthropic/count_tokens/__init__.py"
+  - "litellm/llms/azure_ai/azure_model_router/__init__.py"
+  - "litellm/llms/azure_ai/chat/handler.py"
+  - "litellm/llms/azure_ai/embed/__init__.py"
+  - "litellm/llms/azure_ai/image_generation/dall_e_2_transformation.py"
+  - "litellm/llms/azure_ai/image_generation/dall_e_3_transformation.py"
+  - "litellm/llms/azure_ai/image_generation/gpt_transformation.py"
+  - "litellm/llms/azure_ai/rerank/handler.py"
+  - "litellm/llms/azure_ai/responses/__init__.py"
+  - "litellm/llms/azure_ai/vector_stores/__init__.py"
+  - "litellm/main.py"
