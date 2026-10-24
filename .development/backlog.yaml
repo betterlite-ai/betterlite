@@ -1966,12 +1966,13 @@ tasks:
     title: Cooldown expiry and deployment health snapshots
     status: todo
     depends_on:
-    - B017
-    - B304
+    - B360
+    - B016
+    - B301
+    - B002
     file: tasks/B307-cooldown-state.yaml
     covers:
     - litellm/router_utils/{cooldown_cache,health_state_cache}.py
-
   - id: B308
     milestone: M2 routing
     title: Cooldown error policy and callback events
