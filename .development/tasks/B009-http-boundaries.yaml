@@ -4,15 +4,25 @@ description: >-
   Finish the shared HTTP layer with typed outbound URL boundaries in betterlite-http. Reuse B171's path encoders
   and B173's transport, separating operator-configured base URLs from untrusted path/query data and provider-returned
   follow-up URLs. Add bounded parsing, normalized origin checks and destination host/port allowlist helpers; credentials
-  can only be attached after a follow-up URL has passed the configured origin check. Reject userinfo and unsupported
-  schemes at the configuration boundary and disable automatic credential-bearing cross-origin redirects; a configured
-  private inference endpoint remains valid. Add helper url_origin and url_destination cases around the pinned pure
-  helpers, plus local adversarial tests demonstrating that request bodies cannot override the destination and redirect
-  chains cannot leak credentials. Implement the URL policy parser's fuzz target and replay corpus. The user-URL
-  download wrappers in url_utils.py are deliberately unavailable under the bounded-inputs rule, and callers receive
-  a typed error rather than an attempted fetch. Budget 280 URL policy lines, 150 integration lines and 300 test/fuzz
-  lines. Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
-  parser.
+  can only be attached after a follow-up URL has passed the configured origin check. Accept http and https configured
+  bases, including userinfo: remove userinfo from the stored URL and convert it to a secret Basic Authorization
+  header using HTTPX precedence. Other schemes fail startup by key. A configured private inference endpoint remains
+  valid. Add helper url_origin and url_destination cases around the pinned pure helpers, plus local adversarial
+  tests demonstrating that request bodies cannot override the destination and redirect chains cannot leak credentials.
+  Implement the URL policy parser's fuzz target and replay corpus. The user-URL download wrappers in url_utils.py
+  are deliberately unavailable under the bounded-inputs rule, and callers receive a typed error rather than an attempted
+  fetch.  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
+  parser. Load litellm_settings.provider_url_destination_allowed_hosts as typed host/port patterns; B052 calls this
+  policy when enforcing its request-body 400 Rejected Request rule. No request field reaches the configured URL
+  builder in B009. Follow redirects with a bounded explicit send loop in betterlite-http, setting reqwest redirect::Policy::none():
+  on every origin change strip Authorization, Cookie, Cookie2, Proxy-Authorization, WWW-Authenticate, api-key, x-api-key,
+  x-goog-api-key and every header marked sensitive by the provider; refuse HTTPS-to-HTTP and redirect userinfo.
+  Policy::custom cannot mutate headers. Cover 301/302/303 method rewrite, 307/308 replayability, relative Location,
+  hop bound, and streaming non-replayable bodies. Budget 300 policy/integration, 100 oracle adapters and 350 tests/fuzz
+  (750 total). Do not add behavior depending on the open remote-download decision. Write the behavior rstest functions
+  b009_url_boundary_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
+  the DoD; corpus replay tests have separate names. Register helper operations url_origin, url_destination in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -26,19 +36,30 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L151-L247
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L151-L247
   why: Host/port normalization, destination candidates and allowlist matching.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L405
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L405
   why: DNS validation and same-origin checks before credential forwarding.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
   why: Redirect traversal and the user-URL fetch behavior that conflicts with repository rules.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L463-L505
+  why: Destination allowlist consumption and B052-owned request rejection.
+- url: https://docs.rs/reqwest/latest/reqwest/redirect/struct.Policy.html
+  why: A redirect policy chooses an action but cannot rewrite request headers.
 dod:
-- text: Origin and destination matching agree with the listed helper cases, including case folding, explicit default
+- text: >-
+    Origin and destination matching agree with the listed helper cases, including case folding, explicit default
     ports and IPv6.
   proof:
   - oracle
-- text: Request api_base overrides, URL userinfo, unsupported schemes, cross-origin redirects and encoded traversal
-    cannot redirect configured credentials.
+  - helper-python
+- text: >-
+    No request field reaches the configured URL builder; accepted http/https userinfo becomes secret Basic auth,
+    and redirects cannot forward credentials across origins or downgrade TLS.
   proof:
   - url-boundary-tests
 - text: Configured loopback/private providers still work; request-supplied fetch URLs are rejected before network
@@ -49,7 +70,8 @@ dod:
   proof:
   - url-policy-corpus
   - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -58,27 +80,33 @@ checks:
   commands:
   - id: url-boundary-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-http -p betterlite-config -p betterlite-openai --no-tests=fail
-      -E 'test(/url_boundary|url_origin/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-http -p betterlite-config -p betterlite-openai --no-tests=fail -E
+      'test(/::b009_url_boundary_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: url-policy-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-http/fuzz/fuzz_targets/url_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/url_policy)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/url_policy)"
+      && test -f crates/betterlite-http/fuzz/fuzz_targets/url_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/url_policy)"
       && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_url_policy_corpus)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'provider_url_destination_allowed_hosts' crates/betterlite-config/fuzz/corpus/config_yaml &&
       test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'url_origin' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'url_destination' tools/oracle/fuzz/corpus/helper_case
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/url-origin/default-port.yaml
@@ -89,17 +117,35 @@ oracle_cases:
 - tools/oracle/cases/helpers/url-origin/host-suffix-attack.yaml
 - tools/oracle/cases/helpers/url-origin/destination-allowlist.yaml
 deviations:
-- what: User-supplied media/file URLs are never fetched, and credentials never follow a cross-origin redirect.
-  why: The bounded-inputs rule restricts outbound destinations to configuration; matching LiteLLM's optional user-URL
-    fetching would violate that rule.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L421-L487
+- what: >-
+    Open, waiting for Max: keep rejecting request-supplied media/file URL downloads, or allow public URLs through
+    LiteLLM-compatible SSRF validation and allowlists.
+  why: >-
+    The current bounded-inputs rule forbids request destinations, but LiteLLM safe_get serves providers requiring
+    downloaded image/PDF bytes. Keep the current plan and add no dependent download feature until decided.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
+- what: >-
+    Cross-origin redirects strip all credential headers and HTTPS downgrades are refused; configured bases accept
+    only http/https.
+  why: >-
+    Prevent provider-specific API-key leakage and unsupported transport schemes; the upstream clients follow redirects.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L610-L618
 out_of_scope:
 - Actual remote media downloads and user_url_validation opt-outs are unavailable under the current rules.
 - Endpoint implementations and provider-specific signing remain in the provider backlog.
+- B052 owns is_request_body_safe and the 400 Rejected Request envelope; B009 supplies only URL-policy helpers.
+- >-
+  encode_url_path_segment/segments are B171; safe_get/safe_async_get, SSRF DNS resolution and their download-only
+  helpers remain blocked by the open Max decision; provider follow-up URL origin checks remain in B009.
 pitfalls:
 - An origin check compares parsed scheme, normalized host and effective port, never suffixes or string prefixes.
 - Path percent-encoding and URL joining can normalize dot segments at different times; test both before sending.
 - Do not use the user-URL private-network denylist to reject operator-configured internal inference servers.
+- >-
+  Reqwest Attempt exposes no header mutation; use explicit bounded redirect replay to remove api-key, x-api-key
+  and x-goog-api-key as well as standard credentials.
 review_level: security
 budget:
   max_changed_lines: 800
