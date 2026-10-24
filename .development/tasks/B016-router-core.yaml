@@ -17,14 +17,17 @@ description: Finish the router core by composing B302's catalog, B303's clients 
   supplied random samples for comparisons, and separate seeded distribution tests for random choices.
   Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
   unsupported keys still fail by full path. Keep the implementation, adapters and tests within 800 changed
-  lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+  lines; fixtures and oracle cases are budget-excluded by checks.yaml. Extend B004's typed chat request
+  fields only for the routing controls this task consumes, and extend its existing chat_request fuzz corpus;
+  router-only fields never reach the provider body.
 scope:
   paths:
   - crates/betterlite-router/**
   - crates/betterlite-config/**
   - crates/betterlite-server/**
+  - crates/betterlite-openai/**
   - tools/oracle/cases/routing/router-core/**
-  - tools/oracle/src/router_probes/router-core/**
+  - tools/oracle/src/router_probes/router_core/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/router_core.py
   - tools/oracle/litellm/probes/registry.py
@@ -46,7 +49,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the router_core prefix so the required filter
+    runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -57,6 +61,11 @@ dod:
 - text: All mutants in changed router, config or wire code are caught.
   proof:
   - mutants
+- text: Routing controls have valid and invalid chat parser corpus seeds and are consumed before upstream
+    serialization.
+  proof:
+  - chat-corpus
+  - oracle
 checks:
   optional:
   - mutants
@@ -73,6 +82,10 @@ checks:
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
       --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+  - id: chat-corpus
+    why: routing request controls lack chat parser corpus coverage or replay fails
+    run: test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/router-core/chat-and-embedding-shared-pool.yaml
 - tools/oracle/cases/routing/router-core/blocked-specific-deployment.yaml
