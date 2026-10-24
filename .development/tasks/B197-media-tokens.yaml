@@ -1,24 +1,23 @@
 id: B197
 title: Image and document token accounting
 description: >-
-  Complete token accounting for image/document/file content and maximum-output adjustment. Reuse B183's bounded
-  data-URL bytes and add image-header parsing here without fetching media URLs; implement the pinned resize/tile
-  arithmetic, image detail/default-image modes, document title/context/text/nested content, Anthropic tool blocks
-  and OpenAI file-name accounting. Use checked integer/rational arithmetic with explicit truncation matching Python;
-  never allocate decoded pixels merely to count dimensions. Add get_modified_max_tokens using the injected catalog,
-  explicit buffer settings and B196 counts; return typed warnings when compatibility falls back to the caller's
-  token limit. Direct media_tokens cases cover header formats, dimensions, nested content, fallback token counts
-  and context/output limits. Add token_media fuzz target and reuse the upstream media corpus.  Seed B171's shared
-  helper_case corpus with every added operation and replay it through the common typed parser. Pre-call context
-  checks, rate-limit consumers and /utils/token_counter request callers explicitly use default-count mode for remote
-  images and receive a typed warning so the request can proceed. Their endpoint owners wire this mode; exact direct
-  helper calls still require local bytes. Read dimensions only for PNG/GIF/JPEG/WebP: HEIC and unknown signatures
-  use DEFAULT_IMAGE_WIDTH/HEIGHT even if a library can decode them. Truncated recognized headers are typed errors.
-  Replay the shared bytes corpus at crates/betterlite-prompts/fuzz/corpus/media_data as well as token_media. Write
-  the behavior rstest functions b197_media_token_tests_behavior in adjacent tests.rs files, with a named case for
-  each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations media_tokens
-  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
-  adapter file and corpus seed.
+  Complete token accounting for image/document/file content and maximum-output adjustment. Compose B258's image
+  header/default/tile operations with document title/context/text/nested content, Anthropic tool blocks and OpenAI
+  file-name accounting. Use checked integer/rational arithmetic with explicit truncation matching Python; never
+  allocate decoded pixels merely to count dimensions. Add get_modified_max_tokens using the injected catalog, explicit
+  buffer settings and B196 counts; return typed warnings when compatibility falls back to the caller's token limit.
+  Direct media_tokens cases cover header formats, dimensions, nested content, fallback token counts and context/output
+  limits. Add token_media fuzz target and reuse the upstream media corpus.  Seed B171's shared helper_case corpus
+  with every added operation and replay it through the common typed parser. Pre-call context checks, rate-limit
+  consumers and /utils/token_counter request callers explicitly use default-count mode for remote images and receive
+  a typed warning so the request can proceed. Their endpoint owners wire this mode; exact direct helper calls still
+  require local bytes. B258 owns format defaults, truncated-header errors and the shared media_data corpus; this
+  task owns recursive token_media input parsing and maximum-output limits. Write the behavior rstest functions b197_media_token_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations media_tokens in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Own token_counter.py 58-131 and 693-951;
+  all image primitives 134-329 are B258 and text/tool formatting is B196/B259. Budget 300 content/limits, 110 adapters,
+  260 tests, 60 fuzz/replay and 40 wiring (770 total).
 scope:
   paths:
   - Cargo.toml
@@ -35,15 +34,11 @@ scope:
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/media-tokens/**
   - tools/oracle/fuzz/corpus/helper_case/**
-  - crates/betterlite-prompts/fuzz/corpus/media_data/**
   lint_tables: false
 references:
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L189
-  why: Output limits, resize arithmetic and image tile counts.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L196-L329
-  why: Image formats/dimensions and image detail accounting.
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L131
+  why: Maximum output limit adjustment.
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L693-L951
   why: Document, file and nested Anthropic content counting.
@@ -54,14 +49,14 @@ dod:
   - oracle
   - helper-python
 - text: >-
-    Truncated recognized PNG/GIF/JPEG/WebP headers and arithmetic/depth overflow fail without pixel allocation or
-    network access.
+    Recursive content and checked arithmetic/depth failures are typed; the token_media parser never allocates decoded
+    pixels or fetches remote input.
   proof:
   - media-token-tests
   - token-media-corpus
 - text: >-
-    HEIC and unknown formats use default dimensions; request-path remote images use default-count mode with a typed
-    warning and do not fail the request.
+    Request-path remote images use default-count mode with a typed warning and do not fail the request; B258 proves
+    format defaults.
   proof:
   - oracle
   - media-token-tests
@@ -75,9 +70,6 @@ dod:
     Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
-- text: New format-boundary seeds extend the shared media_data corpus and replay its production parser.
-  proof:
-  - shared-media-corpus
 checks:
   optional:
   - mutants
@@ -105,19 +97,7 @@ checks:
       grep -rlq 'media_tokens' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: shared-media-corpus
-    why: the required new behavior or its evidence is missing
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/media_data)"
-      && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/media_data)"
-      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_media_data_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/media-tokens/low-auto-high.yaml
-- tools/oracle/cases/helpers/media-tokens/default-image.yaml
-- tools/oracle/cases/helpers/media-tokens/png-gif-jpeg.yaml
-- tools/oracle/cases/helpers/media-tokens/webp-variants.yaml
-- tools/oracle/cases/helpers/media-tokens/unknown-header.yaml
-- tools/oracle/cases/helpers/media-tokens/resize-boundaries.yaml
 - tools/oracle/cases/helpers/media-tokens/document-text-context.yaml
 - tools/oracle/cases/helpers/media-tokens/nested-tool-content.yaml
 - tools/oracle/cases/helpers/media-tokens/file-name.yaml
@@ -126,8 +106,6 @@ oracle_cases:
 - tools/oracle/cases/helpers/media-tokens/separate-output-limit.yaml
 - tools/oracle/cases/helpers/media-tokens/unknown-model-limit.yaml
 - tools/oracle/cases/helpers/media-tokens/request-remote-default.yaml
-- tools/oracle/cases/helpers/media-tokens/heic-default-dimensions.yaml
-- tools/oracle/cases/helpers/media-tokens/truncated-png.yaml
 deviations:
 - what: >-
     Request-path remote images use default-image counting with a typed warning; exact direct counting requires local
@@ -146,6 +124,8 @@ deviations:
 out_of_scope:
 - Exact provider token-count endpoints are owned by their provider tasks.
 - No spend or budget decisions are made from these counts in M1.
+- >-
+  All image header/resize/tile primitives 134-329 are B258; source 343-690 and 954-1051 belong to B195/B196/B259.
 pitfalls:
 - Several image formats expose dimensions in headers without needing full decoding.
 - Python floors intermediate resize results; rounding only at the end changes tile boundaries.
