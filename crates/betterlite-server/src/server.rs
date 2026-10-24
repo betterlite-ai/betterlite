@@ -1,4 +1,3 @@
-use crate::connection_limit::{BoundedListener, BoundedStream, MAX_CONNECTIONS};
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
@@ -12,10 +11,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
+const MAX_CONNECTIONS: usize = 1024;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,7 +37,7 @@ pub enum ServerError {
 pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerError> {
     let shutdown_signal = build_shutdown_signal()?;
     let address = format!("{host}:{port}");
-    let tcp_listener = TcpListener::bind((host, port))
+    let listener = TcpListener::bind((host, port))
         .await
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
@@ -47,30 +46,34 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
         config.general_settings.master_key,
         Arc::clone(&shutting_down),
     );
-    let listener = BoundedListener {
-        listener: tcp_listener,
-        permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
-    };
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));
     while !shutting_down.load(Ordering::Acquire) {
-        if let Some((stream, remote_address)) = accept_connection(&listener).await {
-            connections.spawn(serve_connection(
-                connection_builder.clone(),
-                application.clone(),
-                stream,
-                remote_address,
-            ));
+        while let Some(result) = connections.try_join_next() {
+            if let Err(error) = result {
+                tracing::error!(error = ?error, "HTTP connection task stopped");
+            }
         }
-        if let Some(Err(error)) = connections.try_join_next() {
-            tracing::error!(error = ?error, "HTTP connection task stopped");
+        let Some((stream, remote_address)) = accept_connection(&listener).await else {
+            continue;
+        };
+        // The set also holds the shutdown signal task, so this admits MAX_CONNECTIONS connections.
+        if connections.len() > MAX_CONNECTIONS {
+            tracing::warn!(address = ?remote_address, "HTTP connection limit reached");
+            continue;
         }
+        connections.spawn(serve_connection(
+            connection_builder.clone(),
+            application.clone(),
+            stream,
+            remote_address,
+        ));
     }
     drain_connections(&mut connections).await;
     Ok(())
 }
-async fn accept_connection(listener: &BoundedListener) -> Option<(BoundedStream, SocketAddr)> {
+async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
     match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {
         Ok(Ok(connection)) => Some(connection),
         Ok(Err(error)) => {
@@ -92,7 +95,7 @@ fn configure_connection_builder() -> Builder<TokioExecutor> {
 async fn serve_connection(
     builder: Builder<TokioExecutor>,
     application: Router,
-    stream: BoundedStream,
+    stream: TcpStream,
     remote_address: SocketAddr,
 ) {
     let service = TowerToHyperService::new(application);
