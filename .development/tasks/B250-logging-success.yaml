@@ -5,7 +5,7 @@ description: >-
   helpers, success_handler/_success_handler_body and async_success_handler/_async_success_handler_body for chat/embeddings,
   plus _handle_callback_failure and sync-success callback handling on async calls. Share native sync/async mechanics
   through typed events, restoring context on every exit. Exporter-specific branches in 2772-3577 are B110-B118;
-  batch-specific handling is B084, background interactions B092. No callback error may alter a successful response.
+  batch-specific handling is B086, background interactions B098. No callback error may alter a successful response.
   Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
   functions b250_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. Register helper operations logging_success in tools/oracle/src/helpers/mod.rs
@@ -101,9 +101,9 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 - >-
-  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B094;
-  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B092; native response logging
-  4147-4343 B080/B081/B092.
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
+  4147-4343 B080/B081/B098.
 - >-
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
