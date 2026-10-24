@@ -1,0 +1,89 @@
+id: B019
+title: Input and output token reservations and reconciliation
+description: Finish the strategy milestone with ITPM/OTPM pre-call reservations over B304, composed with
+  B319 checks. Use B013 estimates and typed request output caps, then reconcile normalized B014 usage
+  after successful nonstreaming or streaming calls. Carry reservation identity in the typed routing context
+  rather than ambient context variables, and refund stale reservations before a retry. Publish the remaining-usage
+  headers through B016. Verify all strategy variants still use their own selector and the common check
+  pipeline. Use the existing Rust crate boundaries from B004 and B008; integrate through the server when
+  the provider dispatcher or callbacks live in another core crate. This task's source slices are the linked
+  ranges, not a port of their Python classes. Add the listed oracle cases and the matching adapters to
+  B301's component runner where state is not observable over HTTP; adapters call production logic and
+  never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons, and
+  separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target and
+  committed corpus for every newly accepted config form; unsupported keys still fail by full path. Keep
+  the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded
+  by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/io-token-limits/**
+  - tools/oracle/src/router_probes/io-token-limits/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/io_token_limits.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L69-L234
+  why: Limits, output-cap estimation and usage normalization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L325-L525
+  why: Atomic reservations and rollback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L528-L738
+  why: Reconciliation, retry refunds and response headers.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(io_token_limits)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/io-token-limits/input-reserve-output-rollback.yaml
+- tools/oracle/cases/routing/io-token-limits/explicit-zero-output-cap.yaml
+- tools/oracle/cases/routing/io-token-limits/model-output-cap.yaml
+- tools/oracle/cases/routing/io-token-limits/cache-read-billable-input.yaml
+- tools/oracle/cases/routing/io-token-limits/missing-usage-keeps-reservation.yaml
+- tools/oracle/cases/routing/io-token-limits/refund-before-retry.yaml
+- tools/oracle/cases/routing/io-token-limits/stream-final-usage-once.yaml
+- tools/oracle/cases/routing/io-token-limits/minute-boundary-original-key.yaml
+- tools/oracle/cases/routing/io-token-limits/remaining-usage-headers.yaml
+deviations: []
+out_of_scope:
+- Key/team budgets and account rate limits.
+- Provider-specific usage parsing, which remains in B014 and endpoint adapters.
+pitfalls:
+- Missing usage retains the reservation rather than assuming zero consumption.
+- Refund against the original reservation's minute key even after the clock advances.
+- Do not silently substitute model TPM for input/output-specific limits.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

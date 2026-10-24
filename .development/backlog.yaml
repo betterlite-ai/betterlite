@@ -233,10 +233,12 @@ tasks:
     - B317
     - B318
     - B319
-    file: null
+    - B013
+    - B014
+    - B017
+    file: tasks/B019-io-token-limits.yaml
     covers:
-    - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
-    - litellm/router_utils/pre_call_checks/{model_rate_limit_check,io_token_rate_limit_check}.py
+    - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
   - id: B020
     milestone: M2 routing
     title: Tag, budget, access window and affinity routing
