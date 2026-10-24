@@ -151,8 +151,6 @@ dependencies = [
  "betterlite-config",
  "betterlite-server",
  "clap",
- "serde",
- "serde_json",
  "thiserror",
  "tokio",
  "tracing",

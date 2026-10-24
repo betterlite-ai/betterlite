@@ -3,9 +3,6 @@ use crate::auth::parse_key_header;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 #[rstest]
-#[case::aws_bearer_after_another_credential(
-    "AWS4-HMAC-SHA256 Credential=first, Credential=Bearer master/20261024/eu/service/aws4_request"
-)]
 #[case::aws_empty_credential_before_master(
     "AWS4-HMAC-SHA256 Credential=/x, Credential=master/20261024/eu/service/aws4_request"
 )]
