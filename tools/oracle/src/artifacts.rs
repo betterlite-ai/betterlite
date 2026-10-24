@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::case::Case;
 use crate::compare;
 use crate::mock::ProviderRequest;
+use crate::paths::{safe_name, unique_id};
 
 use crate::OracleError;
 use crate::http::Response;
@@ -26,8 +27,8 @@ pub(crate) struct ArtifactInput<'input> {
 pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, OracleError> {
     let directory = input
         .root
-        .join(super::safe_name(&input.case.name))
-        .join(super::unique_id()?);
+        .join(safe_name(&input.case.name))
+        .join(unique_id()?);
     fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
         path: directory.clone(),
         source,
@@ -78,7 +79,7 @@ pub(crate) fn prepare(
     case: &Case,
     upstream: &str,
 ) -> Result<(PathBuf, PathBuf), OracleError> {
-    let directory = root.join(format!("group-{}", super::unique_id()?));
+    let directory = root.join(format!("group-{}", unique_id()?));
     fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
         path: directory.clone(),
         source,

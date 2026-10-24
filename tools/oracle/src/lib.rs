@@ -3,12 +3,14 @@
     reason = "The oracle compares arbitrary provider JSON, so captured payloads require serde_json::Value."
 )]
 
+mod artifacts;
 pub mod case;
 mod cli;
 mod compare;
 mod gateway;
 pub mod http;
 pub mod mock;
+mod paths;
 pub mod process;
 pub mod runner;
 

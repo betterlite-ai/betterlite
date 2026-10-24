@@ -22,6 +22,7 @@ use reqwest::blocking::Client;
 use serde_json::Value;
 
 use crate::OracleError;
+use crate::artifacts;
 use crate::case::{Case, Compare, UpstreamAnswer, load_cases};
 use crate::cli::Options;
 use crate::compare;
@@ -29,8 +30,9 @@ use crate::gateway::{self, GatewayInput};
 use crate::http::{MAX_BODY, Response, client, ready, send};
 use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
+use crate::paths;
 use crate::process::{Gateway, GatewaySpec, sync_litellm};
-use crate::runner::{self, artifacts};
+use crate::runner;
 
 fn response(body: Value) -> Response {
     Response {
@@ -170,7 +172,7 @@ fn oracle_modules_return_the_crate_error() {
     let _: fn(&[PathBuf]) -> Result<Vec<Case>, OracleError> = load_cases;
     let _: fn() -> Result<Client, OracleError> = client;
     let _: fn(&Path) -> Result<(), OracleError> = sync_litellm;
-    let _: fn() -> Result<PathBuf, OracleError> = runner::artifact_root;
+    let _: fn() -> Result<PathBuf, OracleError> = paths::artifact_root;
 }
 
 fn wire_response(bytes: Vec<u8>) -> Result<Response, OracleError> {
@@ -463,12 +465,12 @@ fn litellm_sync_reports_a_missing_project() {
 
 #[test]
 fn runner_helpers_create_safe_artifact_paths_and_ports() {
-    assert_eq!(runner::safe_name("a/b c-underscore_"), "a_b_c-underscore_");
-    assert_eq!(runner::safe_name(""), "case");
-    assert!(runner::free_port().unwrap() > 1);
-    let first_id = runner::unique_id().unwrap();
+    assert_eq!(paths::safe_name("a/b c-underscore_"), "a_b_c-underscore_");
+    assert_eq!(paths::safe_name(""), "case");
+    assert!(paths::free_port().unwrap() > 1);
+    let first_id = paths::unique_id().unwrap();
     assert!(first_id.starts_with(&format!("{}-", process::id())));
-    assert_ne!(first_id, runner::unique_id().unwrap());
+    assert_ne!(first_id, paths::unique_id().unwrap());
 }
 
 #[test]
@@ -611,7 +613,7 @@ fn runner_selects_cases_and_gateways() {
     fs::create_dir_all(&group_root).unwrap();
     runner::run_group(&normal, &group_root, &[]).unwrap_err();
     fs::remove_dir_all(&group_root).unwrap();
-    assert!(runner::artifact_root().unwrap().exists());
+    assert!(paths::artifact_root().unwrap().exists());
 }
 
 #[test]

@@ -5,8 +5,8 @@ use std::path::Path;
 use crate::OracleError;
 use crate::cli::Options;
 use crate::http;
+use crate::paths::free_port;
 use crate::process::{Gateway, GatewaySpec, sync_litellm};
-use crate::runner::free_port;
 
 pub(crate) struct GatewayInput<'input> {
     pub(crate) options: &'input Options,
