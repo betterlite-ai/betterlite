@@ -11,16 +11,19 @@ description: Implement typed tag tokens, positive/required/excluded matching and
   never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons, and
   separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target and
   committed corpus for every newly accepted config form; unsupported keys still fail by full path. Add
-  a cargo-fuzz target tag_selector under crates/betterlite-router/fuzz and a normal replays_the_tag_selector_corpus
+  a cargo-fuzz target tag_match under crates/betterlite-router/fuzz and a normal replays_the_tag_match_corpus
   test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
-  fixtures and oracle cases are budget-excluded by checks.yaml.
+  fixtures and oracle cases are budget-excluded by checks.yaml. Extend B004's typed chat request fields
+  only for the routing controls this task consumes, and extend its existing chat_request fuzz corpus;
+  router-only fields never reach the provider body.
 scope:
   paths:
   - crates/betterlite-router/**
   - crates/betterlite-config/**
   - crates/betterlite-server/**
+  - crates/betterlite-openai/**
   - tools/oracle/cases/routing/tag-matchers/**
-  - tools/oracle/src/router_probes/tag-matchers/**
+  - tools/oracle/src/router_probes/tag_matchers/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/tag_matchers.py
   - tools/oracle/litellm/probes/registry.py
@@ -31,12 +34,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
   why: Tag and regex matching, required/excluded sets and routing prefixes.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the tag_matchers prefix so the required filter
+    runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -51,6 +55,11 @@ dod:
 - text: All mutants in changed router, config or wire code are caught.
   proof:
   - mutants
+- text: Routing controls have valid and invalid chat parser corpus seeds and are consumed before upstream
+    serialization.
+  proof:
+  - chat-corpus
+  - oracle
 checks:
   optional:
   - mutants
@@ -65,12 +74,16 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/tag_selector.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/tag_selector)"
-      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tag_selector_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/tag_match.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/tag_match)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tag_match_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
       --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+  - id: chat-corpus
+    why: routing request controls lack chat parser corpus coverage or replay fails
+    run: test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/tag-matchers/any-versus-all.yaml
 - tools/oracle/cases/routing/tag-matchers/strict-tags-block-regex.yaml
