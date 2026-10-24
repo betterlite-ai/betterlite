@@ -16,8 +16,8 @@ rules:
   - id: no-panics
     title: Code never panics
     statement: >-
-      Every fallible step returns a Result or handles the None. No unwrap, expect, panic, unreachable, todo, indexing or slicing that can go out of bounds, and no unchecked arithmetic. Tests may unwrap.
-    why: A panic in a gateway drops every request on that task and hides the cause from the caller.
+      Every fallible step returns a Result or handles the None. No unwrap, expect, panic, unreachable, todo, indexing or slicing that can go out of bounds, and no unchecked arithmetic. No process::abort and no Box::leak. Tests may unwrap.
+    why: A panic in a gateway drops every request on that task and hides the cause from the caller. Release builds unwind, so a panic that slips through still ends only its own task.
     enforced_by: [clippy]
     reviewed: false
     example:
@@ -58,7 +58,7 @@ rules:
   - id: explicit-not-verbose
     title: Explicit, never implicit, and still short
     statement: >-
-      Write what happens where it happens: no glob imports, no Deref on types that are not pointers, no ..Default::default() that hides fields, no numeric fallback, no impl Trait arguments, clone an Arc with Arc::clone. Explicit does not mean wordy: no return on the last line, no redundant type annotations, no clones the borrow checker does not need, no wrappers that only forward.
+      Write what happens where it happens: no glob imports, no Deref on types that are not pointers, no ..Default::default() that hides fields, no numeric fallback, no impl Trait arguments, clone an Arc with Arc::clone. Name the target of a conversion (RequestId::from(raw), never raw.into()), give a closure a name only when the function uses it twice, and never shadow a binding. Explicit does not mean wordy: no return on the last line, no redundant type annotations, no clones the borrow checker does not need, no wrappers that only forward.
     why: Implicit conversions and hidden defaults are where a reader and the compiler stop agreeing on what runs.
     enforced_by: [clippy, hooks]
     reviewed: true
@@ -67,15 +67,17 @@ rules:
         use crate::wire::*;
         let settings = RouterSettings { num_retries: 2, ..Default::default() };
         let pool = shared.clone();
+        let id: RequestId = raw.into();
       write: |
         use crate::wire::{ChatRequest, ChatResponse};
         let settings = RouterSettings { num_retries: 2, timeout: Duration::from_secs(600), fallbacks: Vec::new() };
         let pool = Arc::clone(&shared);
+        let id = RequestId::from(raw);
 
   - id: one-responsibility-per-file
     title: One file, one responsibility
     statement: >-
-      Each file owns one responsibility and is named after it: a wire format, a route, an auth check, a retry policy. A file that mixes two gets split along the seam. Source files stay under the file-size limit, functions under 40 lines, cognitive complexity 15, 5 arguments, nesting depth 4 and one boolean parameter.
+      Each file owns one responsibility and is named after it: a wire format, a route, an auth check, a retry policy. A file that mixes two gets split along the seam. Source files stay under 300 lines and tests.rs files under 1000, functions under 40 lines, cognitive complexity 15, 5 arguments, nesting depth 4 and one boolean parameter.
     why: A file that does three things gets changed for three reasons, and every change risks the other two.
     enforced_by: [file-size, clippy]
     reviewed: true
@@ -107,7 +109,7 @@ rules:
   - id: comments-say-why
     title: Comments say why, on one line
     statement: >-
-      No comment at the top of a file, no doc comments, no block comments, no comment that spans two lines. A comment is one // line inside the code and explains a constraint the code cannot show. Names and types explain what and how.
+      No comment at the top of a file, no doc comments, no block comments, no comment that spans two lines. A comment is one // line anywhere below the top of the file, above a struct field as much as inside a function, and explains a constraint the code cannot show. Names and types explain what and how.
     why: Comments that restate the code go stale and teach the next reader to skip comments, including the one that matters.
     enforced_by: [hooks]
     reviewed: true
@@ -139,7 +141,7 @@ rules:
   - id: non-nullable-by-default
     title: A value that can always exist is never optional
     statement: >-
-      Use Option only where absence is a real state the code handles differently. Defaults are resolved once, at the boundary where a value enters (config load, request parsing), so everything past it takes plain values. A function never returns Option or Result when it cannot fail.
+      Use Option only where absence is a real state the code handles differently. Defaults are resolved once, at the boundary where a value enters (config load, request parsing), so everything past it takes plain values. A function never returns Option or Result when it cannot fail. On the wire, a field with a default is #[serde(default)] with a plain type, like stream: bool. Option stays only where absent means something no value means, like temperature, where absent means the provider's default.
     why: Every Option pushes a decision to each reader, and a None that travels far from where it appeared is the hardest error to trace.
     enforced_by: [clippy]
     reviewed: true
@@ -367,3 +369,126 @@ rules:
         git commit -am "wip" -m "Co-authored-by: an agent"
       write: |
         git commit -m "feat(router): pick deployments by weight, then rpm, then tpm"
+
+  - id: errors-match-litellm
+    title: Errors match LiteLLM's status and codes, in betterlite's words
+    statement: >-
+      An error betterlite returns has the same HTTP status and the same error type, param and code that LiteLLM returns for that case. The message is betterlite's own, so oracle cases for errors list /error/message in compare.ignore with that reason.
+    why: >-
+      Clients branch on the status and the codes, never on the wording, and LiteLLM's messages ("litellm.BadRequestError: OpenAIException - ...") name a library betterlite is not.
+    enforced_by: [oracle]
+    reviewed: true
+    example:
+      instead_of: |
+        {"error": {"message": "Authentication Error, Invalid proxy server token passed. Received API Key = sk-...wxyz, Key Hash (Token) =9f2c...", "type": "auth_error", "param": "None", "code": "401"}}
+      write: |
+        {"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}}
+        and in the case: ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]
+
+  - id: closed-sets-are-enums
+    title: A closed set is an enum, matched without wildcards
+    statement: >-
+      A set betterlite knows at build time, like providers, routing strategies or call types, is an enum matched exhaustively, never a Box<dyn Trait> registry. Adding a member breaks the build until every match handles it.
+    why: A trait object hides which members exist, and a new provider that a match forgot fails at runtime instead of at compile time.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        let providers: HashMap<&str, Box<dyn Provider>> = registry();
+        let provider = providers.get(name).ok_or(RouteError::UnknownProvider)?;
+      write: |
+        enum Provider { OpenAi(OpenAi), Anthropic(Anthropic) }
+        match provider { Provider::OpenAi(openai) => openai.chat(request).await, Provider::Anthropic(anthropic) => anthropic.chat(request).await }
+
+  - id: no-runtime-borrow-checks
+    title: No Rc and no RefCell
+    statement: >-
+      Ownership is checked at compile time. State shared across tasks is an Arc with a Mutex or a channel, and single-owner state is a plain field passed by reference.
+    why: RefCell turns a borrow mistake into a panic under load, and Rc can't cross threads, so it pushes a design toward a corner the async server can't use.
+    enforced_by: [clippy]
+    reviewed: false
+    example:
+      instead_of: |
+        let cooldowns = Rc::new(RefCell::new(HashMap::new()));
+      write: |
+        let cooldowns = Arc::new(Mutex::new(HashMap::new()));
+
+  - id: money-is-decimal
+    title: Money is a Decimal
+    statement: >-
+      Costs, prices, spend and budgets are rust_decimal::Decimal from the moment they are read, including LiteLLM's float prices when the cost map loads. Floats are denied everywhere.
+    why: A float sum of many small costs drifts, and a budget check that is off by a cent either blocks a paying key or lets one through.
+    enforced_by: [clippy]
+    reviewed: true
+    example:
+      instead_of: |
+        let cost = prompt_tokens as f64 * price.input_cost_per_token;
+      write: |
+        let cost = Decimal::from(prompt_tokens).checked_mul(price.input_cost_per_token).ok_or(CostError::Overflow)?;
+
+  - id: table-tests-use-rstest
+    title: Table tests list their cases with rstest
+    statement: >-
+      A test over several inputs is an rstest function with one named #[case::...] per input, never a loop inside a #[test].
+    why: A loop stops at the first failing input and names none of them, while each rstest case runs, fails and reports on its own.
+    enforced_by: [hooks]
+    reviewed: false
+    example:
+      instead_of: |
+        #[test]
+        fn rejects_bad_ids() {
+            for bad in ["B04", "C004"] {
+                assert!(parse_id(bad).is_err());
+            }
+        }
+      write: |
+        #[rstest]
+        #[case::too_short("B04")]
+        #[case::wrong_letter("C004")]
+        fn rejects_bad_ids(#[case] bad: &str) {
+            assert!(parse_id(bad).is_err());
+        }
+
+  - id: fuzz-parsers
+    title: Parsers of untrusted bytes are fuzzed
+    statement: >-
+      Every parser of bytes from outside (config files, request bodies, SSE streams from providers) has a cargo-fuzz target under its crate's fuzz/ folder. The corpus is committed, and a normal test replays every corpus file through the same parser, so each input the fuzzer found runs on every gate.
+    why: Those parsers see the input nobody wrote a test for, and a fuzzer finds the inputs that panic or hang before a provider sends one.
+    enforced_by: [tests]
+    reviewed: true
+    example:
+      instead_of: |
+        only hand-written tests for the SSE parser
+      write: |
+        crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs feeds arbitrary bytes to the parser
+        a test named replays_the_sse_events_corpus reads every file in crates/betterlite-openai/fuzz/corpus/sse_events/
+
+  - id: mutants-on-core-crates
+    title: The config, router and wire-format crates run mutants
+    statement: >-
+      A task that changes the config crate, the router or a wire-format crate runs the mutants check, and every mutant in the code it changed is caught by a test.
+    why: Those crates decide what reaches a provider and what comes back, and a test suite that lets a mutant live there passes while the behavior is wrong.
+    enforced_by: [mutants]
+    reviewed: true
+    example:
+      instead_of: |
+        checks:
+          optional: []
+      write: |
+        checks:
+          optional: [mutants]
+
+  - id: other-languages
+    title: TypeScript and Python follow their own strict checks
+    statement: >-
+      The admin dashboard keeps LiteLLM's own eslint, prettier and vitest setup as its checks. Python code is typed strictly: ruff and basedpyright in strict mode, run through uv, no Any, and errors as named exception classes that keep their cause.
+    why: The kept dashboard already has working checks, and Python without strict types loses what the Rust core guarantees at the first call across the boundary.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        def completion(**kwargs: Any) -> dict:
+            raise Exception(f"failed: {error}")
+      write: |
+        def completion(model: str, messages: list[Message]) -> ModelResponse:
+            raise APIConnectionError(model=model) from error

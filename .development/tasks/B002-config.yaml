@@ -7,6 +7,7 @@ description: >-
   Any key betterlite does not support yet makes loading fail with one error that lists every such key by its path, for example router_settings.routing_strategy_args. Nothing is dropped silently, and several deployments under one model_name stay several deployments in file order.
   Parse YAML with serde-saphyr (serde_yaml is deprecated) and collect ignored keys with serde_ignored instead of a hand-written visitor.
   Copy LiteLLM's 23 example configs from the pinned commit into crates/betterlite-config/tests/fixtures/litellm/ byte for byte and snapshot what loading each one gives, with insta: the typed config summary, or the error with its full list of unsupported keys.
+  Add a cargo-fuzz target that feeds arbitrary bytes to the loader, seed its corpus with the 23 fixtures, and replay every corpus file in a normal test named replays_the_config_yaml_corpus (rule fuzz-parsers).
 scope:
   paths:
     - Cargo.toml
@@ -42,11 +43,16 @@ dod:
     proof: [config-tests]
   - text: Debug output of a loaded config never contains an api_key or master_key value.
     proof: [config-tests]
+  - text: The loader has a cargo-fuzz target at crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs, and replays_the_config_yaml_corpus loads every file in its corpus, at least the 23 fixtures, without a panic.
+    proof: [config-fuzz-corpus]
   - text: Every mutant in the loader is caught by a test.
     proof: [mutants]
 checks:
   optional: [mutants]
   commands:
+    - id: config-fuzz-corpus
+      why: the config fuzz target or its seeded corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test "$(ls crates/betterlite-config/fuzz/corpus/config_yaml | wc -l)" -ge 23 && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: config-tests
       why: the config crate's tests fail, do not exist, or have snapshots that were not accepted
       run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail
@@ -90,6 +96,8 @@ pitfalls:
   - std::env::set_var is unsafe in edition 2024 and unsafe code is forbidden. That is one more reason the environment comes in through the constructor.
   - LiteLLM accepts numbers written as strings in some fields. Follow what the fixtures need and snapshot the result instead of guessing.
   - Run cargo insta review or cargo insta accept locally to write the snapshots, then commit them. The gate runs with INSTA_UPDATE=no.
+  - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
+  - The fuzz crate is its own workspace and runs on nightly. The replay test runs on the pinned stable toolchain and calls the loader directly, so it needs no fuzz dependency.
 budget:
   max_changed_lines: 800
   max_new_expects: 1

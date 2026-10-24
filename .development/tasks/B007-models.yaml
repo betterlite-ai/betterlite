@@ -3,7 +3,7 @@ title: Model list
 description: >-
   Serve GET /models, /v1/models, /models/{model_id} and /v1/models/{model_id} behind the master key.
   The list holds one entry per model_name in the config, in the order and shape LiteLLM returns, and a model name with several deployments appears once.
-  An unknown model_id gets the status and body LiteLLM gives. Write the cases under tools/oracle/cases/models/ and match LiteLLM on all of them.
+  An unknown model_id gets the status, error type, param and code LiteLLM gives, with betterlite's own message (rule errors-match-litellm). Write the cases under tools/oracle/cases/models/ and match LiteLLM on all of them.
 scope:
   paths:
     - crates/betterlite-server/**

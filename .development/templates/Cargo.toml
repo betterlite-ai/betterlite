@@ -68,3 +68,6 @@ module_name_repetitions = "allow" # contradicts error_impl_error, which asks for
 missing_assert_message = "allow" # the test name and the compared values already say what failed
 cargo_common_metadata = "allow" # nothing is published to crates.io
 multiple_crate_versions = "allow" # cargo deny reports duplicate versions where they can be acted on
+
+[profile.release]
+panic = "unwind" # a panic that slips through ends one request's task, not every request in flight

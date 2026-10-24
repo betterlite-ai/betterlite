@@ -5,7 +5,7 @@ description: >-
   The CLI matches LiteLLM's: --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4000, env PORT).
   GET /health/liveliness and GET /health/liveness answer without auth, exactly as LiteLLM does.
   Every other path requires general_settings.master_key. LiteLLM reads the key from six headers (Authorization as a Bearer token, API-Key, x-api-key, x-goog-api-key, Ocp-Apim-Subscription-Key and x-litellm-api-key), so betterlite reads the same six.
-  Auth runs before routing. A request with no key or a wrong key gets the same status and error body LiteLLM gives, and a request with the right key on a path betterlite does not serve yet gets the same 404 LiteLLM gives.
+  Auth runs before routing. A request with no key or a wrong key gets the same status, error type, param and code LiteLLM gives, with betterlite's own message (rule errors-match-litellm), and a request with the right key on a path betterlite does not serve yet gets the same 404 LiteLLM gives.
   Errors use LiteLLM's JSON shape {"error": {"message", "type", "param", "code"}}. Logs are JSON lines on stderr through tracing, and SIGTERM or Ctrl-C drains in-flight requests and exits 0.
   Add oracle cases for every auth path under tools/oracle/cases/auth/ and run them together with the liveliness case from B001.
 scope:
@@ -30,7 +30,7 @@ references:
   - url: https://docs.rs/axum/latest/axum/serve/struct.Serve.html#method.with_graceful_shutdown
     why: Draining in-flight requests on shutdown.
 dod:
-  - text: The six key headers, a missing key, a wrong key and an unknown path with the right key all match LiteLLM on status and body.
+  - text: The six key headers, a missing key, a wrong key and an unknown path with the right key all match LiteLLM on status, error type, param and code.
     proof: [oracle]
   - text: /health/liveliness and /health/liveness answer without a key, as LiteLLM does.
     proof: [oracle]
@@ -75,7 +75,7 @@ out_of_scope:
   - The x-litellm-* response headers. They arrive with the routes that send them, starting in B004.
 pitfalls:
   - The header-* cases need a route both gateways serve with the right key. Use the unknown-route 404, since auth runs before routing in both.
-  - LiteLLM's error message text may name LiteLLM. If it does, ignore /error/message in that case with a why, and still compare type, param and code.
+  - betterlite writes its own error messages, so every error case lists /error/message in compare.ignore with that reason and still compares type, param and code.
   - clap's env feature reads HOST and PORT itself, so the code never calls std::env.
   - Sending SIGTERM in a test means running kill -TERM <pid>; tests may spawn processes, gateway code may not.
 budget:

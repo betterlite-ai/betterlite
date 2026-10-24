@@ -22,6 +22,8 @@ disallowed-types = [
   { path = "once_cell::sync::OnceCell", reason = "no global state: pass dependencies through constructors" },
   { path = "anyhow::Error", reason = "errors are typed thiserror enums" },
   { path = "eyre::Report", reason = "errors are typed thiserror enums" },
+  { path = "std::rc::Rc", reason = "ownership is checked at compile time; state shared across tasks is an Arc with a Mutex or a channel" },
+  { path = "std::cell::RefCell", reason = "a runtime borrow check panics where the compiler would have refused; restructure ownership instead" },
 ]
 
 disallowed-methods = [
@@ -43,4 +45,7 @@ disallowed-methods = [
   { path = "std::time::Duration::from_secs_f32", reason = "panics on negative or huge values; use Duration::try_from_secs_f32" },
   { path = "reqwest::Client::new", reason = "outbound clients come from the one HTTP client crate so TLS, proxy and timeout settings apply" },
   { path = "reqwest::Client::builder", reason = "outbound clients come from the one HTTP client crate so TLS, proxy and timeout settings apply" },
+  { path = "core::convert::Into::into", reason = "name the target type: RequestId::from(raw), not raw.into(); ? still converts errors" },
+  { path = "std::boxed::Box::leak", reason = "leaked memory never comes back in a long-running server" },
+  { path = "std::process::abort", reason = "kills every in-flight request; return an error instead" },
 ]
