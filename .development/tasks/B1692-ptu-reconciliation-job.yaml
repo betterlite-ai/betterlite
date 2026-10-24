@@ -32,7 +32,8 @@ description: >-
   replace_existing semantics and the existing scheduler misfire grace setting. Supply an
   immutable B844 deployment snapshot, current DB handle and the writer's B1690 lock object;
   send High/failed_tracking_spend through the injected alerting interface. Startup must not
-  create another lock owner per tick. B068 installs this adapter; B070 later supplies the
+  create another lock owner per tick. Install this adapter directly in proxy startup,
+  independently of B068's response-cost service; B070 later supplies the
   shared spend-writer handle through the same typed startup resource, without either task
   depending on the other's umbrella. Job cancellation/shutdown joins the active run and
   retains the normal partial-write result rather than detaching its future.
