@@ -96,13 +96,27 @@ tasks:
     milestone: M1 openai data plane
     title: Provider framework, provider resolution and parameter mapping
     status: todo
-    depends_on: [B005, B009, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B006]
+    depends_on:
+    - B005
+    - B009
+    - B174
+    - B175
+    - B176
+    - B177
+    - B178
+    - B179
+    - B180
+    - B181
+    - B182
+    - B183
+    - B006
     file: tasks/B010-provider-framework.yaml
     covers:
-      - "litellm/llms/{__init__,base,README}.*"
-      - "litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py"
-      - "litellm/llms/base_llm/{chat,bridges}/**"
-      - "litellm/types/llms/base.py"
+    - litellm/llms/{__init__,base,README}.*
+    - litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py
+    - litellm/llms/base_llm/{chat,bridges}/**
+    - litellm/types/llms/base.py
+    - litellm/llms/aiohttp_openai/**
   - id: B011
     milestone: M1 openai data plane
     title: Exception types and provider error mapping
@@ -1828,11 +1842,13 @@ tasks:
     milestone: M1 openai data plane
     title: Pooled outbound requests and response limits
     status: todo
-    depends_on: [B172, B005]
+    depends_on:
+    - B172
+    - B005
     file: tasks/B173-http-pool.yaml
     covers:
-      - "litellm/llms/custom_httpx/{http_handler,httpx_handler,aiohttp_handler,aiohttp_transport,async_client_cleanup,llm_http_handler,container_handler}.py"
-      - "litellm/llms/aiohttp_openai/**"
+    - >-
+      litellm/llms/custom_httpx/{http_handler,httpx_handler,aiohttp_handler,aiohttp_transport,async_client_cleanup,llm_http_handler,container_handler}.py
   - id: B174
     milestone: M1 openai data plane
     title: Provider identity and model resolution
