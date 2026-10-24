@@ -2178,13 +2178,15 @@ tasks:
     title: Routing groups, priority tiers and reasoning capabilities
     status: todo
     depends_on:
-    - B019
+    - B016
+    - B302
     - B010
     - B013
+    - B301
+    - B002
     file: tasks/B323-routing-groups.yaml
     covers:
     - litellm/router_utils/{routing_groups,reasoning_effort_capability}.py
-
   - id: B324
     milestone: M2 routing
     title: Atomic caller and session deployment affinity
