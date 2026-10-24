@@ -1,0 +1,62 @@
+id: B300
+title: Stateful HTTP scenarios for the routing oracle
+description: Extend tools/oracle without changing the existing B001 case format. Add an explicitly tagged
+  scenario format containing the existing config/env/comparison fields and a bounded ordered list of HTTP
+  request steps, with named concurrent steps and join points. Keep each gateway alive for the entire scenario
+  and reset mock scripts and observations independently for the two gateways. Add optional upstream delays
+  and connection-close replies so retry counts, cancellation and first-chunk failures can be observed.
+  Compare per-step responses and the complete ordered provider trace, including method, path, body and
+  selected headers; never ignore deployment selection. Preserve the CLI and exit statuses used by the
+  gate. Seed a two-request scenario and a barrier-controlled concurrent scenario against existing chat
+  routes. Add scenario parser fuzzing and replay. This is harness work only, estimated at 700 to 800 changed
+  lines including tests.
+scope:
+  paths:
+  - tools/oracle/**
+  - Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7880
+  why: Retries require more than one observed provider call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/client_initalization_utils.py#L16-L78
+  why: Concurrent calls must be held at a barrier to test deployment saturation.
+dod:
+- text: Legacy cases and the new two-step and concurrent self-check scenarios pass against two pinned
+    LiteLLM processes.
+  proof:
+  - scenario-self-check
+- text: Deliberately changing the second response, upstream order, path or retry count makes comparison
+    fail, and timeout or cancellation reaps every child.
+  proof:
+  - scenario-tests
+- text: The strict scenario parser has a fuzz target and a corpus replay test.
+  proof:
+  - scenario-corpus
+checks:
+  optional: []
+  commands:
+  - id: scenario-tests
+    why: scenario comparison or lifecycle tests fail or are missing
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(scenario)'
+  - id: scenario-self-check
+    why: the scenario harness disagrees with itself
+    run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/routing/harness
+  - id: scenario-corpus
+    why: the scenario parser fuzz target, corpus or replay test is missing or fails
+    run: test -f tools/oracle/fuzz/fuzz_targets/scenario.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/scenario)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scenario_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/harness/two-requests.yaml
+- tools/oracle/cases/routing/harness/concurrent-requests.yaml
+deviations: []
+out_of_scope:
+- Injecting test state into the production HTTP server.
+- Direct component probes, implemented by B301.
+pitfalls:
+- Never share a canned-response cursor between the two gateway runs.
+- Use barriers and short bounded waits instead of timing assertions based on process startup.
+- The new schema is a harness schema under tools/oracle, not a change to .development/schema.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
