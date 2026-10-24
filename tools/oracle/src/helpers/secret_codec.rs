@@ -17,6 +17,8 @@ use serde_json::{Value, json};
 
 use super::{HelperError, HelperOutput};
 
+mod tests;
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SecretCodecInput {
