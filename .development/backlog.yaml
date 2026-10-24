@@ -250,6 +250,7 @@ tasks:
     - B322
     - B323
     - B324
+    - B325
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2161,3 +2162,17 @@ tasks:
     covers:
     - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
     - litellm/caching/affinity_cache.py
+
+  - id: B325
+    milestone: M2 routing
+    title: Prompt cache prefix affinity
+    status: todo
+    depends_on:
+    - B016
+    - B010
+    - B013
+    - B304
+    file: tasks/B325-prompt-affinity.yaml
+    covers:
+    - litellm/router_utils/prompt_caching_cache.py
+    - litellm/router_utils/pre_call_checks/prompt_caching_deployment_check.py
