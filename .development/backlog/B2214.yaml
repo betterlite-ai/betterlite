@@ -1,7 +1,7 @@
 id: B2214
 milestone: M3 providers
 title: Shared provider message and iterator primitives
-status: in-progress
+status: done
 depends_on: [B171]
 file: tasks/B2214-provider-message-primitives.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/types/utils.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 80
