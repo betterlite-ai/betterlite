@@ -1,76 +1,143 @@
 id: B333
 title: JEV classifier transport and attribution
-description: Add the JEV classifier adapter through B099 Decisions dispatch or a configured B009 HTTP
+description: 'Add the JEV classifier adapter through B099 Decisions dispatch or a configured B009 HTTP
   endpoint, using typed request/response models and B012 attribution. Reuse B331 classifier outcomes and
   timeout recovery. Preserve config-only URL/key sourcing and SecretString boundaries; B358 owns offline
-  heuristic_v2 prediction. Use the existing Rust crate boundaries from B004 and B008; integrate through
-  the server when the provider dispatcher or callbacks live in another core crate. This task's source
-  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
-  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
-  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
-  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
-  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
-  full path. Add a cargo-fuzz target jev_verdict under crates/betterlite-router/fuzz and a normal replays_the_jev_verdict_corpus
-  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
-  fixtures and oracle cases are budget-excluded by checks.yaml.
+  heuristic_v2 prediction. Configuration boundary keys introduced or consumed here: jev_classifier_config,
+  TYPESAFE_API_KEY, TYPESAFE_API_BASE. Pinned declaration defaults: jev_classifier_config=None. Resolve
+  env values once in betterlite-config, never in router code. jev_classifier_config.model defaults to
+  jev-latest, timeout_ms=3000, circuit_breaker_enabled=true and circuit_breaker_cooldown_seconds=30.0.
+  Direct API configuration falls back to TYPESAFE_API_KEY and TYPESAFE_API_BASE (then https://api.typesafe.ai);
+  an explicit new base requires an explicit key. Implement the owned native service in crates/betterlite-router/src/jev_classifier.rs.
+  Add ProbeOperation::B333 in tools/oracle/src/router_probes/mod.rs and the corresponding B333 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/jev_classifier.py:
+  JevClassifierClient.evaluate (L79-L84), _DecisionsRouter.adecisions (L88-L102), RouterJevClassifierClient.__init__
+  (L109-L111), RouterJevClassifierClient.evaluate (L113-L152), HttpJevClassifierClient.__init__ (L156-L159),
+  HttpJevClassifierClient.evaluate (L161-L184), HttpJevClassifierClient._log_response (L187-L258), build_jev_request
+  (L278-L287), jev_classifier_cost (L290-L304). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Bound the jev_verdict outside-byte parser to 1048576 bytes before decoding; on excess use its typed
+  invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback path).'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/jev-classifier/**
+  - crates/betterlite-router/src/jev_classifier.rs
+  - crates/betterlite-router/src/jev_classifier/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/jev_classifier.rs
+  - crates/betterlite-server/src/routing/jev_classifier/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/jev_classifier.rs
   - tools/oracle/src/router_probes/jev_classifier/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/jev_classifier.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/jev_classifier.py
+  - tools/oracle/cases/routing/jev-classifier/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/jev_classifier.rs
+  - crates/betterlite-config/src/jev_classifier/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b333-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs
+  - crates/betterlite-router/fuzz/corpus/jev_verdict/b333-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L109-L304
   why: Router/direct JEV transport and cost.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2159-L2252
   why: JEV verdict outcome.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L79-L84
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L88-L102
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1311-L1322
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L697-L700
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L704-L707
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L710-L722
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1649-L1657
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b333_behaviors and b333_boundaries under jev_classifier::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b333-behaviors
+  - b333-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the jev_classifier prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b333-invalid.yaml;
+    the valid seed contains jev_classifier_config. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
-    replays.
+  - b333-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/jev_verdict/b333-valid.json and crates/betterlite-router/fuzz/corpus/jev_verdict/b333-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target jev_verdict and normal replays_the_jev_verdict_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-- text: All mutants in changed router, config or wire code are caught.
+  - b333-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(jev_classifier)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/jev_verdict)"
-      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_jev_verdict_corpus)'
+  - id: b333-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b333_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b333-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b333_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/jev_classifier.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/jev_classifier.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b333-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b333-" && grep -Fq 'jev_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/b333-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/jev_verdict/b333-valid.json && test -f crates/betterlite-router/fuzz/corpus/jev_verdict/b333-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/jev_verdict
+      | grep -Fq "/b333-" && test -f crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_jev_verdict_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/jev-classifier/jev-direct-versus-deployment.yaml
 - tools/oracle/cases/routing/jev-classifier/jev-timeout-fallback.yaml
@@ -79,7 +146,12 @@ oracle_cases:
 - tools/oracle/cases/routing/jev-classifier/negative-and-nonfinite-cost.yaml
 - tools/oracle/cases/routing/jev-classifier/model-and-cost-attribution.yaml
 - tools/oracle/cases/routing/jev-classifier/cancelled-call-no-late-update.yaml
-deviations: []
+- tools/oracle/cases/routing/jev-classifier/parser-byte-bound.yaml
+deviations:
+- what: The jev_verdict byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L109-L304
 out_of_scope:
 - Offline artifact prediction, which belongs to B358.
 - Retraining the classifier or running an online judge service.
@@ -87,6 +159,10 @@ pitfalls:
 - This task waits for B099 so it does not invent the Decisions wire API.
 - An upstream classifier URL and secret come only from validated operator configuration.
 - JEV output must remain untrusted bytes until the typed parser validates it.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800
