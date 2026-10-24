@@ -21,5 +21,5 @@ The architect is the top of the pyramid: the main session working with Max. It o
 
 - Push to main directly or bypass the merge queue. The ruleset has no bypass, on purpose.
 - Edit product code by hand. A fix goes through a task, even a small one.
-- Loosen a check, a rule or a budget to get a task through. That's a decision for Max, recorded under Decisions with its reason.
+- Loosen a check or a rule to get a task through. That's a decision for Max, recorded under Decisions with its reason. One task's budget (changed lines, new expects, timeouts) may grow when its work is cohesive and green, with the reason in the PR body. Nothing an agent runs gets more access than agents.yaml gives it.
 - Post anything outside betterlite-ai/betterlite (issues, comments, messages elsewhere) without Max's go.
