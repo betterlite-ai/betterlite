@@ -24,14 +24,20 @@ use prompt::Brief;
 pub(crate) enum Step {
     Ready(Vec<String>),
     Retry(Vec<String>),
-    Reviewed(Vec<String>),
+    Reviewed(EarlierReview),
     Climb(Vec<String>),
+}
+
+pub(crate) struct EarlierReview {
+    pub(crate) commit: String,
+    pub(crate) findings: Vec<String>,
 }
 
 struct Progress {
     feedback: Vec<String>,
     number: u32,
     review_rounds: u32,
+    earlier: Option<EarlierReview>,
 }
 
 pub(crate) struct Places<'run> {
@@ -47,6 +53,7 @@ pub(crate) struct Attempt<'run> {
     pub(crate) brief: &'run Brief<'run>,
     pub(crate) places: &'run Places<'run>,
     pub(crate) number: u32,
+    pub(crate) earlier: Option<&'run EarlierReview>,
 }
 
 pub(crate) fn find_runner<'agents>(
@@ -140,16 +147,18 @@ fn climb_rung(
             brief,
             places,
             number: progress.number,
+            earlier: progress.earlier.as_ref(),
         };
         match attempt::attempt_once(&current, runner, rung, &progress.feedback)? {
             Step::Ready(lines) => return Ok(Some(lines)),
             Step::Retry(next) => progress.feedback = next,
-            Step::Reviewed(next) if progress.review_rounds < agents.policy.max_review_rounds => {
+            Step::Reviewed(review) if progress.review_rounds < agents.policy.max_review_rounds => {
                 progress.review_rounds = progress.review_rounds.saturating_add(1);
-                progress.feedback = next;
+                progress.feedback.clone_from(&review.findings);
+                progress.earlier = Some(review);
             }
-            Step::Reviewed(next) => {
-                let reason = format!("review rounds ran out: {}", next.join("; "));
+            Step::Reviewed(review) => {
+                let reason = format!("review rounds ran out: {}", review.findings.join("; "));
                 return Err(GateError::Dispatch {
                     task: brief.task.id.clone(),
                     reason,
@@ -174,6 +183,7 @@ fn run_ladder(
         feedback: notes,
         number: 0,
         review_rounds: 0,
+        earlier: None,
     };
     for rung in &agents.roles.worker.ladder {
         if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {

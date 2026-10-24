@@ -1,3 +1,6 @@
+mod tests;
+
+use crate::dispatch::EarlierReview;
 use crate::spec::task::Task;
 
 pub(crate) struct Brief<'task> {
@@ -22,4 +25,27 @@ pub(crate) fn worker(brief: &Brief<'_>, feedback: &[String]) -> String {
         prompt.push('\n');
     }
     prompt
+}
+
+pub(crate) fn reviewer(brief: &Brief<'_>, earlier: Option<&EarlierReview>) -> String {
+    let rounds = earlier.map_or_else(String::new, |review| {
+        let items: Vec<String> = review
+            .findings
+            .iter()
+            .map(|item| format!("- {item}"))
+            .collect();
+        format!(
+            "\nAn earlier round reviewed this branch at {commit} and asked for these changes:\n{items}\nCheck that each one is fixed. Report a finding only for one that is not fixed, or for a line changed since that round (git diff {commit}...HEAD). Code the earlier round already read is settled.\n",
+            commit = review.commit,
+            items = items.join("\n"),
+        )
+    });
+    format!(
+        "You are the betterlite reviewer for task {id}: {title}.\nRead .development/roles/reviewer.md first and follow it. The rules are in .development/rules.yaml and the task is .development/{file}.\nReview branch {branch} against its base {base} with git diff {base}...HEAD. Change nothing.\nYour final answer is the review JSON described in .development/schema/review.schema.json.\n{rounds}",
+        id = brief.task.id,
+        title = brief.task.title,
+        file = brief.file,
+        branch = brief.branch,
+        base = brief.base,
+    )
 }
