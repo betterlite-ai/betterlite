@@ -10,7 +10,8 @@ description: >-
   field lacks a typed representation. Parse monetary JSON number lexemes directly into Decimal without passing through
   f64; null/absence remain distinct where the source permits them. Add price_fields helper cases that compare canonical
   decimal strings derived from Python Decimal parsing of the same pinned values; add price_fields fuzz target and
-  corpus replay. Budget 380 types/decimal adapter lines, 60 wiring and 300 tests.
+  corpus replay. Budget 380 types/decimal adapter lines, 60 wiring and 300 tests. Seed B171's shared helper_case
+  corpus with every added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -20,6 +21,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/price-fields/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
@@ -42,6 +44,9 @@ dod:
   proof:
   - price-schema-pin
   - price-fields-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -64,6 +69,11 @@ checks:
     run: >-
       echo '9ca0837778541b5b2ce90f8eb30c66b2cbb320ac93295dff975f53483576f57e  crates/betterlite-models/fixtures/model_prices_and_context_window.schema.json'
       | sha256sum --check --quiet
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/price-fields/fraction.yaml
 - tools/oracle/cases/helpers/price-fields/exponent.yaml
