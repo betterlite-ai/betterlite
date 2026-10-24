@@ -171,23 +171,19 @@ tasks:
       - "litellm/llms/base_llm/completion/**"
   - id: B016
     milestone: M2 routing
-    title: Router core, deployment clients and router callbacks
+    title: Router call pipeline and response metadata
     status: todo
     depends_on:
     - B008
-    - B010
-    - B011
-    - B012
-    - B013
-    - B014
-    - B006
-    - B300
-    - B301
     - B302
     - B303
-    - B304
-    - B360
-    - B361
+    - B364
+    - B014
+    - B011
+    - B301
+    - B395
+    - B396
+    - B002
     file: tasks/B016-router-core.yaml
     covers:
     - litellm/router.py
@@ -2709,3 +2705,42 @@ tasks:
     - litellm/router.py
     - litellm/types/router.py
     - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B364
+    milestone: M2 routing
+    title: Static deployment eligibility
+    status: todo
+    depends_on:
+    - B302
+    - B010
+    - B013
+    - B011
+    - B301
+    - B002
+    file: tasks/B364-static-eligibility.yaml
+    covers:
+    - litellm/router.py
+  - id: B395
+    milestone: M2 routing
+    title: Native routing strategy dispatch
+    status: todo
+    depends_on:
+    - B008
+    - B301
+    - B002
+    file: tasks/B395-strategy-dispatch.yaml
+    covers:
+    - litellm/router.py
+  - id: B396
+    milestone: M2 routing
+    title: Pass-through deployment selection
+    status: todo
+    depends_on:
+    - B302
+    - B364
+    - B395
+    - B014
+    - B011
+    - B301
+    file: tasks/B396-passthrough-selection.yaml
+    covers:
+    - litellm/router.py
