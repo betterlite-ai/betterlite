@@ -1996,7 +1996,7 @@ tasks:
     title: Pinned model catalog and exact prices
     status: todo
     depends_on: [B004, B171, B204, B205]
-    file: null
+    file: tasks/B193-model-catalog.yaml
     covers:
       - "model_prices_and_context_window.json"
       - "litellm/model_prices_and_context_window_backup.json"
