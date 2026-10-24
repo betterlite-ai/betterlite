@@ -2035,10 +2035,16 @@ tasks:
     milestone: M1 openai data plane
     title: Native provider error classifiers
     status: todo
-    depends_on: [B185]
+    depends_on:
+    - B185
+    - B238
+    - B239
+    - B240
+    - B241
+    - B242
     file: tasks/B186-native-errors.yaml
     covers:
-      - "litellm/litellm_core_utils/exception_mapping_utils.py"
+    - litellm/litellm_core_utils/exception_mapping_utils.py
   - id: B187
     milestone: M1 openai data plane
     title: Secret and internal-detail redaction
@@ -2542,5 +2548,60 @@ tasks:
     - B187
     - B236
     file: tasks/B245-openai-like-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B238
+    milestone: M1 openai data plane
+    title: Anthropic and Replicate error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B238-anthropic-replicate-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B239
+    milestone: M1 openai data plane
+    title: Bedrock, Mantle and SageMaker errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B239-aws-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B240
+    milestone: M1 openai data plane
+    title: Vertex and Gemini error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B240-vertex-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B241
+    milestone: M1 openai data plane
+    title: Cloudflare, Cohere, Hugging Face and AI21 errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B241-native-errors-a.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B242
+    milestone: M1 openai data plane
+    title: NLP Cloud, Together, Aleph Alpha, Ollama and vLLM errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B242-native-errors-b.yaml
     covers:
     - litellm/litellm_core_utils/exception_mapping_utils.py
