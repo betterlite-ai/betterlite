@@ -35,11 +35,9 @@ pub struct CapabilityRule {
 }
 
 pub fn decode_model_generalization_rules(bytes: &[u8]) -> Result<Vec<Box<RawValue>>, ModelsError> {
-    if bytes.len() > MAX_RULES_BYTES {
-        return Err(ModelsError::RulesTooLarge {
-            size: bytes.len(),
-            limit: MAX_RULES_BYTES,
-        });
+    let size = bytes.len();
+    if size > MAX_RULES_BYTES {
+        return Err(ModelsError::RulesTooLarge { size });
     }
     let document: Box<RawValue> =
         serde_json::from_slice(bytes).map_err(|source| ModelsError::RulesJson { source })?;
@@ -60,28 +58,21 @@ fn searches(pattern: &Regex, model: &str) -> bool {
 impl CatalogGeneralizations {
     #[must_use]
     pub fn install(rules: Vec<Box<RawValue>>) -> (Self, Vec<ModelsError>) {
-        let mut routing = Vec::new();
-        let mut capabilities = Vec::new();
+        let mut installed = Self::default();
         let mut warnings = Vec::new();
         for resolved in resolve_legacy_extends(&rules) {
             match compile_rule(resolved) {
-                Ok(CompiledRule::Routing(routing_rule)) => routing.push(routing_rule),
-                Ok(CompiledRule::Capability(capability_rule)) => capabilities.push(capability_rule),
-                Ok(CompiledRule::Both(routing_rule, capability_rule)) => {
-                    routing.push(routing_rule);
-                    capabilities.push(capability_rule);
+                Ok(CompiledRule::Routing(routing)) => installed.routing.push(routing),
+                Ok(CompiledRule::Capability(capability)) => installed.capabilities.push(capability),
+                Ok(CompiledRule::Both(routing, capability)) => {
+                    installed.routing.push(routing);
+                    installed.capabilities.push(capability);
                 }
                 Err(warning) => warnings.push(warning),
             }
         }
-        (
-            Self {
-                rules,
-                routing,
-                capabilities,
-            },
-            warnings,
-        )
+        installed.rules = rules;
+        (installed, warnings)
     }
 
     #[must_use]
@@ -89,10 +80,8 @@ impl CatalogGeneralizations {
         if model.is_empty() {
             return None;
         }
-        let first = self
-            .routing
-            .iter()
-            .find(|rule| searches(&rule.pattern, model))?;
+        let routing = &self.routing;
+        let first = routing.iter().find(|rule| searches(&rule.pattern, model))?;
         Some(&first.provider)
     }
 
@@ -102,14 +91,11 @@ impl CatalogGeneralizations {
             return None;
         }
         let mut union: Option<ModelInfo> = None;
-        for rule in self
-            .capabilities
-            .iter()
-            .filter(|rule| searches(&rule.pattern, model))
-        {
-            union
-                .get_or_insert_default()
-                .extend(rule.model_info.clone());
+        for rule in &self.capabilities {
+            if searches(&rule.pattern, model) {
+                let merged = union.get_or_insert_default();
+                merged.extend(rule.model_info.clone());
+            }
         }
         union
     }
@@ -121,15 +107,12 @@ impl CatalogGeneralizations {
         }
         let mut fill = ModelInfo::new();
         for rule in &self.capabilities {
-            if rule.fill_missing_for_providers.contains(provider) && searches(&rule.pattern, model)
-            {
-                let fields = rule
-                    .model_info
-                    .iter()
-                    .filter(|(key, _)| key.as_str() != PROVIDER_KEY);
-                fill.extend(fields.map(|(key, value)| (key.clone(), value.clone())));
+            let listed = rule.fill_missing_for_providers.contains(provider);
+            if listed && searches(&rule.pattern, model) {
+                fill.extend(rule.model_info.clone());
             }
         }
+        fill.remove(PROVIDER_KEY);
         (!fill.is_empty()).then_some(fill)
     }
 }

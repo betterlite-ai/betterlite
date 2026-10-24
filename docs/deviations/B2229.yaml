@@ -1,0 +1,14 @@
+task: B2229
+deviations:
+  - what: Rule patterns compile with fancy-regex instead of Python's re. A pattern fancy-regex refuses gets the invalid-regex warning and is skipped, and that warning ends with fancy-regex's error text instead of Python's re.error text. A search that passes fancy-regex's backtrack limit logs a warning and counts as no match. $ matches only at the very end of the model name, where Python's $ also matches before one trailing newline.
+    why: The task asks for a maintained regex engine with bounded work, and fancy-regex is the bounded engine that still runs the lookaheads the shipped catalog rules use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L143-L152
+  - what: decode_model_generalization_rules refuses a rule list over 1048576 bytes and JSON that Python's json module would still read, such as NaN or Infinity, with ModelsError::RulesTooLarge or ModelsError::RulesJson.
+    why: Rule bounded-inputs caps every outside input, and the task fixes the limit at 1048576 bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L193-L199
+  - what: In skip warnings a rule name that is a float, list or object prints as its JSON text instead of Python's str(), and in an invalid pattern a control character other than tab, newline and carriage return prints as \u{..} instead of Python's \xNN.
+    why: String, null, boolean and integer names print exactly as Python does, and the other shapes never appear in a real catalog.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L134-L176
+  - what: Matched capability and fill-missing maps list their keys in sorted order instead of Python's insertion order.
+    why: The maps are BTreeMaps, and key order in a JSON object carries no meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L209-L230

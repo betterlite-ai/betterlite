@@ -12,10 +12,7 @@ fn helper_seeds_select_catalog_generalizations() {
     let seeds: Vec<HelperCase> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            let name = path.file_name().and_then(|file_name| file_name.to_str());
-            name.is_some_and(|file_name| file_name.starts_with("catalog_generalizations"))
-        })
+        .filter(|path| path.to_str().unwrap().contains("/catalog_generalizations"))
         .map(|path| {
             let source = fs::read_to_string(path).unwrap();
             parse_helper_case(&source).unwrap();
@@ -23,9 +20,6 @@ fn helper_seeds_select_catalog_generalizations() {
         })
         .collect();
     assert!(!seeds.is_empty());
-    assert!(
-        seeds
-            .iter()
-            .all(|seed| matches!(seed.call, HelperCall::CatalogGeneralizations(_)))
-    );
+    let selected = |seed: &HelperCase| matches!(seed.call, HelperCall::CatalogGeneralizations(_));
+    assert!(seeds.iter().all(selected));
 }

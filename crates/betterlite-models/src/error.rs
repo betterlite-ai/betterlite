@@ -4,8 +4,8 @@ use crate::catalog_generalizations::python_text::python_repr;
 
 #[derive(Debug, Error)]
 pub enum ModelsError {
-    #[error("the generalization rule list is {size} bytes, over the {limit} byte limit")]
-    RulesTooLarge { size: usize, limit: usize },
+    #[error("the generalization rule list is {size} bytes, over the 1048576 byte limit")]
+    RulesTooLarge { size: usize },
     #[error("the generalization rule list is not valid JSON")]
     RulesJson {
         #[source]

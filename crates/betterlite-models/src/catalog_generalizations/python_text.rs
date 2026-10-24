@@ -19,19 +19,9 @@ pub(crate) fn python_repr(text: &str) -> String {
     let mut repr = String::from(quote);
     for character in text.chars() {
         match character {
-            '\\' => repr.push_str("\\\\"),
-            '\n' => repr.push_str("\\n"),
-            '\r' => repr.push_str("\\r"),
-            '\t' => repr.push_str("\\t"),
             _ if character == quote => repr.extend(['\\', quote]),
-            _ if character.is_control() => {
-                let code = u32::from(character);
-                repr.push_str("\\x");
-                repr.extend(
-                    [code >> 4_u8, code & 0xF]
-                        .into_iter()
-                        .filter_map(|digit| char::from_digit(digit, 16)),
-                );
+            _ if character == '\\' || character.is_control() => {
+                repr.extend(character.escape_default())
             }
             _ => repr.push(character),
         }

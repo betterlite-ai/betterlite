@@ -1,10 +1,10 @@
-use std::fmt::Display;
-
 use betterlite_models::catalog_generalizations::{
     CatalogGeneralizations, decode_model_generalization_rules,
 };
 use betterlite_models::error::ModelsError;
 use serde_json::{Value, json};
+
+use super::{HelperError, HelperOutput};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -22,24 +22,48 @@ pub(crate) struct FillMissingProbe {
     pub(crate) provider: String,
 }
 
-pub(crate) fn invoke(
+pub(crate) fn invoke(input: &CatalogGeneralizationsInput) -> HelperOutput {
+    match decode_model_generalization_rules(input.rules.to_string().as_bytes()) {
+        Ok(rules) => HelperOutput {
+            ok: true,
+            value: Some(report(input, rules)),
+            error: None,
+        },
+        Err(error) => {
+            let message = error.to_string();
+            let failure = HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message,
+            };
+            HelperOutput {
+                ok: false,
+                value: None,
+                error: Some(failure),
+            }
+        }
+    }
+}
+
+fn report(
     input: &CatalogGeneralizationsInput,
-) -> Result<Value, Box<super::HelperError>> {
-    let bytes = serde_json::to_vec(&input.rules).map_err(|error| Box::new(value_error(&error)))?;
-    let rules =
-        decode_model_generalization_rules(&bytes).map_err(|error| Box::new(value_error(&error)))?;
-    let (generalizations, warnings) = CatalogGeneralizations::install(rules);
+    rules: Vec<Box<serde_json::value::RawValue>>,
+) -> Value {
+    let (installed, warnings) = CatalogGeneralizations::install(rules);
     let fill_missing = input
         .fill_missing
         .iter()
-        .map(|probe| generalizations.match_fill_missing(&probe.model, &probe.provider));
-    Ok(json!({
-        "rules": generalizations.rules,
+        .map(|probe| installed.match_fill_missing(&probe.model, &probe.provider));
+    json!({
+        "rules": installed.rules,
         "warnings": warnings.iter().map(warning).collect::<Vec<_>>(),
-        "routing": input.routing.iter().map(|model| generalizations.match_routing(model)).collect::<Vec<_>>(),
-        "capabilities": input.capabilities.iter().map(|model| generalizations.match_capabilities(model)).collect::<Vec<_>>(),
+        "routing": input.routing.iter().map(|model| installed.match_routing(model)).collect::<Vec<_>>(),
+        "capabilities": input.capabilities.iter().map(|model| installed.match_capabilities(model)).collect::<Vec<_>>(),
         "fill_missing": fill_missing.collect::<Vec<_>>(),
-    }))
+    })
 }
 
 fn warning(skipped: &ModelsError) -> Value {
@@ -51,20 +75,6 @@ fn warning(skipped: &ModelsError) -> Value {
         ModelsError::RulesTooLarge { .. } | ModelsError::RulesJson { .. } => "",
     };
     json!({"subject": subject, "message": skipped.to_string()})
-}
-
-fn value_error<E>(error: &E) -> super::HelperError
-where
-    E: Display,
-{
-    super::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    }
 }
 
 mod tests;

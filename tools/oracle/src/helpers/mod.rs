@@ -76,21 +76,20 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 }
 
 fn invoke(call: &HelperCall) -> HelperOutput {
-    let result = match call {
-        HelperCall::UrlPath(input) => url_path::invoke(input),
+    match call {
+        HelperCall::UrlPath(input) => match url_path::invoke(input) {
+            Ok(value) => HelperOutput {
+                ok: true,
+                value: Some(value),
+                error: None,
+            },
+            Err(error) => HelperOutput {
+                ok: false,
+                value: None,
+                error: Some(*error),
+            },
+        },
         HelperCall::CatalogGeneralizations(input) => catalog_generalizations::invoke(input),
-    };
-    match result {
-        Ok(value) => HelperOutput {
-            ok: true,
-            value: Some(value),
-            error: None,
-        },
-        Err(error) => HelperOutput {
-            ok: false,
-            value: None,
-            error: Some(*error),
-        },
     }
 }
 

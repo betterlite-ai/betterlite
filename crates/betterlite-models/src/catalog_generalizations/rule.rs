@@ -8,8 +8,9 @@ use crate::catalog_generalizations::{CapabilityRule, ModelInfo, PROVIDER_KEY, Ro
 use crate::error::ModelsError;
 
 pub(super) struct RuleFields {
-    name: Option<Box<RawValue>>,
-    pattern: Option<Box<RawValue>>,
+    label: String,
+    name: Option<String>,
+    pattern: Option<String>,
     model_info: Option<ModelInfo>,
     extends: Option<String>,
     fill_missing_for_providers: Option<Box<RawValue>>,
@@ -24,72 +25,57 @@ pub(super) enum CompiledRule {
 impl RuleFields {
     fn parse(raw: &RawValue) -> Option<Self> {
         let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(raw.get()).ok()?;
+        let name = fields.remove("name");
+        let pattern = fields.remove("pattern");
         let model_info = fields
             .remove("model_info")
-            .and_then(|info| serde_json::from_str(info.get()).ok());
+            .map(|info| serde_json::from_str(info.get()));
         let extends = fields
             .remove("extends")
-            .and_then(|parent| serde_json::from_str(parent.get()).ok());
+            .map(|parent| serde_json::from_str(parent.get()));
         Some(Self {
-            name: fields.remove("name"),
-            pattern: fields.remove("pattern"),
-            model_info,
-            extends,
+            label: python_text(name.as_deref().or(pattern.as_deref())),
+            name: name.and_then(|text| serde_json::from_str(text.get()).ok()),
+            pattern: pattern.and_then(|text| serde_json::from_str(text.get()).ok()),
+            model_info: model_info.and_then(Result::ok),
+            extends: extends.and_then(Result::ok),
             fill_missing_for_providers: fields.remove("fill_missing_for_providers"),
         })
     }
 }
 
 pub(super) fn resolve_legacy_extends(rules: &[Box<RawValue>]) -> Vec<RuleFields> {
-    let parsed: Vec<RuleFields> = rules
-        .iter()
-        .filter_map(|raw| RuleFields::parse(raw))
-        .collect();
+    let mut parsed = Vec::new();
     let mut parents = BTreeMap::new();
-    for rule in &parsed {
-        let name = rule
-            .name
-            .as_ref()
-            .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok());
-        if let (Some(parent_name), Some(parent_info)) = (name, &rule.model_info) {
-            parents.insert(parent_name, parent_info.clone());
+    for rule in rules.iter().filter_map(|raw| RuleFields::parse(raw)) {
+        if let (Some(name), Some(parent_info)) = (&rule.name, &rule.model_info) {
+            parents.insert(name.clone(), parent_info.clone());
+        }
+        parsed.push(rule);
+    }
+    for rule in &mut parsed {
+        let parent = rule.extends.as_ref().and_then(|name| parents.get(name));
+        if let Some(parent_info) = parent
+            && let Some(own_info) = rule.model_info.take()
+        {
+            let mut merged = parent_info.clone();
+            merged.extend(own_info);
+            rule.model_info = Some(merged);
         }
     }
     parsed
-        .into_iter()
-        .map(|mut rule| {
-            if let Some(parent_info) = rule
-                .extends
-                .as_ref()
-                .and_then(|parent_name| parents.get(parent_name))
-            {
-                rule.model_info = rule.model_info.map(|own_info| {
-                    let mut merged = parent_info.clone();
-                    merged.extend(own_info);
-                    merged
-                });
-            }
-            rule
-        })
-        .collect()
 }
 
 pub(super) fn compile_rule(rule: RuleFields) -> Result<CompiledRule, ModelsError> {
-    let label = python_text(rule.name.as_deref().or(rule.pattern.as_deref()));
-    let regex_source = rule
-        .pattern
-        .as_ref()
-        .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok());
-    let (Some(source), Some(model_info)) = (regex_source, rule.model_info) else {
+    let label = rule.label;
+    let (Some(source), Some(model_info)) = (rule.pattern, rule.model_info) else {
         return Err(ModelsError::MalformedRule { label });
     };
-    let pattern = RegexBuilder::new(&source)
-        .case_insensitive(true)
-        .build()
-        .map_err(|error| ModelsError::InvalidRegex {
-            pattern: source,
-            source: Box::new(error),
-        })?;
+    let built = RegexBuilder::new(&source).case_insensitive(true).build();
+    let pattern = built.map_err(|error| ModelsError::InvalidRegex {
+        pattern: source,
+        source: Box::new(error),
+    })?;
     let fill_missing: Option<Result<BTreeSet<String>, _>> = rule
         .fill_missing_for_providers
         .map(|raw| serde_json::from_str(raw.get()));
