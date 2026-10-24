@@ -1,0 +1,91 @@
+minimum_prek_version: "0.4.9"
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+exclude: ^(\.development/schema/|tools/oracle/cases/)|/fixtures/|/fuzz/(corpus|artifacts)/
+
+repos:
+  - repo: builtin
+    hooks:
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: no-file-start-comments
+        name: no file-start comments
+        entry: >-
+          awk 'FNR==1{j=0} !j&&NF{sub(/^[ \t]+/,""); if(/^\/[\/*]/||(/^#/&&!/^#[![]/)){print FILENAME": file starts with a comment";e=1} j=1} END{exit e}'
+        language: system
+        types: [text]
+        exclude: (^|/)Cargo\.lock$|\.md$|^LICENSE$
+      - id: no-tests-in-implementation
+        name: implementation files carry no test code
+        entry: >-
+          awk '/#\[test\]|#\[cfg\(test\)\]/{print FILENAME": test code inside implementation";e=1} END{exit e}'
+        language: system
+        files: ^(crates|tools|\.development/gate)/([^/]+/)?src/.*\.rs$
+        exclude: /tests(\.rs$|/)
+      - id: tests-file-self-gates
+        name: a tests.rs opens with its gate
+        entry: >-
+          awk 'FNR==1&&$0!="#![cfg(test)]"{print FILENAME": missing leading #![cfg(test)]";e=1} END{exit e}'
+        language: system
+        files: ^(crates|tools|\.development/gate)/([^/]+/)?src/(.*/)?tests\.rs$
+      - id: ast-grep
+        name: ast-grep rules
+        entry: ast-grep scan
+        language: system
+        types: [rust]
+      - id: typos
+        name: typos
+        entry: typos
+        language: system
+        types: [text]
+      - id: fmt
+        name: cargo fmt
+        entry: cargo fmt --
+        language: system
+        types: [rust]
+        exclude: ^\.development/gate/
+        require_serial: true
+      - id: zizmor
+        name: zizmor
+        entry: zizmor --offline
+        language: system
+        files: ^\.github/(workflows/[^/]+|actions/[^/]+/action)\.ya?ml$
+      - id: clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets --locked -- -D warnings
+        language: system
+        types_or: [rust, toml]
+        pass_filenames: false
+        stages: [pre-push]
+        priority: 100
+      - id: nextest
+        name: cargo nextest
+        entry: cargo nextest run --workspace --locked --no-tests=warn
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        priority: 101
+      - id: deny
+        name: cargo deny
+        entry: cargo deny --locked check
+        language: system
+        files: (^|/)(Cargo\.(toml|lock)|deny\.toml)$
+        pass_filenames: false
+        stages: [pre-push]
+        priority: 101
+      - id: shear
+        name: cargo shear
+        entry: cargo shear
+        language: system
+        types_or: [rust, toml]
+        pass_filenames: false
+        stages: [pre-push]
+        priority: 101

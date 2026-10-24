@@ -1,0 +1,7 @@
+id: no-default-struct-update
+language: rust
+severity: error
+message: ..Default::default() hides which fields get which value; name every field
+rule:
+  kind: base_field_initializer
+  regex: default\(\)

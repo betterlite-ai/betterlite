@@ -1,0 +1,16 @@
+id: no-long-names
+language: rust
+severity: error
+message: a name past 30 characters hides the word that matters; say it in fewer words
+note: test files are exempt, since a test name reads as the sentence it checks
+ignores:
+  - "**/tests.rs"
+  - "**/tests/**"
+rule:
+  any:
+    - kind: identifier
+      regex: ^.{31,}$
+    - kind: field_identifier
+      regex: ^.{31,}$
+    - kind: type_identifier
+      regex: ^.{31,}$

@@ -1,0 +1,12 @@
+id: no-spelling-impls
+language: rust
+severity: error
+message: a handwritten FromStr, Display or primitive From spells a value; derive it, or keep the domain type and format at the boundary
+rule:
+  kind: impl_item
+  any:
+    - has: { field: trait, regex: '^((std|core)::str::)?FromStr$' }
+    - has: { field: trait, regex: '^((std|core)::fmt::|fmt::)?Display$' }
+    - all:
+        - has: { field: trait, regex: '^((std|core)::convert::)?From<' }
+        - has: { field: type, regex: '^(String|u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64|bool)$' }

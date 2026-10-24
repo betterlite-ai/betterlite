@@ -1,0 +1,17 @@
+id: no-loops-in-tests
+language: rust
+severity: error
+message: A test over several inputs is an rstest function with one #[case::name(...)] per input, not a loop
+ignores:
+  - .development/**
+rule:
+  kind: for_expression
+  inside:
+    kind: function_item
+    stopBy: end
+    follows:
+      kind: attribute_item
+      regex: '^#\[(tokio::)?test'
+      stopBy:
+        not:
+          kind: attribute_item
