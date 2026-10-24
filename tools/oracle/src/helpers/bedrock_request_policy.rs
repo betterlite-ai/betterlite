@@ -106,18 +106,16 @@ fn iterate(response: &Value, calls: &[IteratorCall]) -> Value {
 }
 
 fn request_value(value: &Value) -> RequestValue {
-    match value {
-        Value::String(text) => RequestValue::Text(text.clone()),
-        Value::Object(object) => RequestValue::Mapping(
-            object
-                .iter()
-                .map(|(key, entry)| (key.clone(), request_value(entry)))
-                .collect(),
-        ),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
-            RequestValue::Raw(value.to_string())
-        }
+    if let Some(text) = value.as_str() {
+        return RequestValue::Text(text.to_owned());
     }
+    let Some(object) = value.as_object() else {
+        return RequestValue::Raw(value.to_string());
+    };
+    let pairs = object
+        .iter()
+        .map(|(key, entry)| (key.clone(), request_value(entry)));
+    RequestValue::Mapping(pairs.collect())
 }
 
 fn entries(value: &Value) -> Vec<(String, RequestValue)> {
@@ -130,24 +128,7 @@ fn entries(value: &Value) -> Vec<(String, RequestValue)> {
 fn pairs_json(params: &[(String, RequestValue)]) -> Result<Value, Box<super::HelperError>> {
     let mut pairs = Vec::new();
     for (key, value) in params {
-        pairs.push(json!([key, json_value(value)?]));
-    }
-    Ok(Value::Array(pairs))
-}
-
-fn json_value(value: &RequestValue) -> Result<Value, Box<super::HelperError>> {
-    match value {
-        RequestValue::Text(text) => Ok(Value::String(text.clone())),
-        // request_value never builds a secret, so nothing reaches this arm
-        RequestValue::Secret(_) => Ok(Value::Null),
-        RequestValue::Mapping(pairs) => {
-            let mut object = serde_json::Map::new();
-            for (key, entry) in pairs {
-                object.insert(key.clone(), json_value(entry)?);
-            }
-            Ok(Value::Object(object))
-        }
-        RequestValue::Raw(raw) => serde_json::from_str(raw).map_err(|error| {
+        let projected = json_value(value).map_err(|error| {
             Box::new(super::HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
@@ -156,7 +137,23 @@ fn json_value(value: &RequestValue) -> Result<Value, Box<super::HelperError>> {
                 code: None,
                 message: error.to_string(),
             })
-        }),
+        })?;
+        pairs.push(json!([key, projected]));
+    }
+    Ok(Value::Array(pairs))
+}
+
+fn json_value(value: &RequestValue) -> Result<Value, serde_json::Error> {
+    match value {
+        RequestValue::Text(text) => Ok(json!(text)),
+        // request_value never builds a secret, so nothing reaches this arm
+        RequestValue::Secret(_) => Ok(Value::Null),
+        RequestValue::Raw(raw) => serde_json::from_str(raw),
+        RequestValue::Mapping(pairs) => pairs
+            .iter()
+            .map(|(key, entry)| Ok((key.clone(), json_value(entry)?)))
+            .collect::<Result<serde_json::Map<String, Value>, serde_json::Error>>()
+            .map(Value::Object),
     }
 }
 
