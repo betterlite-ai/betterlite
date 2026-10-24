@@ -73,8 +73,8 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
 }
 fn strip_prefix(value: &str) -> Option<String> {
     for prefix in ["Bearer ", "Basic ", "bearer "] {
-        if let Some(token) = value.strip_prefix(prefix) {
-            return Some(token.to_owned());
+        if value.starts_with(prefix) {
+            return Some(value.replace(prefix, ""));
         }
     }
     value
@@ -83,7 +83,11 @@ fn strip_prefix(value: &str) -> Option<String> {
         .flatten()
 }
 fn aws_credential(value: &str) -> Option<String> {
-    let pattern = Regex::new(r"Credential=(?:Bearer\s+)?([^/\s,]+)").ok()?;
-    let captures = pattern.captures_iter(value).last()?;
-    captures.get(1).map(|token| token.as_str().to_owned())
+    for pattern in [r"Credential=Bearer\s+([^/\s,]+)", r"Credential=([^/\s,]+)"] {
+        let regex = Regex::new(pattern).ok()?;
+        if let Some(token) = regex.captures(value).and_then(|captures| captures.get(1)) {
+            return Some(token.as_str().to_owned());
+        }
+    }
+    None
 }

@@ -1,7 +1,37 @@
 #![cfg(test)]
 use crate::auth::parse_key_header;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 use std::{fs, path::Path};
+#[rstest]
+#[case::repeated_bearer("Bearer test-Bearer master", "test-master")]
+#[case::repeated_basic("Basic test-Basic master", "test-master")]
+#[case::repeated_lowercase("bearer test-bearer master", "test-master")]
+#[case::aws_empty_credential_before_master(
+    "AWS4-HMAC-SHA256 Credential=/x, Credential=master/20261024/eu/service/aws4_request",
+    "master"
+)]
+#[case::aws_first_bearer(
+    "AWS4-HMAC-SHA256 Credential=Bearer test-master/d/r/s/aws4_request, Credential=other/d",
+    "test-master"
+)]
+#[case::aws_bearer_before_plain(
+    "AWS4-HMAC-SHA256 Credential=other/d, Credential=Bearer test-master/d",
+    "test-master"
+)]
+#[case::aws_first_plain(
+    "AWS4-HMAC-SHA256 Credential=test-master/d, Credential=other/d",
+    "test-master"
+)]
+#[case::aws_two_bearers(
+    "AWS4-HMAC-SHA256 Credential=Bearer test-master/d, Credential=Bearer other/d",
+    "test-master"
+)]
+#[case::aws_empty("AWS4-HMAC-SHA256 Credential=/x", "")]
+fn authorization_prefixes_match_litellm(#[case] value: &str, #[case] expected: &str) {
+    let key = parse_key_header("authorization", value.as_bytes()).unwrap();
+    assert_eq!(key.expose_secret(), expected);
+}
 #[rstest]
 #[case::authorization("authorization")]
 #[case::api_key("api-key")]

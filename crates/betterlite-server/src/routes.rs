@@ -1,6 +1,8 @@
 use crate::auth::authenticate;
+use crate::error_body::request_timeout_error;
 use axum::Json;
 use axum::Router;
+use axum::error_handling::HandleErrorLayer;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::middleware;
@@ -10,8 +12,16 @@ use secrecy::SecretString;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tower::ServiceBuilder;
+use tower::timeout::TimeoutLayer;
 pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<AtomicBool>) -> Router {
-    let routes = Router::new()
+    let timeout_layers = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
+            request_timeout_error()
+        }))
+        .layer(TimeoutLayer::new(Duration::from_secs(30)));
+    Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
         .fallback(|| async {
@@ -22,8 +32,9 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
                 }),
             )
         })
-        .with_state(shutting_down);
-    routes.layer(middleware::from_fn_with_state(master_key, authenticate))
+        .with_state(shutting_down)
+        .layer(middleware::from_fn_with_state(master_key, authenticate))
+        .layer(timeout_layers)
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {

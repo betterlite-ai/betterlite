@@ -1,9 +1,7 @@
 use crate::connection_limit::{BoundedListener, BoundedStream, MAX_CONNECTIONS};
-use crate::error_body::request_timeout_error;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
-use axum::error_handling::HandleErrorLayer;
 use betterlite_config::types::Config;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
@@ -18,8 +16,6 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
-use tower::ServiceBuilder;
-use tower::timeout::TimeoutLayer;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,7 +43,10 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let application = build_application(config, Arc::clone(&shutting_down));
+    let application = router(
+        config.general_settings.master_key,
+        Arc::clone(&shutting_down),
+    );
     let listener = BoundedListener {
         listener: tcp_listener,
         permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
@@ -81,14 +80,6 @@ async fn accept_connection(listener: &BoundedListener) -> Option<(BoundedStream,
         }
         Err(_) => None,
     }
-}
-fn build_application(config: Config, shutting_down: Arc<AtomicBool>) -> Router {
-    let timeout_layers = ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
-            request_timeout_error()
-        }))
-        .layer(TimeoutLayer::new(Duration::from_secs(30)));
-    router(config.general_settings.master_key, shutting_down).layer(timeout_layers)
 }
 fn configure_connection_builder() -> Builder<TokioExecutor> {
     let mut builder = Builder::new(TokioExecutor::new()).http1_only();
