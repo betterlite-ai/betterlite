@@ -2,10 +2,10 @@ use axum::http::StatusCode;
 use std::collections::BTreeMap;
 use std::io::{Error, Write as _};
 use std::net::TcpListener;
+use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use std::str;
 use tokio::{net, runtime, time};
 
 use axum::Router;
@@ -148,10 +148,7 @@ async fn handle(
     play(state, ticket).await
 }
 
-async fn play(
-    state: Arc<Mutex<Recording>>,
-    ticket: Ticket,
-) -> Result<Response<Body>, StatusCode> {
+async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {
     let mut guard = CallGuard {
         state,
         run: ticket.run,

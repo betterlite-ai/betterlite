@@ -75,7 +75,11 @@ pub(crate) fn run_group(
         first_log,
         second_log,
         first_requests: first_trace.into_iter().map(|call| call.request).collect(),
-        second_requests: mock.finish()?.into_iter().map(|call| call.request).collect(),
+        second_requests: mock
+            .finish()?
+            .into_iter()
+            .map(|call| call.request)
+            .collect(),
     };
     compare_group(root, cases, &captures)
 }

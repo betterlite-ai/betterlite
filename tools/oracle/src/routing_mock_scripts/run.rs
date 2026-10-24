@@ -97,9 +97,7 @@ impl Ticket {
                 time::sleep(*delay).await;
                 true
             }
-            Pause::Barrier(barrier) => time::timeout(self.deadline, barrier.wait())
-                .await
-                .is_ok(),
+            Pause::Barrier(barrier) => time::timeout(self.deadline, barrier.wait()).await.is_ok(),
         }
     }
 }
