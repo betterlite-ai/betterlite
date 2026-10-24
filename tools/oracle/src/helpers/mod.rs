@@ -124,8 +124,16 @@ fn run_bounded(
     let pumped = pump_helper_pipes(&mut child, input);
     let status = wait_for_helper_exit(&mut child, timeout)?;
     let pipes = pumped?;
-    let (stdout_output, stdout_excess) = join_pipe(pipes.output)?;
-    let (stderr_output, _stderr_excess) = join_pipe(pipes.diagnostic)?;
+    let (stdout_output, stdout_excess) = pipes
+        .output
+        .join()
+        .map_err(|_| OracleError::HelperJoin)?
+        .map_err(OracleError::HelperIo)?;
+    let (stderr_output, _stderr_excess) = pipes
+        .diagnostic
+        .join()
+        .map_err(|_| OracleError::HelperJoin)?
+        .map_err(OracleError::HelperIo)?;
     if stdout_excess {
         return Err(OracleError::HelperOutputTooLarge);
     }
@@ -135,7 +143,11 @@ fn run_bounded(
             diagnostic: String::from_utf8_lossy(&stderr_output).into_owned(),
         });
     }
-    join_pipe(pipes.input)?;
+    pipes
+        .input
+        .join()
+        .map_err(|_| OracleError::HelperJoin)?
+        .map_err(OracleError::HelperIo)?;
     Ok(stdout_output)
 }
 
@@ -169,13 +181,6 @@ fn wait_for_helper_exit(child: &mut Child, timeout: Duration) -> Result<ExitStat
         }
         thread::park_timeout(Duration::from_millis(10));
     }
-}
-
-fn join_pipe<T>(handle: JoinHandle<io::Result<T>>) -> Result<T, OracleError> {
-    handle
-        .join()
-        .map_err(|_| OracleError::HelperJoin)?
-        .map_err(OracleError::HelperIo)
 }
 
 fn configure_environment(command: &mut Command, case_env: &BTreeMap<String, String>) {
