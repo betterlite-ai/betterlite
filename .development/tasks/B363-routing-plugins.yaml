@@ -12,8 +12,8 @@ description: Implement typed routing-context input/output and wire the ordered r
   where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
   deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
   tests for random choices. Extend the existing config_yaml fuzz target and committed corpus for every
-  newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target routing_plugin_reply
-  under crates/betterlite-router/fuzz and a normal replays_the_routing_plugin_reply_corpus test using
+  newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target plugin_json
+  under crates/betterlite-router/fuzz and a normal replays_the_plugin_json_corpus test using
   the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
   and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -22,7 +22,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/routing-plugins/**
-  - tools/oracle/src/router_probes/routing-plugins/**
+  - tools/oracle/src/router_probes/routing_plugins/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/routing_plugins.py
   - tools/oracle/litellm/probes/registry.py
@@ -44,7 +44,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the routing_plugins prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -73,9 +74,9 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/routing_plugin_reply.rs && test -n "$(ls -A
-      crates/betterlite-router/fuzz/corpus/routing_plugin_reply)" && cargo nextest run --locked -p betterlite-router
-      --no-tests=fail -E 'test(replays_the_routing_plugin_reply_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs && test -n "$(ls -A
+      crates/betterlite-router/fuzz/corpus/plugin_json)" && cargo nextest run --locked -p betterlite-router
+      --no-tests=fail -E 'test(replays_the_plugin_json_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
