@@ -6,7 +6,7 @@ use super::{SecretCodecInput, invoke};
 
 const HELLO: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj";
 
-fn steps(nonce_hex: &str, steps: Value) -> Value {
+fn run(nonce_hex: &str, steps: &Value) -> Value {
     let input: SecretCodecInput = serde_json::from_value(json!({
         "salt_key": "salt-one",
         "master_key": null,
@@ -22,9 +22,9 @@ fn steps(nonce_hex: &str, steps: Value) -> Value {
 
 #[test]
 fn legacy_steps_seal_with_the_given_nonce_and_open_to_plaintext() {
-    let results = steps(
+    let results = run(
         "000102030405060708090a0b0c0d0e0f1011121314151617",
-        json!([
+        &json!([
             {"op": "encrypt_value", "value": "hello", "new_key": null},
             {"op": "decrypt_value", "value": HELLO, "field": "api_key", "report": "error", "keep_original": false},
         ]),
@@ -37,26 +37,26 @@ fn legacy_steps_seal_with_the_given_nonce_and_open_to_plaintext() {
 
 #[test]
 fn a_short_nonce_fails_the_encryption() {
-    let results = steps(
+    let results = run(
         "0001",
-        json!([{"op": "encrypt_value", "value": "hello", "new_key": null}]),
+        &json!([{"op": "encrypt_value", "value": "hello", "new_key": null}]),
     );
     assert_eq!(results[0]["error"]["class"], "ValueError");
 }
 
 #[test]
 fn recorded_logs_name_the_field_only_when_one_is_given() {
-    let results = steps(
+    let results = run(
         "000102030405060708090a0b0c0d0e0f1011121314151617",
-        json!([
-            {"op": "encrypt_value", "value": 7, "new_key": null},
+        &json!([
+            {"op": "encrypt_value", "value": 7_i32, "new_key": null},
             {"op": "decrypt_value", "value": "AAAA-", "field": "api_key", "report": "debug", "keep_original": false},
         ]),
     );
     assert_eq!(
         results,
         json!([
-            {"value": 7, "logs": [{"level": "debug", "names_field": false, "salt_advice": false}]},
+            {"value": 7_i32, "logs": [{"level": "debug", "names_field": false, "salt_advice": false}]},
             {"value": null, "logs": [{"level": "debug", "names_field": true, "salt_advice": true}]},
         ])
     );
