@@ -191,13 +191,15 @@ tasks:
     - litellm/router_utils/{common_utils,handle_error,response_headers,add_retry_fallback_headers}.py
   - id: B017
     milestone: M2 routing
-    title: Retries, retry policies and timeouts
+    title: Execute retries within the routing deadline
     status: todo
     depends_on:
     - B016
     - B305
     - B306
     - B005
+    - B012
+    - B301
     file: tasks/B017-routing-retries.yaml
     covers: []
   - id: B018
