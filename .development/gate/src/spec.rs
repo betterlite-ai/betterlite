@@ -2,6 +2,7 @@ pub(crate) mod agents;
 pub(crate) mod backlog;
 pub(crate) mod catalog;
 pub(crate) mod command;
+pub(crate) mod deviations;
 pub(crate) mod litellm;
 pub(crate) mod report;
 pub(crate) mod review;
