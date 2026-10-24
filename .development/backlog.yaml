@@ -279,6 +279,7 @@ tasks:
     - B342
     - B343
     - B344
+    - B345
     file: null
     covers:
     - router_plugins.json
@@ -2443,3 +2444,17 @@ tasks:
     - litellm/proxy/db/autorouter_session_rollup.py
     - litellm/models/autorouter_session.py
     - litellm/repositories/autorouter_session_repository.py
+
+  - id: B345
+    milestone: M2 routing
+    title: Shadow evaluation request and access validation
+    status: todo
+    depends_on:
+    - B343
+    - B052
+    - B060
+    - B118
+    file: tasks/B345-shadow-eval-validation.yaml
+    covers:
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
