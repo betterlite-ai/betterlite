@@ -91,7 +91,7 @@ fn outcome(input: PrimitivesInput) -> Result<Value, Failure> {
             Ok(json!({"attributes": size_of_val(&BatchConfigBase)}))
         }
         PrimitivesInput::ChatId { uuid } => uuid::Uuid::parse_str(&uuid)
-            .map(|id| json!(ChatCompletionId(id).to_string()))
+            .map(|id| json!(ChatCompletionId(id)))
             .map_err(Failure::Uuid),
         PrimitivesInput::ToolCall { record } => Ok(project_tool_call(record, &Recorder)),
     }

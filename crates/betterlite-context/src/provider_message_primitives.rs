@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::error::ContextError;
@@ -239,8 +238,11 @@ pub struct BatchConfigBase;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChatCompletionId(pub Uuid);
 
-impl fmt::Display for ChatCompletionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "chatcmpl-{}", self.0)
+impl Serialize for ChatCompletionId {
+    fn serialize<Wire>(&self, serializer: Wire) -> Result<Wire::Ok, Wire::Error>
+    where
+        Wire: Serializer,
+    {
+        serializer.collect_str(&format_args!("chatcmpl-{}", self.0))
     }
 }
