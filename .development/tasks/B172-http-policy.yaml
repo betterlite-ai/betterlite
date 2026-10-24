@@ -10,7 +10,11 @@ description: >-
   rather than a second transport stack. Disable reqwest's implicit environment discovery after computing the policy.
   Add helper tls_policy cases using virtual environment/path inputs and a Python adapter around get_ssl_verify/http2_enabled,
   plus local TLS and forwarding-proxy tests for actual transport behavior. Extend B002's existing config corpus
-  instead of introducing another YAML parser. Budget 300 policy/config lines, 180 factory lines and 280 tests.
+  instead of introducing another YAML parser. Budget 300 policy/config lines, 180 factory lines and 280 tests. Seed
+  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. Resolve
+  lowercase proxy variables and their precedence, including CGI handling of HTTP_PROXY, with isolated environment-proxy
+  helper cases. Add an http_policy fuzz target for bounded PEM and proxy-policy decoding, with malformed certificate,
+  key and proxy URL seeds.
 scope:
   paths:
   - Cargo.toml
@@ -20,6 +24,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/tls-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L78-L93
@@ -51,6 +56,12 @@ dod:
 - text: The existing config fuzz corpus covers every added setting.
   proof:
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+- text: PEM and proxy-policy parsers have a nonempty committed corpus replayed through production parsing.
+  proof:
+  - http-policy-corpus
 checks:
   optional:
   - mutants
@@ -68,6 +79,16 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: http-policy-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-http/fuzz/fuzz_targets/http_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/http_policy)"
+      && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_http_policy_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/tls-policy/defaults.yaml
 - tools/oracle/cases/helpers/tls-policy/argument-over-environment.yaml
@@ -75,6 +96,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/tls-policy/ca-file.yaml
 - tools/oracle/cases/helpers/tls-policy/cert-file-override.yaml
 - tools/oracle/cases/helpers/tls-policy/http2-environment.yaml
+- tools/oracle/cases/helpers/tls-policy/proxy-case-precedence.yaml
+- tools/oracle/cases/helpers/tls-policy/proxy-cgi.yaml
+- tools/oracle/cases/helpers/tls-policy/proxy-bypass.yaml
 deviations:
 - what: SSL_SECURITY_LEVEL and SSL_ECDH_CURVE are rejected by name when set.
   why: They are OpenSSL configuration languages with no equivalent rustls contract; silently ignoring them violates
