@@ -1,0 +1,84 @@
+id: B348
+title: Router settings and field metadata endpoints
+description: Serve GET /router/settings and GET /router/fields using typed response models and B066 configuration
+  provenance. Report effective values, configuration overrides, field defaults, available strategies and
+  priority-group support from the implemented router. Keep field definitions in a reviewed static catalog
+  and reproduce source metadata through snapshots/oracle cases. Reuse B052 authentication. This source
+  file defines read endpoints only; settings mutations remain B066's configuration API. Use the existing
+  Rust crate boundaries from B004 and B008; integrate through the server when the provider dispatcher
+  or callbacks live in another core crate. This task's source slices are the linked ranges, not a port
+  of their Python classes. Add the listed oracle cases and the matching adapters to B301's component runner
+  where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
+  deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
+  tests for random choices. Extend the existing config_yaml fuzz target and committed corpus for every
+  newly accepted config form; unsupported keys still fail by full path. Keep the implementation, adapters
+  and tests within 650 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/router-settings/**
+  - tools/oracle/src/router_probes/router-settings/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/router_settings.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L29-L209
+  why: Read endpoints, effective value precedence and source metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L70-L274
+  why: Router field definitions.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(router_settings)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/router-settings/settings-current-values.yaml
+- tools/oracle/cases/routing/router-settings/fields-with-null-values.yaml
+- tools/oracle/cases/routing/router-settings/config-over-runtime.yaml
+- tools/oracle/cases/routing/router-settings/source-default-unset-override.yaml
+- tools/oracle/cases/routing/router-settings/routing-groups-present.yaml
+- tools/oracle/cases/routing/router-settings/strategy-options.yaml
+- tools/oracle/cases/routing/router-settings/authentication-required.yaml
+deviations: []
+out_of_scope:
+- General config write persistence (B066).
+- Per-key/team weights validation (B023).
+pitfalls:
+- Do not invent a PUT /router/settings route; the pinned file provides two GET routes.
+- The runtime stores routing groups separately, so they must not disappear from introspection.
+- Never serialize provider credentials through default_litellm_params.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

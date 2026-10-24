@@ -314,11 +314,14 @@ tasks:
     milestone: M2 routing
     title: Router settings and weights API
     status: todo
-    depends_on: [B016, B052]
+    depends_on:
+    - B016
+    - B052
+    - B348
     file: null
     covers:
-      - "litellm/proxy/management_endpoints/{router_settings_endpoints,router_weights}.py"
-      - "litellm/types/management_endpoints/router_settings_endpoints.py"
+    - litellm/proxy/management_endpoints/{router_settings_endpoints,router_weights}.py
+    - litellm/types/management_endpoints/router_settings_endpoints.py
   - id: B024
     milestone: M3 providers
     title: OpenAI provider, every remaining endpoint
@@ -2483,3 +2486,19 @@ tasks:
     file: tasks/B347-adaptive-concurrency.yaml
     covers:
     - litellm/integrations/adaptive_concurrency.py
+
+  - id: B348
+    milestone: M2 routing
+    title: Router settings and field metadata endpoints
+    status: todo
+    depends_on:
+    - B016
+    - B017
+    - B019
+    - B020
+    - B052
+    - B066
+    file: tasks/B348-router-settings.yaml
+    covers:
+    - litellm/proxy/management_endpoints/router_settings_endpoints.py
+    - litellm/types/management_endpoints/router_settings_endpoints.py
