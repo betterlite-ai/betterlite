@@ -11,7 +11,7 @@ description: >-
   while a recognized curve absent from the selected crypto provider fails startup by name. SSL_SECURITY_LEVEL is
   an OpenSSL cipher-list expression, not a scalar security level, and remains a named startup error. Set the default
   User-Agent to betterlite/<package-version> and honor LITELLM_USER_AGENT. HTTP/2 selects protocol capability, not
-  a second transport. Compose B208 proxy policy. Add tls_policy helper adapters to get_ssl_verify/http2_enabled/get_default_headers
+  a second transport. Compose B208 proxy policy, and prove with a local http:// proxy and a local TLS origin that an HTTPS request opens a CONNECT tunnel carrying Proxy-Authorization and then verifies the origin certificate; B208 only proves plain HTTP forwarding. Add tls_policy helper adapters to get_ssl_verify/http2_enabled/get_default_headers
   and bounded PEM fuzz target http_policy.  Write the behavior rstest functions http_policy_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations tls_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
@@ -56,7 +56,8 @@ dod:
   - helper-python
 - text: >-
     Local TLS tests accept trusted CA, reject untrusted or wrong-host certificates, honor verification disabling
-    and demonstrate that ssl_certificate does not activate mTLS on the default path.
+    and demonstrate that ssl_certificate does not activate mTLS on the default path. An HTTPS request through a
+    local proxy opens a CONNECT tunnel with Proxy-Authorization before TLS.
   proof:
   - http-policy-tests
 - text: >-

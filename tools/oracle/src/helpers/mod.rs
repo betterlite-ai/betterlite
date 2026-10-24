@@ -1,3 +1,4 @@
+mod catalog_generalizations;
 mod provider_message_primitives;
 mod url_path;
 
@@ -21,6 +22,8 @@ pub(crate) enum HelperCall {
     UrlPath(url_path::UrlPathInput),
     #[serde(rename = "provider_message_primitives")]
     ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
+    #[serde(rename = "catalog_generalizations")]
+    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -79,6 +82,7 @@ fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
         HelperCall::UrlPath(input) => url_path::invoke(input),
         HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
+        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
     };
     match result {
         Ok(value) => HelperOutput {
