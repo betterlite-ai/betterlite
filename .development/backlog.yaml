@@ -2024,10 +2024,10 @@ tasks:
     depends_on:
     - B310
     - B005
+    - B301
     file: tasks/B311-chat-stream-fallback.yaml
     covers:
     - litellm/router.py
-
   - id: B312
     milestone: M2 routing
     title: Responses and Messages stream fallback boundaries
