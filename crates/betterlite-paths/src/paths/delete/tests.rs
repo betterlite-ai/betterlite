@@ -91,3 +91,15 @@ fn dot_paths_behavior_tests_behavior(
     assert_eq!(result, expected.map(document));
     assert_eq!(original, document(data));
 }
+
+#[rstest]
+#[case::trailing_wildcard("a[*]")]
+#[case::trailing_index("a[0]")]
+fn trailing_selectors_visit_no_elements(#[case] path: &str) {
+    let limits = PathLimits {
+        max_visits: 2,
+        ..LIMITS
+    };
+    let data = document(r#"{"a": [{}, {}]}"#);
+    assert_eq!(remove(&limits, &data, path), Ok(data.clone()));
+}

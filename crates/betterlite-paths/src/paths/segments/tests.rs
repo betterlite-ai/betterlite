@@ -40,6 +40,7 @@ fn field(name: &str) -> Segment {
 #[case::too_many_selectors("[0][*][x]", Err(PathError::TooManySelectors { limit: 2 }))]
 #[case::too_deep("a.b.c.d.e", Err(PathError::TooDeep { limit: 4 }))]
 #[case::long_digit_run(&format!("[{}]", "0".repeat(4301)), Ok(vec![Segment::Unmatched]))]
+#[case::digit_run_at_limit(&format!("[{}]", "0".repeat(4300)), Ok(vec![Segment::Index(0)]))]
 fn dot_paths_behavior_tests_behavior(
     #[case] path: &str,
     #[case] expected: Result<Vec<Segment>, PathError>,

@@ -6,7 +6,11 @@ pub fn parse(limits: &PathLimits, path: &str) -> Result<Vec<Segment>, PathError>
     let mut segments = Vec::new();
     let mut selectors = 0_usize;
     let mut rest = path;
-    while !rest.is_empty() {
+    // every scan consumes at least one byte, so the path length bounds the steps
+    for _step in 0..path.len() {
+        if rest.is_empty() {
+            break;
+        }
         let (segment, after) = scan(rest);
         rest = after;
         let Some(found) = segment else {

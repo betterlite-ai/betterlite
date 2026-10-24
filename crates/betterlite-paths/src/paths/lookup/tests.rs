@@ -46,6 +46,13 @@ fn document(json: &str) -> Document {
 #[case::string_is_not_int(r#"{"a": "text"}"#, "a", "0", Ok("0"))]
 #[case::bool_counts_as_int(r#"{"a": true}"#, "a", "0", Ok("true"))]
 #[case::int_is_not_bool(r#"{"a": 1}"#, "a", "false", Ok("false"))]
+#[case::negative_int_matches_int(r#"{"a": -1}"#, "a", "0", Ok("-1"))]
+#[case::large_int_matches_int(
+    r#"{"a": 18446744073709551615}"#,
+    "a",
+    "0",
+    Ok("18446744073709551615")
+)]
 #[case::int_is_not_float(r#"{"a": 1}"#, "a", "1.5", Ok("1.5"))]
 #[case::float_matches_float(r#"{"a": 2.5}"#, "a", "1.5", Ok("2.5"))]
 #[case::list_matches_list(r#"{"a": ["x"]}"#, "a", "[]", Ok(r#"["x"]"#))]
@@ -53,6 +60,7 @@ fn document(json: &str) -> Document {
 #[case::dict_matches_dict(r#"{"a": {"b": 1}}"#, "a", "{}", Ok(r#"{"b": 1}"#))]
 #[case::escaped_dots_are_one_part("{}", r"a\.b\.c\.d\.e", "null", Ok("null"))]
 #[case::too_deep("{}", "a.b.c.d.e", "null", Err(PathError::TooDeep { limit: 4 }))]
+#[case::length_at_limit(r#"{"a": 1}"#, &"a".repeat(64), "null", Ok("null"))]
 #[case::too_long("{}", &"a".repeat(65), "null", Err(PathError::TooLong { bytes: 65, limit: 64 }))]
 fn dot_paths_behavior_tests_behavior(
     #[case] data: &str,
