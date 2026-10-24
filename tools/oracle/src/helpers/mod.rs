@@ -3,6 +3,7 @@ mod catalog_generalizations;
 mod dot_paths;
 mod provider_base_helpers;
 mod provider_message_primitives;
+mod proxy_policy;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -31,6 +32,8 @@ pub(crate) enum HelperCall {
     ProviderBaseHelpers(provider_base_helpers::BaseCall),
     #[serde(rename = "provider_message_primitives")]
     ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
+    #[serde(rename = "proxy_policy")]
+    ProxyPolicy(proxy_policy::ProxyPolicyInput),
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
 }
@@ -94,6 +97,7 @@ fn invoke(call: &HelperCall) -> HelperOutput {
         HelperCall::DotPaths(input) => dot_paths::invoke(input),
         HelperCall::ProviderBaseHelpers(input) => provider_base_helpers::invoke(input),
         HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
+        HelperCall::ProxyPolicy(input) => proxy_policy::invoke(input),
         HelperCall::UrlPath(input) => url_path::invoke(input),
     };
     match result {
