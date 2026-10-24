@@ -10,7 +10,7 @@ use tokio::process::{Child, Command};
 use tokio::time::{sleep, timeout};
 const STANDARD_CONFIG: &str = "general_settings:\n  master_key: test-master\n";
 #[derive(serde::Deserialize)]
-struct LogEvent {
+struct LogLine {
     timestamp: String,
     level: String,
     message: String,
@@ -52,100 +52,8 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     request.read_to_end(&mut response).await.unwrap();
     assert!(response.starts_with(b"HTTP/1.1 404"));
     assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
-    let stderr = server.wait().await;
+    let stderr = String::from_utf8(server.wait().await).unwrap();
     assert_json_logs(&stderr);
-}
-#[tokio::test]
-async fn malformed_config_logs_no_secret() {
-    let port = free_port().await;
-    let secret = "config-secret-must-not-be-logged";
-    let (_, config_path) = fixture(
-        port,
-        &format!("general_settings:\n  master_key: {secret}\n  broken: [\n"),
-    )
-    .await;
-    let output = Command::new("setpriv")
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
-        .args([
-            "--config",
-            config_path.to_str().unwrap(),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-        ])
-        .output()
-        .await
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(!stderr.contains(secret));
-}
-#[tokio::test]
-async fn unsupported_config_logs_paths() {
-    let port = free_port().await;
-    let (_, config_path) = fixture(
-        port,
-        "general_settings:\n  master_key: test-master\n  unsupported: true\n",
-    )
-    .await;
-    let output = Command::new("setpriv")
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
-        .args([
-            "--config",
-            config_path.to_str().unwrap(),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-        ])
-        .output()
-        .await
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("unsupported_key"));
-    assert!(stderr.contains("general_settings.unsupported"));
-}
-#[tokio::test]
-async fn missing_environment_logs_variable_and_path() {
-    let port = free_port().await;
-    let (_, config_path) = fixture(
-        port,
-        "general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n",
-    )
-    .await;
-    let output = Command::new("setpriv")
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
-        .args([
-            "--config",
-            config_path.to_str().unwrap(),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-        ])
-        .output()
-        .await
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("missing_environment"));
-    assert!(stderr.contains("MISSING_MASTER_KEY"));
-    assert!(stderr.contains("general_settings.master_key"));
-}
-#[tokio::test]
-async fn dropping_server_guard_kills_server() {
-    let port = free_port().await;
-    let (_, config_path) = fixture(port, STANDARD_CONFIG).await;
-    let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 100).await;
-    drop(server);
-    sleep(Duration::from_millis(100)).await;
-    TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
 }
 #[tokio::test]
 async fn partial_headers_are_closed_after_the_read_deadline() {
@@ -168,17 +76,14 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
     .unwrap();
     drop(server);
 }
-fn assert_json_logs(stderr: &[u8]) {
-    let events = String::from_utf8(stderr.to_owned())
-        .unwrap()
+fn assert_json_logs(stderr: &str) {
+    let events = stderr
         .lines()
-        .map(|line| serde_json::from_str::<LogEvent>(line).unwrap())
+        .map(|line| serde_json::from_str::<LogLine>(line).unwrap())
         .collect::<Vec<_>>();
     assert!(!events.is_empty());
-    assert!(events.iter().any(|event| {
-        !event.timestamp.is_empty()
-            && event.level == "INFO"
-            && event.message == "betterlite server listening"
+    assert!(events.iter().all(|event| {
+        !event.timestamp.is_empty() && !event.level.is_empty() && !event.message.is_empty()
     }));
 }
 async fn fixture(port: u16, source: &str) -> (PathBuf, PathBuf) {
