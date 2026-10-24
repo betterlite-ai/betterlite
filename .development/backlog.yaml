@@ -1901,7 +1901,7 @@ tasks:
     title: Gemini, Cohere and Azure message helpers
     status: todo
     depends_on: [B179, B183]
-    file: null
+    file: tasks/B182-other-prompts.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/factory.py"
   - id: B183
