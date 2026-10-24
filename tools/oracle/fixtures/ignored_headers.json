@@ -1,0 +1,62 @@
+{
+  "left": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-call-id": "one"
+    },
+    "body": {
+      "id": "one",
+      "stable": "same"
+    }
+  },
+  "right": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-call-id": "two"
+    },
+    "body": {
+      "id": "two",
+      "stable": "same"
+    }
+  },
+  "left_requests": [
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "headers": {},
+      "body": {
+        "x": 1
+      }
+    }
+  ],
+  "right_requests": [
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "headers": {},
+      "body": {
+        "x": 1
+      }
+    }
+  ],
+  "compare": {
+    "headers": [
+      "Content-Type"
+    ],
+    "headers_present": [
+      "X-Call-ID"
+    ],
+    "upstream_headers": [
+      "authorization"
+    ],
+    "ignore": [
+      {
+        "pointer": "/id",
+        "why": "generated"
+      }
+    ]
+  },
+  "expected": null
+}

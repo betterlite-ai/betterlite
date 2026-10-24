@@ -1,0 +1,34 @@
+{
+  "left": {
+    "status": 200,
+    "headers": {},
+    "body": [
+      {
+        "id": "one"
+      }
+    ]
+  },
+  "right": {
+    "status": 200,
+    "headers": {},
+    "body": [
+      {
+        "id": "two"
+      }
+    ]
+  },
+  "left_requests": [],
+  "right_requests": [],
+  "compare": {
+    "headers": [],
+    "headers_present": [],
+    "upstream_headers": [],
+    "ignore": [
+      {
+        "pointer": "/0/id",
+        "why": "generated"
+      }
+    ]
+  },
+  "expected": null
+}

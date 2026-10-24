@@ -1,0 +1,178 @@
+use axum::http::StatusCode;
+use std::collections::{BTreeMap, VecDeque};
+use std::io::{Error, Write as _};
+use std::net::TcpListener;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+use std::{mem, str};
+use tokio::{net, runtime, time};
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::extract::{Request, State};
+use axum::http::Response;
+use serde::Serialize;
+use serde_json::Value;
+use tokio::sync::oneshot;
+
+use crate::OracleError;
+use crate::case::UpstreamAnswer;
+use crate::http::MAX_BODY;
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub(crate) struct ProviderRequest {
+    pub(crate) method: String,
+    pub(crate) path: String,
+    pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) body: Value,
+}
+
+struct Recording {
+    answers: VecDeque<UpstreamAnswer>,
+    requests: Vec<ProviderRequest>,
+    failure: Option<Error>,
+}
+
+pub(crate) struct MockProvider {
+    pub(crate) base_url: String,
+    recording: Arc<Mutex<Recording>>,
+    stop: Option<oneshot::Sender<()>>,
+    pub(crate) thread: Option<JoinHandle<Result<(), Error>>>,
+}
+
+impl MockProvider {
+    pub(crate) fn start(answers: &[UpstreamAnswer]) -> Result<Self, OracleError> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::MockIo)?;
+        listener
+            .set_nonblocking(true)
+            .map_err(OracleError::MockIo)?;
+        let address = listener.local_addr().map_err(OracleError::MockIo)?;
+        let runtime = runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(OracleError::MockIo)?;
+        let recording = Arc::new(Mutex::new(Recording {
+            answers: answers.iter().cloned().collect(),
+            requests: Vec::new(),
+            failure: None,
+        }));
+        let router = Router::new()
+            .fallback(handle)
+            .with_state(Arc::clone(&recording));
+        let (stop, stopped) = oneshot::channel();
+        let shutdown = async {
+            let _stopped = stopped.await;
+        };
+        let thread = thread::Builder::new()
+            .spawn(move || {
+                runtime.block_on(async move {
+                    let socket = net::TcpListener::from_std(listener)?;
+                    axum::serve(socket, router)
+                        .with_graceful_shutdown(shutdown)
+                        .await
+                })
+            })
+            .map_err(OracleError::MockIo)?;
+        Ok(Self {
+            base_url: format!("http://{address}"),
+            recording,
+            stop: Some(stop),
+            thread: Some(thread),
+        })
+    }
+
+    pub(crate) fn finish(mut self) -> Result<Vec<ProviderRequest>, OracleError> {
+        self.shutdown()?;
+        let mut recorded = self
+            .recording
+            .lock()
+            .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
+        if let Some(error) = recorded.failure.take() {
+            return Err(OracleError::MockIo(error));
+        }
+        Ok(mem::take(&mut recorded.requests))
+    }
+
+    fn shutdown(&mut self) -> Result<(), OracleError> {
+        if let Some(stop) = self.stop.take() {
+            let _sent = stop.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_source| OracleError::MockJoin)?
+                .map_err(OracleError::MockIo)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for MockProvider {
+    fn drop(&mut self) {
+        let _shutdown = self.shutdown();
+    }
+}
+
+async fn handle(
+    State(state): State<Arc<Mutex<Recording>>>,
+    request: Request,
+) -> Result<Response<Body>, StatusCode> {
+    let (parts, body) = request.into_parts();
+    if parts.method == "GET" && parts.uri.path() == "/v1/models" {
+        return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
+    }
+    let bytes = time::timeout(Duration::from_secs(30), to_bytes(body, MAX_BODY))
+        .await
+        .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
+        .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let headers = parts
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            Ok((
+                name.to_string(),
+                str::from_utf8(value.as_bytes())?.to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
+        .map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let captured = ProviderRequest {
+        method: parts.method.to_string(),
+        path: parts.uri.to_string(),
+        headers,
+        body: serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned())),
+    };
+    let mut recorded = state
+        .lock()
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = reply(&mut recorded, captured).map_err(|error| {
+        recorded.failure = Some(error);
+        StatusCode::INTERNAL_SERVER_ERROR
+    });
+    drop(recorded);
+    result
+}
+
+fn reply(recorded: &mut Recording, request: ProviderRequest) -> Result<Response<Body>, Error> {
+    recorded.requests.push(request);
+    let answer = recorded
+        .answers
+        .pop_front()
+        .ok_or_else(|| Error::other("provider answer sequence exhausted"))?;
+    let body = if let Some(json) = answer.body {
+        serde_json::to_vec(&json).map_err(Error::other)?
+    } else {
+        let mut bytes = Vec::new();
+        for event in answer.events.unwrap_or_default() {
+            writeln!(bytes, "data: {event}\n")?;
+        }
+        bytes
+    };
+    let mut response = Response::builder().status(answer.status);
+    for (name, value) in answer.headers {
+        response = response.header(name, value);
+    }
+    response.body(Body::from(body)).map_err(Error::other)
+}

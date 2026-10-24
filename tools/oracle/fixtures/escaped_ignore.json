@@ -1,0 +1,41 @@
+{
+  "left": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "a/b": {
+        "~key": "left"
+      },
+      "array": [
+        1
+      ]
+    }
+  },
+  "right": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "a/b": {
+        "~key": "right"
+      },
+      "array": [
+        1,
+        2
+      ]
+    }
+  },
+  "left_requests": [],
+  "right_requests": [],
+  "compare": {
+    "headers": [],
+    "headers_present": [],
+    "upstream_headers": [],
+    "ignore": [
+      {
+        "pointer": "/a~1b/~0key",
+        "why": "generated"
+      }
+    ]
+  },
+  "expected": "/array/1"
+}
