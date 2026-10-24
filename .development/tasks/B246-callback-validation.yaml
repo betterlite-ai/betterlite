@@ -1,0 +1,96 @@
+id: B246
+title: Callback config validators
+description: >-
+  Implement all callback_config_validation.py validators through _arize_sampling_rate_error and _newrelic_config_error,
+  plus parsing of the supported callback option shapes. Use typed sampling Decimal and injected feature flags; preserve
+  credential-family/alias separation and B188 request provenance. Consume pinned callback_configs metadata without
+  enabling unavailable adapters. Budget 250 validators/types, 100 Python adapters, 300 tests/fuzz and 60 wiring
+  (710 total). Add the callback_config cargo-fuzz target, call the production parser, and commit/replay malformed
+  and boundary seeds. Write the behavior rstest functions b246_behavior_tests_behavior in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations callback_validation in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/callback_config.rs
+  - crates/betterlite-logging/src/callback_config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/callback-validation/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-logging/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_config_validation.py#L23-L268
+  why: Complete validators, including Arize sampling.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - callback_config-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b246_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'callback_validation' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: callback_config-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/callback_config)"
+      && test -f crates/betterlite-logging/fuzz/fuzz_targets/callback_config.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/callback_config)"
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_callback_config_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/callback-validation/langfuse-environment.yaml
+- tools/oracle/cases/helpers/callback-validation/span-scope.yaml
+- tools/oracle/cases/helpers/callback-validation/sampling-decimal.yaml
+- tools/oracle/cases/helpers/callback-validation/credential-family-conflict.yaml
+- tools/oracle/cases/helpers/callback-validation/credential-alias.yaml
+- tools/oracle/cases/helpers/callback-validation/newrelic-region.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B189 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
