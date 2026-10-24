@@ -1,0 +1,88 @@
+id: B010
+title: Closed provider framework and existing route integration
+description: >-
+  Finish the provider framework by composing the split helpers behind betterlite-provider's closed executable Provider
+  enum, initially OpenAi. Give the framework concrete chat/stream/embedding operation types, prepared request/result
+  metadata and typed unsupported-operation errors, reusing existing betterlite-openai models rather than creating
+  a duplicate wire crate. Keep transformation, configured HTTP execution and response decoding as explicit stages;
+  the server resolves a deployment before passing its trusted inputs to the provider. Provider-specific branches
+  select their own prompt and parameter transforms, and unavailable adapters remain explicit errors even when the
+  catalog recognizes their names. Adapt B004-B006 server calls to this boundary, preserve B005's cancellation and
+  incremental SSE behavior, and expose typed bridge/iterator seams for B015 and future endpoints without implementing
+  unneeded endpoint bodies. Add framework oracle cases and regression tests; keep reqwest confined to betterlite-http
+  and update deny.toml only for the new crate edges. Budget 280 framework lines, 170 integration lines and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-framework/**
+  - tools/oracle/cases/provider-framework/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467
+  why: Common provider transformation interface and its extension hooks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/bridges/completion_transformation.py#L18-L55
+  why: Request/response/iterator bridge boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1-L220
+  why: Iterator responsibilities and end-of-stream state.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L1-L180
+  why: Shared provider response helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L200
+  why: Typed inputs shared by provider implementations.
+dod:
+- text: Chat, streaming and embedding calls pass through the provider enum and retain all listed oracle behavior.
+  proof:
+  - oracle
+  - provider-framework-tests
+- text: Unsupported executable adapters and call types fail before HTTP, and parallel calls do not share mutable
+    request/settings state.
+  proof:
+  - provider-framework-tests
+- text: Disconnects drop the upstream stream and decoding remains incremental under a slow provider.
+  proof:
+  - provider-framework-tests
+- text: Production dependency edges remain acyclic and only betterlite-http constructs outbound clients.
+  proof:
+  - clippy
+  - deny
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-framework-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/provider_framework/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/chat/openai-basic.yaml
+- tools/oracle/cases/chat/openai-tools.yaml
+- tools/oracle/cases/chat/openai-stream.yaml
+- tools/oracle/cases/chat/openai-stream-usage.yaml
+- tools/oracle/cases/embeddings/string-input.yaml
+- tools/oracle/cases/helpers/provider-framework/base-thinking-defaults.yaml
+- tools/oracle/cases/helpers/provider-framework/base-role-mapping.yaml
+- tools/oracle/cases/helpers/provider-framework/unsupported-operation.yaml
+deviations: []
+out_of_scope:
+- Provider-specific retry policy is B017; B010 must not add an internal second retry loop.
+- Python dynamic extension classes and synchronous wrappers are B157-B165.
+- Additional endpoints are represented only when their owning tasks implement their concrete types.
+pitfalls:
+- B004 puts wire models and the OpenAI adapter in the same crate, so betterlite-provider may depend on betterlite-openai
+  but never the reverse.
+- A catalog ProviderId is metadata and must not be used as proof that an executable adapter exists.
+- Do not buffer streams to make all operation result types look alike.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

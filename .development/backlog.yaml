@@ -97,7 +97,7 @@ tasks:
     title: Provider framework, provider resolution and parameter mapping
     status: todo
     depends_on: [B005, B009, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B006]
-    file: null
+    file: tasks/B010-provider-framework.yaml
     covers:
       - "litellm/llms/{__init__,base,README}.*"
       - "litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py"
