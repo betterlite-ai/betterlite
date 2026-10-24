@@ -1,87 +1,114 @@
 id: B305
 title: Resolve router and provider timeouts
-description: Replace the provisional B004 timeout resolution with a typed timeout plan shared by router
+description: 'Replace the provisional B004 timeout resolution with a typed timeout plan shared by router
   attempts and B009 transport calls. Preserve whether the global request timeout was explicitly configured,
   including an explicitly configured default numeric value. Distinguish whole routing deadline, individual
   attempt timeout and streaming timeout; convert decimal seconds with checked arithmetic. Wire cancellation
-  through the existing stream and client layers. The standalone timeout decorator's ignored async override
-  is not a contract to silently copy; record the explicit correction below and keep its regression outside
-  parity comparisons. Use the existing Rust crate boundaries from B004 and B008; integrate through the
-  server when the provider dispatcher or callbacks live in another core crate. This task's source slices
-  are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching
-  adapters to B301's component runner where state is not observable over HTTP; adapters call production
-  logic and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
-  and separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target
-  and committed corpus for every newly accepted config form; unsupported keys still fail by full path.
-  Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are
-  budget-excluded by checks.yaml. Extend B004's typed chat request fields only for the routing controls
-  this task consumes, and extend its existing chat_request fuzz corpus; router-only fields never reach
-  the provider body.
+  through the existing stream and client layers. Configuration boundary keys introduced or consumed here:
+  timeout, stream_timeout, request_timeout. Pinned declaration defaults: timeout=None; stream_timeout=None.
+  Resolve env values once in betterlite-config, never in router code. Implement the owned native service
+  in crates/betterlite-router/src/routing_timeouts.rs. Add ProbeOperation::B305 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B305 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/litellm_core_utils/completion_timeout.py:
+  CompletionTimeout._fallback_when_no_explicit_timeout (L17-L30), CompletionTimeout.resolve (L33-L70).
+  Implement these behaviors through the typed Rust services above; synchronous facades and structural
+  accessors reuse the same primitive instead of separate ports. Function coverage in litellm/litellm_core_utils/request_timeout_resolver.py:
+  get_configured_request_timeout (L20-L29). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-http/**
-  - crates/betterlite-openai/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/routing-timeouts/**
+  - crates/betterlite-router/src/routing_timeouts.rs
+  - crates/betterlite-router/src/routing_timeouts/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_timeouts.rs
+  - crates/betterlite-server/src/routing/routing_timeouts/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_timeouts.rs
   - tools/oracle/src/router_probes/routing_timeouts/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/routing_timeouts.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_timeouts.py
+  - tools/oracle/cases/routing/routing-timeouts/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/routing_timeouts.rs
+  - crates/betterlite-config/src/routing_timeouts/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b305-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/completion_timeout.py#L12-L70
   why: Provider completion timeout fallback and precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/request_timeout_resolver.py#L19-L29
   why: Explicit global setting distinction.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4122-L4162
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4122-L4247
   why: Router stream and nonstream precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/timeout.py#L24-L104
-  why: Standalone decorator and its async override discrepancy.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4156-L4247
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b305_behaviors and b305_boundaries under routing_timeouts::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b305-behaviors
+  - b305-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the routing_timeouts prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b305-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b305-invalid.yaml;
+    the valid seed contains timeout. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - b305-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
-- text: Routing controls have valid and invalid chat parser corpus seeds and are consumed before upstream
-    serialization.
-  proof:
-  - chat-corpus
-  - oracle
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(routing_timeouts)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b305-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b305_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b305-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b305_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
-  - id: chat-corpus
-    why: routing request controls lack chat parser corpus coverage or replay fails
-    run: test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_timeouts.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/routing_timeouts.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b305-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b305-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b305-" && grep -Fq 'timeout' crates/betterlite-config/fuzz/corpus/config_yaml/b305-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-timeouts/unset-versus-explicit-6000.yaml
 - tools/oracle/cases/routing/routing-timeouts/model-versus-request-timeout.yaml
@@ -89,20 +116,25 @@ oracle_cases:
 - tools/oracle/cases/routing/routing-timeouts/transport-read-timeout.yaml
 - tools/oracle/cases/routing/routing-timeouts/attempt-408.yaml
 - tools/oracle/cases/routing/routing-timeouts/cancellation-stops-upstream.yaml
-deviations:
-- what: A configured force_timeout bounds the async operation rather than only changing the timeout error
-    text.
-  why: The pinned standalone async decorator calculates an override but passes timeout_duration to wait_for;
-    betterlite must enforce configured waits.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/timeout.py#L81-L104
+deviations: []
 out_of_scope:
 - Retry scheduling, which B017 composes with this timeout plan.
 - HTTP connection-pool policy already owned by B009.
+- 'litellm/timeout.py timeout/decorator/wrapper/async_wrapper and _LoopWrapper.__init__/run/stop_loop
+  are uncalled at the pin: rg found no imports or @timeout uses in litellm/. No replacement or bug fix
+  is required.'
+- 'litellm/timeout.py: No callers at the pinned commit; no implementation is required: timeout (L24-L88),
+  timeout.decorator (L39-L86), timeout.decorator.wrapper (L41-L64), timeout.decorator.wrapper.async_func
+  (L42-L43), timeout.decorator.async_wrapper (L67-L82), _LoopWrapper.__init__ (L99-L101), _LoopWrapper.run
+  (L103-L112), _LoopWrapper.stop_loop (L114-L117).'
 pitfalls:
 - B004's prose default is provisional; the pinned completion helper distinguishes an unset timeout from
   explicit 6000.
 - Do not reset an overall deadline when an attempt changes deployments.
-- The architect must acknowledge the standalone async override correction before dispatch.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: standard
 budget:
   max_changed_lines: 800
