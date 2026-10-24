@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/pre-routing-registry/**
-  - tools/oracle/src/router_probes/pre-routing-registry/**
+  - tools/oracle/src/router_probes/pre_routing_registry/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/pre_routing_registry.py
   - tools/oracle/litellm/probes/registry.py
@@ -37,7 +37,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the pre_routing_registry prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
