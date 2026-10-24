@@ -34,6 +34,67 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: nova2_reasoning_config: Nova2 detector removes first matching bedrock/converse/,bedrock/,converse/
+  wrapper, then one of us.,eu.,apac.; recognize leading amazon.nova-2- or nova-2/. Other region prefixes/casing
+  do not match. Effort low,medium,high -> {reasoningConfig:{type:enabled,maxReasoningEffort:<value>}}. Other values
+  ->BadRequestError400 Invalid reasoning_effort value '<value>' for Nova 2 models. Supported values: ['low', 'medium',
+  'high']; model alwaysamazon.nova-2-lite-v1:0, providerbedrock_converse. gpt_reasoning_object: GPT detector searches
+  openai\.gpt-\d anywhere, unlike B598 bounded family regex. _requires_min_max_tokens also accepts xai\.grok-. Reasoning
+  handler checks case-sensitive gpt-oss or deepseek substring first, then GPT -> replaces reasoning with {effort:<raw
+  string>}, then Nova2, then Anthropic. Do not validate raw GPT effort here or preserve old reasoning keys. gpt_oss_and_deepseek_effort:
+  gpt-oss/deepseek handler passes raw reasoning_effort unchanged, including none/unknown strings. Separate predicates
+  detect deepseek anywhere in original/base, and deepseek.r1 for R1. R1 rejects reasoning-effort in supported-param
+  listing/composer, while other DeepSeek lists it; no DeepSeek accepts Anthropic-shaped thinking even when supports_reasoning
+  flag true. anthropic_adaptive_effort: B569 mappingNone removes thinking and whole output_config. Otherwise set
+  thinking; adaptive capability via B688 preserves an existing dict output_config and setdefault effort using minimal/low->low,medium/high/xhigh/max
+  as-is; invalid mapping invokes B569 invalid-effort error. B690 normalizes ceiling then validate effective effort,
+  assign output_config and _output_config_normalized=true. Existing effort wins even invalid. Validation permits
+  low,medium,high,xhigh,max, otherwise BadRequestError400 Invalid reasoning_effort/output_config.effort value: <repr>.
+  Must be one of: 'low', 'medium', 'high', 'xhigh', or 'max'. Model/provider original/bedrock_converse; B569 capability
+  error follows membership validation. minimum_thinking_budget: Dict thinking with int budget_tokens (including
+  bool) below integer BEDROCK_MIN_THINKING_BUDGET_TOKENS env default1024 clamps in place and debug Bedrock requires
+  thinking.budget_tokens >= <minimum>, got <budget>. Clamping to minimum. Floating/string/None/missing budget untouched;
+  no requirement thinking.type=enabled and no upper max-token clamp here. nova_web_search_only: Any case-insensitive
+  nova substring returns {systemTool:{name:nova_grounding}}, ignoring all web_search_options members including search_context_size/user_location;
+  empty dict enables it. Non-Nova returns None and debug web_search_options passed but model <model> is not a Nova
+  model. Nova grounding is only supported on Amazon Nova models. This helper does not validate model support through
+  the catalog. sampling_capabilities: B2203 base begins anthropic ->true regardless of explicit capability false
+  (later Anthropic gate handles it). Else query B688 supports_sampling_params for original then global.<base>,us.<base>,eu.<base>;
+  first non-None flag wins includingFalse, unknownall ->true. Literal Claude model-name shortcuts for thinking are
+  claude-3-7,claude-sonnet-4,claude-opus-4, then supports_reasoning original/base. supported_param_list: Base ordered
+  list max_tokens,max_completion_tokens,stream,stream_options,stop, optionaltemperature/top_p when sampling supported,extra_headers,response_format,requestMetadata,service_tier,parallel_tool_calls.
+  Case-sensitive arn substring anywhere adds tools,tool_choice,thinking,reasoning_effort,output_config and web_search_options
+  iff nova casefold substring, then returns. Otherwise tools for base prefixes anthropic,mistral,cohere,meta.llama3-1/3-2/3-3,meta.llama4,amazon.nova
+  or supports_function_calling flag. Nova base addsweb_search_options; tool_choice requires capability on original/base.
+  Reasoning order GPT-OSS/GPT original/base, DeepSeek(nonR1),Nova2,Anthropic-thinking (adds thinking,reasoning_effort,output_config).
+  Anthropic base addscontext_management last. _auto_tool_choice returns {auto:{}}. converse_class_defaults: Constructor
+  stores only non-None maxTokens,stopSequences,temperature,topP,topK on the class, preserving falsey values; initial
+  annotations create no runtime defaults. Isolate class state in oracle fixtures. get_config reads own class dictionary,
+  excludes underscore names, None, function,builtin,classmethod,staticmethod; unlike BaseConfig it does not exclude
+  property descriptors, so capture their kind rather than serializing Python objects. custom_llm_provider property
+  returns bedrock_converse. get_config_blocks returns guardrailConfig,performanceConfig,serviceTier block types
+  in that order.
+
+
+  Load BEDROCK_MIN_THINKING_BUDGET_TOKENS, AmazonConverseConfig.maxTokens, AmazonConverseConfig.stopSequences, AmazonConverseConfig.temperature,
+  AmazonConverseConfig.topP, AmazonConverseConfig.topK through betterlite-config, with injected environment lookup
+  and the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest bedrock_converse_options_config_cases; each named loads_<key> case invokes the real B002 loader,
+  checks explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  B688 owns the BEDROCK_MIN_THINKING_BUDGET_TOKENS loader and its tests; consume that value rather than registering
+  this key again.
+
+
+  Shared supports/declared capability functions are B2221; raw Anthropic catalog flags are B2216 where the owned
+  code calls those functions. These are lower prerequisites, not B157 SDK calls.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
+
+
   Implement crates/betterlite-bedrock/src/converse_options.rs with adjacent tests under converse_options/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -49,10 +110,9 @@ description: >-
 
   Write rstest function converse_options_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): nova2_reasoning_config, gpt_reasoning_object, gpt_oss_and_deepseek_effort, anthropic_adaptive_effort, minimum_thinking_budget,
-  nova_web_search_only, sampling_capabilities, supported_param_list. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  nova_web_search_only, sampling_capabilities, supported_param_list, converse_class_defaults. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options* using HelperCase: kind:
@@ -68,9 +128,9 @@ description: >-
 
 
   Budget from 322 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 340 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 569 planned, 575 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 270 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 110 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 765 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -86,17 +146,28 @@ scope:
   - tools/oracle/helpers/bedrock_converse_options.py
   - tools/oracle/cases/helpers/providers/bedrock-converse-options/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_converse_options.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_converse_options/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_converse_options_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_converse_options*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L143-L166
-  why: >-
-    Own AmazonConverseConfig.__init__, AmazonConverseConfig.custom_llm_provider, AmazonConverseConfig.get_config_blocks.
+  why: Own AmazonConverseConfig.__init__, AmazonConverseConfig.custom_llm_provider, AmazonConverseConfig.get_config_blocks.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L299-L314
   why: Own AmazonConverseConfig.get_config. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L388-L737
-  why: >-
-    Own AmazonConverseConfig._is_openai_gpt_reasoning_model, AmazonConverseConfig._requires_min_max_tokens, AmazonConverseConfig._is_nova_2_model,
+  why: Own AmazonConverseConfig._is_openai_gpt_reasoning_model, AmazonConverseConfig._requires_min_max_tokens, AmazonConverseConfig._is_nova_2_model,
     AmazonConverseConfig._map_web_search_options, AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config,
     AmazonConverseConfig._handle_reasoning_effort_parameter, AmazonConverseConfig._validate_anthropic_adaptive_effort,
     AmazonConverseConfig._clamp_thinking_budget_tokens, AmazonConverseConfig._is_deepseek_model, AmazonConverseConfig._is_deepseek_r1_model,
@@ -104,50 +175,73 @@ references:
     AmazonConverseConfig._supports_sampling_params, AmazonConverseConfig.get_supported_openai_params, AmazonConverseConfig._auto_tool_choice.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    nova2 reasoning config: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/nova2-reasoning-config.yaml.
+- text: 'nova2_reasoning_config: Nova2 detector removes first matching bedrock/converse/,bedrock/,converse/ wrapper,
+    then one of us.,eu.,apac.; recognize leading amazon.nova-2- or nova-2/. Other region prefixes/casing do not
+    match. Effort low,medium,high -> {reasoningConfig:{type:enabled,maxReasoningEffort:<value>}}. Other values ->BadRequestError400
+    Invalid reasoning_effort value ''<value>'' for Nova 2 models. Supported values: [''low'', ''medium'', ''high''];
+    model alwaysamazon.nova-2-lite-v1:0, providerbedrock_converse.'
   proof:
   - case-nova2-reasoning-config
   - oracle
   - helper-python
-- text: >-
-    gpt reasoning object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/gpt-reasoning-object.yaml.
+- text: 'gpt_reasoning_object: GPT detector searches openai\.gpt-\d anywhere, unlike B598 bounded family regex.
+    _requires_min_max_tokens also accepts xai\.grok-. Reasoning handler checks case-sensitive gpt-oss or deepseek
+    substring first, then GPT -> replaces reasoning with {effort:<raw string>}, then Nova2, then Anthropic. Do not
+    validate raw GPT effort here or preserve old reasoning keys.'
   proof:
   - case-gpt-reasoning-object
   - oracle
   - helper-python
-- text: >-
-    gpt oss and deepseek effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/gpt-oss-and-deepseek-effort.yaml.
+- text: 'gpt_oss_and_deepseek_effort: gpt-oss/deepseek handler passes raw reasoning_effort unchanged, including
+    none/unknown strings. Separate predicates detect deepseek anywhere in original/base, and deepseek.r1 for R1.
+    R1 rejects reasoning-effort in supported-param listing/composer, while other DeepSeek lists it; no DeepSeek
+    accepts Anthropic-shaped thinking even when supports_reasoning flag true.'
   proof:
   - case-gpt-oss-and-deepseek-effort
   - oracle
   - helper-python
-- text: >-
-    anthropic adaptive effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/anthropic-adaptive-effort.yaml.
+- text: 'anthropic_adaptive_effort: B569 mappingNone removes thinking and whole output_config. Otherwise set thinking;
+    adaptive capability via B688 preserves an existing dict output_config and setdefault effort using minimal/low->low,medium/high/xhigh/max
+    as-is; invalid mapping invokes B569 invalid-effort error. B690 normalizes ceiling then validate effective effort,
+    assign output_config and _output_config_normalized=true. Existing effort wins even invalid. Validation permits
+    low,medium,high,xhigh,max, otherwise BadRequestError400 Invalid reasoning_effort/output_config.effort value:
+    <repr>. Must be one of: ''low'', ''medium'', ''high'', ''xhigh'', or ''max''. Model/provider original/bedrock_converse;
+    B569 capability error follows membership validation.'
   proof:
   - case-anthropic-adaptive-effort
   - oracle
   - helper-python
-- text: >-
-    minimum thinking budget: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/minimum-thinking-budget.yaml.
+- text: 'minimum_thinking_budget: Dict thinking with int budget_tokens (including bool) below integer BEDROCK_MIN_THINKING_BUDGET_TOKENS
+    env default1024 clamps in place and debug Bedrock requires thinking.budget_tokens >= <minimum>, got <budget>.
+    Clamping to minimum. Floating/string/None/missing budget untouched; no requirement thinking.type=enabled and
+    no upper max-token clamp here.'
   proof:
   - case-minimum-thinking-budget
   - oracle
   - helper-python
-- text: >-
-    nova web search only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/nova-web-search-only.yaml.
+- text: 'nova_web_search_only: Any case-insensitive nova substring returns {systemTool:{name:nova_grounding}}, ignoring
+    all web_search_options members including search_context_size/user_location; empty dict enables it. Non-Nova
+    returns None and debug web_search_options passed but model <model> is not a Nova model. Nova grounding is only
+    supported on Amazon Nova models. This helper does not validate model support through the catalog.'
   proof:
   - case-nova-web-search-only
   - oracle
   - helper-python
-- text: >-
-    sampling capabilities: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/sampling-capabilities.yaml.
+- text: 'sampling_capabilities: B2203 base begins anthropic ->true regardless of explicit capability false (later
+    Anthropic gate handles it). Else query B688 supports_sampling_params for original then global.<base>,us.<base>,eu.<base>;
+    first non-None flag wins includingFalse, unknownall ->true. Literal Claude model-name shortcuts for thinking
+    are claude-3-7,claude-sonnet-4,claude-opus-4, then supports_reasoning original/base.'
   proof:
   - case-sampling-capabilities
   - oracle
   - helper-python
-- text: >-
-    supported param list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-options/supported-param-list.yaml.
+- text: 'supported_param_list: Base ordered list max_tokens,max_completion_tokens,stream,stream_options,stop, optionaltemperature/top_p
+    when sampling supported,extra_headers,response_format,requestMetadata,service_tier,parallel_tool_calls. Case-sensitive
+    arn substring anywhere adds tools,tool_choice,thinking,reasoning_effort,output_config and web_search_options
+    iff nova casefold substring, then returns. Otherwise tools for base prefixes anthropic,mistral,cohere,meta.llama3-1/3-2/3-3,meta.llama4,amazon.nova
+    or supports_function_calling flag. Nova base addsweb_search_options; tool_choice requires capability on original/base.
+    Reasoning order GPT-OSS/GPT original/base, DeepSeek(nonR1),Nova2,Anthropic-thinking (adds thinking,reasoning_effort,output_config).
+    Anthropic base addscontext_management last. _auto_tool_choice returns {auto:{}}.'
   proof:
   - case-supported-param-list
   - oracle
@@ -156,47 +250,124 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'converse_class_defaults: Constructor stores only non-None maxTokens,stopSequences,temperature,topP,topK
+    on the class, preserving falsey values; initial annotations create no runtime defaults. Isolate class state
+    in oracle fixtures. get_config reads own class dictionary, excludes underscore names, None, function,builtin,classmethod,staticmethod;
+    unlike BaseConfig it does not exclude property descriptors, so capture their kind rather than serializing Python
+    objects. custom_llm_provider property returns bedrock_converse. get_config_blocks returns guardrailConfig,performanceConfig,serviceTier
+    block types in that order.'
+  proof:
+  - case-converse-class-defaults
+  - oracle
+  - helper-python
+- text: The real config loader resolves AmazonConverseConfig.maxTokens, including its default and precedence.
+  proof:
+  - config-amazonconverseconfig-maxtokens
+- text: The real config loader resolves AmazonConverseConfig.stopSequences, including its default and precedence.
+  proof:
+  - config-amazonconverseconfig-stopsequences
+- text: The real config loader resolves AmazonConverseConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazonconverseconfig-temperature
+- text: The real config loader resolves AmazonConverseConfig.topP, including its default and precedence.
+  proof:
+  - config-amazonconverseconfig-topp
+- text: The real config loader resolves AmazonConverseConfig.topK, including its default and precedence.
+  proof:
+  - config-amazonconverseconfig-topk
 checks:
   optional:
   - mutants
   commands:
   - id: case-nova2-reasoning-config
-    why: The nova2-reasoning-config behavior is missing or differs from its pinned fixture.
+    why: 'Nova2 detector removes first matching bedrock/converse/,bedrock/,converse/ wrapper, then one of us.,eu.,apac.;
+      recognize leading amazon.nova-2- or nova-2/. Other region prefixes/casing do not match. Effort low,medium,high
+      -> {reasoningConfig:{type:enabled,maxReasoningEffort:<value>}}. Other values ->BadRequestError400 Invalid
+      reasoning_effort value ''<value>'' for Nova 2 models. Supported values: [''low'', ''medium'', ''high'']; model
+      alwaysamazon.nova-2-lite-v1:0, providerbedrock_converse.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_nova2_reasoning_config$/)'
   - id: case-gpt-reasoning-object
-    why: The gpt-reasoning-object behavior is missing or differs from its pinned fixture.
+    why: GPT detector searches openai\.gpt-\d anywhere, unlike B598 bounded family regex. _requires_min_max_tokens
+      also accepts xai\.grok-. Reasoning handler checks case-sensitive gpt-oss or deepseek substring first, then
+      GPT -> replaces reasoning with {effort:<raw string>}, then Nova2, then Anthropic. Do not validate raw GPT
+      effort here or preserve old reasoning keys.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_gpt_reasoning_object$/)'
   - id: case-gpt-oss-and-deepseek-effort
-    why: The gpt-oss-and-deepseek-effort behavior is missing or differs from its pinned fixture.
+    why: gpt-oss/deepseek handler passes raw reasoning_effort unchanged, including none/unknown strings. Separate
+      predicates detect deepseek anywhere in original/base, and deepseek.r1 for R1. R1 rejects reasoning-effort
+      in supported-param listing/composer, while other DeepSeek lists it; no DeepSeek accepts Anthropic-shaped thinking
+      even when supports_reasoning flag true.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_gpt_oss_and_deepseek_effort$/)'
   - id: case-anthropic-adaptive-effort
-    why: The anthropic-adaptive-effort behavior is missing or differs from its pinned fixture.
+    why: 'B569 mappingNone removes thinking and whole output_config. Otherwise set thinking; adaptive capability
+      via B688 preserves an existing dict output_config and setdefault effort using minimal/low->low,medium/high/xhigh/max
+      as-is; invalid mapping invokes B569 invalid-effort error. B690 normalizes ceiling then validate effective
+      effort, assign output_config and _output_config_normalized=true. Existing effort wins even invalid. Validation
+      permits low,medium,high,xhigh,max, otherwise BadRequestError400 Invalid reasoning_effort/output_config.effort
+      value: <repr>. Must be one of: ''low'', ''medium'', ''high'', ''xhigh'', or ''max''. Model/provider original/bedrock_converse;
+      B569 capability error follows membership validation.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_anthropic_adaptive_effort$/)'
   - id: case-minimum-thinking-budget
-    why: The minimum-thinking-budget behavior is missing or differs from its pinned fixture.
+    why: Dict thinking with int budget_tokens (including bool) below integer BEDROCK_MIN_THINKING_BUDGET_TOKENS
+      env default1024 clamps in place and debug Bedrock requires thinking.budget_tokens >= <minimum>, got <budget>.
+      Clamping to minimum. Floating/string/None/missing budget untouched; no requirement thinking.type=enabled and
+      no upper max-token clamp here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_minimum_thinking_budget$/)'
   - id: case-nova-web-search-only
-    why: The nova-web-search-only behavior is missing or differs from its pinned fixture.
+    why: Any case-insensitive nova substring returns {systemTool:{name:nova_grounding}}, ignoring all web_search_options
+      members including search_context_size/user_location; empty dict enables it. Non-Nova returns None and debug
+      web_search_options passed but model <model> is not a Nova model. Nova grounding is only supported on Amazon
+      Nova models. This helper does not validate model support through the catalog.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_nova_web_search_only$/)'
   - id: case-sampling-capabilities
-    why: The sampling-capabilities behavior is missing or differs from its pinned fixture.
+    why: B2203 base begins anthropic ->true regardless of explicit capability false (later Anthropic gate handles
+      it). Else query B688 supports_sampling_params for original then global.<base>,us.<base>,eu.<base>; first non-None
+      flag wins includingFalse, unknownall ->true. Literal Claude model-name shortcuts for thinking are claude-3-7,claude-sonnet-4,claude-opus-4,
+      then supports_reasoning original/base.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_sampling_capabilities$/)'
   - id: case-supported-param-list
-    why: The supported-param-list behavior is missing or differs from its pinned fixture.
+    why: Base ordered list max_tokens,max_completion_tokens,stream,stream_options,stop, optionaltemperature/top_p
+      when sampling supported,extra_headers,response_format,requestMetadata,service_tier,parallel_tool_calls. Case-sensitive
+      arn substring anywhere adds tools,tool_choice,thinking,reasoning_effort,output_config and web_search_options
+      iff nova casefold substring, then returns. Otherwise tools for base prefixes anthropic,mistral,cohere,meta.llama3-1/3-2/3-3,meta.llama4,amazon.nova
+      or supports_function_calling flag. Nova base addsweb_search_options; tool_choice requires capability on original/base.
+      Reasoning order GPT-OSS/GPT original/base, DeepSeek(nonR1),Nova2,Anthropic-thinking (adds thinking,reasoning_effort,output_config).
+      Anthropic base addscontext_management last. _auto_tool_choice returns {auto:{}}.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_supported_param_list$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_options.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_options.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options*")"
       && grep -lq 'bedrock_converse_options' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_options$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-converse-class-defaults
+    why: Constructor stores only non-None maxTokens,stopSequences,temperature,topP,topK on the class, preserving
+      falsey values; initial annotations create no runtime defaults. Isolate class state in oracle fixtures. get_config
+      reads own class dictionary, excludes underscore names, None, function,builtin,classmethod,staticmethod; unlike
+      BaseConfig it does not exclude property descriptors, so capture their kind rather than serializing Python
+      objects. custom_llm_provider property returns bedrock_converse. get_config_blocks returns guardrailConfig,performanceConfig,serviceTier
+      block types in that order.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_options_cases::case_[0-9]+_converse_class_defaults$/)'
+  - id: config-amazonconverseconfig-maxtokens
+    why: AmazonConverseConfig.maxTokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_converse_options_config_cases::case_[0-9]+_loads_amazonconverseconfig_maxtokens$/)'
+  - id: config-amazonconverseconfig-stopsequences
+    why: AmazonConverseConfig.stopSequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_converse_options_config_cases::case_[0-9]+_loads_amazonconverseconfig_stopsequences$/)'
+  - id: config-amazonconverseconfig-temperature
+    why: AmazonConverseConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_converse_options_config_cases::case_[0-9]+_loads_amazonconverseconfig_temperature$/)'
+  - id: config-amazonconverseconfig-topp
+    why: AmazonConverseConfig.topP lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_converse_options_config_cases::case_[0-9]+_loads_amazonconverseconfig_topp$/)'
+  - id: config-amazonconverseconfig-topk
+    why: AmazonConverseConfig.topK lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_converse_options_config_cases::case_[0-9]+_loads_amazonconverseconfig_topk$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-options/nova2-reasoning-config.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-options/gpt-reasoning-object.yaml
@@ -206,78 +377,67 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-options/nova-web-search-only.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-options/sampling-capabilities.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-options/supported-param-list.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-options/converse-class-defaults.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
-  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
-  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
-  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+- 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata
+  L316-L385 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values
+  L739-L768; AmazonConverseConfig.get_supported_image_types L770-L771; AmazonConverseConfig.get_supported_document_types
+  L773-L774; AmazonConverseConfig.get_supported_video_types L776-L777; AmazonConverseConfig.get_all_supported_content_types
+  L779-L780; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
+  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
+  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L908-L919; AmazonConverseConfig._add_additional_properties_to_schema
+  L921-L955; AmazonConverseConfig._create_output_config_for_response_format L957-L996; AmazonConverseConfig._apply_tool_call_transformation
+  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params
+  L1010-L1165; AmazonConverseConfig._map_request_metadata_param L1167-L1170; AmazonConverseConfig._map_context_management_param
+  L1172-L1187; AmazonConverseConfig._map_service_tier_param L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens
+  L1271-L1294; AmazonConverseConfig.get_cache_point_block L1296-L1306; AmazonConverseConfig.get_cache_point_block
+  L1308-L1318; AmazonConverseConfig.get_cache_point_block L1320-L1338; AmazonConverseConfig._build_cache_point_block
+  L1340-L1353; AmazonConverseConfig._transform_inference_params L1508-L1511; AmazonConverseConfig._handle_top_k_value
+  L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config L1539-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config
+  L1555-L1567 belong to B602.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L168-L218; AmazonConverseConfig._has_orphaned_tool_blocks L220-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L227-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L280-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1355-L1357; AmazonConverseConfig._opens_with_tool_result L1359-L1371; AmazonConverseConfig._system_run_before
   L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
   L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
-  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
-  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
-  belong to B603; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values L739-L768; AmazonConverseConfig.get_supported_image_types
-  L770-L771; AmazonConverseConfig.get_supported_document_types L773-L774; AmazonConverseConfig.get_supported_video_types
-  L776-L777; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
-  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
-  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L909-L919; AmazonConverseConfig._add_additional_properties_to_schema
-  L922-L955; AmazonConverseConfig._create_output_config_for_response_format L958-L996; AmazonConverseConfig._apply_tool_call_transformation
-  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
-  have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params L1010-L1165; AmazonConverseConfig._map_request_metadata_param
-  L1167-L1170; AmazonConverseConfig._map_context_management_param L1172-L1187; AmazonConverseConfig._map_service_tier_param
-  L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens L1271-L1294; AmazonConverseConfig.get_cache_point_block
-  L1297-L1306; AmazonConverseConfig.get_cache_point_block L1309-L1318; AmazonConverseConfig.get_cache_point_block
-  L1320-L1338; AmazonConverseConfig._build_cache_point_block L1341-L1353; AmazonConverseConfig._transform_inference_params
-  L1508-L1511; AmazonConverseConfig._handle_top_k_value L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config
-  L1540-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config L1556-L1567 belong to B602;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
-  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
-  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
-  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
-  belong to B683; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response L2079-L2105; AmazonConverseConfig._transform_response
-  L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709; AmazonConverseConfig.validate_environment L2711-L2724;
-  AmazonConverseConfig.should_fake_stream L2726-L2752 belong to B607; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
-  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
-  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
-  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
-  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
-  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed
-  L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
-  L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
-  L2483-L2525 belong to B606; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata L316-L385
-  belong to B596; reuse that implementation or its injected typed boundary.
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1461-L1465;
+  AmazonConverseConfig._converted_text_block L1467-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params
+  L1569-L1684; AmazonConverseConfig._transform_request_helper L1861-L1970; AmazonConverseConfig._async_transform_request
+  L1972-L2014; AmazonConverseConfig.transform_request L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077
+  belong to B604.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content
+  L2107-L2117; AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details
+  L2141-L2159; AmazonConverseConfig.thinking_tokens_from_additional_fields L2161-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2172-L2175; AmazonConverseConfig._usage_count L2177-L2183; AmazonConverseConfig._cache_read_count L2185-L2188;
+  AmazonConverseConfig._cache_write_count L2190-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names
+  L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed L2287-L2317; AmazonConverseConfig._translate_message_content
+  L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations L2390-L2457; AmazonConverseConfig._unwrap_bedrock_properties
+  L2459-L2480; AmazonConverseConfig._filter_json_mode_tools L2482-L2525 belong to B606.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response
+  L2079-L2105; AmazonConverseConfig._transform_response L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709;
+  AmazonConverseConfig.validate_environment L2711-L2724; AmazonConverseConfig.should_fake_stream L2726-L2752 belong
+  to B607.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
+  L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
-- >-
-  Preserve sampling policy, tool-support metadata, native Nova grounding, effort representation and the thinking-budget
-  clamp with a diagnostic; model lookup uses the injected catalog.
+- The Nova2 detector recognizes only us., eu. and apac. wrappers, while Nova grounding accepts any nova substring.
+- Adaptive effort keeps an existing output_config.effort; this differs from the direct Anthropic mapper that replaces
+  it.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

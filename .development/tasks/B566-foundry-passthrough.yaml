@@ -28,6 +28,37 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: foundry_root_path: Parse the base, remove empty path segments, truncate at first exact case-sensitive
+  models segment, remove query, retain fragment and strip trailing slash from final URL. No models segment preserves
+  all path segments. repeated_native_prefix: Strip B101 model/model-group prefix first. Compare root suffix/native
+  prefix case-insensitively, longest overlap first; remove overlap only when it covers the entire native endpoint
+  or the endpoint starts openai. Partial overlap for non-openai endpoints remains; preserve kept root segment casing.
+  query_api_version_precedence: An incoming mapping containing api-version wins even if its value is None/empty.
+  Else truthy deployment api_version wins over the base query value. Invalid typed deployment version returns None;
+  missing effective version preserves the original query mapping; otherwise merge api-version without copying other
+  base query keys. ocr_usage_log: Nonstream logging first tries B548 chat/Responses projection, then OCR, then Foundry
+  relay shapes, finally StandardPassThroughResponseObject from B101 relayed_body. OCR runs only for 200 and an available
+  injected/native binding; pass model, prefix-stripped endpoint and raw content. None stays None; ValueError/RuntimeError
+  (including model-validation errors) warn azure_ai passthrough: OCR body from <url> is not costable: <error> and
+  fall through. Successful OCR sets call_type=aocr. stream_collected_log: Collected chunks delegate B548 unchanged;
+  no Foundry-specific stream aggregation. Assert B101 relay shape selection and generic body fallback independently
+  of OCR availability. auth_selection: Get base through B549; missing base raises ValueError: Azure AI api base
+  not found: set `api_base` on the deployment or AZURE_AI_API_BASE. B549 auth overwrites matching caller headers,
+  selecting api-key header by base. Streaming detection is truthiness of request_data.stream for every endpoint.
+  foundry_relay_shape_literals: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse;
+  /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B101 owns the shape matching
+  and validation, with no extra Foundry endpoints.
+
+
+  Write standalone Rust test passthrough_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test passthrough_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-foundry/src/passthrough.rs with adjacent tests under passthrough/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -43,9 +74,9 @@ description: >-
 
   Write rstest function passthrough_cases in betterlite-foundry with these exact named cases (one per oracle file):
   foundry_root_path, repeated_native_prefix, query_api_version_precedence, ocr_usage_log, stream_collected_log,
-  auth_selection. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  auth_selection, foundry_relay_shape_literals. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_passthrough* using HelperCase: kind:
@@ -63,9 +94,9 @@ description: >-
 
 
   Budget from 142 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 170 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 428 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 220 production lines, 205 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 555 planned, 575 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -91,40 +122,52 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/provider_config.rs#L162-L189
   why: Native OCR route recognition and normalized response projection.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/passthrough/transformation.py#L40-L207
-  why: >-
-    Own api_version_from, foundry_root, is_repeated_native_prefix, without_repeated_native_prefix, relay_query_params,
+  why: Own api_version_from, foundry_root, is_repeated_native_prefix, without_repeated_native_prefix, relay_query_params,
     AzureAIPassthroughConfig.__init__, AzureAIPassthroughConfig.is_streaming_request, AzureAIPassthroughConfig.get_complete_url,
     AzureAIPassthroughConfig.validate_environment, AzureAIPassthroughConfig.logging_non_streaming_response, AzureAIPassthroughConfig.logged_ocr_response,
     AzureAIPassthroughConfig.handle_logging_collected_chunks. Other functions in this file remain with the owners
     listed below.
 dod:
-- text: 'foundry root path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/foundry-root-path.yaml.'
+- text: 'foundry_root_path: Parse the base, remove empty path segments, truncate at first exact case-sensitive models
+    segment, remove query, retain fragment and strip trailing slash from final URL. No models segment preserves
+    all path segments.'
   proof:
   - case-foundry-root-path
   - oracle
   - helper-python
-- text: 'repeated native prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/repeated-native-prefix.yaml.'
+- text: 'repeated_native_prefix: Strip B101 model/model-group prefix first. Compare root suffix/native prefix case-insensitively,
+    longest overlap first; remove overlap only when it covers the entire native endpoint or the endpoint starts
+    openai. Partial overlap for non-openai endpoints remains; preserve kept root segment casing.'
   proof:
   - case-repeated-native-prefix
   - oracle
   - helper-python
-- text: >-
-    query api version precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/query-api-version-precedence.yaml.
+- text: 'query_api_version_precedence: An incoming mapping containing api-version wins even if its value is None/empty.
+    Else truthy deployment api_version wins over the base query value. Invalid typed deployment version returns
+    None; missing effective version preserves the original query mapping; otherwise merge api-version without copying
+    other base query keys.'
   proof:
   - case-query-api-version-precedence
   - oracle
   - helper-python
-- text: 'ocr usage log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/ocr-usage-log.yaml.'
+- text: 'ocr_usage_log: Nonstream logging first tries B548 chat/Responses projection, then OCR, then Foundry relay
+    shapes, finally StandardPassThroughResponseObject from B101 relayed_body. OCR runs only for 200 and an available
+    injected/native binding; pass model, prefix-stripped endpoint and raw content. None stays None; ValueError/RuntimeError
+    (including model-validation errors) warn azure_ai passthrough: OCR body from <url> is not costable: <error>
+    and fall through. Successful OCR sets call_type=aocr.'
   proof:
   - case-ocr-usage-log
   - oracle
   - helper-python
-- text: 'stream collected log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/stream-collected-log.yaml.'
+- text: 'stream_collected_log: Collected chunks delegate B548 unchanged; no Foundry-specific stream aggregation.
+    Assert B101 relay shape selection and generic body fallback independently of OCR availability.'
   proof:
   - case-stream-collected-log
   - oracle
   - helper-python
-- text: 'auth selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/auth-selection.yaml.'
+- text: 'auth_selection: Get base through B549; missing base raises ValueError: Azure AI api base not found: set
+    `api_base` on the deployment or AZURE_AI_API_BASE. B549 auth overwrites matching caller headers, selecting api-key
+    header by base. Streaming detection is truthiness of request_data.stream for every endpoint.'
   proof:
   - case-auth-selection
   - oracle
@@ -136,47 +179,81 @@ dod:
 - text: decode_logged_ocr_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+- text: 'foundry_relay_shape_literals: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse;
+    /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B101 owns the shape matching
+    and validation, with no extra Foundry endpoints.'
+  proof:
+  - case-foundry-relay-shape-literals
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-foundry-root-path
-    why: The foundry-root-path behavior is missing or differs from its pinned fixture.
+    why: Parse the base, remove empty path segments, truncate at first exact case-sensitive models segment, remove
+      query, retain fragment and strip trailing slash from final URL. No models segment preserves all path segments.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foundry_root_path$/)'
   - id: case-repeated-native-prefix
-    why: The repeated-native-prefix behavior is missing or differs from its pinned fixture.
+    why: Strip B101 model/model-group prefix first. Compare root suffix/native prefix case-insensitively, longest
+      overlap first; remove overlap only when it covers the entire native endpoint or the endpoint starts openai.
+      Partial overlap for non-openai endpoints remains; preserve kept root segment casing.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_repeated_native_prefix$/)'
   - id: case-query-api-version-precedence
-    why: The query-api-version-precedence behavior is missing or differs from its pinned fixture.
+    why: An incoming mapping containing api-version wins even if its value is None/empty. Else truthy deployment
+      api_version wins over the base query value. Invalid typed deployment version returns None; missing effective
+      version preserves the original query mapping; otherwise merge api-version without copying other base query
+      keys.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_query_api_version_precedence$/)'
   - id: case-ocr-usage-log
-    why: The ocr-usage-log behavior is missing or differs from its pinned fixture.
+    why: 'Nonstream logging first tries B548 chat/Responses projection, then OCR, then Foundry relay shapes, finally
+      StandardPassThroughResponseObject from B101 relayed_body. OCR runs only for 200 and an available injected/native
+      binding; pass model, prefix-stripped endpoint and raw content. None stays None; ValueError/RuntimeError (including
+      model-validation errors) warn azure_ai passthrough: OCR body from <url> is not costable: <error> and fall
+      through. Successful OCR sets call_type=aocr.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_ocr_usage_log$/)'
   - id: case-stream-collected-log
-    why: The stream-collected-log behavior is missing or differs from its pinned fixture.
+    why: Collected chunks delegate B548 unchanged; no Foundry-specific stream aggregation. Assert B101 relay shape
+      selection and generic body fallback independently of OCR availability.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_stream_collected_log$/)'
   - id: case-auth-selection
-    why: The auth-selection behavior is missing or differs from its pinned fixture.
+    why: 'Get base through B549; missing base raises ValueError: Azure AI api base not found: set `api_base` on
+      the deployment or AZURE_AI_API_BASE. B549 auth overwrites matching caller headers, selecting api-key header
+      by base. Streaming detection is truthiness of request_data.stream for every endpoint.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_auth_selection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_passthrough.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_passthrough.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_passthrough*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_passthrough*")"
       && grep -lq 'foundry_passthrough' tools/oracle/fuzz/corpus/helper_case/foundry_passthrough* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_passthrough$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_passthrough)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_passthrough)"
       && grep -q 'decode_logged_ocr_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_passthrough.rs &&
       cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_passthrough_corpus$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_secret_safe_failure$/)'
+  - id: case-foundry-relay-shape-literals
+    why: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse; /providers/blackforestlabs/v1/flux-2-pro
+      maps to aimage_generation plus ImageResponse. B101 owns the shape matching and validation, with no extra Foundry
+      endpoints.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foundry_relay_shape_literals$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-passthrough/foundry-root-path.yaml
 - tools/oracle/cases/helpers/providers/foundry-passthrough/repeated-native-prefix.yaml
@@ -184,18 +261,19 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-passthrough/ocr-usage-log.yaml
 - tools/oracle/cases/helpers/providers/foundry-passthrough/stream-collected-log.yaml
 - tools/oracle/cases/helpers/providers/foundry-passthrough/auth-selection.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/foundry-relay-shape-literals.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and OCR response bodies belong to
-  B092; this task recognizes the logged_ocr_response seam and invokes an injected OCR projector from that owner.
+- 'litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and OCR response bodies belong to
+  B092; this task recognizes the logged_ocr_response seam and invokes an injected OCR projector from that owner.'
 pitfalls:
-- LITELLM_RUST=false does not bypass get_native_bridge for OCR logging, so the oracle must capture that seam explicitly.
+- Only the exact models path segment truncates the Foundry root; Models is retained.
+- Partial path overlap is removed only for an openai-prefixed native endpoint.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 575
   max_new_expects: 0
-review_level: standard
+review_level: security

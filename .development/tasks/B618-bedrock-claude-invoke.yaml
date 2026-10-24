@@ -17,13 +17,13 @@ description: >-
 
 
   For response_format when supports_native_structured_output is false, map with the temporary claude-3-sonnet-20240229
-  catalog model, restore the original model and remove the generated response-format tool_choice when forced tool
-  use is unsupported. Reuse B960 filter_and_transform_beta_headers and its B959 config.
+  catalog model, then restore the original model and remove the generated response-format tool_choice when forced
+  tool use is unsupported. Reuse B960 filter_and_transform_beta_headers and its B959 config.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
-  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
-  and no copied helper algorithm is permitted.
+  and list their direct ownership here. Provider leaves must never import betterlite-core, and no copied helper
+  algorithm is permitted.
 
 
   remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
@@ -88,6 +88,59 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: bedrock_anthropic_version: Provider is bedrock and should_strip_billing_metadata returns
+  True. _build_bedrock_anthropic_request_base copies options while removing the twelve B590 authentication fields,
+  copies dict output_config before B690 effort normalization, then normalizes tool-search tools and calls B577 AnthropicConfig.transform_request.
+  Pop model and stream from the resulting body. Run B597 structured-output and unsupported-output-config helpers,
+  set anthropic_version to bedrock-2023-05-31 only when the key is absent (preserve explicit None/empty), then normalize
+  tool custom fields/schema types and remove eager_input_streaming with B597. Preserve this order and original output_config
+  immutability. adaptive_effort_ceiling: Clamp only when B568 _is_adaptive_thinking_model(model,bedrock) is true
+  and raw params.reasoning_effort is a string. Run B690 normalize_bedrock_opus_output_config_effort on {effort:value}
+  and write its resulting effort back into the original non_default_params. Preserve nonstring/unknown efforts and
+  models without an applicable ceiling as B690 does. The separate output_config copy is clamped again during body
+  construction; use the same ceiling cases as B600/B622. bedrock_beta_filter: Read user beta values through B599
+  and form a set. Build auto betas with B568 get_anthropic_beta_list using provider=bedrock,prompt_caching_set=False
+  and the original tools/messages/options for computer,file-id,MCP,mid-conversation-output and display-updates flags.
+  For tool search without programmatic calling or input examples, discard advanced-tool-use-2025-11-20 and add tool-search-tool-2025-10-19
+  only when B690 supports it. Eager-input streaming adds fine-grained-tool-streaming-2025-05-14. Run B960 filter_and_transform_beta_headers
+  only on auto values not explicitly supplied by the user, then return sorted union with the untouched user set.
+  Thus user betas bypass automatic filtering and survive a discard/rewrite. Emit anthropic_beta only for a nonempty
+  computed list; otherwise preserve any existing body value. tool_search_tool_name: For falsey or non-list tools
+  return the same options unchanged. Otherwise preserve order, silently drop tool_search_tool_bm25_20251119, copy
+  tool_search_tool_regex_20251119 to type=tool_search_tool_regex and default a missing name to tool_search_tool_regex
+  (retain explicit None/empty), and retain other tool records. Write the new list back into the supplied options;
+  malformed nonmapping entries propagate their error. There is no warning for BM25 removal. inline_document: Document
+  traversal ignores non-list messages/content, non-dict messages/blocks/sources, non-document blocks, sources whose
+  type is not url, and URLs that are not strings. A URL ending case-insensitively in .pdf supplies application/pdf
+  to B183 conversion; a query suffix prevents that inference. The source post-download rewrite replaces source with
+  only type=base64,media_type,data while retaining other block fields. Successful URL acquisition itself is excluded
+  by the declared no-fetch deviation; inline base64 documents stay unchanged and are tested normally. claude_response_usage:
+  Delegate the entire response to B580 AnthropicConfig.transform_response with the same model/raw response/preallocated
+  response/logging/request_data/messages/options/litellm_params/encoding/api_key/json_mode. Use B580 response, usage,
+  metadata and error cases unchanged; no second Bedrock decoder or new status mapping belongs here. response_format_tool_stub:
+  Use B569 supported options. Capture requested thinking display updates through B568 before any mapping. If response_format
+  is present and B688 supports_native_structured_output(model,bedrock) is false, give B576 the temporary model claude-3-sonnet-20240229.
+  Clamp reasoning_effort using the original model first, map options, then B688 translates legacy thinking using
+  the original model. If updates were requested and translated thinking is a dict with type=adaptive, replace it
+  with exactly {type:adaptive,display:updates}, dropping other thinking fields. forced_tool_choice_removed: After
+  restoring the original model, remove mapped tool_choice only when response_format is present, tool_choice is a
+  dict named json_tool_call, and B688 forced_tool_use_unsupported(original_model) is true. Other names, non-dicts
+  and ordinary requests retain the choice. async_media_order: uses_async_transform_request returns True. Async first
+  invokes B183 async_inline_remote_media on messages, then calls this same synchronous transform; errors from inlining
+  occur before option/body processing. Sync builds the body before document-URL conversion, then computes beta values.
+  Compare those mutation/failure boundaries without making remote calls.
+
+
+  The existing remote_url_current_rejection oracle row uses a blocked loopback URL at B183 and compares ImageFetchError
+  status 400 before transport. Add standalone Rust test claude_invoke_never_fetches_request_urls for an otherwise
+  valid public HTTP/PDF URL: assert the same typed rejection and zero outbound attempts. This second test proves
+  the declared policy difference and is not a Python remote-fetch oracle.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
+
+
   Implement crates/betterlite-bedrock/src/claude_invoke.rs with adjacent tests under claude_invoke/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -102,11 +155,10 @@ description: >-
 
 
   Write rstest function claude_invoke_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  bedrock_anthropic_version, model_field_removal, adaptive_effort_ceiling, bedrock_beta_filter, tool_search_tool_name,
-  inline_document, claude_response_usage, response_format_tool_stub, forced_tool_choice_removed, remote_url_current_rejection.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  bedrock_anthropic_version, adaptive_effort_ceiling, bedrock_beta_filter, tool_search_tool_name, inline_document,
+  claude_response_usage, response_format_tool_stub, forced_tool_choice_removed, remote_url_current_rejection, async_media_order.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke* using HelperCase: kind:
@@ -122,9 +174,9 @@ description: >-
 
 
   Budget from 277 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 300 production lines, 135 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 555 planned, 575 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 290 production lines, 290 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 725 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -142,67 +194,90 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L67-L394
-  why: >-
-    Own AmazonAnthropicClaudeConfig.custom_llm_provider, AmazonAnthropicClaudeConfig.should_strip_billing_metadata,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L67-L394
+  why: Own AmazonAnthropicClaudeConfig.custom_llm_provider, AmazonAnthropicClaudeConfig.should_strip_billing_metadata,
     AmazonAnthropicClaudeConfig.get_supported_openai_params, AmazonAnthropicClaudeConfig.map_openai_params, AmazonAnthropicClaudeConfig._clamp_adaptive_reasoning_effort_for_bedrock,
     AmazonAnthropicClaudeConfig.transform_request, AmazonAnthropicClaudeConfig.uses_async_transform_request, AmazonAnthropicClaudeConfig.async_transform_request,
     AmazonAnthropicClaudeConfig._build_bedrock_anthropic_request_base, AmazonAnthropicClaudeConfig._compute_bedrock_invoke_beta_headers,
     AmazonAnthropicClaudeConfig._convert_document_url_sources_to_base64, AmazonAnthropicClaudeConfig._normalize_bedrock_tool_search_tools,
     AmazonAnthropicClaudeConfig.transform_response. Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    bedrock anthropic version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/bedrock-anthropic-version.yaml.
+- text: 'bedrock_anthropic_version: Provider is bedrock and should_strip_billing_metadata returns True. _build_bedrock_anthropic_request_base
+    copies options while removing the twelve B590 authentication fields, copies dict output_config before B690 effort
+    normalization, then normalizes tool-search tools and calls B577 AnthropicConfig.transform_request. Pop model
+    and stream from the resulting body. Run B597 structured-output and unsupported-output-config helpers, set anthropic_version
+    to bedrock-2023-05-31 only when the key is absent (preserve explicit None/empty), then normalize tool custom
+    fields/schema types and remove eager_input_streaming with B597. Preserve this order and original output_config
+    immutability.'
   proof:
   - case-bedrock-anthropic-version
   - oracle
   - helper-python
-- text: 'model field removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/model-field-removal.yaml.'
-  proof:
-  - case-model-field-removal
-  - oracle
-  - helper-python
-- text: >-
-    adaptive effort ceiling: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/adaptive-effort-ceiling.yaml.
+- text: 'adaptive_effort_ceiling: Clamp only when B568 _is_adaptive_thinking_model(model,bedrock) is true and raw
+    params.reasoning_effort is a string. Run B690 normalize_bedrock_opus_output_config_effort on {effort:value}
+    and write its resulting effort back into the original non_default_params. Preserve nonstring/unknown efforts
+    and models without an applicable ceiling as B690 does. The separate output_config copy is clamped again during
+    body construction; use the same ceiling cases as B600/B622.'
   proof:
   - case-adaptive-effort-ceiling
   - oracle
   - helper-python
-- text: 'bedrock beta filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/bedrock-beta-filter.yaml.'
+- text: 'bedrock_beta_filter: Read user beta values through B599 and form a set. Build auto betas with B568 get_anthropic_beta_list
+    using provider=bedrock,prompt_caching_set=False and the original tools/messages/options for computer,file-id,MCP,mid-conversation-output
+    and display-updates flags. For tool search without programmatic calling or input examples, discard advanced-tool-use-2025-11-20
+    and add tool-search-tool-2025-10-19 only when B690 supports it. Eager-input streaming adds fine-grained-tool-streaming-2025-05-14.
+    Run B960 filter_and_transform_beta_headers only on auto values not explicitly supplied by the user, then return
+    sorted union with the untouched user set. Thus user betas bypass automatic filtering and survive a discard/rewrite.
+    Emit anthropic_beta only for a nonempty computed list; otherwise preserve any existing body value.'
   proof:
   - case-bedrock-beta-filter
   - oracle
   - helper-python
-- text: 'tool search tool name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/tool-search-tool-name.yaml.'
+- text: 'tool_search_tool_name: For falsey or non-list tools return the same options unchanged. Otherwise preserve
+    order, silently drop tool_search_tool_bm25_20251119, copy tool_search_tool_regex_20251119 to type=tool_search_tool_regex
+    and default a missing name to tool_search_tool_regex (retain explicit None/empty), and retain other tool records.
+    Write the new list back into the supplied options; malformed nonmapping entries propagate their error. There
+    is no warning for BM25 removal.'
   proof:
   - case-tool-search-tool-name
   - oracle
   - helper-python
-- text: 'inline document: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/inline-document.yaml.'
+- text: 'inline_document: Document traversal ignores non-list messages/content, non-dict messages/blocks/sources,
+    non-document blocks, sources whose type is not url, and URLs that are not strings. A URL ending case-insensitively
+    in .pdf supplies application/pdf to B183 conversion; a query suffix prevents that inference. The source post-download
+    rewrite replaces source with only type=base64,media_type,data while retaining other block fields. Successful
+    URL acquisition itself is excluded by the declared no-fetch deviation; inline base64 documents stay unchanged
+    and are tested normally.'
   proof:
   - case-inline-document
   - oracle
   - helper-python
-- text: 'claude response usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/claude-response-usage.yaml.'
+- text: 'claude_response_usage: Delegate the entire response to B580 AnthropicConfig.transform_response with the
+    same model/raw response/preallocated response/logging/request_data/messages/options/litellm_params/encoding/api_key/json_mode.
+    Use B580 response, usage, metadata and error cases unchanged; no second Bedrock decoder or new status mapping
+    belongs here.'
   proof:
   - case-claude-response-usage
   - oracle
   - helper-python
-- text: >-
-    response format tool stub: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/response-format-tool-stub.yaml.
+- text: 'response_format_tool_stub: Use B569 supported options. Capture requested thinking display updates through
+    B568 before any mapping. If response_format is present and B688 supports_native_structured_output(model,bedrock)
+    is false, give B576 the temporary model claude-3-sonnet-20240229. Clamp reasoning_effort using the original
+    model first, map options, then B688 translates legacy thinking using the original model. If updates were requested
+    and translated thinking is a dict with type=adaptive, replace it with exactly {type:adaptive,display:updates},
+    dropping other thinking fields.'
   proof:
   - case-response-format-tool-stub
   - oracle
   - helper-python
-- text: >-
-    forced tool choice removed: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/forced-tool-choice-removed.yaml.
+- text: 'forced_tool_choice_removed: After restoring the original model, remove mapped tool_choice only when response_format
+    is present, tool_choice is a dict named json_tool_call, and B688 forced_tool_use_unsupported(original_model)
+    is true. Other names, non-dicts and ordinary requests retain the choice.'
   proof:
   - case-forced-tool-choice-removed
   - oracle
   - helper-python
-- text: >-
-    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml.
+- text: 'remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml.'
   proof:
   - case-remote-url-current-rejection
   - oracle
@@ -211,56 +286,104 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'async_media_order: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media
+    on messages, then calls this same synchronous transform; errors from inlining occur before option/body processing.
+    Sync builds the body before document-URL conversion, then computes beta values. Compare those mutation/failure
+    boundaries without making remote calls.'
+  proof:
+  - case-async-media-order
+  - oracle
+  - helper-python
+- text: Public request URLs requiring bytes are rejected with ImageFetchError 400 and never fetched.
+  proof:
+  - no-request-download
 checks:
   optional:
   - mutants
   commands:
   - id: case-bedrock-anthropic-version
-    why: The bedrock-anthropic-version behavior is missing or differs from its pinned fixture.
+    why: Provider is bedrock and should_strip_billing_metadata returns True. _build_bedrock_anthropic_request_base
+      copies options while removing the twelve B590 authentication fields, copies dict output_config before B690
+      effort normalization, then normalizes tool-search tools and calls B577 AnthropicConfig.transform_request.
+      Pop model and stream from the resulting body. Run B597 structured-output and unsupported-output-config helpers,
+      set anthropic_version to bedrock-2023-05-31 only when the key is absent (preserve explicit None/empty), then
+      normalize tool custom fields/schema types and remove eager_input_streaming with B597. Preserve this order
+      and original output_config immutability.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_bedrock_anthropic_version$/)'
-  - id: case-model-field-removal
-    why: The model-field-removal behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_model_field_removal$/)'
   - id: case-adaptive-effort-ceiling
-    why: The adaptive-effort-ceiling behavior is missing or differs from its pinned fixture.
+    why: Clamp only when B568 _is_adaptive_thinking_model(model,bedrock) is true and raw params.reasoning_effort
+      is a string. Run B690 normalize_bedrock_opus_output_config_effort on {effort:value} and write its resulting
+      effort back into the original non_default_params. Preserve nonstring/unknown efforts and models without an
+      applicable ceiling as B690 does. The separate output_config copy is clamped again during body construction;
+      use the same ceiling cases as B600/B622.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_adaptive_effort_ceiling$/)'
   - id: case-bedrock-beta-filter
-    why: The bedrock-beta-filter behavior is missing or differs from its pinned fixture.
+    why: Read user beta values through B599 and form a set. Build auto betas with B568 get_anthropic_beta_list using
+      provider=bedrock,prompt_caching_set=False and the original tools/messages/options for computer,file-id,MCP,mid-conversation-output
+      and display-updates flags. For tool search without programmatic calling or input examples, discard advanced-tool-use-2025-11-20
+      and add tool-search-tool-2025-10-19 only when B690 supports it. Eager-input streaming adds fine-grained-tool-streaming-2025-05-14.
+      Run B960 filter_and_transform_beta_headers only on auto values not explicitly supplied by the user, then return
+      sorted union with the untouched user set. Thus user betas bypass automatic filtering and survive a discard/rewrite.
+      Emit anthropic_beta only for a nonempty computed list; otherwise preserve any existing body value.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_bedrock_beta_filter$/)'
   - id: case-tool-search-tool-name
-    why: The tool-search-tool-name behavior is missing or differs from its pinned fixture.
+    why: For falsey or non-list tools return the same options unchanged. Otherwise preserve order, silently drop
+      tool_search_tool_bm25_20251119, copy tool_search_tool_regex_20251119 to type=tool_search_tool_regex and default
+      a missing name to tool_search_tool_regex (retain explicit None/empty), and retain other tool records. Write
+      the new list back into the supplied options; malformed nonmapping entries propagate their error. There is
+      no warning for BM25 removal.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_tool_search_tool_name$/)'
   - id: case-inline-document
-    why: The inline-document behavior is missing or differs from its pinned fixture.
+    why: Document traversal ignores non-list messages/content, non-dict messages/blocks/sources, non-document blocks,
+      sources whose type is not url, and URLs that are not strings. A URL ending case-insensitively in .pdf supplies
+      application/pdf to B183 conversion; a query suffix prevents that inference. The source post-download rewrite
+      replaces source with only type=base64,media_type,data while retaining other block fields. Successful URL acquisition
+      itself is excluded by the declared no-fetch deviation; inline base64 documents stay unchanged and are tested
+      normally.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_inline_document$/)'
   - id: case-claude-response-usage
-    why: The claude-response-usage behavior is missing or differs from its pinned fixture.
+    why: Delegate the entire response to B580 AnthropicConfig.transform_response with the same model/raw response/preallocated
+      response/logging/request_data/messages/options/litellm_params/encoding/api_key/json_mode. Use B580 response,
+      usage, metadata and error cases unchanged; no second Bedrock decoder or new status mapping belongs here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_claude_response_usage$/)'
   - id: case-response-format-tool-stub
-    why: The response-format-tool-stub behavior is missing or differs from its pinned fixture.
+    why: Use B569 supported options. Capture requested thinking display updates through B568 before any mapping.
+      If response_format is present and B688 supports_native_structured_output(model,bedrock) is false, give B576
+      the temporary model claude-3-sonnet-20240229. Clamp reasoning_effort using the original model first, map options,
+      then B688 translates legacy thinking using the original model. If updates were requested and translated thinking
+      is a dict with type=adaptive, replace it with exactly {type:adaptive,display:updates}, dropping other thinking
+      fields.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_response_format_tool_stub$/)'
   - id: case-forced-tool-choice-removed
-    why: The forced-tool-choice-removed behavior is missing or differs from its pinned fixture.
+    why: After restoring the original model, remove mapped tool_choice only when response_format is present, tool_choice
+      is a dict named json_tool_call, and B688 forced_tool_use_unsupported(original_model) is true. Other names,
+      non-dicts and ordinary requests retain the choice.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_forced_tool_choice_removed$/)'
   - id: case-remote-url-current-rejection
-    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_remote_url_current_rejection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_claude_invoke.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_claude_invoke.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*")"
       && grep -lq 'bedrock_claude_invoke' tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_claude_invoke$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-async-media-order
+    why: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media on messages,
+      then calls this same synchronous transform; errors from inlining occur before option/body processing. Sync
+      builds the body before document-URL conversion, then computes beta values. Compare those mutation/failure
+      boundaries without making remote calls.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_async_media_order$/)'
+  - id: no-request-download
+    why: The no-fetch deviation is absent.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_never_fetches_request_urls$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/bedrock-anthropic-version.yaml
-- tools/oracle/cases/helpers/providers/bedrock-claude-invoke/model-field-removal.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/adaptive-effort-ceiling.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/bedrock-beta-filter.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/tool-search-tool-name.yaml
@@ -269,23 +392,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/response-format-tool-stub.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/forced-tool-choice-removed.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-claude-invoke/async-media-order.yaml
 deviations:
-- what: >-
-    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
-    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
-    only supplied bytes or already authorized local file handles may be read.
-  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
-    feature that depends on fetching.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L67-L394
+- what: Never fetch request URLs. A document/image URL requiring local bytes fails with ImageFetchError status 400
+    before upstream transport; inline data and descriptors the provider accepts remain supported.
+  why: Max must decide whether request URL downloads should be allowed. Preserve local inputs and the no-fetch policy
+    while that choice remains open.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L303-L340
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve native output schema and safe response metadata.
+- The tool-search beta is computed from the original tools, while the body uses a renamed and filtered tool list.
+- An explicitly supplied user beta bypasses filtering even when the same automatically generated beta would be removed.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

@@ -29,6 +29,28 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: foundry_responses_url: Resolve base through B549 or raise ValueError api_base is required
+  for the Azure AI Foundry Responses API. Set the api_base parameter or the AZURE_AI_API_BASE environment variable.
+  Split nonempty path segments; if first two are api,projects retain the first3 segments, else discard path; append
+  openai/v1/responses and remove query, retaining fragment. Provider is azure_ai and native websocket support=False.
+  responses_auth: Resolve params.api_key/base through B549 model-info accessors, choose host-specific api-key versus
+  Authorization and allow Entra fallback; copy caller headers then overlay auth and Content-Type=application/json.
+  Inherit request/response reasoning and status filtering from B544, not just the OpenAI base. decisions_route:
+  Foundry Decisions inherits B099 BaseDecisionsConfig (SystemOne wire/IR), not B524 OpenAI decision conversion.
+  Keys/base use AZURE_AI_API_KEY/AZURE_AI_API_BASE. Strip the optional trailing /api/projects/<project> plus optional
+  /openai/v1,/openai,/models,/v1 suffix, then append /providers/microsoft/v1/systemone, removing query and fragment.
+  Missing-base diagnostic is Missing AZURE_AI_API_BASE - set AZURE_AI_API_BASE or pass api_base, e.g. https://<resource>.services.ai.azure.com.
+
+
+  Write standalone Rust test foundry_responses_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test foundry_responses_secret_safe_failure in betterlite-foundry: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-foundry/src/responses.rs with adjacent tests under responses/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -44,9 +66,8 @@ description: >-
 
   Write rstest function responses_cases in betterlite-foundry with these exact named cases (one per oracle file):
   foundry_responses_url, responses_auth, missing_base, no_native_websocket, decisions_route. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_responses* using HelperCase: kind: helper
@@ -61,9 +82,9 @@ description: >-
 
 
   Budget from 35 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 70 production lines, 90 behavior/config-test lines, 75 combined
+  SDK overloads share an async implementation): 100 production lines, 175 behavior/config-test lines, 95 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 260 planned, 400 maximum changed lines.
+  wiring lines; 395 planned, 400 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -82,20 +103,26 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/responses/transformation.py#L18-L53
-  why: >-
-    Own _responses_url, AzureAIResponsesAPIConfig.custom_llm_provider, AzureAIResponsesAPIConfig.validate_environment,
+  why: Own _responses_url, AzureAIResponsesAPIConfig.custom_llm_provider, AzureAIResponsesAPIConfig.validate_environment,
     AzureAIResponsesAPIConfig.supports_native_websocket, AzureAIResponsesAPIConfig.get_complete_url. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/decisions/transformation.py#L18-L24
   why: Own AzureAIDecisionsConfig.missing_api_base_message, AzureAIDecisionsConfig.get_complete_url. Other functions
     in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/decisions/transformation.py#L8-L16
+  why: Exact suffix regex, SystemOne path and environment declarations.
 dod:
-- text: 'foundry responses url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-responses/foundry-responses-url.yaml.'
+- text: 'foundry_responses_url: Resolve base through B549 or raise ValueError api_base is required for the Azure
+    AI Foundry Responses API. Set the api_base parameter or the AZURE_AI_API_BASE environment variable. Split nonempty
+    path segments; if first two are api,projects retain the first3 segments, else discard path; append openai/v1/responses
+    and remove query, retaining fragment. Provider is azure_ai and native websocket support=False.'
   proof:
   - case-foundry-responses-url
   - oracle
   - helper-python
-- text: 'responses auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-responses/responses-auth.yaml.'
+- text: 'responses_auth: Resolve params.api_key/base through B549 model-info accessors, choose host-specific api-key
+    versus Authorization and allow Entra fallback; copy caller headers then overlay auth and Content-Type=application/json.
+    Inherit request/response reasoning and status filtering from B544, not just the OpenAI base.'
   proof:
   - case-responses-auth
   - oracle
@@ -110,7 +137,11 @@ dod:
   - case-no-native-websocket
   - oracle
   - helper-python
-- text: 'decisions route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-responses/decisions-route.yaml.'
+- text: 'decisions_route: Foundry Decisions inherits B099 BaseDecisionsConfig (SystemOne wire/IR), not B524 OpenAI
+    decision conversion. Keys/base use AZURE_AI_API_KEY/AZURE_AI_API_BASE. Strip the optional trailing /api/projects/<project>
+    plus optional /openai/v1,/openai,/models,/v1 suffix, then append /providers/microsoft/v1/systemone, removing
+    query and fragment. Missing-base diagnostic is Missing AZURE_AI_API_BASE - set AZURE_AI_API_BASE or pass api_base,
+    e.g. https://<resource>.services.ai.azure.com.'
   proof:
   - case-decisions-route
   - oracle
@@ -119,38 +150,57 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-foundry-responses-url
-    why: The foundry-responses-url behavior is missing or differs from its pinned fixture.
+    why: Resolve base through B549 or raise ValueError api_base is required for the Azure AI Foundry Responses API.
+      Set the api_base parameter or the AZURE_AI_API_BASE environment variable. Split nonempty path segments; if
+      first two are api,projects retain the first3 segments, else discard path; append openai/v1/responses and remove
+      query, retaining fragment. Provider is azure_ai and native websocket support=False.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_foundry_responses_url$/)'
   - id: case-responses-auth
-    why: The responses-auth behavior is missing or differs from its pinned fixture.
+    why: Resolve params.api_key/base through B549 model-info accessors, choose host-specific api-key versus Authorization
+      and allow Entra fallback; copy caller headers then overlay auth and Content-Type=application/json. Inherit
+      request/response reasoning and status filtering from B544, not just the OpenAI base.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_auth$/)'
   - id: case-missing-base
-    why: The missing-base behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-responses/missing-base.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_missing_base$/)'
   - id: case-no-native-websocket
-    why: The no-native-websocket behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-responses/no-native-websocket.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_no_native_websocket$/)'
   - id: case-decisions-route
-    why: The decisions-route behavior is missing or differs from its pinned fixture.
+    why: Foundry Decisions inherits B099 BaseDecisionsConfig (SystemOne wire/IR), not B524 OpenAI decision conversion.
+      Keys/base use AZURE_AI_API_KEY/AZURE_AI_API_BASE. Strip the optional trailing /api/projects/<project> plus
+      optional /openai/v1,/openai,/models,/v1 suffix, then append /providers/microsoft/v1/systemone, removing query
+      and fragment. Missing-base diagnostic is Missing AZURE_AI_API_BASE - set AZURE_AI_API_BASE or pass api_base,
+      e.g. https://<resource>.services.ai.azure.com.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_decisions_route$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_responses.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_responses.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_responses*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_responses*")"
       && grep -lq 'foundry_responses' tools/oracle/fuzz/corpus/helper_case/foundry_responses* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_responses$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_responses_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_responses_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-responses/foundry-responses-url.yaml
 - tools/oracle/cases/helpers/providers/foundry-responses/responses-auth.yaml
@@ -164,8 +214,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve configured API base requirements, host-specific authentication and absence of native websocket support.
+- Responses preserves the first project path while Decisions strips a trailing project path; they cannot share one
+  endpoint normalizer.
+- The Responses URL helper keeps a fragment even while clearing query, unlike Decisions which clears both.
 budget:
   max_changed_lines: 400
   max_new_expects: 0
-review_level: standard
+review_level: security

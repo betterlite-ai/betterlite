@@ -22,6 +22,12 @@ description: >-
   no helper adapters in this task. Write the behavior rstest functions b173_http_pool_tests_behavior, b173_chat_regression_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names.
+
+
+  Reuse B2236 for configured network_mock transport and its loader. In _get_async_http_client/_get_sync_http_client
+  preserve the non-None configured client_session override before the truthy network_mock check. Run named transport
+  tests mock_after_supplied_client and mock_before_network_options for both variants, alongside B2236 mock_selection
+  helper output. Do not conflate this operator-controlled transport with the oracle fixture transport.
 scope:
   paths:
   - Cargo.toml
@@ -32,37 +38,29 @@ scope:
   - crates/betterlite-config/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
   why: Client ownership, stream anchoring and blocked cookies.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
   why: Bounded response reads and closure on every exit.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
   why: Cache identity and reuse.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L442-L540
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L442-L540
   why: Common async/sync send boundary, distinct from per-endpoint conversion.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L101-L139
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L101-L139
   why: Path and query construction consumed by future container endpoints.
 - url: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html
   why: Pooling, limits and retry/redirect configuration.
 dod:
-- text: >-
-    Repeated calls reuse a local connection, different security policies remain isolated, and concurrent deployments
+- text: Repeated calls reuse a local connection, different security policies remain isolated, and concurrent deployments
     never exchange authorization or cookies.
   proof:
   - http-pool-tests
-- text: >-
-    Deadlines, decompression/body/header limits, read failure and cancellation release capacity and close resources
+- text: Deadlines, decompression/body/header limits, read failure and cancellation release capacity and close resources
     without retrying.
   proof:
   - http-pool-tests
-- text: >-
-    JSON, bytes and multipart transport behavior, body ownership and query collisions are exercised against local
-    servers.
+- text: JSON, bytes and multipart transport behavior, body ownership and query collisions are exercised against
+    local servers.
   proof:
   - http-pool-tests
 - text: The existing chat stream remains incremental and shutdown waits for tracked work with a bounded deadline.
@@ -83,18 +81,15 @@ checks:
   commands:
   - id: http-pool-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/::b173_http_pool_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/::b173_http_pool_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-regression
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b173_chat_regression_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b173_chat_regression_behavior($|::)/)
       - test(/replays_the_/)'
   - id: layering
     why: the required new behavior or its evidence is missing
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-http/src)" && grep -qE 'crate = "reqwest",
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-http/src)" && grep -qE 'crate = "reqwest",
       wrappers = \[[^]]*"betterlite-http"' deny.toml
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
@@ -102,30 +97,24 @@ oracle_cases:
 deviations:
 - what: litellm_settings.disable_aiohttp_transport and DISABLE_AIOHTTP_TRANSPORT are accepted no-ops.
   why: The selected Python engine has no Rust equivalent; B208 explicitly owns environment proxy semantics.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
 - what: Repeated query values from one source remain ordered; URL values still win collisions with explicit params.
   why: Avoid silent loss within a caller-provided sequence while matching source precedence.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1459-L1469
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1459-L1469
 - what: Buffered bodies have a 16 MiB limit and decoded response headers a 64 KiB acceptance limit.
   why: Bound untrusted provider responses; HTTP/1 parser allocation is governed by its separate library ceiling.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
 out_of_scope:
-- >-
-  Endpoint request/response schemas in the large HTTP handler belong to B024-B050 and B080-B099; this part owns
+- Endpoint request/response schemas in the large HTTP handler belong to B024-B050 and B080-B099; this part owns
   only their shared transport.
-- >-
-  Retries and backoff are B017, WebSocket protocols are their endpoint tasks, and synchronous Python wrappers are
+- Retries and backoff are B017, WebSocket protocols are their endpoint tasks, and synchronous Python wrappers are
   B157-B161.
 pitfalls:
 - A request timeout must still cover body consumption after headers have arrived.
 - Do not derive a cache key by concatenating arbitrary parameter strings.
 - No detached client cleanup task may survive server shutdown.
 - Reqwest retries protocol NACKs by default; disabling router retries alone is insufficient.
-- >-
-  Reqwest redirect policy cannot mutate headers and its built-in stripping does not cover provider API-key headers;
+- Reqwest redirect policy cannot mutate headers and its built-in stripping does not cover provider API-key headers;
   B009 owns explicit redirect replay.
 review_level: security
 budget:

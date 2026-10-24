@@ -1,16 +1,34 @@
 id: B592
-title: AWS role assumption and credential expiry
+title: AWS role identity probes and credential expiry
 description: >-
-  Add AwsRoleCredentials using reusable STS signing/client components over an injected transport. Preserve already-running-role
-  ARN matching, explicit session-name generation through an injected id source, role chaining, external id and session
-  tags. Keep expiry TTL tied to the returned Expiration; never log the AWS response or raw credentials. STS credential
-  cache TTL is integer seconds until Expiration minus the pinned 60-second safety margin; never cache until the
-  exact expiry.
+  Implement AwsRoleIdentity and STS expiry extraction below credential resolution. This slice checks whether the
+  ambient identity matches a requested role and projects returned credentials; B594 owns role assumption, session-name
+  generation and fallback, and B593 owns IRSA chaining. Use injected SDK transport and clock without logging response
+  credentials.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/base_aws_llm.py:
   BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role L912-L969; BaseAWSLLM._extract_credentials_and_ttl
   L1193-L1214.
+
+
+  Named case contracts: assumed_role_arn_matching: Split ARN on colons; require at least6 components and exact initial
+  arn, but do not validate service, region, account digits or partition. Rejoin resource colons. role/ uses final
+  slash segment (empty allowed); assumed-role/ uses first segment after prefix even without session suffix. Return
+  partition,account,role; other resource prefixes return None. Compare paths, partitions/accounts, malformed strings
+  and empty role names. already_role_no_second_assume: Invalid target ARN returns false before environment/STS access.
+  If both AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE are truthy, compare full role ARN strings exactly and return,
+  even if mismatch; do not probe STS or read the token file. Otherwise GetCallerIdentity via default sts client
+  with only B590 verify; parse identity Arn defaultempty and compare partition/account/role. Same final role name
+  across IAM paths counts equal only in STS branch. different_account_role_chain: The identity probe returns false
+  on a different account or partition, even if final role names match. It never calls AssumeRole; B594 acts on that
+  result. returned_expiration_ttl: Require Credentials.AccessKeyId,SecretAccessKey,SessionToken,Expiration, preserving
+  missing-key errors. Build credentials and compute int((Expiration-now using Expiration.tzinfo).total_seconds()-60),
+  truncating towardzero, with no lower bound. Already expired returns zero/negative TTL; naive datetime uses naive
+  injected now. B594 non-IRSA path retains fractional TTL and has its own case. sts_error: Any GetCallerIdentity/client/parsing
+  exception is caught, debug Could not determine current role identity: <error> and false; a missing/unparseable
+  Arn is false without exception. Successful match may debug Current identity already matches target role: <role>.
+  Do not invent an auth rejection/status on probe failure.
 
 
   Implement crates/betterlite-bedrock/src/assume_role.rs with adjacent tests under assume_role/. Keep each Rust
@@ -27,11 +45,9 @@ description: >-
 
 
   Write rstest function assume_role_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  assumed_role_arn_matching, already_role_no_second_assume, different_account_role_chain, external_id_session_tags,
-  session_name_generated, returned_expiration_ttl, sts_error. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  assumed_role_arn_matching, already_role_no_second_assume, different_account_role_chain, returned_expiration_ttl,
+  sts_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_assume_role* using HelperCase: kind:
@@ -61,9 +77,9 @@ description: >-
 
 
   Budget from 92 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 125 production lines, 138 behavior/config-test lines, 83 combined
+  SDK overloads share an async implementation): 130 production lines, 195 behavior/config-test lines, 95 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 371 planned, 400 maximum changed lines.
+  wiring lines; 445 planned, 450 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -89,42 +105,41 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1193-L1214
   why: Own BaseAWSLLM._extract_credentials_and_ttl. Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    assumed role arn matching: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/assumed-role-arn-matching.yaml.
+- text: 'assumed_role_arn_matching: Split ARN on colons; require at least6 components and exact initial arn, but
+    do not validate service, region, account digits or partition. Rejoin resource colons. role/ uses final slash
+    segment (empty allowed); assumed-role/ uses first segment after prefix even without session suffix. Return partition,account,role;
+    other resource prefixes return None. Compare paths, partitions/accounts, malformed strings and empty role names.'
   proof:
   - case-assumed-role-arn-matching
   - oracle
   - helper-python
-- text: >-
-    already role no second assume: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/already-role-no-second-assume.yaml.
+- text: 'already_role_no_second_assume: Invalid target ARN returns false before environment/STS access. If both
+    AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE are truthy, compare full role ARN strings exactly and return, even
+    if mismatch; do not probe STS or read the token file. Otherwise GetCallerIdentity via default sts client with
+    only B590 verify; parse identity Arn defaultempty and compare partition/account/role. Same final role name across
+    IAM paths counts equal only in STS branch.'
   proof:
   - case-already-role-no-second-assume
   - oracle
   - helper-python
-- text: >-
-    different account role chain: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/different-account-role-chain.yaml.
+- text: 'different_account_role_chain: The identity probe returns false on a different account or partition, even
+    if final role names match. It never calls AssumeRole; B594 acts on that result.'
   proof:
   - case-different-account-role-chain
   - oracle
   - helper-python
-- text: >-
-    external id session tags: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/external-id-session-tags.yaml.
-  proof:
-  - case-external-id-session-tags
-  - oracle
-  - helper-python
-- text: 'session name generated: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/session-name-generated.yaml.'
-  proof:
-  - case-session-name-generated
-  - oracle
-  - helper-python
-- text: >-
-    returned expiration ttl: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/returned-expiration-ttl.yaml.
+- text: 'returned_expiration_ttl: Require Credentials.AccessKeyId,SecretAccessKey,SessionToken,Expiration, preserving
+    missing-key errors. Build credentials and compute int((Expiration-now using Expiration.tzinfo).total_seconds()-60),
+    truncating towardzero, with no lower bound. Already expired returns zero/negative TTL; naive datetime uses naive
+    injected now. B594 non-IRSA path retains fractional TTL and has its own case.'
   proof:
   - case-returned-expiration-ttl
   - oracle
   - helper-python
-- text: 'sts error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-assume-role/sts-error.yaml.'
+- text: 'sts_error: Any GetCallerIdentity/client/parsing exception is caught, debug Could not determine current
+    role identity: <error> and false; a missing/unparseable Arn is false without exception. Successful match may
+    debug Current identity already matches target role: <role>. Do not invent an auth rejection/status on probe
+    failure.'
   proof:
   - case-sts-error
   - oracle
@@ -144,36 +159,40 @@ checks:
   - mutants
   commands:
   - id: case-assumed-role-arn-matching
-    why: The assumed-role-arn-matching behavior is missing or differs from its pinned fixture.
+    why: Split ARN on colons; require at least6 components and exact initial arn, but do not validate service, region,
+      account digits or partition. Rejoin resource colons. role/ uses final slash segment (empty allowed); assumed-role/
+      uses first segment after prefix even without session suffix. Return partition,account,role; other resource
+      prefixes return None. Compare paths, partitions/accounts, malformed strings and empty role names.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_assumed_role_arn_matching$/)'
   - id: case-already-role-no-second-assume
-    why: The already-role-no-second-assume behavior is missing or differs from its pinned fixture.
+    why: Invalid target ARN returns false before environment/STS access. If both AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE
+      are truthy, compare full role ARN strings exactly and return, even if mismatch; do not probe STS or read the
+      token file. Otherwise GetCallerIdentity via default sts client with only B590 verify; parse identity Arn defaultempty
+      and compare partition/account/role. Same final role name across IAM paths counts equal only in STS branch.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_already_role_no_second_assume$/)'
   - id: case-different-account-role-chain
-    why: The different-account-role-chain behavior is missing or differs from its pinned fixture.
+    why: The identity probe returns false on a different account or partition, even if final role names match. It
+      never calls AssumeRole; B594 acts on that result.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_different_account_role_chain$/)'
-  - id: case-external-id-session-tags
-    why: The external-id-session-tags behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_external_id_session_tags$/)'
-  - id: case-session-name-generated
-    why: The session-name-generated behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_session_name_generated$/)'
   - id: case-returned-expiration-ttl
-    why: The returned-expiration-ttl behavior is missing or differs from its pinned fixture.
+    why: Require Credentials.AccessKeyId,SecretAccessKey,SessionToken,Expiration, preserving missing-key errors.
+      Build credentials and compute int((Expiration-now using Expiration.tzinfo).total_seconds()-60), truncating
+      towardzero, with no lower bound. Already expired returns zero/negative TTL; naive datetime uses naive injected
+      now. B594 non-IRSA path retains fractional TTL and has its own case.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_returned_expiration_ttl$/)'
   - id: case-sts-error
-    why: The sts-error behavior is missing or differs from its pinned fixture.
+    why: 'Any GetCallerIdentity/client/parsing exception is caught, debug Could not determine current role identity:
+      <error> and false; a missing/unparseable Arn is false without exception. Successful match may debug Current
+      identity already matches target role: <role>. Do not invent an auth rejection/status on probe failure.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::assume_role_cases::case_[0-9]+_sts_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_assume_role.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_assume_role.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_assume_role*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_assume_role*")"
       && grep -lq 'bedrock_assume_role' tools/oracle/fuzz/corpus/helper_case/bedrock_assume_role* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_assume_role$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -187,8 +206,6 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-assume-role/assumed-role-arn-matching.yaml
 - tools/oracle/cases/helpers/providers/bedrock-assume-role/already-role-no-second-assume.yaml
 - tools/oracle/cases/helpers/providers/bedrock-assume-role/different-account-role-chain.yaml
-- tools/oracle/cases/helpers/providers/bedrock-assume-role/external-id-session-tags.yaml
-- tools/oracle/cases/helpers/providers/bedrock-assume-role/session-name-generated.yaml
 - tools/oracle/cases/helpers/providers/bedrock-assume-role/returned-expiration-ttl.yaml
 - tools/oracle/cases/helpers/providers/bedrock-assume-role/sts-error.yaml
 deviations: []
@@ -197,41 +214,37 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
-  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
-  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn L538-L560; BaseAWSLLM._get_provider_from_model_path
-  L563-L580; BaseAWSLLM.get_bedrock_invoke_provider L583-L616; BaseAWSLLM.get_bedrock_model_id L619-L667; BaseAWSLLM._get_model_id_from_model_with_spec
-  L670-L678; BaseAWSLLM.encode_model_id L681-L689; BaseAWSLLM.get_bedrock_embedding_provider L692-L730; BaseAWSLLM._get_aws_region_name
-  L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
-  BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
-  L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong
-  to B591; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token
-  L991-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191
-  belong to B593; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
-  L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
-  L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
-  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779 belong to B595; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params L81-L97; build_web_identity_session_policy
-  L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194; AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__
-  L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key L273-L279; BaseAWSLLM._get_or_set_cached_credentials
-  L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L314-L319; BaseAWSLLM._is_auth_with_aws_role L322-L323;
-  BaseAWSLLM._is_auth_with_aws_profile L326-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple L330-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key
-  L338-L343; BaseAWSLLM._auth_with_aws_profile L1393-L1402; BaseAWSLLM._auth_with_aws_session_token L1405-L1423;
-  BaseAWSLLM._auth_with_access_key_and_secret_key L1426-L1448; BaseAWSLLM._auth_with_env_vars L1451-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials
-  L1463-L1469 belong to B590; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params
+  L81-L97; build_web_identity_session_policy L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194;
+  AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__ L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key
+  L273-L279; BaseAWSLLM._get_or_set_cached_credentials L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L313-L319;
+  BaseAWSLLM._is_auth_with_aws_role L321-L323; BaseAWSLLM._is_auth_with_aws_profile L325-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple
+  L329-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key L337-L343; BaseAWSLLM._auth_with_aws_profile L1392-L1402;
+  BaseAWSLLM._auth_with_aws_session_token L1404-L1423; BaseAWSLLM._auth_with_access_key_and_secret_key L1425-L1448;
+  BaseAWSLLM._auth_with_env_vars L1450-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials L1462-L1469 belong
+  to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn
+  L538-L560; BaseAWSLLM._get_provider_from_model_path L562-L580; BaseAWSLLM.get_bedrock_invoke_provider L582-L616;
+  BaseAWSLLM.get_bedrock_model_id L618-L667; BaseAWSLLM._get_model_id_from_model_with_spec L669-L678; BaseAWSLLM.encode_model_id
+  L680-L689; BaseAWSLLM.get_bedrock_embedding_provider L691-L730; BaseAWSLLM._get_aws_region_name L732-L790; BaseAWSLLM._validate_aws_region_name
+  L792-L804; BaseAWSLLM._parse_sts_region_from_endpoint L806-L815; BaseAWSLLM._resolve_sts_region L817-L828; BaseAWSLLM._build_sts_client_kwargs
+  L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499;
+  BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong to B591.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience
+  L971-L988; BaseAWSLLM._auth_with_web_identity_token L990-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155;
+  BaseAWSLLM._handle_irsa_same_account L1157-L1191 belong to B593.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L345-L510; BaseAWSLLM.resolve_credentials
+  L512-L525; BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1257-L1390 belong to B594.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1519-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params L1527-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1536-L1568; BaseAWSLLM.get_request_headers L1570-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655;
+  BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
+  L1770-L1779 belong to B595.'
 pitfalls:
-- Preserve already-running-role ARN matching, explicit session-name generation through an injected id source, role
-  chaining, external id and session tags.
+- The IRSA shortcut compares the entire ARN string and never falls through to the looser role-name comparison.
+- assumed-role/ without a session segment can still parse; validation is deliberately narrower than an AWS ARN validator.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: security

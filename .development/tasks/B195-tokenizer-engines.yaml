@@ -23,6 +23,10 @@ description: >-
   220 tests, 100 fuzz/replay and 100 config/wiring (770 total). Own token_counter.py offload limiter helpers 343-361
   and utils.py backend/selection 2376-2470 only for already packaged engines; undecided remote/custom acquisition
   is excluded.
+
+
+  Also own main.py _load_default_encoding L9394-L9397 as the lazy accessor to the packaged default engine; B196
+  owns its caller and one-time cache. The accessor performs no asset acquisition.
 scope:
   paths:
   - Cargo.toml
@@ -36,14 +40,11 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
   why: Rust-codec OpenAIEncoding interface; do not use this as the Python oracle implementation.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
   why: Hugging Face wrapper and special-token handling.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
   why: Bundled offline cache and explicit custom directory.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
   why: Tokenizer selection helper.
@@ -53,13 +54,11 @@ references:
   why: Concrete error sources compatible with repository rules.
 - url: https://docs.rs/tokenizers/latest/tokenizers/tokenizer/type.Error.html
   why: An erased error boundary must not be adopted without a rules change.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L89
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L89
   why: Python tiktoken and packaged Anthropic backend selection.
 dod:
-- text: >-
-    Encode/decode/count outputs match Python for every bundled vocabulary, Unicode, whitespace, special tokens and
-    malformed IDs.
+- text: Encode/decode/count outputs match Python for every bundled vocabulary, Unicode, whitespace, special tokens
+    and malformed IDs.
   proof:
   - oracle
   - helper-python
@@ -67,8 +66,7 @@ dod:
   proof:
   - tokenizer-assets
   - tokenizer-engine-tests
-- text: >-
-    Custom invalid assets fail explicitly; concurrency, input/output caps and bounded CPU offload prevent unbounded
+- text: Custom invalid assets fail explicitly; concurrency, input/output caps and bounded CPU offload prevent unbounded
     allocations or runtime blocking.
   proof:
   - tokenizer-engine-tests
@@ -77,8 +75,7 @@ dod:
   - tokenizer-asset-corpus
   - tokenizer-input-corpus
   - config-yaml-corpus
-- text: >-
-    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -87,33 +84,28 @@ checks:
   commands:
   - id: tokenizer-engine-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::b195_tokenizer_engine_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::b195_tokenizer_engine_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: tokenizer-asset-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
       && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_asset.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
       && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_asset_corpus)'
   - id: tokenizer-input-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
       && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_input.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
       && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_input_corpus)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
       && grep -rlq 'CUSTOM_TIKTOKEN_CACHE_DIR' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'TOKEN_COUNTER_MAX_CONCURRENT_COUNTS'
       crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
       && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: tokenizer-assets
     why: a bundled tokenizer asset differs from the pinned source
@@ -130,9 +122,8 @@ checks:
       SUMS'
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -146,26 +137,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/tokenizer-engine/invalid-id.yaml
 - tools/oracle/cases/helpers/tokenizer-engine/custom-local.yaml
 deviations:
-- what: >-
-    Open, waiting for Max: bundle the three model-family Hugging Face tokenizer.json assets at pinned revisions
-    after license review, or behave as disable_hf_tokenizer_download=true and use OpenAI tokenizers.
-  why: >-
-    The pinned helper downloads Xenova/c4ai-command-r-v01-tokenizer, hf-internal-testing/llama-tokenizer and Xenova/llama-3-tokenizer.
-    Keep current offline engines and do not implement a selection policy dependent on this choice; model_info.custom_tokenizer
-    fails startup until decided.
+- what: Tokenizer assets are local or bundled only; request/model names never trigger Hugging Face downloads. Unavailable
+    optional Hugging Face tokenizers follow disable_hf_tokenizer_download=true and use the existing OpenAI tokenizer
+    selection. model_info.custom_tokenizer fails configuration loading with the typed unsupported-setting error;
+    no provider request is sent.
+  why: Keep offline behavior while Max decides whether to bundle additional pinned Hugging Face assets or support
+    validated downloads.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
 out_of_scope:
 - Message/tool/image accounting is B196-B197.
 - Python mutable tokenizer methods and SDK pretrained-download convenience are B166.
-- >-
-  Automatic family selection requiring the three missing HF repositories stays blocked by the open decision; supplied
+- Automatic family selection requiring the three missing HF repositories stays blocked by the open decision; supplied
   local bytes are an internal API only, not a new configuration key.
 pitfalls:
-- >-
-  The oracle must force the Python backend and use the same vocabulary bytes, not LiteLLM's optional Rust implementation.
+- The oracle must force the Python backend and use the same vocabulary bytes, not LiteLLM's optional Rust implementation.
 - A library's default model-name lookup may differ from LiteLLM's normalization even when its BPE is correct.
-- >-
-  Concrete source errors are required; converting a boxed tokenizer error to a string is not a compliant fallback.
+- Concrete source errors are required; converting a boxed tokenizer error to a string is not a compliant fallback.
 review_level: standard
 budget:
   max_changed_lines: 800

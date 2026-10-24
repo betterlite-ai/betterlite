@@ -9,9 +9,63 @@ description: >-
   sanitized_tools_update L43-L53; AzureOpenAIConfig.__init__ L83-L99; AzureOpenAIConfig.get_config L102-L103; AzureOpenAIConfig.get_supported_openai_params
   L105-L137; AzureOpenAIConfig.requires_max_completion_tokens L140-L147; AzureOpenAIConfig._is_response_format_supported_model
   L149-L166; AzureOpenAIConfig._is_response_format_supported_api_version L168-L186; AzureOpenAIConfig.map_openai_params
-  L188-L269; AzureOpenAIConfig.transform_request L271-L294; AzureOpenAIConfig.transform_response L296-L312; AzureOpenAIConfig.get_mapped_special_auth_params
-  L314-L315; AzureOpenAIConfig.map_special_auth_params L317-L321; AzureOpenAIConfig.get_eu_regions L323-L327; AzureOpenAIConfig.get_us_regions
-  L329-L344; AzureOpenAIConfig.get_error_class L346-L347; AzureOpenAIConfig.validate_environment L349-L361.
+  L188-L269; AzureOpenAIConfig.transform_request L271-L294; AzureOpenAIConfig.get_mapped_special_auth_params L314-L315;
+  AzureOpenAIConfig.map_special_auth_params L317-L321; AzureOpenAIConfig.get_eu_regions L323-L327; AzureOpenAIConfig.get_us_regions
+  L329-L344; AzureOpenAIConfig.get_error_class L346-L347;.
+
+
+  Named case contracts: api_version_response_format: Native response_format support requires normalized model not
+  containing gpt-3.5 (regex (\d)-(\d) -> \1.\2) and original model not containing gpt-35, plus API year>2024 or
+  year=2024/month>=8. Empty/short API versions have no date gate; dates with at least three hyphen components parse
+  year/month as integers here and can fail. Do not infer model capability from a catalog. Use B2214 JSON-tool emulation
+  otherwise; unsupported empty schema silently adds nothing. max_completion_tokens: Any case-sensitive gpt-5 or
+  gpt-6 substring or gpt5_series triggers max_tokens -> setdefault(max_completion_tokens,value), including gpt-5-chat
+  models excluded from reasoning routing. Existing max_completion_tokens wins; nonmatching names retain max_tokens.
+  Mapping order matters if the explicit completion field appears later. azure_message_content: With litellm.openai_system_messages_first
+  default False, preserve order; when True call B219 ordering first. Then drop tool_reference parts, hoist tool
+  images (B219), convert Azure tool/image/file messages (B182). Assemble model/messages, optional-parameter overlay
+  and finally sanitized tools; optional model/messages can overwrite the generated fields. sanitized_tool_schema:
+  A list-valued tools always produces a replacement tools list, including []; dictionaries use B178 tool_with_sanitized_parameters
+  plus flatten_combinators_and_drop_non_python_regex_patterns, non-dictionaries remain unchanged. Non-list tools
+  yields no update. Preserve input records and apply sanitized tools after other optional values. unsupported_param:
+  Supported list is temperature,n,stream,stream_options,stop,max_tokens,max_completion_tokens,tools,tool_choice,presence_penalty,frequency_penalty,logit_bias,user,function_call,functions,tools,tool_choice,top_p,logprobs,top_logprobs,response_format,seed,extra_headers,parallel_tool_calls,prediction,modalities,audio,web_search_options,prompt_cache_key,store,
+  including duplicate tools/tool_choice. Unknown names silently disappear; this mapper does not generically reject
+  them. azure_tool_choice_date_gate: For a date with at least three components, compare year/month/day as STRINGS:
+  before 2023-12-01 tool_choice raises UnsupportedParamsError status400 with the exact API-version-upgrade message
+  at L232, unless either global or per-call drop_params is literal True, then omit silently. Invalid/short dates
+  bypass this gate. Include 2023-2-01 to expose string comparison. azure_required_tool_choice: For tool_choice=required,
+  only year==2024 and month string<=05 rejects/drops, using the exact L242 message containing litellm.drop_params=True,
+  litellm_settings/drop_params:true and the Azure chat-completions reference. Version 2023-12-01 passes this second
+  test despite the comment; 2024-06-01 passes. Empty/False values forward when otherwise allowed. azure_parameter_shapes:
+  List tools extend existing optional tools instead of replacing; malformed existing non-list tools fails. A non-list
+  tools value passes through the supported-name branch. Dict response_format uses B2214; non-dict response_format
+  passes through without validation. Retain None values for supported names. azure_tool_choice_without_tools: During
+  request assembly drop tool_choice unless optional tools or functions is truthy; []/None/empty mapping count absent,
+  a truthy malformed value keeps choice. Sanitation still runs using the original optional tools value. azure_class_defaults:
+  Constructor frequency_penalty,function_call,functions,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p
+  all default None and only non-None values update class configuration; do not infer numeric zero from docstrings.
+  B2202 get_config supplies the inherited class projection. Public Python class-setting behavior belongs B159; native
+  resolved configuration retains defaults and explicit values. azure_special_auth_regions: get_mapped_special_auth_params
+  returns token->azure_ad_token; mapping overwrites only azure_ad_token when input key token exists, including None,
+  retaining unrelated optional entries. EU prefixes exactly europe,sweden,switzerland,france,uk; US exactly us,eastus,eastus2,eastus2euap,eastus3,southcentralus,westus,westus2,westus3,westus4.
+  azure_error_factory: get_error_class forwards message/status/headers to B673 AzureOpenAIError without rewrite.
+  This helper assigns no new param or code.
+
+
+  The tool_choice errors have type UnsupportedParamsError/status400 and inherit unset param/code from B184. Preserve
+  the full literal messages in L232/L242, including newlines and URLs, in the named date-gate fixtures. Shared drop_params
+  defaults False (B176 config policy) and openai_system_messages_first defaults False (B503 loader); use their lower
+  config records. No new environment variables are read.
+
+
+  The old-version tool_choice error message is Azure does not support 'tool_choice', for api_version={api_version}.
+  Bump your API version to '2023-12-01-preview' or later. This parameter requires 'api_version="2023-12-01-preview"'
+  or later. Azure API Reference: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions.
+  The required-choice message is Azure does not support '{value}' as a {param} param, for api_version={api_version}.
+  To drop 'tool_choice=required' for calls with this Azure API version, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n
+  drop_params: true`\nAzure API Reference: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions.
+  The named date-gate/required-choice cases assert these exact messages; prose terminal punctuation is not part
+  of the source URL.
 
 
   Implement crates/betterlite-azure/src/azure_chat_base_policy.rs with adjacent tests under azure_chat_base_policy/.
@@ -28,10 +82,11 @@ description: >-
 
 
   Write rstest function azure_chat_base_policy_cases in betterlite-azure with these exact named cases (one per oracle
-  file): api_version_response_format, max_completion_tokens, azure_message_content, sanitized_tool_schema, unsupported_param.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): api_version_response_format, max_completion_tokens, azure_message_content, sanitized_tool_schema, unsupported_param,
+  azure_tool_choice_date_gate, azure_required_tool_choice, azure_parameter_shapes, azure_tool_choice_without_tools,
+  azure_class_defaults, azure_special_auth_regions, azure_error_factory. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy* using HelperCase: kind:
@@ -46,10 +101,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 259 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 280 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 485 planned, 500 maximum changed lines.
+  Budget from 229 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 265 production lines, 315 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 750 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -70,39 +125,49 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/gpt_transformation.py#L43-L53
   why: Own sanitized_tools_update. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/gpt_transformation.py#L83-L361
-  why: >-
-    Own AzureOpenAIConfig.__init__, AzureOpenAIConfig.get_config, AzureOpenAIConfig.get_supported_openai_params,
+  why: Own AzureOpenAIConfig.__init__, AzureOpenAIConfig.get_config, AzureOpenAIConfig.get_supported_openai_params,
     AzureOpenAIConfig.requires_max_completion_tokens, AzureOpenAIConfig._is_response_format_supported_model, AzureOpenAIConfig._is_response_format_supported_api_version,
     AzureOpenAIConfig.map_openai_params, AzureOpenAIConfig.transform_request, AzureOpenAIConfig.transform_response,
     AzureOpenAIConfig.get_mapped_special_auth_params, AzureOpenAIConfig.map_special_auth_params, AzureOpenAIConfig.get_eu_regions,
     AzureOpenAIConfig.get_us_regions, AzureOpenAIConfig.get_error_class, AzureOpenAIConfig.validate_environment.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    api version response format: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-base-policy/api-version-response-format.yaml.
+- text: 'api_version_response_format: Native response_format support requires normalized model not containing gpt-3.5
+    (regex (\d)-(\d) -> \1.\2) and original model not containing gpt-35, plus API year>2024 or year=2024/month>=8.
+    Empty/short API versions have no date gate; dates with at least three hyphen components parse year/month as
+    integers here and can fail. Do not infer model capability from a catalog. Use B2214 JSON-tool emulation otherwise;
+    unsupported empty schema silently adds nothing.'
   proof:
   - case-api-version-response-format
   - oracle
   - helper-python
-- text: >-
-    max completion tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-base-policy/max-completion-tokens.yaml.
+- text: 'max_completion_tokens: Any case-sensitive gpt-5 or gpt-6 substring or gpt5_series triggers max_tokens ->
+    setdefault(max_completion_tokens,value), including gpt-5-chat models excluded from reasoning routing. Existing
+    max_completion_tokens wins; nonmatching names retain max_tokens. Mapping order matters if the explicit completion
+    field appears later.'
   proof:
   - case-max-completion-tokens
   - oracle
   - helper-python
-- text: >-
-    azure message content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-message-content.yaml.
+- text: 'azure_message_content: With litellm.openai_system_messages_first default False, preserve order; when True
+    call B219 ordering first. Then drop tool_reference parts, hoist tool images (B219), convert Azure tool/image/file
+    messages (B182). Assemble model/messages, optional-parameter overlay and finally sanitized tools; optional model/messages
+    can overwrite the generated fields.'
   proof:
   - case-azure-message-content
   - oracle
   - helper-python
-- text: >-
-    sanitized tool schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-base-policy/sanitized-tool-schema.yaml.
+- text: 'sanitized_tool_schema: A list-valued tools always produces a replacement tools list, including []; dictionaries
+    use B178 tool_with_sanitized_parameters plus flatten_combinators_and_drop_non_python_regex_patterns, non-dictionaries
+    remain unchanged. Non-list tools yields no update. Preserve input records and apply sanitized tools after other
+    optional values.'
   proof:
   - case-sanitized-tool-schema
   - oracle
   - helper-python
-- text: 'unsupported param: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-base-policy/unsupported-param.yaml.'
+- text: 'unsupported_param: Supported list is temperature,n,stream,stream_options,stop,max_tokens,max_completion_tokens,tools,tool_choice,presence_penalty,frequency_penalty,logit_bias,user,function_call,functions,tools,tool_choice,top_p,logprobs,top_logprobs,response_format,seed,extra_headers,parallel_tool_calls,prediction,modalities,audio,web_search_options,prompt_cache_key,store,
+    including duplicate tools/tool_choice. Unknown names silently disappear; this mapper does not generically reject
+    them.'
   proof:
   - case-unsupported-param
   - oracle
@@ -111,49 +176,160 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'azure_tool_choice_date_gate: For a date with at least three components, compare year/month/day as STRINGS:
+    before 2023-12-01 tool_choice raises UnsupportedParamsError status400 with the exact API-version-upgrade message
+    at L232, unless either global or per-call drop_params is literal True, then omit silently. Invalid/short dates
+    bypass this gate. Include 2023-2-01 to expose string comparison.'
+  proof:
+  - case-azure-tool-choice-date-gate
+  - oracle
+  - helper-python
+- text: 'azure_required_tool_choice: For tool_choice=required, only year==2024 and month string<=05 rejects/drops,
+    using the exact L242 message containing litellm.drop_params=True, litellm_settings/drop_params:true and the
+    Azure chat-completions reference. Version 2023-12-01 passes this second test despite the comment; 2024-06-01
+    passes. Empty/False values forward when otherwise allowed.'
+  proof:
+  - case-azure-required-tool-choice
+  - oracle
+  - helper-python
+- text: 'azure_parameter_shapes: List tools extend existing optional tools instead of replacing; malformed existing
+    non-list tools fails. A non-list tools value passes through the supported-name branch. Dict response_format
+    uses B2214; non-dict response_format passes through without validation. Retain None values for supported names.'
+  proof:
+  - case-azure-parameter-shapes
+  - oracle
+  - helper-python
+- text: 'azure_tool_choice_without_tools: During request assembly drop tool_choice unless optional tools or functions
+    is truthy; []/None/empty mapping count absent, a truthy malformed value keeps choice. Sanitation still runs
+    using the original optional tools value.'
+  proof:
+  - case-azure-tool-choice-without-tools
+  - oracle
+  - helper-python
+- text: 'azure_class_defaults: Constructor frequency_penalty,function_call,functions,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p
+    all default None and only non-None values update class configuration; do not infer numeric zero from docstrings.
+    B2202 get_config supplies the inherited class projection. Public Python class-setting behavior belongs B159;
+    native resolved configuration retains defaults and explicit values.'
+  proof:
+  - case-azure-class-defaults
+  - oracle
+  - helper-python
+- text: 'azure_special_auth_regions: get_mapped_special_auth_params returns token->azure_ad_token; mapping overwrites
+    only azure_ad_token when input key token exists, including None, retaining unrelated optional entries. EU prefixes
+    exactly europe,sweden,switzerland,france,uk; US exactly us,eastus,eastus2,eastus2euap,eastus3,southcentralus,westus,westus2,westus3,westus4.'
+  proof:
+  - case-azure-special-auth-regions
+  - oracle
+  - helper-python
+- text: 'azure_error_factory: get_error_class forwards message/status/headers to B673 AzureOpenAIError without rewrite.
+    This helper assigns no new param or code.'
+  proof:
+  - case-azure-error-factory
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-api-version-response-format
-    why: The api-version-response-format behavior is missing or differs from its pinned fixture.
+    why: Native response_format support requires normalized model not containing gpt-3.5 (regex (\d)-(\d) -> \1.\2)
+      and original model not containing gpt-35, plus API year>2024 or year=2024/month>=8. Empty/short API versions
+      have no date gate; dates with at least three hyphen components parse year/month as integers here and can fail.
+      Do not infer model capability from a catalog. Use B2214 JSON-tool emulation otherwise; unsupported empty schema
+      silently adds nothing.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_api_version_response_format$/)'
   - id: case-max-completion-tokens
-    why: The max-completion-tokens behavior is missing or differs from its pinned fixture.
+    why: Any case-sensitive gpt-5 or gpt-6 substring or gpt5_series triggers max_tokens -> setdefault(max_completion_tokens,value),
+      including gpt-5-chat models excluded from reasoning routing. Existing max_completion_tokens wins; nonmatching
+      names retain max_tokens. Mapping order matters if the explicit completion field appears later.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_max_completion_tokens$/)'
   - id: case-azure-message-content
-    why: The azure-message-content behavior is missing or differs from its pinned fixture.
+    why: With litellm.openai_system_messages_first default False, preserve order; when True call B219 ordering first.
+      Then drop tool_reference parts, hoist tool images (B219), convert Azure tool/image/file messages (B182). Assemble
+      model/messages, optional-parameter overlay and finally sanitized tools; optional model/messages can overwrite
+      the generated fields.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_message_content$/)'
   - id: case-sanitized-tool-schema
-    why: The sanitized-tool-schema behavior is missing or differs from its pinned fixture.
+    why: A list-valued tools always produces a replacement tools list, including []; dictionaries use B178 tool_with_sanitized_parameters
+      plus flatten_combinators_and_drop_non_python_regex_patterns, non-dictionaries remain unchanged. Non-list tools
+      yields no update. Preserve input records and apply sanitized tools after other optional values.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_sanitized_tool_schema$/)'
   - id: case-unsupported-param
-    why: The unsupported-param behavior is missing or differs from its pinned fixture.
+    why: Supported list is temperature,n,stream,stream_options,stop,max_tokens,max_completion_tokens,tools,tool_choice,presence_penalty,frequency_penalty,logit_bias,user,function_call,functions,tools,tool_choice,top_p,logprobs,top_logprobs,response_format,seed,extra_headers,parallel_tool_calls,prediction,modalities,audio,web_search_options,prompt_cache_key,store,
+      including duplicate tools/tool_choice. Unknown names silently disappear; this mapper does not generically
+      reject them.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_unsupported_param$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_chat_base_policy.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_chat_base_policy.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy*")"
       && grep -lq 'azure_chat_base_policy' tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_base_policy$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-azure-tool-choice-date-gate
+    why: 'For a date with at least three components, compare year/month/day as STRINGS: before 2023-12-01 tool_choice
+      raises UnsupportedParamsError status400 with the exact API-version-upgrade message at L232, unless either
+      global or per-call drop_params is literal True, then omit silently. Invalid/short dates bypass this gate.
+      Include 2023-2-01 to expose string comparison.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_tool_choice_date_gate$/)'
+  - id: case-azure-required-tool-choice
+    why: For tool_choice=required, only year==2024 and month string<=05 rejects/drops, using the exact L242 message
+      containing litellm.drop_params=True, litellm_settings/drop_params:true and the Azure chat-completions reference.
+      Version 2023-12-01 passes this second test despite the comment; 2024-06-01 passes. Empty/False values forward
+      when otherwise allowed.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_required_tool_choice$/)'
+  - id: case-azure-parameter-shapes
+    why: List tools extend existing optional tools instead of replacing; malformed existing non-list tools fails.
+      A non-list tools value passes through the supported-name branch. Dict response_format uses B2214; non-dict
+      response_format passes through without validation. Retain None values for supported names.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_parameter_shapes$/)'
+  - id: case-azure-tool-choice-without-tools
+    why: During request assembly drop tool_choice unless optional tools or functions is truthy; []/None/empty mapping
+      count absent, a truthy malformed value keeps choice. Sanitation still runs using the original optional tools
+      value.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_tool_choice_without_tools$/)'
+  - id: case-azure-class-defaults
+    why: Constructor frequency_penalty,function_call,functions,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p
+      all default None and only non-None values update class configuration; do not infer numeric zero from docstrings.
+      B2202 get_config supplies the inherited class projection. Public Python class-setting behavior belongs B159;
+      native resolved configuration retains defaults and explicit values.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_class_defaults$/)'
+  - id: case-azure-special-auth-regions
+    why: get_mapped_special_auth_params returns token->azure_ad_token; mapping overwrites only azure_ad_token when
+      input key token exists, including None, retaining unrelated optional entries. EU prefixes exactly europe,sweden,switzerland,france,uk;
+      US exactly us,eastus,eastus2,eastus2euap,eastus3,southcentralus,westus,westus2,westus3,westus4.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_special_auth_regions$/)'
+  - id: case-azure-error-factory
+    why: get_error_class forwards message/status/headers to B673 AzureOpenAIError without rewrite. This helper assigns
+      no new param or code.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_chat_base_policy_cases::case_[0-9]+_azure_error_factory$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-chat-base-policy/api-version-response-format.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-base-policy/max-completion-tokens.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-message-content.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-base-policy/sanitized-tool-schema.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-base-policy/unsupported-param.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-tool-choice-date-gate.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-required-tool-choice.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-parameter-shapes.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-tool-choice-without-tools.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-class-defaults.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-special-auth-regions.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-base-policy/azure-error-factory.yaml
 deviations: []
-out_of_scope: []
+out_of_scope:
+- 'AzureOpenAIConfig.transform_response L296-L312 and validate_environment L349-L361 are NotImplementedError placeholders
+  with no caller at the pin: AzureChatCompletion owns both operations via B533/B685/B531; do not add oracle cases
+  or use these placeholders as generic handler fallbacks.'
 pitfalls:
-- API-version response-format eligibility and model eligibility are separate gates.
+- The response_format docstring promises catalog lookup, but the executable test only excludes the gpt-3.5/gpt-35
+  spellings.
+- tool_choice date checks compare strings, while response_format date checks convert year/month to integers.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: standard

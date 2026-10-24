@@ -22,6 +22,29 @@ description: >-
   and no copied helper algorithm is permitted.
 
 
+  Named case contracts: string_schema_object: Decode string tools[i].parameters with B192 safe_json_loads only when
+  it yields an object; retain an existing object, None, absent parameters and nondictionary tool entries. invalid_string_schema:
+  A string decoding to a nonobject or malformed JSON, or a nonstring/nonobject parameters value, raises BadRequestError
+  400 with model/provider and a diagnostic naming tools[index].parameters and the original Python type. recursive_tool_namespace:
+  Walk nested tools lists for schema sanitation, retain nondictionary entries and unrelated fields, and preserve
+  unchanged entries; string-to-object parameters decoding applies only to the outer tool list before this recursive
+  walk. foreign_tool_item_id: For OPENAI/AZURE list input remove a string id from function_call unless it starts
+  fc, and from custom_tool_call unless it starts ctc; preserve call_id, nonstring ids, other item types, string
+  input and other providers. cache_control_in_input_and_tools: Use B219 recursive filter to remove cache_control
+  from dictionary input/tool entries; preserve nondictionaries and strings. Validate input first, remove cache markers
+  second, decode schemas third, sanitize fourth, then remove foreign ids. reasoning_summary_and_null: Pydantic input
+  items dump with exclude_none=True; reasoning dictionaries attempt ResponseReasoningItem validation, default summary
+  to reasoning_content truncated at 100 characters plus ... only if longer. On any exception log debug and keep
+  the original item except None status/content/encrypted_content; do not retain an invented summary from the failed
+  attempt. gpt4_schema_combinators: For OPENAI/AZURE flatten top-level combinators and drop invalid Python regex
+  when the last model component (or ft: base segment) starts gpt-4, gpt-3.5, chatgpt-4o, o1, o3 or o4. gpt5_keeps_combinators:
+  Other model families, including unknown Azure deployment names, retain combinators but still drop invalid Python
+  regex; other providers skip all schema sanitation. base_model_gate: Nonempty string litellm_params.model_info.base_model
+  overrides the model name for the combinator gate; wrong type/empty/missing base_model falls back to model. replay_body_overlay:
+  The final body contains model, prepared input and optional parameters with sanitized tools only when present;
+  preserve absent versus empty tools and source duplicate-key errors if options repeat model/input.
+
+
   Implement crates/betterlite-openai/src/response_input.rs with adjacent tests under response_input/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -37,10 +60,9 @@ description: >-
 
   Write rstest function response_input_cases in betterlite-openai with these exact named cases (one per oracle file):
   string_schema_object, invalid_string_schema, recursive_tool_namespace, foreign_tool_item_id, cache_control_in_input_and_tools,
-  reasoning_summary_and_null, gpt4_schema_combinators, gpt5_keeps_combinators, base_model_gate. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  reasoning_summary_and_null, gpt4_schema_combinators, gpt5_keeps_combinators, base_model_gate, replay_body_overlay.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_response_input* using HelperCase: kind:
@@ -58,9 +80,9 @@ description: >-
 
 
   Budget from 235 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 260 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 557 planned, 575 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 285 production lines, 200 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 675 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -82,8 +104,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L283-L556
-  why: >-
-    Own OpenAIResponsesAPIConfig.transform_responses_api_request, OpenAIResponsesAPIConfig._prepared_input_and_tools,
+  why: Own OpenAIResponsesAPIConfig.transform_responses_api_request, OpenAIResponsesAPIConfig._prepared_input_and_tools,
     OpenAIResponsesAPIConfig._tools_with_object_parameters, OpenAIResponsesAPIConfig._tool_with_object_parameters,
     OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools, OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids,
     OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id, OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai,
@@ -92,52 +113,62 @@ references:
     OpenAIResponsesAPIConfig._handle_reasoning_item. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: 'string schema object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/string-schema-object.yaml.'
+- text: 'string_schema_object: Decode string tools[i].parameters with B192 safe_json_loads only when it yields an
+    object; retain an existing object, None, absent parameters and nondictionary tool entries.'
   proof:
   - case-string-schema-object
   - oracle
   - helper-python
-- text: 'invalid string schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/invalid-string-schema.yaml.'
+- text: 'invalid_string_schema: A string decoding to a nonobject or malformed JSON, or a nonstring/nonobject parameters
+    value, raises BadRequestError 400 with model/provider and a diagnostic naming tools[index].parameters and the
+    original Python type.'
   proof:
   - case-invalid-string-schema
   - oracle
   - helper-python
-- text: >-
-    recursive tool namespace: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/recursive-tool-namespace.yaml.
+- text: 'recursive_tool_namespace: Walk nested tools lists for schema sanitation, retain nondictionary entries and
+    unrelated fields, and preserve unchanged entries; string-to-object parameters decoding applies only to the outer
+    tool list before this recursive walk.'
   proof:
   - case-recursive-tool-namespace
   - oracle
   - helper-python
-- text: 'foreign tool item id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/foreign-tool-item-id.yaml.'
+- text: 'foreign_tool_item_id: For OPENAI/AZURE list input remove a string id from function_call unless it starts
+    fc, and from custom_tool_call unless it starts ctc; preserve call_id, nonstring ids, other item types, string
+    input and other providers.'
   proof:
   - case-foreign-tool-item-id
   - oracle
   - helper-python
-- text: >-
-    cache control in input and tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/cache-control-in-input-and-tools.yaml.
+- text: 'cache_control_in_input_and_tools: Use B219 recursive filter to remove cache_control from dictionary input/tool
+    entries; preserve nondictionaries and strings. Validate input first, remove cache markers second, decode schemas
+    third, sanitize fourth, then remove foreign ids.'
   proof:
   - case-cache-control-in-input-and-tools
   - oracle
   - helper-python
-- text: >-
-    reasoning summary and null: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/reasoning-summary-and-null.yaml.
+- text: 'reasoning_summary_and_null: Pydantic input items dump with exclude_none=True; reasoning dictionaries attempt
+    ResponseReasoningItem validation, default summary to reasoning_content truncated at 100 characters plus ...
+    only if longer. On any exception log debug and keep the original item except None status/content/encrypted_content;
+    do not retain an invented summary from the failed attempt.'
   proof:
   - case-reasoning-summary-and-null
   - oracle
   - helper-python
-- text: >-
-    gpt4 schema combinators: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/gpt4-schema-combinators.yaml.
+- text: 'gpt4_schema_combinators: For OPENAI/AZURE flatten top-level combinators and drop invalid Python regex when
+    the last model component (or ft: base segment) starts gpt-4, gpt-3.5, chatgpt-4o, o1, o3 or o4.'
   proof:
   - case-gpt4-schema-combinators
   - oracle
   - helper-python
-- text: >-
-    gpt5 keeps combinators: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/gpt5-keeps-combinators.yaml.
+- text: 'gpt5_keeps_combinators: Other model families, including unknown Azure deployment names, retain combinators
+    but still drop invalid Python regex; other providers skip all schema sanitation.'
   proof:
   - case-gpt5-keeps-combinators
   - oracle
   - helper-python
-- text: 'base model gate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/base-model-gate.yaml.'
+- text: 'base_model_gate: Nonempty string litellm_params.model_info.base_model overrides the model name for the
+    combinator gate; wrong type/empty/missing base_model falls back to model.'
   proof:
   - case-base-model-gate
   - oracle
@@ -150,56 +181,77 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'replay_body_overlay: The final body contains model, prepared input and optional parameters with sanitized
+    tools only when present; preserve absent versus empty tools and source duplicate-key errors if options repeat
+    model/input.'
+  proof:
+  - case-replay-body-overlay
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-string-schema-object
-    why: The string-schema-object behavior is missing or differs from its pinned fixture.
+    why: Decode string tools[i].parameters with B192 safe_json_loads only when it yields an object; retain an existing
+      object, None, absent parameters and nondictionary tool entries.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_string_schema_object$/)'
   - id: case-invalid-string-schema
-    why: The invalid-string-schema behavior is missing or differs from its pinned fixture.
+    why: A string decoding to a nonobject or malformed JSON, or a nonstring/nonobject parameters value, raises BadRequestError
+      400 with model/provider and a diagnostic naming tools[index].parameters and the original Python type.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_invalid_string_schema$/)'
   - id: case-recursive-tool-namespace
-    why: The recursive-tool-namespace behavior is missing or differs from its pinned fixture.
+    why: Walk nested tools lists for schema sanitation, retain nondictionary entries and unrelated fields, and preserve
+      unchanged entries; string-to-object parameters decoding applies only to the outer tool list before this recursive
+      walk.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_recursive_tool_namespace$/)'
   - id: case-foreign-tool-item-id
-    why: The foreign-tool-item-id behavior is missing or differs from its pinned fixture.
+    why: For OPENAI/AZURE list input remove a string id from function_call unless it starts fc, and from custom_tool_call
+      unless it starts ctc; preserve call_id, nonstring ids, other item types, string input and other providers.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_foreign_tool_item_id$/)'
   - id: case-cache-control-in-input-and-tools
-    why: The cache-control-in-input-and-tools behavior is missing or differs from its pinned fixture.
+    why: Use B219 recursive filter to remove cache_control from dictionary input/tool entries; preserve nondictionaries
+      and strings. Validate input first, remove cache markers second, decode schemas third, sanitize fourth, then
+      remove foreign ids.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_cache_control_in_input_and_tools$/)'
   - id: case-reasoning-summary-and-null
-    why: The reasoning-summary-and-null behavior is missing or differs from its pinned fixture.
+    why: Pydantic input items dump with exclude_none=True; reasoning dictionaries attempt ResponseReasoningItem
+      validation, default summary to reasoning_content truncated at 100 characters plus ... only if longer. On any
+      exception log debug and keep the original item except None status/content/encrypted_content; do not retain
+      an invented summary from the failed attempt.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_reasoning_summary_and_null$/)'
   - id: case-gpt4-schema-combinators
-    why: The gpt4-schema-combinators behavior is missing or differs from its pinned fixture.
+    why: 'For OPENAI/AZURE flatten top-level combinators and drop invalid Python regex when the last model component
+      (or ft: base segment) starts gpt-4, gpt-3.5, chatgpt-4o, o1, o3 or o4.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_gpt4_schema_combinators$/)'
   - id: case-gpt5-keeps-combinators
-    why: The gpt5-keeps-combinators behavior is missing or differs from its pinned fixture.
+    why: Other model families, including unknown Azure deployment names, retain combinators but still drop invalid
+      Python regex; other providers skip all schema sanitation.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_gpt5_keeps_combinators$/)'
   - id: case-base-model-gate
-    why: The base-model-gate behavior is missing or differs from its pinned fixture.
+    why: Nonempty string litellm_params.model_info.base_model overrides the model name for the combinator gate;
+      wrong type/empty/missing base_model falls back to model.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_base_model_gate$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_input.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_input.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_input*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_input*")"
       && grep -lq 'openai_response_input' tools/oracle/fuzz/corpus/helper_case/openai_response_input* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_response_input$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_input)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_input)"
       && grep -q 'decode_response_tool_schema' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_input.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_input_corpus$/)'
+  - id: case-replay-body-overlay
+    why: The final body contains model, prepared input and optional parameters with sanitized tools only when present;
+      preserve absent versus empty tools and source duplicate-key errors if options repeat model/input.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_replay_body_overlay$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-input/string-schema-object.yaml
 - tools/oracle/cases/helpers/providers/openai-response-input/invalid-string-schema.yaml
@@ -210,40 +262,41 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-input/gpt4-schema-combinators.yaml
 - tools/oracle/cases/helpers/providers/openai-response-input/gpt5-keeps-combinators.yaml
 - tools/oracle/cases/helpers/providers/openai-response-input/base-model-gate.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/replay-body-overlay.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response L558-L587;
-  OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url L604-L623;
-  OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
-  L659-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L669-L671; OpenAIResponsesAPIConfig.get_event_model_class
-  L674-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
-  L754-L756 belong to B508; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models
+  L59-L72; _DeleteResponse.json L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body
+  L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider L106-L108; OpenAIResponsesAPIConfig.supports_native_file_search
+  L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model
+  L116-L126; OpenAIResponsesAPIConfig._model_map_lookup_name L128-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none
+  L132-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none L139-L151; OpenAIResponsesAPIConfig._supports_reasoning_param
+  L153-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort L168-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens
+  L175-L186; OpenAIResponsesAPIConfig.get_supported_openai_params L188-L205; OpenAIResponsesAPIConfig.map_openai_params
+  L207-L281 belong to B506.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response
+  L558-L587; OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url
+  L604-L623; OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
+  L658-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L668-L671; OpenAIResponsesAPIConfig.get_event_model_class
+  L673-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
+  L754-L756 belong to B508.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
   L761-L777; OpenAIResponsesAPIConfig.transform_delete_response_api_response L779-L791; OpenAIResponsesAPIConfig.transform_get_response_api_request
   L796-L812; OpenAIResponsesAPIConfig.transform_get_response_api_response L814-L832; OpenAIResponsesAPIConfig.transform_list_input_items_request
   L837-L862; OpenAIResponsesAPIConfig.transform_list_input_items_response L864-L872; OpenAIResponsesAPIConfig.transform_cancel_response_api_request
   L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
-  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models L60-L72; _DeleteResponse.json
-  L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider
-  L107-L108; OpenAIResponsesAPIConfig.supports_native_file_search L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages
-  L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model L117-L126; OpenAIResponsesAPIConfig._model_map_lookup_name
-  L129-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none L133-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none
-  L140-L151; OpenAIResponsesAPIConfig._supports_reasoning_param L154-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort
-  L169-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens L176-L186; OpenAIResponsesAPIConfig.get_supported_openai_params
-  L188-L205; OpenAIResponsesAPIConfig.map_openai_params L207-L281 belong to B506; reuse that implementation or its
-  injected typed boundary.
+  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509.'
 pitfalls:
-- Reasoning-item validation failure retains a lax item; rejecting it loses the pinned replay fallback.
+- The accepted tool-id prefixes are fc and ctc, not fc_ and ctc_, so a stricter underscore check drops IDs LiteLLM
+  retains.
+- Reasoning validation fallback filters the original item, not the temporary dictionary that received the generated
+  summary.
+- Nested namespace schemas receive recursive sanitation but not recursive JSON-string decoding.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

@@ -1,0 +1,268 @@
+id: B2229
+title: Shared catalog generalization engine
+description: >-
+  Move the pure fallback-generalization rule engine below provider resolution and metadata lookup. B313 keeps router/server
+  integration; B193 installs parsed catalog rules. Compile case-insensitive Python-compatible regular expressions
+  once with a maintained bounded implementation, preserving ordered matching and warnings.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/litellm_core_utils/fallback_generalizations.py:
+  _resolve_legacy_extends L69-L95; _parse_fill_missing_for_providers L114-L127; _compile_rule L130-L181; _FallbackGeneralizations.__init__
+  L187-L191; set_rules L193-L199; match_routing L201-L207; match_capabilities L209-L215; match_fill_missing L217-L230;
+  set_fallback_generalizations L236-L244; get_fallback_generalization_rules L247-L249; match_routing_generalization
+  L252-L257; match_capability_generalizations L260-L266; match_fill_missing_generalizations L269-L277.
+
+
+  Named case contracts: install_and_legacy_extends: Initial raw rules/list and all compiled collections are empty.
+  set_rules accepts a list only, otherwise installs []; keep the original raw list for the accessor while compiling
+  expanded copies. A parent index uses dict rules with string name and dict model_info; duplicate names use the
+  last parent. A string extends resolves one level against raw parent model_info, child keys win; missing parent,
+  nonstring extends, non-dict child info and non-dict rules pass through unchanged. No recursion/cycle traversal.
+  compile_classification: Non-dict rules are skipped silently. Require string pattern and dict model_info, compile
+  with IGNORECASE re.search semantics (no implicit anchors). Missing fill_missing_for_providers means empty; when
+  present it must be list/tuple of strings (empty allowed), then becomes a set. No provider key means capability-only,
+  even empty model_info. A string litellm_provider as the sole key means routing-only; mixed provider and other
+  keys means both. A present nonstring provider rejects the rule. Ignore other rule fields including description.
+  malformed_rule_warnings: Malformed pattern/info warns LiteLLM: skipping malformed fallback generalization rule
+  {name-or-pattern} (needs string 'pattern' and dict 'model_info'). Invalid regex warns LiteLLM: skipping fallback
+  generalization rule with invalid regex {pattern!r}: {error}. Bad fill list warns LiteLLM: skipping malformed fallback
+  generalization rule {name-or-pattern} ('fill_missing_for_providers' must be a list of provider strings). Bad provider
+  warns LiteLLM: skipping invalid fallback generalization rule {name-or-pattern}: 'litellm_provider' in 'model_info'
+  must be a string. Warning order follows compile order; use name by key presence, including None. first_routing_match:
+  Empty model yields None even for an empty-pattern rule. Otherwise return the first matching routing provider (including
+  empty string), with case-insensitive substring search unless the expression anchors itself. Later matches do not
+  override routing. capability_union: Empty model or no matching capability rule returns None. Merge all matching
+  rule maps in file order, later keys win, including explicit None/False and legacy provider keys. A matched empty
+  capability map returns {}, not None. Return a new map without mutating stored rules. fill_missing_projection:
+  Empty model/provider or no flagged matching rule returns None. Provider membership is case-sensitive. Merge matching
+  flagged capability maps in file order, removing litellm_provider; an empty merged result becomes None. This returns
+  proposed fields only; B2219 fills absent entry keys and retains explicit null/False values.
+
+
+  Outside-byte boundary: decode_model_generalization_rules consumes bounded rule-list JSON bytes, maximum 1048576
+  bytes, used by catalog/config installation before compilation in crates/betterlite-models/src/catalog_generalizations.rs
+  or its scoped child module. Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz
+  target crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs. Add valid, malformed, truncated
+  and boundary corpus inputs and adjacent test replays_the_model_generalization_rules_corpus that checks outcome
+  categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Implement crates/betterlite-models/src/catalog_generalizations.rs with adjacent tests under catalog_generalizations/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation catalog_generalizations in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function catalog_generalizations_cases in betterlite-models with these exact named cases (one per
+  oracle file): install_and_legacy_extends, compile_classification, malformed_rule_warnings, first_routing_match,
+  capability_union, fill_missing_projection. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/catalog_generalizations* using HelperCase: kind:
+  helper and the externally tagged catalog_generalizations variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_catalog_generalizations that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
+
+
+  Budget from 160 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 260 production lines, 250 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 65 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 720 planned, 725 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/catalog_generalizations.rs
+  - crates/betterlite-models/src/catalog_generalizations/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/catalog_generalizations.rs
+  - tools/oracle/src/helpers/catalog_generalizations/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/catalog_generalizations.py
+  - tools/oracle/cases/helpers/providers/catalog-generalizations/**
+  - tools/oracle/fuzz/corpus/helper_case/catalog_generalizations*
+  - crates/betterlite-models/fuzz/Cargo.toml
+  - crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs
+  - crates/betterlite-models/fuzz/corpus/model_generalization_rules/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L69-L95
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L114-L127
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L130-L181
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L187-L191
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L193-L199
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L201-L207
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L209-L215
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L217-L230
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L236-L244
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L247-L249
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L252-L257
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L260-L266
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L269-L277
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New catalog_generalizations seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'install_and_legacy_extends: Initial raw rules/list and all compiled collections are empty. set_rules accepts
+    a list only, otherwise installs []; keep the original raw list for the accessor while compiling expanded copies.
+    A parent index uses dict rules with string name and dict model_info; duplicate names use the last parent. A
+    string extends resolves one level against raw parent model_info, child keys win; missing parent, nonstring extends,
+    non-dict child info and non-dict rules pass through unchanged. No recursion/cycle traversal.'
+  proof:
+  - case-install-and-legacy-extends
+  - oracle
+  - helper-python
+- text: 'compile_classification: Non-dict rules are skipped silently. Require string pattern and dict model_info,
+    compile with IGNORECASE re.search semantics (no implicit anchors). Missing fill_missing_for_providers means
+    empty; when present it must be list/tuple of strings (empty allowed), then becomes a set. No provider key means
+    capability-only, even empty model_info. A string litellm_provider as the sole key means routing-only; mixed
+    provider and other keys means both. A present nonstring provider rejects the rule. Ignore other rule fields
+    including description.'
+  proof:
+  - case-compile-classification
+  - oracle
+  - helper-python
+- text: 'malformed_rule_warnings: Malformed pattern/info warns LiteLLM: skipping malformed fallback generalization
+    rule {name-or-pattern} (needs string ''pattern'' and dict ''model_info''). Invalid regex warns LiteLLM: skipping
+    fallback generalization rule with invalid regex {pattern!r}: {error}. Bad fill list warns LiteLLM: skipping
+    malformed fallback generalization rule {name-or-pattern} (''fill_missing_for_providers'' must be a list of provider
+    strings). Bad provider warns LiteLLM: skipping invalid fallback generalization rule {name-or-pattern}: ''litellm_provider''
+    in ''model_info'' must be a string. Warning order follows compile order; use name by key presence, including
+    None.'
+  proof:
+  - case-malformed-rule-warnings
+  - oracle
+  - helper-python
+- text: 'first_routing_match: Empty model yields None even for an empty-pattern rule. Otherwise return the first
+    matching routing provider (including empty string), with case-insensitive substring search unless the expression
+    anchors itself. Later matches do not override routing.'
+  proof:
+  - case-first-routing-match
+  - oracle
+  - helper-python
+- text: 'capability_union: Empty model or no matching capability rule returns None. Merge all matching rule maps
+    in file order, later keys win, including explicit None/False and legacy provider keys. A matched empty capability
+    map returns {}, not None. Return a new map without mutating stored rules.'
+  proof:
+  - case-capability-union
+  - oracle
+  - helper-python
+- text: 'fill_missing_projection: Empty model/provider or no flagged matching rule returns None. Provider membership
+    is case-sensitive. Merge matching flagged capability maps in file order, removing litellm_provider; an empty
+    merged result becomes None. This returns proposed fields only; B2219 fills absent entry keys and retains explicit
+    null/False values.'
+  proof:
+  - case-fill-missing-projection
+  - oracle
+  - helper-python
+- text: decode_model_generalization_rules has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/catalog_generalizations.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/catalog_generalizations*")"
+      && grep -lq 'catalog_generalizations' tools/oracle/fuzz/corpus/helper_case/catalog_generalizations* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_catalog_generalizations$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-install-and-legacy-extends
+    why: Initial raw rules/list and all compiled collections are empty. set_rules accepts a list only, otherwise
+      installs []; keep the original raw list for the accessor while compiling expanded copies. A parent index uses
+      dict rules with string name and dict model_info; duplicate names use the last parent. A string extends resolves
+      one level against raw parent model_info, child keys win; missing parent, nonstring extends, non-dict child
+      info and non-dict rules pass through unchanged. No recursion/cycle traversal.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_install_and_legacy_extends$/)'
+  - id: case-compile-classification
+    why: Non-dict rules are skipped silently. Require string pattern and dict model_info, compile with IGNORECASE
+      re.search semantics (no implicit anchors). Missing fill_missing_for_providers means empty; when present it
+      must be list/tuple of strings (empty allowed), then becomes a set. No provider key means capability-only,
+      even empty model_info. A string litellm_provider as the sole key means routing-only; mixed provider and other
+      keys means both. A present nonstring provider rejects the rule. Ignore other rule fields including description.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_compile_classification$/)'
+  - id: case-malformed-rule-warnings
+    why: 'Malformed pattern/info warns LiteLLM: skipping malformed fallback generalization rule {name-or-pattern}
+      (needs string ''pattern'' and dict ''model_info''). Invalid regex warns LiteLLM: skipping fallback generalization
+      rule with invalid regex {pattern!r}: {error}. Bad fill list warns LiteLLM: skipping malformed fallback generalization
+      rule {name-or-pattern} (''fill_missing_for_providers'' must be a list of provider strings). Bad provider warns
+      LiteLLM: skipping invalid fallback generalization rule {name-or-pattern}: ''litellm_provider'' in ''model_info''
+      must be a string. Warning order follows compile order; use name by key presence, including None.'
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_malformed_rule_warnings$/)'
+  - id: case-first-routing-match
+    why: Empty model yields None even for an empty-pattern rule. Otherwise return the first matching routing provider
+      (including empty string), with case-insensitive substring search unless the expression anchors itself. Later
+      matches do not override routing.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_first_routing_match$/)'
+  - id: case-capability-union
+    why: Empty model or no matching capability rule returns None. Merge all matching rule maps in file order, later
+      keys win, including explicit None/False and legacy provider keys. A matched empty capability map returns {},
+      not None. Return a new map without mutating stored rules.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_capability_union$/)'
+  - id: case-fill-missing-projection
+    why: Empty model/provider or no flagged matching rule returns None. Provider membership is case-sensitive. Merge
+      matching flagged capability maps in file order, removing litellm_provider; an empty merged result becomes
+      None. This returns proposed fields only; B2219 fills absent entry keys and retains explicit null/False values.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::catalog_generalizations_cases::case_[0-9]+_fill_missing_projection$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_generalization_rules)"
+      && grep -q 'decode_model_generalization_rules' crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_model_generalization_rules_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/catalog-generalizations/install-and-legacy-extends.yaml
+- tools/oracle/cases/helpers/providers/catalog-generalizations/compile-classification.yaml
+- tools/oracle/cases/helpers/providers/catalog-generalizations/malformed-rule-warnings.yaml
+- tools/oracle/cases/helpers/providers/catalog-generalizations/first-routing-match.yaml
+- tools/oracle/cases/helpers/providers/catalog-generalizations/capability-union.yaml
+- tools/oracle/cases/helpers/providers/catalog-generalizations/fill-missing-projection.yaml
+deviations:
+- what: Unsupported valid Python regex constructs or exhausted regex work emit a warning naming the pattern and
+    skip that rule; oversized rule-list input fails the typed configuration decoder.
+  why: Retain B313 bounded-regex and 1048576-byte policy without unbounded expression execution.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L143-L152
+out_of_scope:
+- All functions in fallback_generalizations.py are owned here; B313 is integration only. Catalog parsing/reload
+  orchestration stays B193, provider inference B174, metadata lookup B2219.
+pitfalls:
+- A matched empty capability rule returns an empty map, while an empty fill-missing result returns None.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: standard

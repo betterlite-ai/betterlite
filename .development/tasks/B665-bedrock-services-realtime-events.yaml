@@ -2,8 +2,8 @@ id: B665
 title: Bedrock realtime native event dispatch
 description: >-
   Compose a closed native realtime event decoder/dispatcher and client session.update preface handling. Preserve
-  unknown event behavior, provider exceptions and content-free event logging. Python SDK version/import/protocol
-  stubs become typed transport capability errors; package introspection is not reimplemented in gateway code.
+  unknown event behavior, provider exceptions and content-free event logging. Python SDK packaging/version diagnostics
+  remain B159; native transport exposes its actual errors without manufacturing missing-Python-package failures.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/transformation.py:
@@ -12,14 +12,56 @@ description: >-
   L94-L94; RealtimeClientWebSocket.send_text L96-L96; RealtimeClientWebSocket.close L98-L98; BedrockInputStream.send
   L102-L102; BedrockInputStream.close L104-L104; BedrockPayloadPart.bytes_ L109-L109; BedrockOutputChunk.value L114-L114;
   BedrockOutputStream.receive L118-L118; BedrockBidirectionalStream.input_stream L123-L123; BedrockBidirectionalStream.await_output
-  L125-L125; ClosableBedrockRuntimeClient.close L130-L130; _installed_sdk_version L133-L137; _sdk_import_error L140-L149;
-  _close_bedrock_client L152-L157; _client_messages L167-L175; _pending_session_update L178-L190; _raise_provider_failure
-  L193-L198; _parse_client_message L201-L205; _ack_session_update L208-L232; BedrockRealtime.__init__ L238-L240.
+  L125-L125; ClosableBedrockRuntimeClient.close L130-L130; _close_bedrock_client L152-L157; _client_messages L167-L175;
+  _pending_session_update L178-L190; _raise_provider_failure L193-L198; _parse_client_message L201-L205; _ack_session_update
+  L208-L232; BedrockRealtime.__init__ L238-L240.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
   or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
   and no copied helper algorithm is permitted.
+
+
+  Named case contracts: native_event_dispatch: decode_realtime_native_event parses JSON string/bytes. Syntax error
+  warns Invalid JSON message: {preview} and returns empty response with ALL passed state fields unchanged; invalid
+  UTF-8 bytes may raise outside JSONDecodeError. Valid nondict JSON/wrong event shapes keep source errors. Event
+  branch priority is sessionStart,contentStart,textOutput,audioOutput,user contentEnd,assistant contentEnd,userSpeechStart/End,usageEvent,toolUse,promptEnd/completionEnd.
+  Multiple keys select only first branch. session_update_first: _client_messages yields initial_message whenever
+  notNone,includingempty,then receive_text loop; any receive Exception debugs Client to Bedrock forwarding ended:
+  {error} with traceback and terminates iterator. _parse_client_message validates JSON via TypeAdapter JsonValue
+  and returns dict else immutableempty mapping; malformed/nonobject returns{},notexception. _json_dict accepts dictelse{},_json_str
+  acceptsstringincludingemptyelseNone. pending_session_update: Scope keys exactly litellm.bedrock_realtime.pending_session_update,litellm.bedrock_realtime.session_committed,litellm.bedrock_realtime.committed_failure.
+  Only committed isTrue identity triggers B682 status400 message Bedrock realtime session already committed to a
+  provider stream; it cannot be replayed plus . The committed stream failed with: {stored failure} when truthy.
+  Otherwise return pending only ifstring,includingempty. Integer1 is notTrue identity. provider_failure_event: Map
+  by exact exception class name: AccessDeniedException403,ConflictException400,InternalServerException500,ModelErrorException424,ModelNotReadyException429,ModelStreamErrorException424,ModelTimeoutException408,ResourceNotFoundException404,ServiceQuotaExceededException400,ServiceUnavailableException503,ThrottlingException429,ValidationException400.
+  B682 message {ClassName}: {error}; unknown exception unchanged. _raise_provider_failure logs Bedrock Realtime:
+  provider stream failed: {B187 redacted error}; if committed isTrue save same redactedstring to failurekey,then
+  raise mappederror with cause. native_session_and_state: sessionStart sets session_configuration_request to JSON
+  {configured:true}, emitsnothing. Return response plus current_output_item_id,current_response_id,current_delta_chunks,current_conversation_id,current_item_chunks,current_delta_type,session_configuration_request
+  on every successful dispatch; current_item_chunks always preserved. Unknown event keys/missing event silentlyemitnothing
+  and preserve state, no warning. native_user_transcript_dispatch: While _user_transcript_active, textOutput.content
+  defaultempty routes B663 user transcription; otherwise assistant text. A contentEnd while active clears active/generation-stage,
+  then completes buffered transcript, and does not process END_TURN as assistantcompletion. Audio alwaysroutesB663
+  regardless of transcriptflag. UserSpeechStart wins if both speech keys present. native_completion_dispatch: Assistant
+  contentEnd first calls B664 block completion,then validates BedrockContentEnd and only exact stopReason END_TURN
+  emits response.done/resets ids viaB664. Other/missing reasons retainresponse. usageEvent validates B661 typed
+  cumulative usage records then stores viaB663,emitsnothing. toolUse delegatesB664 and debugs toolname/id without
+  additionalstate. promptEnd/completionEnd delegatesB664, resets returned ids/type but preservesconversation/delta
+  accumulator as source. ack_session_update_order: Await bedrock_stream.await_output BEFORE changing scope; on success
+  pop pending and set committedTrue. Without logging return True without client ack. With logging validate session.modalities
+  as list[str]|None,then B661 session_updated_event andsendJSON. Validation failure occurs after committed flag
+  and outside sendcatch. Send Exception logs forwarding-ended and returns False withoutundoingcommit; successTrue.
+  event_logging_selection: Use global logged_real_time_event_types whennotNone,otherwise DefaultLoggedRealTimeEventTypes
+  fromB1006; exact * logsall. Otherwise source membership applies to event.type includingNone; empty list logsnone.
+  Reuse B1006 real loader/default cases, no second setting owner. _close_bedrock_client ignores nonclosableobjects;
+  closable asyncclose exceptions silentlysuppressed, successdebug Bedrock Realtime: closed SDK client.
+
+
+  The same production parser module also exposes decode_realtime_client_preface for _parse_client_message; extend
+  the existing fuzz target to call both decoder entry points on every seed, including nonobjects, invalidUTF8 and
+  malformedsession.modalities. Protocol declarations map to native traits, not separately executable methods. Use
+  B590 BaseAWS constructor and B187 redaction helpers directly.
 
 
   Implement crates/betterlite-bedrock/src/realtime_events.rs with adjacent tests under realtime_events/. Keep each
@@ -36,10 +78,10 @@ description: >-
 
 
   Write rstest function realtime_events_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): native_event_dispatch, session_update_first, pending_session_update, provider_failure_event, malformed_client_json,
-  unknown_native_event, closed_session_error. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): native_event_dispatch, session_update_first, pending_session_update, provider_failure_event, native_session_and_state,
+  native_user_transcript_dispatch, native_completion_dispatch, ack_session_update_order, event_logging_selection.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_events* using HelperCase:
@@ -56,10 +98,10 @@ description: >-
   success/failure categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 232 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 255 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 526 planned, 550 maximum changed lines.
+  Budget from 217 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 290 production lines, 310 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 795 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -84,54 +126,44 @@ references:
   why: Own BedrockRealtimeConfig.transform_realtime_response. Other functions in this file remain with the owners
     listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L63-L240
-  why: >-
-    Own _as_bedrock_error, _json_dict, _json_str, _should_log_event, RealtimeClientWebSocket.receive_text, RealtimeClientWebSocket.send_text,
+  why: Own _as_bedrock_error, _json_dict, _json_str, _should_log_event, RealtimeClientWebSocket.receive_text, RealtimeClientWebSocket.send_text,
     RealtimeClientWebSocket.close, BedrockInputStream.send, BedrockInputStream.close, BedrockPayloadPart.bytes_,
     BedrockOutputChunk.value, BedrockOutputStream.receive, BedrockBidirectionalStream.input_stream, BedrockBidirectionalStream.await_output,
     ClosableBedrockRuntimeClient.close, _installed_sdk_version, _sdk_import_error, _close_bedrock_client, _client_messages,
     _pending_session_update, _raise_provider_failure, _parse_client_message, _ack_session_update, BedrockRealtime.__init__.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    native event dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/native-event-dispatch.yaml.
+- text: 'native_event_dispatch: decode_realtime_native_event parses JSON string/bytes. Syntax error warns Invalid
+    JSON message: {preview} and returns empty response with ALL passed state fields unchanged; invalid UTF-8 bytes
+    may raise outside JSONDecodeError. Valid nondict JSON/wrong event shapes keep source errors. Event branch priority
+    is sessionStart,contentStart,textOutput,audioOutput,user contentEnd,assistant contentEnd,userSpeechStart/End,usageEvent,toolUse,promptEnd/completionEnd.
+    Multiple keys select only first branch.'
   proof:
   - case-native-event-dispatch
   - oracle
   - helper-python
-- text: >-
-    session update first: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/session-update-first.yaml.
+- text: 'session_update_first: _client_messages yields initial_message whenever notNone,includingempty,then receive_text
+    loop; any receive Exception debugs Client to Bedrock forwarding ended: {error} with traceback and terminates
+    iterator. _parse_client_message validates JSON via TypeAdapter JsonValue and returns dict else immutableempty
+    mapping; malformed/nonobject returns{},notexception. _json_dict accepts dictelse{},_json_str acceptsstringincludingemptyelseNone.'
   proof:
   - case-session-update-first
   - oracle
   - helper-python
-- text: >-
-    pending session update: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/pending-session-update.yaml.
+- text: 'pending_session_update: Scope keys exactly litellm.bedrock_realtime.pending_session_update,litellm.bedrock_realtime.session_committed,litellm.bedrock_realtime.committed_failure.
+    Only committed isTrue identity triggers B682 status400 message Bedrock realtime session already committed to
+    a provider stream; it cannot be replayed plus . The committed stream failed with: {stored failure} when truthy.
+    Otherwise return pending only ifstring,includingempty. Integer1 is notTrue identity.'
   proof:
   - case-pending-session-update
   - oracle
   - helper-python
-- text: >-
-    provider failure event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/provider-failure-event.yaml.
+- text: 'provider_failure_event: Map by exact exception class name: AccessDeniedException403,ConflictException400,InternalServerException500,ModelErrorException424,ModelNotReadyException429,ModelStreamErrorException424,ModelTimeoutException408,ResourceNotFoundException404,ServiceQuotaExceededException400,ServiceUnavailableException503,ThrottlingException429,ValidationException400.
+    B682 message {ClassName}: {error}; unknown exception unchanged. _raise_provider_failure logs Bedrock Realtime:
+    provider stream failed: {B187 redacted error}; if committed isTrue save same redactedstring to failurekey,then
+    raise mappederror with cause.'
   proof:
   - case-provider-failure-event
-  - oracle
-  - helper-python
-- text: >-
-    malformed client json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/malformed-client-json.yaml.
-  proof:
-  - case-malformed-client-json
-  - oracle
-  - helper-python
-- text: >-
-    unknown native event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/unknown-native-event.yaml.
-  proof:
-  - case-unknown-native-event
-  - oracle
-  - helper-python
-- text: >-
-    closed session error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/closed-session-error.yaml.
-  proof:
-  - case-closed-session-error
   - oracle
   - helper-python
 - text: New bedrock_services_realtime_events seeds parse as the intended call variant and replay through the shared
@@ -142,100 +174,180 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'native_session_and_state: sessionStart sets session_configuration_request to JSON {configured:true}, emitsnothing.
+    Return response plus current_output_item_id,current_response_id,current_delta_chunks,current_conversation_id,current_item_chunks,current_delta_type,session_configuration_request
+    on every successful dispatch; current_item_chunks always preserved. Unknown event keys/missing event silentlyemitnothing
+    and preserve state, no warning.'
+  proof:
+  - case-native-session-and-state
+  - oracle
+  - helper-python
+- text: 'native_user_transcript_dispatch: While _user_transcript_active, textOutput.content defaultempty routes
+    B663 user transcription; otherwise assistant text. A contentEnd while active clears active/generation-stage,
+    then completes buffered transcript, and does not process END_TURN as assistantcompletion. Audio alwaysroutesB663
+    regardless of transcriptflag. UserSpeechStart wins if both speech keys present.'
+  proof:
+  - case-native-user-transcript-dispatch
+  - oracle
+  - helper-python
+- text: 'native_completion_dispatch: Assistant contentEnd first calls B664 block completion,then validates BedrockContentEnd
+    and only exact stopReason END_TURN emits response.done/resets ids viaB664. Other/missing reasons retainresponse.
+    usageEvent validates B661 typed cumulative usage records then stores viaB663,emitsnothing. toolUse delegatesB664
+    and debugs toolname/id without additionalstate. promptEnd/completionEnd delegatesB664, resets returned ids/type
+    but preservesconversation/delta accumulator as source.'
+  proof:
+  - case-native-completion-dispatch
+  - oracle
+  - helper-python
+- text: 'ack_session_update_order: Await bedrock_stream.await_output BEFORE changing scope; on success pop pending
+    and set committedTrue. Without logging return True without client ack. With logging validate session.modalities
+    as list[str]|None,then B661 session_updated_event andsendJSON. Validation failure occurs after committed flag
+    and outside sendcatch. Send Exception logs forwarding-ended and returns False withoutundoingcommit; successTrue.'
+  proof:
+  - case-ack-session-update-order
+  - oracle
+  - helper-python
+- text: 'event_logging_selection: Use global logged_real_time_event_types whennotNone,otherwise DefaultLoggedRealTimeEventTypes
+    fromB1006; exact * logsall. Otherwise source membership applies to event.type includingNone; empty list logsnone.
+    Reuse B1006 real loader/default cases, no second setting owner. _close_bedrock_client ignores nonclosableobjects;
+    closable asyncclose exceptions silentlysuppressed, successdebug Bedrock Realtime: closed SDK client.'
+  proof:
+  - case-event-logging-selection
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-native-event-dispatch
-    why: The native-event-dispatch behavior is missing or differs from its pinned fixture.
+    why: 'decode_realtime_native_event parses JSON string/bytes. Syntax error warns Invalid JSON message: {preview}
+      and returns empty response with ALL passed state fields unchanged; invalid UTF-8 bytes may raise outside JSONDecodeError.
+      Valid nondict JSON/wrong event shapes keep source errors. Event branch priority is sessionStart,contentStart,textOutput,audioOutput,user
+      contentEnd,assistant contentEnd,userSpeechStart/End,usageEvent,toolUse,promptEnd/completionEnd. Multiple keys
+      select only first branch.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_native_event_dispatch$/)'
   - id: case-session-update-first
-    why: The session-update-first behavior is missing or differs from its pinned fixture.
+    why: '_client_messages yields initial_message whenever notNone,includingempty,then receive_text loop; any receive
+      Exception debugs Client to Bedrock forwarding ended: {error} with traceback and terminates iterator. _parse_client_message
+      validates JSON via TypeAdapter JsonValue and returns dict else immutableempty mapping; malformed/nonobject
+      returns{},notexception. _json_dict accepts dictelse{},_json_str acceptsstringincludingemptyelseNone.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_session_update_first$/)'
   - id: case-pending-session-update
-    why: The pending-session-update behavior is missing or differs from its pinned fixture.
+    why: 'Scope keys exactly litellm.bedrock_realtime.pending_session_update,litellm.bedrock_realtime.session_committed,litellm.bedrock_realtime.committed_failure.
+      Only committed isTrue identity triggers B682 status400 message Bedrock realtime session already committed
+      to a provider stream; it cannot be replayed plus . The committed stream failed with: {stored failure} when
+      truthy. Otherwise return pending only ifstring,includingempty. Integer1 is notTrue identity.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_pending_session_update$/)'
   - id: case-provider-failure-event
-    why: The provider-failure-event behavior is missing or differs from its pinned fixture.
+    why: 'Map by exact exception class name: AccessDeniedException403,ConflictException400,InternalServerException500,ModelErrorException424,ModelNotReadyException429,ModelStreamErrorException424,ModelTimeoutException408,ResourceNotFoundException404,ServiceQuotaExceededException400,ServiceUnavailableException503,ThrottlingException429,ValidationException400.
+      B682 message {ClassName}: {error}; unknown exception unchanged. _raise_provider_failure logs Bedrock Realtime:
+      provider stream failed: {B187 redacted error}; if committed isTrue save same redactedstring to failurekey,then
+      raise mappederror with cause.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_provider_failure_event$/)'
-  - id: case-malformed-client-json
-    why: The malformed-client-json behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_malformed_client_json$/)'
-  - id: case-unknown-native-event
-    why: The unknown-native-event behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_unknown_native_event$/)'
-  - id: case-closed-session-error
-    why: The closed-session-error behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_closed_session_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_events.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_events.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_events*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_events*")"
       && grep -lq 'bedrock_services_realtime_events' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_events*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_events)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_events)"
       && grep -q 'decode_realtime_native_event' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_events.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_events_corpus$/)'
+  - id: case-native-session-and-state
+    why: sessionStart sets session_configuration_request to JSON {configured:true}, emitsnothing. Return response
+      plus current_output_item_id,current_response_id,current_delta_chunks,current_conversation_id,current_item_chunks,current_delta_type,session_configuration_request
+      on every successful dispatch; current_item_chunks always preserved. Unknown event keys/missing event silentlyemitnothing
+      and preserve state, no warning.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_native_session_and_state$/)'
+  - id: case-native-user-transcript-dispatch
+    why: While _user_transcript_active, textOutput.content defaultempty routes B663 user transcription; otherwise
+      assistant text. A contentEnd while active clears active/generation-stage, then completes buffered transcript,
+      and does not process END_TURN as assistantcompletion. Audio alwaysroutesB663 regardless of transcriptflag.
+      UserSpeechStart wins if both speech keys present.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_native_user_transcript_dispatch$/)'
+  - id: case-native-completion-dispatch
+    why: Assistant contentEnd first calls B664 block completion,then validates BedrockContentEnd and only exact
+      stopReason END_TURN emits response.done/resets ids viaB664. Other/missing reasons retainresponse. usageEvent
+      validates B661 typed cumulative usage records then stores viaB663,emitsnothing. toolUse delegatesB664 and
+      debugs toolname/id without additionalstate. promptEnd/completionEnd delegatesB664, resets returned ids/type
+      but preservesconversation/delta accumulator as source.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_native_completion_dispatch$/)'
+  - id: case-ack-session-update-order
+    why: Await bedrock_stream.await_output BEFORE changing scope; on success pop pending and set committedTrue.
+      Without logging return True without client ack. With logging validate session.modalities as list[str]|None,then
+      B661 session_updated_event andsendJSON. Validation failure occurs after committed flag and outside sendcatch.
+      Send Exception logs forwarding-ended and returns False withoutundoingcommit; successTrue.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_ack_session_update_order$/)'
+  - id: case-event-logging-selection
+    why: 'Use global logged_real_time_event_types whennotNone,otherwise DefaultLoggedRealTimeEventTypes fromB1006;
+      exact * logsall. Otherwise source membership applies to event.type includingNone; empty list logsnone. Reuse
+      B1006 real loader/default cases, no second setting owner. _close_bedrock_client ignores nonclosableobjects;
+      closable asyncclose exceptions silentlysuppressed, successdebug Bedrock Realtime: closed SDK client.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_events_cases::case_[0-9]+_event_logging_selection$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/native-event-dispatch.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/session-update-first.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/pending-session-update.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/provider-failure-event.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/malformed-client-json.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/unknown-native-event.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/closed-session-error.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/native-session-and-state.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/native-user-transcript-dispatch.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/native-completion-dispatch.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/ack-session-update-order.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-events/event-logging-selection.yaml
+deviations:
+- what: Malformed provider JSON warning previews and client receive failure traces omit raw content/credentials;
+    skip, close and error behavior remain unchanged.
+  why: Repository redaction rules prohibit exposing realtime payloads or secrets through diagnostics.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1294-L1309
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
+- handler.py _installed_sdk_version L133-L137 and _sdk_import_error L140-L149 are B159 Python SDK packaging only,
+  not native gateway behavior. Their aws-sdk-bedrock-runtime[awscrt]>=0.10.0,<0.12.0 and pip install litellm[bedrock-realtime]
+  diagnostics are not Rust capability errors. Constructor delegates BaseAWS initialization B590; SDK-version lookup
+  storage belongs to that Python packaging seam.
+- 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: BedrockRealtime.async_realtime L242-L346;
+  BedrockRealtime._run_session L348-L411; BedrockRealtime._bridge L413-L457 belong to B666.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock
+  L459-L511; BedrockRealtime._forward_bedrock_to_client L513-L589 belong to B667.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__
+  L83-L124; BedrockRealtimeConfig.get_error_class L126-L132; BedrockRealtimeConfig.validate_environment L134-L136;
+  BedrockRealtimeConfig.get_complete_url L138-L140; BedrockRealtimeConfig.requires_session_configuration L142-L144;
+  BedrockRealtimeConfig.session_configuration_request L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format
+  L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate L216-L233; BedrockRealtimeConfig.transform_session_update_event
+  L235-L356; BedrockRealtimeConfig._session_object L670-L682; BedrockRealtimeConfig.session_created_event L684-L694;
+  BedrockRealtimeConfig.session_updated_event L696-L707 belong to B661.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
   L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event
   L452-L518; BedrockRealtimeConfig.transform_response_create_event L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages
   L568-L583; BedrockRealtimeConfig.transform_response_cancel_event L585-L597; BedrockRealtimeConfig.session_close_messages
   L599-L626; BedrockRealtimeConfig.transform_realtime_request L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event
-  L1212-L1273 belong to B662; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event L709-L820;
-  BedrockRealtimeConfig._parse_generation_stage L823-L831; BedrockRealtimeConfig._current_user_item_id L833-L837;
-  BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event L849-L852;
-  BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
+  L1212-L1273 belong to B662.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event
+  L709-L820; BedrockRealtimeConfig._parse_generation_stage L822-L831; BedrockRealtimeConfig._current_user_item_id
+  L833-L837; BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event
+  L849-L852; BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
   L909-L922; BedrockRealtimeConfig.transform_text_output_event L924-L964; BedrockRealtimeConfig.transform_audio_output_event
-  L966-L999 belong to B663; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta L854-L875; BedrockRealtimeConfig.leftover_usage_done_events
-  L877-L893; BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
-  L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
-  L1159-L1210 belong to B664; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
-  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
-  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
-  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
-  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
-  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
-  L696-L707 belong to B661; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime.async_realtime L242-L346; BedrockRealtime._run_session
-  L348-L411; BedrockRealtime._bridge L413-L457 belong to B666; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock L459-L511; BedrockRealtime._forward_bedrock_to_client
-  L513-L589 belong to B667; reuse that implementation or its injected typed boundary.
+  L966-L999 belong to B663.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta
+  L854-L875; BedrockRealtimeConfig.leftover_usage_done_events L877-L893; BedrockRealtimeConfig.transform_content_end_event
+  L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event L1103-L1127; BedrockRealtimeConfig._response_done_events
+  L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event L1159-L1210 belong to B664.'
 pitfalls:
-- Preserve unknown event behavior, provider exceptions and content-free event logging.
+- The session becomes committed before modalities validation or ack delivery, so an ack failure must not make the
+  attempt replayable.
+- Provider event dispatch silently ignores unknown events, while client event dispatch in B662 warns about unknown
+  message types.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

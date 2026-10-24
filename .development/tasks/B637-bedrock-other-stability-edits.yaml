@@ -10,8 +10,9 @@ description: >-
   BedrockStabilityImageEditConfig._is_stability_edit_model L55-L86; BedrockStabilityImageEditConfig.get_error_class
   L88-L94; BedrockStabilityImageEditConfig.get_supported_openai_params L96-L105; BedrockStabilityImageEditConfig.map_openai_params
   L107-L158; BedrockStabilityImageEditConfig.transform_image_edit_request L160-L277; BedrockStabilityImageEditConfig.transform_image_edit_response
-  L279-L349; BedrockStabilityImageEditConfig.use_multipart_form_data L351-L355; BedrockStabilityImageEditConfig.get_complete_url
-  L357-L374; BedrockStabilityImageEditConfig.validate_environment L376-L407.
+  pre-cost branch L279-L340 and return L349-L349; BedrockStabilityImageEditConfig.use_multipart_form_data L351-L355;
+  BedrockStabilityImageEditConfig.get_complete_url L357-L374; BedrockStabilityImageEditConfig.validate_environment
+  L376-L407.
 
 
   Reuse the B068 image-price projection for llm_provider-x-litellm-response-cost and the existing Stability aspect-ratio
@@ -20,6 +21,41 @@ description: >-
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: stability_edit_model_selection: A truthy lowercased model qualifies only if it contains
+  stability. and one of upscale,outpaint,inpaint,erase,remove-background,search-recolor,search-replace,control-sketch,control-structure,style-guide,style-transfer.
+  These are substring tests; empty/None is false. No raw-catalog flag is required. Base initialization is B2202
+  no-op. image_and_mask_fields: Start output_format=png and include non-None/nonempty prompt. Optional image bytes
+  become base64, strings pass through unchanged, file-like objects read from their current position (no Canvas seek-to-zero),
+  and other SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring put the image
+  under init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take the first item
+  of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string conversion;
+  an empty list becomes the literal [] string. Options can overwrite a generated init_image. native_edit_options:
+  Skip underscore-prefixed and None options. Convert left,right,up,down,seed with int and strength,creativity,control_strength,grow_mask,fidelity,composition_fidelity,style_strength,change_strength
+  with float; ValueError/TypeError preserves the original value, while other conversion errors propagate. Pass negative_prompt,aspect_ratio,output_format,model,mode,style_preset,select_prompt,search_prompt
+  unchanged. Ignore all remaining keys. Return body and an empty second mapping; _n does not trigger a request loop
+  and _response_format never creates URLs. stability_artifact_results: Decode JSON, then if errors key is present
+  raise B682 error with original status/headers and Bedrock Stability error: {errors}, regardless of images or error
+  truthiness. Otherwise inspect only the first finish_reasons element when the container and element are truthy;
+  raise status400 with Bedrock Stability error: {first_reason}. Later nonempty reasons do not matter. Success maps
+  truthy images entries to ordered ImageObject(b64_json=value,url=None,revised_prompt=None); absent/empty/all-falsey
+  images are permitted. This path reads images, not artifacts, and constructs fresh shared ImageResponse defaults.
+  filtered_result_error: decode_stability_reply failure becomes B682 error with original status/headers and Error
+  parsing Bedrock Stability response: {decoder_error}; parsed malformed records fail outside that catch. The provider
+  transform does not itself reject non-200 HTTP status without an errors/finish-reason indication; B638 transport
+  owns HTTP rejection. B068 adds llm_provider-x-litellm-response-cost from output_cost_per_image with absent default0
+  and None omitted, without multiplying by image count; catalog or conversion failures propagate, unlike B636. stability_edit_url:
+  use_multipart_form_data returns False. get_complete_url returns literal bedrock://image-edit placeholder, unused
+  by B638 native URL construction. validate_environment uses an empty mapping for None, adds Content-Type=application/json
+  only if that exact key is absent, and preserves other headers; it performs no credential lookup. get_error_class
+  delegates B682 preserving message/status/headers. stability_option_mapping: Supported params are n,size,response_format,mask
+  in that order. Copy options; map exact sizes 1024x1024,512x512,256x256 to aspect_ratio=1:1, 1792x1024 to 16:9
+  and 1024x1792 to 9:16. Unknown sizes add nothing. Store n as _n and response_format as _response_format, then
+  remove size,n,response_format. An unsupported key with falsey drop_params raises ValueError Parameter {key} is
+  not supported for model {model}. Supported parameters are ['n', 'size', 'response_format', 'mask']. Set drop_params=True
+  to drop unsupported parameters. With truthy drop_params the code does not remove unknown keys from its initial
+  copy, despite the comment; retained fields may later be accepted by request building.
 
 
   Implement crates/betterlite-bedrock/src/stability_edits.rs with adjacent tests under stability_edits/. Keep each
@@ -37,9 +73,9 @@ description: >-
 
   Write rstest function stability_edits_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): stability_edit_model_selection, image_and_mask_fields, native_edit_options, stability_artifact_results,
-  filtered_result_error, stability_edit_url. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  filtered_result_error, stability_edit_url, stability_option_mapping. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_stability_edits* using HelperCase:
@@ -56,10 +92,10 @@ description: >-
   success/failure categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 276 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 295 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 553 planned, 575 maximum changed lines.
+  Budget from 270 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 265 production lines, 280 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 740 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -81,45 +117,66 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L55-L407
-  why: >-
-    Own BedrockStabilityImageEditConfig._is_stability_edit_model, BedrockStabilityImageEditConfig.get_error_class,
+  why: Own BedrockStabilityImageEditConfig._is_stability_edit_model, BedrockStabilityImageEditConfig.get_error_class,
     BedrockStabilityImageEditConfig.get_supported_openai_params, BedrockStabilityImageEditConfig.map_openai_params,
     BedrockStabilityImageEditConfig.transform_image_edit_request, BedrockStabilityImageEditConfig.transform_image_edit_response,
     BedrockStabilityImageEditConfig.use_multipart_form_data, BedrockStabilityImageEditConfig.get_complete_url, BedrockStabilityImageEditConfig.validate_environment.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L177-L183
+  why: Exact five-entry size mapping, reused from the native Stability type owner B046.
 dod:
-- text: >-
-    stability edit model selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-edit-model-selection.yaml.
+- text: 'stability_edit_model_selection: A truthy lowercased model qualifies only if it contains stability. and
+    one of upscale,outpaint,inpaint,erase,remove-background,search-recolor,search-replace,control-sketch,control-structure,style-guide,style-transfer.
+    These are substring tests; empty/None is false. No raw-catalog flag is required. Base initialization is B2202
+    no-op.'
   proof:
   - case-stability-edit-model-selection
   - oracle
   - helper-python
-- text: >-
-    image and mask fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/image-and-mask-fields.yaml.
+- text: 'image_and_mask_fields: Start output_format=png and include non-None/nonempty prompt. Optional image bytes
+    become base64, strings pass through unchanged, file-like objects read from their current position (no Canvas
+    seek-to-zero), and other SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring
+    put the image under init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take
+    the first item of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string
+    conversion; an empty list becomes the literal [] string. Options can overwrite a generated init_image.'
   proof:
   - case-image-and-mask-fields
   - oracle
   - helper-python
-- text: >-
-    native edit options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/native-edit-options.yaml.
+- text: 'native_edit_options: Skip underscore-prefixed and None options. Convert left,right,up,down,seed with int
+    and strength,creativity,control_strength,grow_mask,fidelity,composition_fidelity,style_strength,change_strength
+    with float; ValueError/TypeError preserves the original value, while other conversion errors propagate. Pass
+    negative_prompt,aspect_ratio,output_format,model,mode,style_preset,select_prompt,search_prompt unchanged. Ignore
+    all remaining keys. Return body and an empty second mapping; _n does not trigger a request loop and _response_format
+    never creates URLs.'
   proof:
   - case-native-edit-options
   - oracle
   - helper-python
-- text: >-
-    stability artifact results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-artifact-results.yaml.
+- text: 'stability_artifact_results: Decode JSON, then if errors key is present raise B682 error with original status/headers
+    and Bedrock Stability error: {errors}, regardless of images or error truthiness. Otherwise inspect only the
+    first finish_reasons element when the container and element are truthy; raise status400 with Bedrock Stability
+    error: {first_reason}. Later nonempty reasons do not matter. Success maps truthy images entries to ordered ImageObject(b64_json=value,url=None,revised_prompt=None);
+    absent/empty/all-falsey images are permitted. This path reads images, not artifacts, and constructs fresh shared
+    ImageResponse defaults.'
   proof:
   - case-stability-artifact-results
   - oracle
   - helper-python
-- text: >-
-    filtered result error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/filtered-result-error.yaml.
+- text: 'filtered_result_error: decode_stability_reply failure becomes B682 error with original status/headers and
+    Error parsing Bedrock Stability response: {decoder_error}; parsed malformed records fail outside that catch.
+    The provider transform does not itself reject non-200 HTTP status without an errors/finish-reason indication;
+    B638 transport owns HTTP rejection. B068 adds llm_provider-x-litellm-response-cost from output_cost_per_image
+    with absent default0 and None omitted, without multiplying by image count; catalog or conversion failures propagate,
+    unlike B636.'
   proof:
   - case-filtered-result-error
   - oracle
   - helper-python
-- text: >-
-    stability edit url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-edit-url.yaml.
+- text: 'stability_edit_url: use_multipart_form_data returns False. get_complete_url returns literal bedrock://image-edit
+    placeholder, unused by B638 native URL construction. validate_environment uses an empty mapping for None, adds
+    Content-Type=application/json only if that exact key is absent, and preserves other headers; it performs no
+    credential lookup. get_error_class delegates B682 preserving message/status/headers.'
   proof:
   - case-stability-edit-url
   - oracle
@@ -131,47 +188,87 @@ dod:
 - text: decode_stability_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'stability_option_mapping: Supported params are n,size,response_format,mask in that order. Copy options;
+    map exact sizes 1024x1024,512x512,256x256 to aspect_ratio=1:1, 1792x1024 to 16:9 and 1024x1792 to 9:16. Unknown
+    sizes add nothing. Store n as _n and response_format as _response_format, then remove size,n,response_format.
+    An unsupported key with falsey drop_params raises ValueError Parameter {key} is not supported for model {model}.
+    Supported parameters are [''n'', ''size'', ''response_format'', ''mask'']. Set drop_params=True to drop unsupported
+    parameters. With truthy drop_params the code does not remove unknown keys from its initial copy, despite the
+    comment; retained fields may later be accepted by request building.'
+  proof:
+  - case-stability-option-mapping
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-stability-edit-model-selection
-    why: The stability-edit-model-selection behavior is missing or differs from its pinned fixture.
+    why: A truthy lowercased model qualifies only if it contains stability. and one of upscale,outpaint,inpaint,erase,remove-background,search-recolor,search-replace,control-sketch,control-structure,style-guide,style-transfer.
+      These are substring tests; empty/None is false. No raw-catalog flag is required. Base initialization is B2202
+      no-op.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_stability_edit_model_selection$/)'
   - id: case-image-and-mask-fields
-    why: The image-and-mask-fields behavior is missing or differs from its pinned fixture.
+    why: Start output_format=png and include non-None/nonempty prompt. Optional image bytes become base64, strings
+      pass through unchanged, file-like objects read from their current position (no Canvas seek-to-zero), and other
+      SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring put the image under
+      init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take the first item
+      of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string conversion;
+      an empty list becomes the literal [] string. Options can overwrite a generated init_image.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_image_and_mask_fields$/)'
   - id: case-native-edit-options
-    why: The native-edit-options behavior is missing or differs from its pinned fixture.
+    why: Skip underscore-prefixed and None options. Convert left,right,up,down,seed with int and strength,creativity,control_strength,grow_mask,fidelity,composition_fidelity,style_strength,change_strength
+      with float; ValueError/TypeError preserves the original value, while other conversion errors propagate. Pass
+      negative_prompt,aspect_ratio,output_format,model,mode,style_preset,select_prompt,search_prompt unchanged.
+      Ignore all remaining keys. Return body and an empty second mapping; _n does not trigger a request loop and
+      _response_format never creates URLs.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_native_edit_options$/)'
   - id: case-stability-artifact-results
-    why: The stability-artifact-results behavior is missing or differs from its pinned fixture.
+    why: 'Decode JSON, then if errors key is present raise B682 error with original status/headers and Bedrock Stability
+      error: {errors}, regardless of images or error truthiness. Otherwise inspect only the first finish_reasons
+      element when the container and element are truthy; raise status400 with Bedrock Stability error: {first_reason}.
+      Later nonempty reasons do not matter. Success maps truthy images entries to ordered ImageObject(b64_json=value,url=None,revised_prompt=None);
+      absent/empty/all-falsey images are permitted. This path reads images, not artifacts, and constructs fresh
+      shared ImageResponse defaults.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_stability_artifact_results$/)'
   - id: case-filtered-result-error
-    why: The filtered-result-error behavior is missing or differs from its pinned fixture.
+    why: 'decode_stability_reply failure becomes B682 error with original status/headers and Error parsing Bedrock
+      Stability response: {decoder_error}; parsed malformed records fail outside that catch. The provider transform
+      does not itself reject non-200 HTTP status without an errors/finish-reason indication; B638 transport owns
+      HTTP rejection. B068 adds llm_provider-x-litellm-response-cost from output_cost_per_image with absent default0
+      and None omitted, without multiplying by image count; catalog or conversion failures propagate, unlike B636.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_filtered_result_error$/)'
   - id: case-stability-edit-url
-    why: The stability-edit-url behavior is missing or differs from its pinned fixture.
+    why: use_multipart_form_data returns False. get_complete_url returns literal bedrock://image-edit placeholder,
+      unused by B638 native URL construction. validate_environment uses an empty mapping for None, adds Content-Type=application/json
+      only if that exact key is absent, and preserves other headers; it performs no credential lookup. get_error_class
+      delegates B682 preserving message/status/headers.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_stability_edit_url$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_stability_edits.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_stability_edits.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_stability_edits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_stability_edits*")"
       && grep -lq 'bedrock_other_stability_edits' tools/oracle/fuzz/corpus/helper_case/bedrock_other_stability_edits*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_stability_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_stability_edits)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_stability_edits)"
       && grep -q 'decode_stability_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_stability_edits.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_stability_edits_corpus$/)'
+  - id: case-stability-option-mapping
+    why: Supported params are n,size,response_format,mask in that order. Copy options; map exact sizes 1024x1024,512x512,256x256
+      to aspect_ratio=1:1, 1792x1024 to 16:9 and 1024x1792 to 9:16. Unknown sizes add nothing. Store n as _n and
+      response_format as _response_format, then remove size,n,response_format. An unsupported key with falsey drop_params
+      raises ValueError Parameter {key} is not supported for model {model}. Supported parameters are ['n', 'size',
+      'response_format', 'mask']. Set drop_params=True to drop unsupported parameters. With truthy drop_params the
+      code does not remove unknown keys from its initial copy, despite the comment; retained fields may later be
+      accepted by request building.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_stability_option_mapping$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-edit-model-selection.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/image-and-mask-fields.yaml
@@ -179,6 +276,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-artifact-results.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/filtered-result-error.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-edit-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-stability-edits/stability-option-mapping.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -186,8 +284,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve model selection, image/mask conversion, seed/negative-prompt/native fields and body/auth/url validation.
+- The mapper's drop_params branch leaves unsupported fields in its initial copy.
+- Only the first Stability finish reason is inspected, unlike the generation adapter's joined reasons.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: standard

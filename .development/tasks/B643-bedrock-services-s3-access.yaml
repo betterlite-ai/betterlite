@@ -1,16 +1,11 @@
 id: B643
 title: Bedrock managed S3 object authorization
 description: >-
-  Add ManagedS3Object and TrustedS3Settings carrying operator-owned input/output bucket and prefix, separate static
-  S3 credentials, KMS key and bucket owner. Resolve AWS_S3_BUCKET_NAME, AWS_S3_OUTPUT_BUCKET_NAME, AWS_S3_ENCRYPTION_KEY_ID
-  and AWS_S3_BUCKET_OWNER plus their deployment fields only in config. Port the S3-specific managed-cloud-file helper
-  contract here: percent-decode once, validate the configured bucket/prefix and relative path, and require one of
-  litellm-bedrock-files-, litellm-bedrock-files/, litellm-batch-outputs/. Shared GCS/unified proxy ownership checks
-  stay B087. Decode managed ids and validate scheme/bucket/prefix; allow_legacy_cloud_file_ids defaults false. The
-  immutable trusted credential snapshot cannot be forged by request JSON. Reject foreign buckets, traversal, credential-bearing
-  URLs and untrusted _litellm_internal_model_credentials before signing or fetching. The leaf receives an injected
-  batch-model resolver returning provider-local ResolvedBatchModel and preserves its warning/fallback outcome; B030
-  wires the upper B174 resolver, so this leaf never imports betterlite-provider.
+  Implement Bedrock native S3 file-ID extraction, trusted bucket selection, shared object authorization and batch
+  model-name helpers. Keep native S3 storage operations distinct from the absent enterprise managed-files hook.
+  B2208 owns common URI/path validation and the trusted legacy flag; this task adds Bedrock wrappers, exact error
+  propagation and configuration selection. Call the shared B174 resolver from its lower-level implementation rather
+  than copying its algorithm or hiding the dependency behind an injected provider callback.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
@@ -20,12 +15,74 @@ description: >-
   L269-L279. litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner
   L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
   L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871. litellm/llms/bedrock/files/handler.py: BedrockFilesHandler.__init__
-  L30-L34; BedrockFilesHandler._extract_s3_uri_from_file_id L36-L39; BedrockFilesHandler._parse_s3_uri L41-L62;
-  BedrockFilesHandler._get_configured_s3_bucket_name L64-L67.
+  L30-L34.
 
 
   Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
   prerequisite.
+
+
+  Named case contracts: managed_file_id_decode: decode_managed_file_id adds = padding to a multiple of4, decodes
+  URL-safe base64 with the source permissive decoder and decodes UTF-8. If decoded text starts litellm_proxy and
+  contains llm_output_file_id,, return the substring after its first occurrence up to the next such marker or semicolon.
+  It need not be an S3 URI at this extraction stage. Swallow every decoding error, then accept the original string
+  only when it starts exact s3://; otherwise ValueError file_id must be a managed LiteLLM S3 file id. Raw percent-encoded
+  schemes are not accepted by this wrapper even though the lower URI validator decodes once. configured_input_output_buckets:
+  _trusted_s3_model_credentials reads only a MappingProxyType under _litellm_internal_model_credentials; otherwise
+  return default s3_bucket_name=None,s3_output_bucket_name=None. Copy and validate the trusted snapshot as an extra-ignore
+  Pydantic record with optional string fields. Single-bucket lookup uses truthy trusted s3_bucket_name then os.getenv
+  AWS_S3_BUCKET_NAME. Multi-bucket lookup independently selects input and output from trusted values then AWS_S3_BUCKET_NAME/AWS_S3_OUTPUT_BUCKET_NAME,
+  removes falsey values and deduplicates in input-before-output order. A missing single bucket or empty tuple raises
+  ValueError S3 bucket_name is required. Set 's3_bucket_name' in proxy config or AWS_S3_BUCKET_NAME for Bedrock
+  file content retrieval. An output-only configuration is sufficient for the multi-bucket method, but not the single-bucket
+  method. configured_prefix_boundary: Delegate B2208 validate_managed_cloud_file_id with scheme=s3:// and ordered
+  allowed prefixes litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/. _validate_file_id_against_configured_buckets
+  tries all but the last configured bucket while suppressing only ValueError, then returns or raises the last result.
+  Preserve B2208 configured-prefix boundary and one-pass decoding cases. This helper is called with a nonempty tuple
+  from bucket selection; do not fabricate an empty-tuple proxy case. foreign_bucket_rejected: _resolve_managed_s3_object
+  resolves configured buckets and B2208 legacy policy before entering its try. Only extraction/authorization ValueError
+  inside the try becomes B682 BedrockError status400 with the original message and a synthetic HTTP400 response
+  whose text matches and request is GET https://litellm.ai. Missing configuration and trusted-snapshot validation
+  errors occur before the catch and remain their original errors. If several buckets reject, expose the last bucket's
+  error, not the first. legacy_id_opt_in: Reuse B2208 trusted legacy-policy cases: default False, true bool or case-insensitive
+  trimmed strings 1,true,yes,on opt in; numeric1 and untrusted request values do not. Legacy mode relaxes managed-name
+  prefix only, retaining configured-bucket/prefix and path validation. B2208 owns the loader and corpus; do not
+  define another flag or environment variable. request_credentials_rejected: Request-supplied s3_bucket_name,s3_output_bucket_name
+  and a plain dict pretending to be _litellm_internal_model_credentials do not authorize a bucket; ignore them and
+  use trusted snapshot/environment. A malformed genuinely trusted snapshot preserves Pydantic validation errors.
+  _frozen_mapping constructs an immutable shallow MappingProxyType over a fresh dict of input pairs, with the last
+  duplicate key winning; nested values are not recursively frozen. Native fixtures distinguish a trusted snapshot
+  from a JSON mapping. kms_owner_precedence: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting
+  with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first nonempty
+  string from litellm_params then optional_params, otherwise B129 get_secret_str(env), then None. Ignore explicit
+  nonstrings and empty strings, retain whitespace strings, and do not trim or validate KMS/account syntax. These
+  two settings may come from request optional_params, unlike trusted bucket authorization. s3_model_helpers: CommonBatchFilesUtils
+  construction creates B590 BaseAWSLLM. Its model helper removes one exact leading bedrock/ and otherwise preserves
+  the model. _strip_llm_routing_prefix calls B174 get_llm_provider(model,custom_llm_provider=None) and returns the
+  selected model; on any exception log at exception level litellm.llms.bedrock.files.transformation.py::_strip_llm_routing_prefix()
+  - Error inferring custom_llm_provider - %s and return the original model. _invoke_route_model then removes one
+  leading invoke/ from that result and prepends invoke/. Preserve resolver errors as this logged fallback, not as
+  a new rejection. plain_s3_uri_parser: CommonBatchFilesUtils.parse_s3_uri is deliberately simpler than authorization:
+  require exact s3:// and at least one slash afterward, else ValueError Invalid S3 URI format: {s3_uri}. Split only
+  the first slash and return bucket,key without percent decoding or validation; empty bucket/key and traversal are
+  accepted here and must not acquire authorization merely by parsing. BedrockFilesHandler._parse_s3_uri instead
+  delegates B2208 full authorization with the three managed prefixes and its explicit legacy argument default False.
+  files_handler_initialization: BedrockFilesHandler calls B590 base initialization and gets the B173 async client
+  for LlmProviders.BEDROCK. Its extraction and single-bucket methods delegate to this task's shared functions with
+  identical errors; no extra lookup or request is made during construction.
+
+
+  Load s3_bucket_name, s3_output_bucket_name, s3_encryption_key_id, s3_bucket_owner through betterlite-config, with
+  injected environment lookup and the defaults/precedence stated here. Deployment inputs use litellm_params and
+  global inputs use litellm_settings. Add config rstest bedrock_services_s3_access_config_cases; each named loads_<key>
+  case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml parser seeds. Reject
+  unrelated keys.
+
+
+  All four environment variables and their four deployment settings default None. The real B002 loader cases for
+  deployment bucket names feed the immutable B1021 credential snapshot; request fields do not. Environment bucket
+  lookups use os.getenv semantics, whereas KMS/owner lookups use B129 secret resolution. Reuse B2208 allow_legacy_cloud_file_ids
+  configuration. Separate S3 static credentials belong to B644, not this authorization task.
 
 
   Implement crates/betterlite-bedrock/src/s3_access.rs with adjacent tests under s3_access/. Keep each Rust module
@@ -43,10 +100,9 @@ description: >-
 
   Write rstest function s3_access_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   managed_file_id_decode, configured_input_output_buckets, configured_prefix_boundary, foreign_bucket_rejected,
-  legacy_id_opt_in, request_credentials_rejected, s3_static_key_pair, kms_owner_precedence, encoded_traversal, managed_prefixes,
-  trusted_legacy_boolean_strings. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  legacy_id_opt_in, request_credentials_rejected, kms_owner_precedence, s3_model_helpers, plain_s3_uri_parser, files_handler_initialization.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_access* using HelperCase:
@@ -64,14 +120,14 @@ description: >-
 
 
   Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/s3_access.rs
-  and its loader wiring: AWS_S3_BUCKET_NAME, AWS_S3_OUTPUT_BUCKET_NAME, AWS_S3_ENCRYPTION_KEY_ID, AWS_S3_BUCKET_OWNER,
-  allow_legacy_cloud_file_ids. Module-level settings enter litellm_settings; deployment settings enter litellm_params;
-  environment lookup is injected. Keep the defaults and precedence specified above and in the linked branches; existing
-  key owners remain unchanged. Write config rstest bedrock_services_s3_access_config_cases with named cases loads_aws_s3_bucket_name,
-  loads_aws_s3_output_bucket_name, loads_aws_s3_encryption_key_id, loads_aws_s3_bucket_owner, loads_allow_legacy_cloud_file_ids,
-  plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
-  value, default, precedence and secret redaction where applicable. Seed B002 config_yaml with new bedrock_services_s3_access*
-  files for every key; reuse its parser/fuzz target.
+  and its loader wiring: AWS_S3_BUCKET_NAME, AWS_S3_OUTPUT_BUCKET_NAME, AWS_S3_ENCRYPTION_KEY_ID, AWS_S3_BUCKET_OWNER.
+  Module-level settings enter litellm_settings; deployment settings enter litellm_params; environment lookup is
+  injected. Keep the defaults and precedence specified above and in the linked branches; existing key owners remain
+  unchanged. Write config rstest bedrock_services_s3_access_config_cases with named cases loads_aws_s3_bucket_name,
+  loads_aws_s3_output_bucket_name, loads_aws_s3_encryption_key_id, loads_aws_s3_bucket_owner, plus rejects_unrelated_key.
+  Each loads case calls the real config loader with that key and asserts the resolved value, default, precedence
+  and secret redaction where applicable. Seed B002 config_yaml with new bedrock_services_s3_access* files for every
+  key; reuse its parser/fuzz target.
 
 
   The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
@@ -88,10 +144,10 @@ description: >-
   it is not a Python oracle case.
 
 
-  Budget from 195 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 220 production lines, 209 behavior/config-test lines,
-  99 combined Rust/Python adapter lines, 55 parser target/replay lines, 40 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 648 planned, 650 maximum changed lines.
+  Budget from 169 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 265 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 75 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 745 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -123,90 +179,90 @@ scope:
   - crates/betterlite-config/src/tests.rs
   - crates/betterlite-config/src/tests/bedrock_services_s3_access_config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
+  - crates/betterlite-config/src/providers/bedrock/bedrock_services_s3_access.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_services_s3_access/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L11-L167
-  why: S3 managed-object naming and bucket/prefix authorization called by the covered provider functions; port the
-    S3-specific helper here.
+  why: B2208 owns shared naming and authorization; call it directly rather than porting an S3-specific copy.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L87-L108
   why: Own _frozen_mapping, _invoke_route_model, _strip_llm_routing_prefix. Other functions in this file remain
     with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L166-L279
-  why: >-
-    Own extract_s3_uri_from_file_id, _trusted_s3_model_credentials, get_configured_s3_bucket_name, get_configured_s3_bucket_names,
+  why: Own extract_s3_uri_from_file_id, _trusted_s3_model_credentials, get_configured_s3_bucket_name, get_configured_s3_bucket_names,
     _validate_file_id_against_configured_buckets, _rejected_file_id, _resolve_managed_s3_object. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1786-L1871
-  why: >-
-    Own resolve_s3_encryption_key_id, resolve_s3_bucket_owner, _resolve_s3_setting, CommonBatchFilesUtils.__init__,
+  why: Own resolve_s3_encryption_key_id, resolve_s3_bucket_owner, _resolve_s3_setting, CommonBatchFilesUtils.__init__,
     CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model, CommonBatchFilesUtils.parse_s3_uri. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/handler.py#L30-L67
-  why: >-
-    Own BedrockFilesHandler.__init__, BedrockFilesHandler._extract_s3_uri_from_file_id, BedrockFilesHandler._parse_s3_uri,
-    BedrockFilesHandler._get_configured_s3_bucket_name. Other functions in this file remain with the owners listed
-    below.
+  why: Own only BedrockFilesHandler.__init__; the legacy downloader wrappers have no live caller.
 dod:
-- text: >-
-    managed file id decode: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/managed-file-id-decode.yaml.
+- text: 'managed_file_id_decode: decode_managed_file_id adds = padding to a multiple of4, decodes URL-safe base64
+    with the source permissive decoder and decodes UTF-8. If decoded text starts litellm_proxy and contains llm_output_file_id,,
+    return the substring after its first occurrence up to the next such marker or semicolon. It need not be an S3
+    URI at this extraction stage. Swallow every decoding error, then accept the original string only when it starts
+    exact s3://; otherwise ValueError file_id must be a managed LiteLLM S3 file id. Raw percent-encoded schemes
+    are not accepted by this wrapper even though the lower URI validator decodes once.'
   proof:
   - case-managed-file-id-decode
   - oracle
   - helper-python
-- text: >-
-    configured input output buckets: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/configured-input-output-buckets.yaml.
+- text: 'configured_input_output_buckets: _trusted_s3_model_credentials reads only a MappingProxyType under _litellm_internal_model_credentials;
+    otherwise return default s3_bucket_name=None,s3_output_bucket_name=None. Copy and validate the trusted snapshot
+    as an extra-ignore Pydantic record with optional string fields. Single-bucket lookup uses truthy trusted s3_bucket_name
+    then os.getenv AWS_S3_BUCKET_NAME. Multi-bucket lookup independently selects input and output from trusted values
+    then AWS_S3_BUCKET_NAME/AWS_S3_OUTPUT_BUCKET_NAME, removes falsey values and deduplicates in input-before-output
+    order. A missing single bucket or empty tuple raises ValueError S3 bucket_name is required. Set ''s3_bucket_name''
+    in proxy config or AWS_S3_BUCKET_NAME for Bedrock file content retrieval. An output-only configuration is sufficient
+    for the multi-bucket method, but not the single-bucket method.'
   proof:
   - case-configured-input-output-buckets
   - oracle
   - helper-python
-- text: >-
-    configured prefix boundary: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/configured-prefix-boundary.yaml.
+- text: 'configured_prefix_boundary: Delegate B2208 validate_managed_cloud_file_id with scheme=s3:// and ordered
+    allowed prefixes litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/. _validate_file_id_against_configured_buckets
+    tries all but the last configured bucket while suppressing only ValueError, then returns or raises the last
+    result. Preserve B2208 configured-prefix boundary and one-pass decoding cases. This helper is called with a
+    nonempty tuple from bucket selection; do not fabricate an empty-tuple proxy case.'
   proof:
   - case-configured-prefix-boundary
   - oracle
   - helper-python
-- text: >-
-    foreign bucket rejected: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/foreign-bucket-rejected.yaml.
+- text: 'foreign_bucket_rejected: _resolve_managed_s3_object resolves configured buckets and B2208 legacy policy
+    before entering its try. Only extraction/authorization ValueError inside the try becomes B682 BedrockError status400
+    with the original message and a synthetic HTTP400 response whose text matches and request is GET https://litellm.ai.
+    Missing configuration and trusted-snapshot validation errors occur before the catch and remain their original
+    errors. If several buckets reject, expose the last bucket''s error, not the first.'
   proof:
   - case-foreign-bucket-rejected
   - oracle
   - helper-python
-- text: 'legacy id opt in: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/legacy-id-opt-in.yaml.'
+- text: 'legacy_id_opt_in: Reuse B2208 trusted legacy-policy cases: default False, true bool or case-insensitive
+    trimmed strings 1,true,yes,on opt in; numeric1 and untrusted request values do not. Legacy mode relaxes managed-name
+    prefix only, retaining configured-bucket/prefix and path validation. B2208 owns the loader and corpus; do not
+    define another flag or environment variable.'
   proof:
   - case-legacy-id-opt-in
   - oracle
   - helper-python
-- text: >-
-    request credentials rejected: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/request-credentials-rejected.yaml.
+- text: 'request_credentials_rejected: Request-supplied s3_bucket_name,s3_output_bucket_name and a plain dict pretending
+    to be _litellm_internal_model_credentials do not authorize a bucket; ignore them and use trusted snapshot/environment.
+    A malformed genuinely trusted snapshot preserves Pydantic validation errors. _frozen_mapping constructs an immutable
+    shallow MappingProxyType over a fresh dict of input pairs, with the last duplicate key winning; nested values
+    are not recursively frozen. Native fixtures distinguish a trusted snapshot from a JSON mapping.'
   proof:
   - case-request-credentials-rejected
   - oracle
   - helper-python
-- text: 's3 static key pair: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/s3-static-key-pair.yaml.'
-  proof:
-  - case-s3-static-key-pair
-  - oracle
-  - helper-python
-- text: >-
-    kms owner precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/kms-owner-precedence.yaml.
+- text: 'kms_owner_precedence: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting
+    with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first
+    nonempty string from litellm_params then optional_params, otherwise B129 get_secret_str(env), then None. Ignore
+    explicit nonstrings and empty strings, retain whitespace strings, and do not trim or validate KMS/account syntax.
+    These two settings may come from request optional_params, unlike trusted bucket authorization.'
   proof:
   - case-kms-owner-precedence
-  - oracle
-  - helper-python
-- text: 'encoded traversal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/encoded-traversal.yaml.'
-  proof:
-  - case-encoded-traversal
-  - oracle
-  - helper-python
-- text: 'managed prefixes: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/managed-prefixes.yaml.'
-  proof:
-  - case-managed-prefixes
-  - oracle
-  - helper-python
-- text: >-
-    trusted legacy boolean strings: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-access/trusted-legacy-boolean-strings.yaml.
-  proof:
-  - case-trusted-legacy-boolean-strings
   - oracle
   - helper-python
 - text: New bedrock_services_s3_access seeds parse as the intended call variant and replay through the shared production
@@ -232,10 +288,6 @@ dod:
   proof:
   - config-aws-s3-bucket-owner
   - config-corpus
-- text: allow_legacy_cloud_file_ids is accepted by the config loader with the documented default and precedence.
-  proof:
-  - config-allow-legacy-cloud-file-ids
-  - config-corpus
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
   - config-unknown-key
@@ -245,94 +297,139 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 's3_model_helpers: CommonBatchFilesUtils construction creates B590 BaseAWSLLM. Its model helper removes
+    one exact leading bedrock/ and otherwise preserves the model. _strip_llm_routing_prefix calls B174 get_llm_provider(model,custom_llm_provider=None)
+    and returns the selected model; on any exception log at exception level litellm.llms.bedrock.files.transformation.py::_strip_llm_routing_prefix()
+    - Error inferring custom_llm_provider - %s and return the original model. _invoke_route_model then removes one
+    leading invoke/ from that result and prepends invoke/. Preserve resolver errors as this logged fallback, not
+    as a new rejection.'
+  proof:
+  - case-s3-model-helpers
+  - oracle
+  - helper-python
+- text: 'plain_s3_uri_parser: CommonBatchFilesUtils.parse_s3_uri is deliberately simpler than authorization: require
+    exact s3:// and at least one slash afterward, else ValueError Invalid S3 URI format: {s3_uri}. Split only the
+    first slash and return bucket,key without percent decoding or validation; empty bucket/key and traversal are
+    accepted here and must not acquire authorization merely by parsing. BedrockFilesHandler._parse_s3_uri instead
+    delegates B2208 full authorization with the three managed prefixes and its explicit legacy argument default
+    False.'
+  proof:
+  - case-plain-s3-uri-parser
+  - oracle
+  - helper-python
+- text: 'files_handler_initialization: BedrockFilesHandler calls B590 base initialization and gets the B173 async
+    client for LlmProviders.BEDROCK. Its extraction and single-bucket methods delegate to this task''s shared functions
+    with identical errors; no extra lookup or request is made during construction.'
+  proof:
+  - case-files-handler-initialization
+  - oracle
+  - helper-python
+- text: The real config loader resolves s3_bucket_name, including its default and precedence.
+  proof:
+  - config-s3-bucket-name
+- text: The real config loader resolves s3_output_bucket_name, including its default and precedence.
+  proof:
+  - config-s3-output-bucket-name
+- text: The real config loader resolves s3_encryption_key_id, including its default and precedence.
+  proof:
+  - config-s3-encryption-key-id
+- text: The real config loader resolves s3_bucket_owner, including its default and precedence.
+  proof:
+  - config-s3-bucket-owner
 checks:
   optional:
   - mutants
   commands:
   - id: case-managed-file-id-decode
-    why: The managed-file-id-decode behavior is missing or differs from its pinned fixture.
+    why: decode_managed_file_id adds = padding to a multiple of4, decodes URL-safe base64 with the source permissive
+      decoder and decodes UTF-8. If decoded text starts litellm_proxy and contains llm_output_file_id,, return the
+      substring after its first occurrence up to the next such marker or semicolon. It need not be an S3 URI at
+      this extraction stage. Swallow every decoding error, then accept the original string only when it starts exact
+      s3://; otherwise ValueError file_id must be a managed LiteLLM S3 file id. Raw percent-encoded schemes are
+      not accepted by this wrapper even though the lower URI validator decodes once.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_managed_file_id_decode$/)'
   - id: case-configured-input-output-buckets
-    why: The configured-input-output-buckets behavior is missing or differs from its pinned fixture.
+    why: _trusted_s3_model_credentials reads only a MappingProxyType under _litellm_internal_model_credentials;
+      otherwise return default s3_bucket_name=None,s3_output_bucket_name=None. Copy and validate the trusted snapshot
+      as an extra-ignore Pydantic record with optional string fields. Single-bucket lookup uses truthy trusted s3_bucket_name
+      then os.getenv AWS_S3_BUCKET_NAME. Multi-bucket lookup independently selects input and output from trusted
+      values then AWS_S3_BUCKET_NAME/AWS_S3_OUTPUT_BUCKET_NAME, removes falsey values and deduplicates in input-before-output
+      order. A missing single bucket or empty tuple raises ValueError S3 bucket_name is required. Set 's3_bucket_name'
+      in proxy config or AWS_S3_BUCKET_NAME for Bedrock file content retrieval. An output-only configuration is
+      sufficient for the multi-bucket method, but not the single-bucket method.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_configured_input_output_buckets$/)'
   - id: case-configured-prefix-boundary
-    why: The configured-prefix-boundary behavior is missing or differs from its pinned fixture.
+    why: Delegate B2208 validate_managed_cloud_file_id with scheme=s3:// and ordered allowed prefixes litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/.
+      _validate_file_id_against_configured_buckets tries all but the last configured bucket while suppressing only
+      ValueError, then returns or raises the last result. Preserve B2208 configured-prefix boundary and one-pass
+      decoding cases. This helper is called with a nonempty tuple from bucket selection; do not fabricate an empty-tuple
+      proxy case.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_configured_prefix_boundary$/)'
   - id: case-foreign-bucket-rejected
-    why: The foreign-bucket-rejected behavior is missing or differs from its pinned fixture.
+    why: _resolve_managed_s3_object resolves configured buckets and B2208 legacy policy before entering its try.
+      Only extraction/authorization ValueError inside the try becomes B682 BedrockError status400 with the original
+      message and a synthetic HTTP400 response whose text matches and request is GET https://litellm.ai. Missing
+      configuration and trusted-snapshot validation errors occur before the catch and remain their original errors.
+      If several buckets reject, expose the last bucket's error, not the first.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_foreign_bucket_rejected$/)'
   - id: case-legacy-id-opt-in
-    why: The legacy-id-opt-in behavior is missing or differs from its pinned fixture.
+    why: 'Reuse B2208 trusted legacy-policy cases: default False, true bool or case-insensitive trimmed strings
+      1,true,yes,on opt in; numeric1 and untrusted request values do not. Legacy mode relaxes managed-name prefix
+      only, retaining configured-bucket/prefix and path validation. B2208 owns the loader and corpus; do not define
+      another flag or environment variable.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_legacy_id_opt_in$/)'
   - id: case-request-credentials-rejected
-    why: The request-credentials-rejected behavior is missing or differs from its pinned fixture.
+    why: Request-supplied s3_bucket_name,s3_output_bucket_name and a plain dict pretending to be _litellm_internal_model_credentials
+      do not authorize a bucket; ignore them and use trusted snapshot/environment. A malformed genuinely trusted
+      snapshot preserves Pydantic validation errors. _frozen_mapping constructs an immutable shallow MappingProxyType
+      over a fresh dict of input pairs, with the last duplicate key winning; nested values are not recursively frozen.
+      Native fixtures distinguish a trusted snapshot from a JSON mapping.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_request_credentials_rejected$/)'
-  - id: case-s3-static-key-pair
-    why: The s3-static-key-pair behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_s3_static_key_pair$/)'
   - id: case-kms-owner-precedence
-    why: The kms-owner-precedence behavior is missing or differs from its pinned fixture.
+    why: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID
+      or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first nonempty string from litellm_params then optional_params,
+      otherwise B129 get_secret_str(env), then None. Ignore explicit nonstrings and empty strings, retain whitespace
+      strings, and do not trim or validate KMS/account syntax. These two settings may come from request optional_params,
+      unlike trusted bucket authorization.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_kms_owner_precedence$/)'
-  - id: case-encoded-traversal
-    why: The encoded-traversal behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_encoded_traversal$/)'
-  - id: case-managed-prefixes
-    why: The managed-prefixes behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_managed_prefixes$/)'
-  - id: case-trusted-legacy-boolean-strings
-    why: The trusted-legacy-boolean-strings behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_trusted_legacy_boolean_strings$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_access.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_access.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_access*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_access*")"
       && grep -lq 'bedrock_services_s3_access' tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_access*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_s3_access$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_access)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_access)"
       && grep -q 'decode_managed_file_id' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_access.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_access_corpus$/)'
   - id: config-aws-s3-bucket-name
     why: The AWS_S3_BUCKET_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_bucket_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_bucket_name$/)'
       && grep -lq 'AWS_S3_BUCKET_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
   - id: config-aws-s3-output-bucket-name
     why: The AWS_S3_OUTPUT_BUCKET_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_output_bucket_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_output_bucket_name$/)'
       && grep -lq 'AWS_S3_OUTPUT_BUCKET_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
   - id: config-aws-s3-encryption-key-id
     why: The AWS_S3_ENCRYPTION_KEY_ID setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_encryption_key_id$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_encryption_key_id$/)'
       && grep -lq 'AWS_S3_ENCRYPTION_KEY_ID' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
   - id: config-aws-s3-bucket-owner
     why: The AWS_S3_BUCKET_OWNER setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_bucket_owner$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_bucket_owner$/)'
       && grep -lq 'AWS_S3_BUCKET_OWNER' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
-  - id: config-allow-legacy-cloud-file-ids
-    why: The allow_legacy_cloud_file_ids setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_allow_legacy_cloud_file_ids$/)'
-      && grep -lq 'allow_legacy_cloud_file_ids' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_s3_access*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
@@ -340,6 +437,38 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_access_secret_safe_failure$/)'
+  - id: case-s3-model-helpers
+    why: CommonBatchFilesUtils construction creates B590 BaseAWSLLM. Its model helper removes one exact leading
+      bedrock/ and otherwise preserves the model. _strip_llm_routing_prefix calls B174 get_llm_provider(model,custom_llm_provider=None)
+      and returns the selected model; on any exception log at exception level litellm.llms.bedrock.files.transformation.py::_strip_llm_routing_prefix()
+      - Error inferring custom_llm_provider - %s and return the original model. _invoke_route_model then removes
+      one leading invoke/ from that result and prepends invoke/. Preserve resolver errors as this logged fallback,
+      not as a new rejection.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_s3_model_helpers$/)'
+  - id: case-plain-s3-uri-parser
+    why: 'CommonBatchFilesUtils.parse_s3_uri is deliberately simpler than authorization: require exact s3:// and
+      at least one slash afterward, else ValueError Invalid S3 URI format: {s3_uri}. Split only the first slash
+      and return bucket,key without percent decoding or validation; empty bucket/key and traversal are accepted
+      here and must not acquire authorization merely by parsing. BedrockFilesHandler._parse_s3_uri instead delegates
+      B2208 full authorization with the three managed prefixes and its explicit legacy argument default False.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_plain_s3_uri_parser$/)'
+  - id: case-files-handler-initialization
+    why: BedrockFilesHandler calls B590 base initialization and gets the B173 async client for LlmProviders.BEDROCK.
+      Its extraction and single-bucket methods delegate to this task's shared functions with identical errors; no
+      extra lookup or request is made during construction.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_files_handler_initialization$/)'
+  - id: config-s3-bucket-name
+    why: s3_bucket_name lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_s3_bucket_name$/)'
+  - id: config-s3-output-bucket-name
+    why: s3_output_bucket_name lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_s3_output_bucket_name$/)'
+  - id: config-s3-encryption-key-id
+    why: s3_encryption_key_id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_s3_encryption_key_id$/)'
+  - id: config-s3-bucket-owner
+    why: s3_bucket_owner lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_s3_bucket_owner$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/managed-file-id-decode.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/configured-input-output-buckets.yaml
@@ -347,128 +476,130 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/foreign-bucket-rejected.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/legacy-id-opt-in.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/request-credentials-rejected.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/s3-static-key-pair.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-access/kms-owner-precedence.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/encoded-traversal.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/managed-prefixes.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/trusted-legacy-boolean-strings.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/s3-model-helpers.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/plain-s3-uri-parser.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-access/files-handler-initialization.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not port them.'
+- All functions in cloud_storage_security.py are B2208. This task only calls the shared validator and trusted legacy
+  policy. Native S3 uploads/downloads do not install enterprise managed file/batch hooks; API-family owners retain
+  the open-source missing-hook outcomes.
+- 'litellm/llms/bedrock/files/handler.py: BedrockFilesHandler._extract_s3_uri_from_file_id L36-L39, _parse_s3_uri
+  L41-L62 and _get_configured_s3_bucket_name L64-L67 have no live caller at the pin; only the unreachable legacy
+  downloader calls them.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
-  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
-  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
-  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
-  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
-  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
-  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
-  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
-  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394;
-  BedrockFilesConfig.custom_llm_provider L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment
-  L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
-  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
-  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
+- 'Function ownership inventory litellm/llms/bedrock/files/handler.py: BedrockFilesHandler.afile_content L69-L132;
+  BedrockFilesHandler.file_content L134-L173 belong to B646.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__
+  L392-L394; BedrockFilesConfig.custom_llm_provider L396-L398; BedrockFilesConfig.file_upload_http_method L400-L405;
+  BedrockFilesConfig.validate_environment L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460;
+  BedrockFilesConfig._get_s3_object_name_from_batch_jsonl L462-L478; BedrockFilesConfig.get_object_name L480-L504;
+  BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params L549-L550;
+  BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
   L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
-  L1265-L1266 belong to B644; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
-  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
-  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
-  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
-  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  L1265-L1266 belong to B644.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298;
+  _listing_query L301-L305; _requested_listing_purpose L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted
+  L318-L321; _listing_bucket_name L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372;
+  BedrockFilesConfig.transform_retrieve_file_request L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response
+  L1276-L1282; BedrockFilesConfig.transform_delete_file_request L1284-L1292; BedrockFilesConfig.transform_delete_file_response
+  L1294-L1307; BedrockFilesConfig.transform_list_files_request L1309-L1317; BedrockFilesConfig.transform_list_files_next_request
+  L1319-L1335; BedrockFilesConfig._signed_listing_request L1337-L1361; BedrockFilesConfig.transform_list_files_response
+  L1363-L1391; BedrockFilesConfig.transform_file_content_request L1393-L1412; BedrockFilesConfig._transform_s3_file_request
+  L1414-L1432; BedrockFilesConfig._s3_request_target L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body
+  L1459-L1488 belong to B645.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response
+  L1490-L1503; BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537;
+  BedrockJsonlFilesTransformation._get_s3_object_name L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file
+  L1555-L1590 belong to B646.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record
+  L574-L614; BedrockFilesConfig._is_titan_v2_embed_model L638-L681; BedrockFilesConfig._lookup_provider_specific_field
+  L683-L715; BedrockFilesConfig._coerce_embedding_input_to_string L717-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params
+  L773-L819 belong to B647.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L821-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L845-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L857-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
   L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
-  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
-  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
-  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1026-L1108 belong to B648.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
-  no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/files/handler.py: BedrockFilesHandler.afile_content L69-L132; BedrockFilesHandler.file_content
-  L134-L173 belong to B646; reuse that implementation or its injected typed boundary.
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- Resolve AWS_S3_BUCKET_NAME, AWS_S3_OUTPUT_BUCKET_NAME, AWS_S3_ENCRYPTION_KEY_ID and AWS_S3_BUCKET_OWNER plus their
-  deployment fields only in config.
+- Bucket selection happens before the ValueError-to-BedrockError catch, so missing configuration is not the same
+  400 path as a rejected file ID.
+- The plain CommonBatchFilesUtils S3 parser accepts empty bucket/key components and must not substitute for authorization.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

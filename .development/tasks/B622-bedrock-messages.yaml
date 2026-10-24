@@ -7,17 +7,16 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
-  AmazonAnthropicClaudeMessagesConfig.custom_llm_provider L82-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider
-  L86-L87; AmazonAnthropicClaudeMessagesConfig.get_error_class L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__
-  L99-L101; AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request
+  AmazonAnthropicClaudeMessagesConfig.get_error_class L91-L97; AmazonAnthropicClaudeMessagesConfig.__init__ L99-L101;
+  AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment L103-L114; AmazonAnthropicClaudeMessagesConfig.sign_request
   L116-L137; AmazonAnthropicClaudeMessagesConfig.get_complete_url L139-L156; AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request
   L676-L795; AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator L797-L815; AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper
   L817-L854.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
-  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
-  and no copied helper algorithm is permitted.
+  with direct dependencies. Provider leaves must never import betterlite-core, and no copied helper algorithm is
+  permitted.
 
 
   Reuse AnthropicConfig._model_supports_effort_param from B569 (litellm/llms/anthropic/chat/transformation.py);
@@ -60,20 +59,66 @@ description: >-
   remains with that prerequisite.
 
 
-  Reuse AmazonInvokeConfig.__init__ from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  Reuse AmazonInvokeConfig.__init__ from B2205 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
   its implementation remains with that prerequisite.
 
 
-  Reuse AmazonInvokeConfig.get_complete_url from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  Reuse AmazonInvokeConfig.get_complete_url from B2205 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
   its implementation remains with that prerequisite.
 
 
-  Reuse AmazonInvokeConfig.sign_request from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  Reuse AmazonInvokeConfig.sign_request from B2205 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
   its implementation remains with that prerequisite.
 
 
   Reuse normalize_bedrock_opus_output_config_effort from B690 (litellm/llms/bedrock/common_utils.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: messages_invoke_url: Initialize the B961 base Messages interface (its inherited object initializer
+  has no provider logic) and B2205 Invoke config. Delegate get_complete_url and sign_request directly to B2205 with
+  all source arguments, including stream/fake_stream, retaining its exact literal-True streaming and endpoint/proxy
+  distinctions. Environment validation calls B596 metadata-header ownership/merge with no guardrail headers, returns
+  api_base unchanged and ignores api_key; use the same metadata cases as B619. messages_native_body: Insert missing
+  anthropic_version bedrock-2023-05-31, preserve an explicit version, then pop stream and model before Invoke signing;
+  use B961 request assembly and system normalization. aws_event_to_sse: Construct the B609 inherited AWS event iterator
+  with model and the B623 _chunk_parser override; pass httpx_response.aiter_bytes() and original response headers
+  to aiter_bytes. Feed its parsed events through B623 usage promotion and B979 BaseAnthropicMessagesStreamingIterator(request_body,logging).async_sse_wrapper,
+  yielding every produced byte chunk unchanged. On normal completion, failure or GeneratorExit, await inner sse_stream.aclose
+  in finally, so B979 partial-spend finalization runs deterministically. adaptive_display_updates: Remember requested
+  thinking.display=updates before base transformation, and restore {type: adaptive, display: updates} only if the
+  translated thinking is adaptive. unsupported_output_config_warn_drop: After earlier normalizers, only global litellm.drop_params
+  is literal True plus a dict output_config containing a non-format key plus no B569 Bedrock effort support triggers
+  warning Dropping unsupported `output_config` for model={model} (drop_params=True). Effort is only supported on
+  Opus 4.5+, Sonnet 4.6+, and Mythos Preview. Then remove the entire output_config, including format. A format-only/empty/non-dict
+  value or merely truthy nonboolean drop_params does not enter this branch. B2201 owns the False default and loader.
+  normalization_order: Capture B568 display updates before B621 raw-effort clamp, then call B961 AnthropicMessagesConfig
+  preparation and system-role normalization. B692 web-search rejection precedes version insertion and removal of
+  model/stream. Run B621 clear-thinking injection before TTL sanitation and before B692 context filtering. Shallow-copy
+  dict output_config, then B597 structured-output rewriting, B690 effort normalization and B597 unsupported keys/custom-tool/schema/name
+  normalization. Compute B692 betas from original messages/options plus the outgoing request and injection flag.
+  Set anthropic_beta only when the result is truthy. Remove eager_input_streaming through B597, run the final warning/drop
+  branch, then B692 allowlist. error_header_projection: Provider identity and beta fallback are B692. get_error_class
+  constructs B682 BedrockError with supplied status/message/headers. Native error/message_start framing follows
+  B609/B623/B979; this task does not convert native Messages errors into chat choices. messages_constructor: BaseAnthropicMessagesConfig
+  has no explicit __init__: its inherited object initializer runs before B2205 Invoke initialization. Empty kwargs
+  succeed; nonempty kwargs fail at that first call rather than silently configuring the Invoke base. Model request
+  options remain separate from constructor kwargs. B608 owns the inherited AWS decoder initialization used before
+  B609 aiter_bytes and B623 record projection.
+
+
+  litellm.drop_params defaults false through the existing config owner B2201; consume the injected value and its
+  existing loader coverage, with no environment read in this adapter. B568 owns is_thinking_display_updates_used
+  and B692 owns the called beta/rejection/allowlist helpers.
+
+
+  Write standalone Rust test bedrock_messages_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test bedrock_messages_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/messages.rs with adjacent tests under messages/. Keep each Rust module
@@ -90,10 +135,10 @@ description: >-
 
 
   Write rstest function messages_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  messages_invoke_url, messages_native_body, anthropic_beta_body, aws_event_to_sse, native_error_event, message_start_event.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  messages_invoke_url, messages_native_body, anthropic_beta_body, aws_event_to_sse, native_error_event, message_start_event,
+  adaptive_display_updates, unsupported_output_config_warn_drop, normalization_order, error_header_projection, messages_constructor.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_messages* using HelperCase: kind: helper
@@ -107,10 +152,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 203 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 230 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 433 planned, 450 maximum changed lines.
+  Budget from 199 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 225 production lines, 275 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 635 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -128,26 +173,27 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_messages*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L82-L156
-  why: >-
-    Own AmazonAnthropicClaudeMessagesConfig.custom_llm_provider, AmazonAnthropicClaudeMessagesConfig.beta_headers_provider,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L82-L156
+  why: Own AmazonAnthropicClaudeMessagesConfig.custom_llm_provider, AmazonAnthropicClaudeMessagesConfig.beta_headers_provider,
     AmazonAnthropicClaudeMessagesConfig.get_error_class, AmazonAnthropicClaudeMessagesConfig.__init__, AmazonAnthropicClaudeMessagesConfig.validate_anthropic_messages_environment,
     AmazonAnthropicClaudeMessagesConfig.sign_request, AmazonAnthropicClaudeMessagesConfig.get_complete_url. Other
     functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L676-L854
-  why: >-
-    Own AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request, AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L676-L854
+  why: Own AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request, AmazonAnthropicClaudeMessagesConfig.get_async_streaming_response_iterator,
     AmazonAnthropicClaudeMessagesConfig.bedrock_sse_wrapper. Other functions in this file remain with the owners
     listed below.
 dod:
-- text: 'messages invoke url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/messages-invoke-url.yaml.'
+- text: 'messages_invoke_url: Initialize the B961 base Messages interface (its inherited object initializer has
+    no provider logic) and B2205 Invoke config. Delegate get_complete_url and sign_request directly to B2205 with
+    all source arguments, including stream/fake_stream, retaining its exact literal-True streaming and endpoint/proxy
+    distinctions. Environment validation calls B596 metadata-header ownership/merge with no guardrail headers, returns
+    api_base unchanged and ignores api_key; use the same metadata cases as B619.'
   proof:
   - case-messages-invoke-url
   - oracle
   - helper-python
-- text: 'messages native body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/messages-native-body.yaml.'
+- text: 'messages_native_body: Insert missing anthropic_version bedrock-2023-05-31, preserve an explicit version,
+    then pop stream and model before Invoke signing; use B961 request assembly and system normalization.'
   proof:
   - case-messages-native-body
   - oracle
@@ -157,7 +203,11 @@ dod:
   - case-anthropic-beta-body
   - oracle
   - helper-python
-- text: 'aws event to sse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/aws-event-to-sse.yaml.'
+- text: 'aws_event_to_sse: Construct the B609 inherited AWS event iterator with model and the B623 _chunk_parser
+    override; pass httpx_response.aiter_bytes() and original response headers to aiter_bytes. Feed its parsed events
+    through B623 usage promotion and B979 BaseAnthropicMessagesStreamingIterator(request_body,logging).async_sse_wrapper,
+    yielding every produced byte chunk unchanged. On normal completion, failure or GeneratorExit, await inner sse_stream.aclose
+    in finally, so B979 partial-spend finalization runs deterministically.'
   proof:
   - case-aws-event-to-sse
   - oracle
@@ -175,41 +225,132 @@ dod:
 - text: New bedrock_messages seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'adaptive_display_updates: Remember requested thinking.display=updates before base transformation, and restore
+    {type: adaptive, display: updates} only if the translated thinking is adaptive.'
+  proof:
+  - case-adaptive-display-updates
+  - oracle
+  - helper-python
+- text: 'unsupported_output_config_warn_drop: After earlier normalizers, only global litellm.drop_params is literal
+    True plus a dict output_config containing a non-format key plus no B569 Bedrock effort support triggers warning
+    Dropping unsupported `output_config` for model={model} (drop_params=True). Effort is only supported on Opus
+    4.5+, Sonnet 4.6+, and Mythos Preview. Then remove the entire output_config, including format. A format-only/empty/non-dict
+    value or merely truthy nonboolean drop_params does not enter this branch. B2201 owns the False default and loader.'
+  proof:
+  - case-unsupported-output-config-warn-drop
+  - oracle
+  - helper-python
+- text: 'normalization_order: Capture B568 display updates before B621 raw-effort clamp, then call B961 AnthropicMessagesConfig
+    preparation and system-role normalization. B692 web-search rejection precedes version insertion and removal
+    of model/stream. Run B621 clear-thinking injection before TTL sanitation and before B692 context filtering.
+    Shallow-copy dict output_config, then B597 structured-output rewriting, B690 effort normalization and B597 unsupported
+    keys/custom-tool/schema/name normalization. Compute B692 betas from original messages/options plus the outgoing
+    request and injection flag. Set anthropic_beta only when the result is truthy. Remove eager_input_streaming
+    through B597, run the final warning/drop branch, then B692 allowlist.'
+  proof:
+  - case-normalization-order
+  - oracle
+  - helper-python
+- text: 'error_header_projection: Provider identity and beta fallback are B692. get_error_class constructs B682
+    BedrockError with supplied status/message/headers. Native error/message_start framing follows B609/B623/B979;
+    this task does not convert native Messages errors into chat choices.'
+  proof:
+  - case-error-header-projection
+  - oracle
+  - helper-python
+- text: 'messages_constructor: BaseAnthropicMessagesConfig has no explicit __init__: its inherited object initializer
+    runs before B2205 Invoke initialization. Empty kwargs succeed; nonempty kwargs fail at that first call rather
+    than silently configuring the Invoke base. Model request options remain separate from constructor kwargs. B608
+    owns the inherited AWS decoder initialization used before B609 aiter_bytes and B623 record projection.'
+  proof:
+  - case-messages-constructor
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-messages-invoke-url
-    why: The messages-invoke-url behavior is missing or differs from its pinned fixture.
+    why: Initialize the B961 base Messages interface (its inherited object initializer has no provider logic) and
+      B2205 Invoke config. Delegate get_complete_url and sign_request directly to B2205 with all source arguments,
+      including stream/fake_stream, retaining its exact literal-True streaming and endpoint/proxy distinctions.
+      Environment validation calls B596 metadata-header ownership/merge with no guardrail headers, returns api_base
+      unchanged and ignores api_key; use the same metadata cases as B619.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_messages_invoke_url$/)'
   - id: case-messages-native-body
-    why: The messages-native-body behavior is missing or differs from its pinned fixture.
+    why: Insert missing anthropic_version bedrock-2023-05-31, preserve an explicit version, then pop stream and
+      model before Invoke signing; use B961 request assembly and system normalization.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_messages_native_body$/)'
   - id: case-anthropic-beta-body
-    why: The anthropic-beta-body behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/anthropic-beta-body.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_anthropic_beta_body$/)'
   - id: case-aws-event-to-sse
-    why: The aws-event-to-sse behavior is missing or differs from its pinned fixture.
+    why: Construct the B609 inherited AWS event iterator with model and the B623 _chunk_parser override; pass httpx_response.aiter_bytes()
+      and original response headers to aiter_bytes. Feed its parsed events through B623 usage promotion and B979
+      BaseAnthropicMessagesStreamingIterator(request_body,logging).async_sse_wrapper, yielding every produced byte
+      chunk unchanged. On normal completion, failure or GeneratorExit, await inner sse_stream.aclose in finally,
+      so B979 partial-spend finalization runs deterministically.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_aws_event_to_sse$/)'
   - id: case-native-error-event
-    why: The native-error-event behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/native-error-event.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_native_error_event$/)'
   - id: case-message-start-event
-    why: The message-start-event behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-messages/message-start-event.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_message_start_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_messages.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_messages.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_messages*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_messages*")"
       && grep -lq 'bedrock_messages' tools/oracle/fuzz/corpus/helper_case/bedrock_messages* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_messages$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-adaptive-display-updates
+    why: 'Remember requested thinking.display=updates before base transformation, and restore {type: adaptive, display:
+      updates} only if the translated thinking is adaptive.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_adaptive_display_updates$/)'
+  - id: case-unsupported-output-config-warn-drop
+    why: After earlier normalizers, only global litellm.drop_params is literal True plus a dict output_config containing
+      a non-format key plus no B569 Bedrock effort support triggers warning Dropping unsupported `output_config`
+      for model={model} (drop_params=True). Effort is only supported on Opus 4.5+, Sonnet 4.6+, and Mythos Preview.
+      Then remove the entire output_config, including format. A format-only/empty/non-dict value or merely truthy
+      nonboolean drop_params does not enter this branch. B2201 owns the False default and loader.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_unsupported_output_config_warn_drop$/)'
+  - id: case-normalization-order
+    why: Capture B568 display updates before B621 raw-effort clamp, then call B961 AnthropicMessagesConfig preparation
+      and system-role normalization. B692 web-search rejection precedes version insertion and removal of model/stream.
+      Run B621 clear-thinking injection before TTL sanitation and before B692 context filtering. Shallow-copy dict
+      output_config, then B597 structured-output rewriting, B690 effort normalization and B597 unsupported keys/custom-tool/schema/name
+      normalization. Compute B692 betas from original messages/options plus the outgoing request and injection flag.
+      Set anthropic_beta only when the result is truthy. Remove eager_input_streaming through B597, run the final
+      warning/drop branch, then B692 allowlist.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_normalization_order$/)'
+  - id: case-error-header-projection
+    why: Provider identity and beta fallback are B692. get_error_class constructs B682 BedrockError with supplied
+      status/message/headers. Native error/message_start framing follows B609/B623/B979; this task does not convert
+      native Messages errors into chat choices.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_error_header_projection$/)'
+  - id: case-messages-constructor
+    why: 'BaseAnthropicMessagesConfig has no explicit __init__: its inherited object initializer runs before B2205
+      Invoke initialization. Empty kwargs succeed; nonempty kwargs fail at that first call rather than silently
+      configuring the Invoke base. Model request options remain separate from constructor kwargs. B608 owns the
+      inherited AWS decoder initialization used before B609 aiter_bytes and B623 record projection.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::messages_cases::case_[0-9]+_messages_constructor$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_messages_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-messages/messages-invoke-url.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages/messages-native-body.yaml
@@ -217,38 +358,44 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-messages/aws-event-to-sse.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages/native-error-event.yaml
 - tools/oracle/cases/helpers/providers/bedrock-messages/message-start-event.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages/adaptive-display-updates.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages/unsupported-output-config-warn-drop.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages/normalization-order.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages/error-header-projection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-messages/messages-constructor.yaml
 deviations: []
 out_of_scope:
-- >-
-  B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
+- B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
   this task implements only its listed provider overrides on prepared native records.
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage
-  L857-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage L878-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser
-  L956-L991 belong to B623; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control
-  L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management
-  L250-L320; AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L323-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
-  L332-L339; AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking L341-L368; AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock
-  L657-L674 belong to B621; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
-  L370-L387 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock
-  L389-L401; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock
-  L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke L471-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers
-  L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools L605-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields
-  L643-L654 belong to B692; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py: AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5
+  L370-L387 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._remove_ttl_from_cache_control L158-L211; AmazonAnthropicClaudeMessagesConfig._supports_extended_thinking_on_bedrock
+  L213-L248; AmazonAnthropicClaudeMessagesConfig._ensure_thinking_for_clear_thinking_context_management L250-L320;
+  AmazonAnthropicClaudeMessagesConfig._resolve_clear_thinking_budget_tokens L322-L329; AmazonAnthropicClaudeMessagesConfig._effort_from_thinking_budget
+  L331-L339; AmazonAnthropicClaudeMessagesConfig._inject_adaptive_thinking_for_clear_thinking L341-L368; AmazonAnthropicClaudeMessagesConfig._is_claude_4_5_on_bedrock
+  L389-L401; AmazonAnthropicClaudeMessagesConfig._clamp_adaptive_reasoning_effort_for_bedrock L656-L674 belong to
+  B621.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._merge_message_start_cache_into_delta_usage L856-L875; AmazonAnthropicClaudeMessagesConfig._promote_message_stop_usage
+  L877-L952; AmazonAnthropicClaudeMessagesStreamDecoder._chunk_parser L956-L991 belong to B623.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig.custom_llm_provider L81-L83; AmazonAnthropicClaudeMessagesConfig.beta_headers_provider
+  L85-L87; AmazonAnthropicClaudeMessagesConfig._supports_tool_search_on_bedrock L403-L420; AmazonAnthropicClaudeMessagesConfig._get_tool_search_beta_header_for_bedrock
+  L422-L451; AmazonAnthropicClaudeMessagesConfig._filter_context_management_for_bedrock_invoke L470-L512; AmazonAnthropicClaudeMessagesConfig._get_bedrock_invoke_anthropic_beta_headers
+  L514-L602; AmazonAnthropicClaudeMessagesConfig._reject_unsupported_web_search_tools L604-L641; AmazonAnthropicClaudeMessagesConfig._strip_unsupported_bedrock_invoke_fields
+  L643-L654 belong to B692.'
+- 'Function ownership inventory litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py:
+  AmazonAnthropicClaudeMessagesConfig._is_claude_opus_4_5 L370-L387 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- Tool schemas and beta filtering come from their existing owners; native Messages replay must not repeat chat-message
-  conversion.
+- The output_config warning runs after structural rewrites, so a key removed earlier cannot trigger it.
+- The finally block closes the inner SSE generator even when iteration fails before completion.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
-review_level: standard
+review_level: security

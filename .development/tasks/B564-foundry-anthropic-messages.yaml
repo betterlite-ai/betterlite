@@ -2,10 +2,10 @@ id: B564
 title: Foundry Anthropic Messages requests
 description: >-
   Add native FoundryMessagesRequest preparation using the Anthropic wire records already exposed by the provider.
-  B081 owns the parent AnthropicMessagesConfig behavior; this task owns the Azure overrides only and accepts pre-normalized
-  Anthropic messages. Oracle adapters isolate these overrides with a superclass seam returning the supplied normalized
-  input; they must not recreate the deferred parent algorithm. Preserve /anthropic/v1/messages base normalization,
-  system roles and cache_control.scope removal.
+  B961 owns the parent AnthropicMessagesConfig request behavior; this task owns the Azure overrides only and accepts
+  pre-normalized Anthropic messages. Oracle adapters isolate these overrides with a superclass seam returning the
+  supplied normalized input; they must not recreate the deferred parent algorithm. Preserve /anthropic/v1/messages
+  base normalization, system roles and cache_control.scope removal.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/anthropic/messages_transformation.py:
@@ -15,8 +15,33 @@ description: >-
   L149-L166.
 
 
-  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  Reuse BaseAzureLLM._base_validate_azure_environment from B2200 (litellm/llms/azure/common_utils.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: messages_url_normalization: Choose truthy explicit api_base or AZURE_API_BASE, no litellm.api_base
+  fallback. None raises ValueError: Missing Azure API Base - Please set `api_base` or `AZURE_API_BASE` environment
+  variable. Expected format: https://<resource-name>.services.ai.azure.com/anthropic. Strip trailing slashes; any
+  existing /v1/messages suffix is accepted. Otherwise truncate at the first /anthropic occurrence anywhere, append
+  /anthropic if absent, then /v1/messages; this is literal string matching, not parsed URL path matching. x_api_key_rename:
+  Use the same dict-versus-typed explicit-key insertion and B2200 Azure auth contract as B563. Rename exact api-key
+  to x-api-key only if x-api-key is absent; if both exist retain both, including empty existing x-api-key. anthropic_version_default:
+  Set exact lowercase anthropic-version=2023-06-01 and content-type=application/json only when missing, preserving
+  present empty values and differently cased keys; delegate beta updates to B960, then return the original api_base
+  with headers. cache_control_scope_removal: After B961 request and system-role normalization, mutate only dict
+  cache_control on immediate dict content blocks in list system and list message.content. Remove scope alone, retain
+  type/ttl/unknown keys, and leave tools, nested blocks, strings and non-dict cache_control unchanged. native_body_projection:
+  custom_llm_provider=azure_ai and should_strip_billing_metadata=true; use B961 parent transformation and _normalize_system_role_messages
+  without copying either implementation.
+
+
+  Write standalone Rust test anthropic_messages_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test anthropic_messages_secret_safe_failure in betterlite-foundry: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-foundry/src/anthropic_messages.rs with adjacent tests under anthropic_messages/. Keep
@@ -35,8 +60,8 @@ description: >-
   Write rstest function anthropic_messages_cases in betterlite-foundry with these exact named cases (one per oracle
   file): messages_url_normalization, x_api_key_rename, anthropic_version_default, cache_control_scope_removal, system_role_normalization,
   native_body_projection. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_messages* using HelperCase:
@@ -52,9 +77,9 @@ description: >-
 
 
   Budget from 112 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 145 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 348 planned, 400 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 190 production lines, 205 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 520 planned, 525 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -73,43 +98,48 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/messages_transformation.py#L22-L166
-  why: >-
-    Own AzureAnthropicMessagesConfig.custom_llm_provider, AzureAnthropicMessagesConfig.should_strip_billing_metadata,
+  why: Own AzureAnthropicMessagesConfig.custom_llm_provider, AzureAnthropicMessagesConfig.should_strip_billing_metadata,
     AzureAnthropicMessagesConfig.validate_anthropic_messages_environment, AzureAnthropicMessagesConfig.get_complete_url,
     AzureAnthropicMessagesConfig._remove_scope_from_cache_control, AzureAnthropicMessagesConfig.transform_anthropic_messages_request.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    messages url normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/messages-url-normalization.yaml.
+- text: 'messages_url_normalization: Choose truthy explicit api_base or AZURE_API_BASE, no litellm.api_base fallback.
+    None raises ValueError: Missing Azure API Base - Please set `api_base` or `AZURE_API_BASE` environment variable.
+    Expected format: https://<resource-name>.services.ai.azure.com/anthropic. Strip trailing slashes; any existing
+    /v1/messages suffix is accepted. Otherwise truncate at the first /anthropic occurrence anywhere, append /anthropic
+    if absent, then /v1/messages; this is literal string matching, not parsed URL path matching.'
   proof:
   - case-messages-url-normalization
   - oracle
   - helper-python
-- text: 'x api key rename: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/x-api-key-rename.yaml.'
+- text: 'x_api_key_rename: Use the same dict-versus-typed explicit-key insertion and B2200 Azure auth contract as
+    B563. Rename exact api-key to x-api-key only if x-api-key is absent; if both exist retain both, including empty
+    existing x-api-key.'
   proof:
   - case-x-api-key-rename
   - oracle
   - helper-python
-- text: >-
-    anthropic version default: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/anthropic-version-default.yaml.
+- text: 'anthropic_version_default: Set exact lowercase anthropic-version=2023-06-01 and content-type=application/json
+    only when missing, preserving present empty values and differently cased keys; delegate beta updates to B960,
+    then return the original api_base with headers.'
   proof:
   - case-anthropic-version-default
   - oracle
   - helper-python
-- text: >-
-    cache control scope removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/cache-control-scope-removal.yaml.
+- text: 'cache_control_scope_removal: After B961 request and system-role normalization, mutate only dict cache_control
+    on immediate dict content blocks in list system and list message.content. Remove scope alone, retain type/ttl/unknown
+    keys, and leave tools, nested blocks, strings and non-dict cache_control unchanged.'
   proof:
   - case-cache-control-scope-removal
   - oracle
   - helper-python
-- text: >-
-    system role normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/system-role-normalization.yaml.
+- text: 'system role normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/system-role-normalization.yaml.'
   proof:
   - case-system-role-normalization
   - oracle
   - helper-python
-- text: >-
-    native body projection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/native-body-projection.yaml.
+- text: 'native_body_projection: custom_llm_provider=azure_ai and should_strip_billing_metadata=true; use B961 parent
+    transformation and _normalize_system_role_messages without copying either implementation.'
   proof:
   - case-native-body-projection
   - oracle
@@ -118,41 +148,61 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-messages-url-normalization
-    why: The messages-url-normalization behavior is missing or differs from its pinned fixture.
+    why: 'Choose truthy explicit api_base or AZURE_API_BASE, no litellm.api_base fallback. None raises ValueError:
+      Missing Azure API Base - Please set `api_base` or `AZURE_API_BASE` environment variable. Expected format:
+      https://<resource-name>.services.ai.azure.com/anthropic. Strip trailing slashes; any existing /v1/messages
+      suffix is accepted. Otherwise truncate at the first /anthropic occurrence anywhere, append /anthropic if absent,
+      then /v1/messages; this is literal string matching, not parsed URL path matching.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_messages_url_normalization$/)'
   - id: case-x-api-key-rename
-    why: The x-api-key-rename behavior is missing or differs from its pinned fixture.
+    why: Use the same dict-versus-typed explicit-key insertion and B2200 Azure auth contract as B563. Rename exact
+      api-key to x-api-key only if x-api-key is absent; if both exist retain both, including empty existing x-api-key.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_x_api_key_rename$/)'
   - id: case-anthropic-version-default
-    why: The anthropic-version-default behavior is missing or differs from its pinned fixture.
+    why: Set exact lowercase anthropic-version=2023-06-01 and content-type=application/json only when missing, preserving
+      present empty values and differently cased keys; delegate beta updates to B960, then return the original api_base
+      with headers.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_anthropic_version_default$/)'
   - id: case-cache-control-scope-removal
-    why: The cache-control-scope-removal behavior is missing or differs from its pinned fixture.
+    why: After B961 request and system-role normalization, mutate only dict cache_control on immediate dict content
+      blocks in list system and list message.content. Remove scope alone, retain type/ttl/unknown keys, and leave
+      tools, nested blocks, strings and non-dict cache_control unchanged.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_cache_control_scope_removal$/)'
   - id: case-system-role-normalization
-    why: The system-role-normalization behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-messages/system-role-normalization.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_system_role_normalization$/)'
   - id: case-native-body-projection
-    why: The native-body-projection behavior is missing or differs from its pinned fixture.
+    why: custom_llm_provider=azure_ai and should_strip_billing_metadata=true; use B961 parent transformation and
+      _normalize_system_role_messages without copying either implementation.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_cases::case_[0-9]+_native_body_projection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic_messages.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic_messages.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_messages*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_messages*")"
       && grep -lq 'foundry_anthropic_messages' tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_messages*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic_messages$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_messages_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-anthropic-messages/messages-url-normalization.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic-messages/x-api-key-rename.yaml
@@ -162,17 +212,16 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-anthropic-messages/native-body-projection.yaml
 deviations: []
 out_of_scope:
-- >-
-  B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
+- B081 owns inherited AnthropicMessagesConfig public/native normalization in litellm/llms/anthropic/pass_through/messages/transformation.py;
   this task implements only its listed provider overrides on prepared native records.
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- B081 owns the parent AnthropicMessagesConfig behavior; this task owns the Azure overrides only and accepts pre-normalized
-  Anthropic messages.
+- The URL normalizer truncates all suffixes after the first /anthropic substring, including query text.
+- Existing x-api-key prevents renaming and leaves api-key present as a second header.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 525
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -7,23 +7,76 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_generation/amazon_titan_transformation.py:
-  AmazonTitanImageGenerationConfig.__init__ L30-L41; AmazonTitanImageGenerationConfig.get_config L44-L59; AmazonTitanImageGenerationConfig._is_titan_model
-  L62-L71; AmazonTitanImageGenerationConfig.get_supported_openai_params L74-L75; AmazonTitanImageGenerationConfig.map_openai_params
-  L78-L101; AmazonTitanImageGenerationConfig.transform_request_body L104-L126; AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response
-  L129-L139. litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py: AmazonStabilityConfig.__init__
-  L47-L58; AmazonStabilityConfig.get_config L61-L76; AmazonStabilityConfig.get_supported_openai_params L79-L80;
-  AmazonStabilityConfig.map_openai_params L83-L94; AmazonStabilityConfig.transform_request_body L97-L117; AmazonStabilityConfig.transform_response_dict_to_openai_response
-  L120-L130. litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py: AmazonStability3Config.get_config
-  L22-L37; AmazonStability3Config.get_supported_openai_params L40-L44; AmazonStability3Config._is_stability_3_model
-  L47-L66; AmazonStability3Config.transform_request_body L69-L74; AmazonStability3Config.map_openai_params L77-L83;
-  AmazonStability3Config.transform_response_dict_to_openai_response L86-L105. litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py:
-  AmazonNovaCanvasConfig.get_config L28-L43; AmazonNovaCanvasConfig.get_supported_openai_params L46-L48; AmazonNovaCanvasConfig._is_nova_model
-  L51-L60; AmazonNovaCanvasConfig.transform_request_body L63-L148; AmazonNovaCanvasConfig.map_openai_params L151-L169;
-  AmazonNovaCanvasConfig.transform_response_dict_to_openai_response L172-L185.
+  AmazonTitanImageGenerationConfig._is_titan_model L62-L71; AmazonTitanImageGenerationConfig.get_supported_openai_params
+  L74-L75; AmazonTitanImageGenerationConfig.map_openai_params L78-L101; AmazonTitanImageGenerationConfig.transform_request_body
+  L104-L126; AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response L129-L139. litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py:
+  AmazonStabilityConfig.__init__ L47-L58; AmazonStabilityConfig.get_config L61-L76; AmazonStabilityConfig.get_supported_openai_params
+  L79-L80; AmazonStabilityConfig.map_openai_params L83-L94; AmazonStabilityConfig.transform_request_body L97-L117;
+  AmazonStabilityConfig.transform_response_dict_to_openai_response L120-L130. litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py:
+  AmazonStability3Config.get_supported_openai_params L40-L44; AmazonStability3Config._is_stability_3_model L47-L66;
+  AmazonStability3Config.transform_request_body L69-L74; AmazonStability3Config.map_openai_params L77-L83; AmazonStability3Config.transform_response_dict_to_openai_response
+  L86-L105. litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py: AmazonNovaCanvasConfig.get_supported_openai_params
+  L46-L48; AmazonNovaCanvasConfig._is_nova_model L51-L60; AmazonNovaCanvasConfig.transform_request_body L63-L148;
+  AmazonNovaCanvasConfig.map_openai_params L151-L169; AmazonNovaCanvasConfig.transform_response_dict_to_openai_response
+  L172-L185. litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class L66-L74.
 
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: titan_image_body: Titan supports size,n,quality. Mapping splits non-None size on literal
+  x into exactly two Python integers, maps non-None n to numberOfImages, and maps hd/premium/high to premium, standard/medium/low
+  to standard; auto/unknown quality adds nothing. If any mapped field exists, replace optional.imageGenerationConfig
+  entirely with that new record. Body building pops imageGenerationConfig default {}, negativeText default None
+  and taskType default TEXT_IMAGE; include negativeText only when truthy. A second pop of imageGenerationConfig
+  necessarily sees its default after the first pop. Emit taskType,textToImageParams={text plus optional negativeText},imageGenerationConfig;
+  ignore remaining optional fields and retain explicit taskType=None. The unused Titan class defaults do not enter
+  this body. stability1_text_prompts: Stability 1 supports only size and maps a non-None size into top-level integer
+  width,height. Deep-copy options, remove exact user, replace each host os.linesep in text with a space, and add
+  class config fields only when absent, preserving explicit None. Emit text_prompts=[{text: normalized prompt,weight:1}],
+  then overlay inference params so a supplied text_prompts replaces it. Constructor cfg_scale,seed,steps,width,height
+  all default None and persist non-None values as class settings; get_config excludes dunder/functions/builtin/class/static
+  methods and None but retains single-underscore data. Do not inject the numerical defaults described in the source
+  docstring. stability3_prompt: Stability 3 supports [] and returns optional params unchanged from mapping. Build
+  prompt=text plus keyword-expanded options, preserving all extras; an existing prompt causes a keyword-collision
+  TypeError rather than an override. There is no user removal or class-default merge in this family. nova_canvas_task_body:
+  Nova supports n,size,quality in that order. Pop taskType default TEXT_IMAGE, imageGenerationConfig default {},
+  and model_id default None from the caller options; overlay all remaining options on the nested image config. For
+  TEXT_IMAGE, COLOR_GUIDED_GENERATION and INPAINTING respectively remove textToImageParams,colorGuidedGenerationParams,inpaintingParams
+  from that merged config, default {}, and overlay its fields on text=text so an explicit text wins. Emit that nested
+  params record, taskType and remaining imageGenerationConfig. A different task, including None, raises NotImplementedError
+  Task type {task_type} is not supported. TypedDict constructors retain arbitrary fields and values rather than
+  enforcing annotations. size_n_quality_map: Nova maps non-None size to integer top-level width,height and n to
+  numberOfImages; hd/premium quality becomes premium and standard becomes standard. Unlike Titan, high/medium/low/auto/unknown
+  values are ignored and do not replace an existing quality. Size parsing in Titan, Stability 1 and Nova preserves
+  split/int failures for malformed strings, accepts Python integer syntax and does not enforce positive or supported
+  dimensions. artifacts_to_b64_results: Titan requires images and Stability 1 requires artifacts with each artifact.base64;
+  missing accessed keys fail directly. Stability 3 and Nova default absent images to an empty list. For all families
+  overwrite only model_response.data with ordered Image(b64_json=value) entries, preserving other response fields,
+  with no decoding, URL construction or download. image_provider_error: Stability 3 filters finish_reasons by truthiness,
+  then raises B682 BedrockError 400 with the retained strings joined by semicolon-space before mapping images; absent
+  or all-falsey reasons pass. A malformed None/list item keeps its native iteration/join failure. Nova ignores its
+  response error field and simply maps images; Titan and Stability 1 likewise do not invent provider-error validation.
+  Nonmapping request config values fail at their actual mapping/keyword-expansion step, before the later TypedDict
+  constructor catches. image_family_selection: Choose Titan for case-sensitive amazon.titan substring, else Nova
+  for amazon.nova-canvas, else Stability 3 for sd3 or sd3.5 or stable-image, else Stability 1. Falsey model uses
+  Stability 1. These are substring checks rather than strict provider prefixes, and Titan wins when a string contains
+  multiple markers. Reuse the same selector from B634 and B068.
+
+
+  Load cfg_scale, seed, steps, width, height through betterlite-config, with injected environment lookup and the
+  defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest bedrock_image_models_config_cases; each named loads_<key> case invokes the real B002 loader,
+  checks explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  These five config loader cases target AmazonStabilityConfig class settings only, each default None; Titan, Nova
+  and Stability 3 do not read them. SDK-only nonstring keyword names can reach the Nova TypedDict constructor catch
+  messages Error transforming text to image params, Error transforming color guided generation params, Error transforming
+  inpainting params and Error transforming image generation config, each followed by : {error}. Got params: {params},
+  Expected params: {annotations}. They cannot arise from JSON object keys; their Python adapter validation belongs
+  to B159, and no fake proxy failure case is added.
 
 
   Implement crates/betterlite-bedrock/src/image_models.rs with adjacent tests under image_models/. Keep each Rust
@@ -41,9 +94,9 @@ description: >-
 
   Write rstest function image_models_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   titan_image_body, stability1_text_prompts, stability3_prompt, nova_canvas_task_body, size_n_quality_map, artifacts_to_b64_results,
-  image_provider_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  image_provider_error, image_family_selection. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models* using HelperCase:
@@ -58,10 +111,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 360 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 375 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 591 planned, 600 maximum changed lines.
+  Budget from 309 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 265 production lines, 280 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 75 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 765 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -77,68 +130,104 @@ scope:
   - tools/oracle/helpers/bedrock_other_image_models.py
   - tools/oracle/cases/helpers/providers/bedrock-other-image-models/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_image_models.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_image_models/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_image_models_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_image_models*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_titan_transformation.py#L30-L139
-  why: >-
-    Own AmazonTitanImageGenerationConfig.__init__, AmazonTitanImageGenerationConfig.get_config, AmazonTitanImageGenerationConfig._is_titan_model,
-    AmazonTitanImageGenerationConfig.get_supported_openai_params, AmazonTitanImageGenerationConfig.map_openai_params,
-    AmazonTitanImageGenerationConfig.transform_request_body, AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response.
-    Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py#L47-L130
-  why: >-
-    Own AmazonStabilityConfig.__init__, AmazonStabilityConfig.get_config, AmazonStabilityConfig.get_supported_openai_params,
+  why: Own AmazonTitanImageGenerationConfig._is_titan_model, AmazonTitanImageGenerationConfig.get_supported_openai_params,
+    AmazonTitanImageGenerationConfig.map_openai_params, AmazonTitanImageGenerationConfig.transform_request_body,
+    AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response. Other functions in this file remain
+    with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py#L47-L130
+  why: Own AmazonStabilityConfig.__init__, AmazonStabilityConfig.get_config, AmazonStabilityConfig.get_supported_openai_params,
     AmazonStabilityConfig.map_openai_params, AmazonStabilityConfig.transform_request_body, AmazonStabilityConfig.transform_response_dict_to_openai_response.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L22-L105
-  why: >-
-    Own AmazonStability3Config.get_config, AmazonStability3Config.get_supported_openai_params, AmazonStability3Config._is_stability_3_model,
-    AmazonStability3Config.transform_request_body, AmazonStability3Config.map_openai_params, AmazonStability3Config.transform_response_dict_to_openai_response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L22-L105
+  why: Own AmazonStability3Config.get_supported_openai_params, AmazonStability3Config._is_stability_3_model, AmazonStability3Config.transform_request_body,
+    AmazonStability3Config.map_openai_params, AmazonStability3Config.transform_response_dict_to_openai_response.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py#L28-L185
-  why: >-
-    Own AmazonNovaCanvasConfig.get_config, AmazonNovaCanvasConfig.get_supported_openai_params, AmazonNovaCanvasConfig._is_nova_model,
-    AmazonNovaCanvasConfig.transform_request_body, AmazonNovaCanvasConfig.map_openai_params, AmazonNovaCanvasConfig.transform_response_dict_to_openai_response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py#L28-L185
+  why: Own AmazonNovaCanvasConfig.get_supported_openai_params, AmazonNovaCanvasConfig._is_nova_model, AmazonNovaCanvasConfig.transform_request_body,
+    AmazonNovaCanvasConfig.map_openai_params, AmazonNovaCanvasConfig.transform_response_dict_to_openai_response.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66-L74
+  why: Shared family selection below image execution and cost calculation.
 dod:
-- text: 'titan image body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/titan-image-body.yaml.'
+- text: 'titan_image_body: Titan supports size,n,quality. Mapping splits non-None size on literal x into exactly
+    two Python integers, maps non-None n to numberOfImages, and maps hd/premium/high to premium, standard/medium/low
+    to standard; auto/unknown quality adds nothing. If any mapped field exists, replace optional.imageGenerationConfig
+    entirely with that new record. Body building pops imageGenerationConfig default {}, negativeText default None
+    and taskType default TEXT_IMAGE; include negativeText only when truthy. A second pop of imageGenerationConfig
+    necessarily sees its default after the first pop. Emit taskType,textToImageParams={text plus optional negativeText},imageGenerationConfig;
+    ignore remaining optional fields and retain explicit taskType=None. The unused Titan class defaults do not enter
+    this body.'
   proof:
   - case-titan-image-body
   - oracle
   - helper-python
-- text: >-
-    stability1 text prompts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability1-text-prompts.yaml.
+- text: 'stability1_text_prompts: Stability 1 supports only size and maps a non-None size into top-level integer
+    width,height. Deep-copy options, remove exact user, replace each host os.linesep in text with a space, and add
+    class config fields only when absent, preserving explicit None. Emit text_prompts=[{text: normalized prompt,weight:1}],
+    then overlay inference params so a supplied text_prompts replaces it. Constructor cfg_scale,seed,steps,width,height
+    all default None and persist non-None values as class settings; get_config excludes dunder/functions/builtin/class/static
+    methods and None but retains single-underscore data. Do not inject the numerical defaults described in the source
+    docstring.'
   proof:
   - case-stability1-text-prompts
   - oracle
   - helper-python
-- text: 'stability3 prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml.'
+- text: 'stability3_prompt: Stability 3 supports [] and returns optional params unchanged from mapping. Build prompt=text
+    plus keyword-expanded options, preserving all extras; an existing prompt causes a keyword-collision TypeError
+    rather than an override. There is no user removal or class-default merge in this family.'
   proof:
   - case-stability3-prompt
   - oracle
   - helper-python
-- text: >-
-    nova canvas task body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/nova-canvas-task-body.yaml.
+- text: 'nova_canvas_task_body: Nova supports n,size,quality in that order. Pop taskType default TEXT_IMAGE, imageGenerationConfig
+    default {}, and model_id default None from the caller options; overlay all remaining options on the nested image
+    config. For TEXT_IMAGE, COLOR_GUIDED_GENERATION and INPAINTING respectively remove textToImageParams,colorGuidedGenerationParams,inpaintingParams
+    from that merged config, default {}, and overlay its fields on text=text so an explicit text wins. Emit that
+    nested params record, taskType and remaining imageGenerationConfig. A different task, including None, raises
+    NotImplementedError Task type {task_type} is not supported. TypedDict constructors retain arbitrary fields and
+    values rather than enforcing annotations.'
   proof:
   - case-nova-canvas-task-body
   - oracle
   - helper-python
-- text: 'size n quality map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/size-n-quality-map.yaml.'
+- text: 'size_n_quality_map: Nova maps non-None size to integer top-level width,height and n to numberOfImages;
+    hd/premium quality becomes premium and standard becomes standard. Unlike Titan, high/medium/low/auto/unknown
+    values are ignored and do not replace an existing quality. Size parsing in Titan, Stability 1 and Nova preserves
+    split/int failures for malformed strings, accepts Python integer syntax and does not enforce positive or supported
+    dimensions.'
   proof:
   - case-size-n-quality-map
   - oracle
   - helper-python
-- text: >-
-    artifacts to b64 results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/artifacts-to-b64-results.yaml.
+- text: 'artifacts_to_b64_results: Titan requires images and Stability 1 requires artifacts with each artifact.base64;
+    missing accessed keys fail directly. Stability 3 and Nova default absent images to an empty list. For all families
+    overwrite only model_response.data with ordered Image(b64_json=value) entries, preserving other response fields,
+    with no decoding, URL construction or download.'
   proof:
   - case-artifacts-to-b64-results
   - oracle
   - helper-python
-- text: >-
-    image provider error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml.
+- text: 'image_provider_error: Stability 3 filters finish_reasons by truthiness, then raises B682 BedrockError 400
+    with the retained strings joined by semicolon-space before mapping images; absent or all-falsey reasons pass.
+    A malformed None/list item keeps its native iteration/join failure. Nova ignores its response error field and
+    simply maps images; Titan and Stability 1 likewise do not invent provider-error validation. Nonmapping request
+    config values fail at their actual mapping/keyword-expansion step, before the later TypedDict constructor catches.'
   proof:
   - case-image-provider-error
   - oracle
@@ -147,44 +236,117 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'image_family_selection: Choose Titan for case-sensitive amazon.titan substring, else Nova for amazon.nova-canvas,
+    else Stability 3 for sd3 or sd3.5 or stable-image, else Stability 1. Falsey model uses Stability 1. These are
+    substring checks rather than strict provider prefixes, and Titan wins when a string contains multiple markers.
+    Reuse the same selector from B634 and B068.'
+  proof:
+  - case-image-family-selection
+  - oracle
+  - helper-python
+- text: The real config loader resolves cfg_scale, including its default and precedence.
+  proof:
+  - config-cfg-scale
+- text: The real config loader resolves seed, including its default and precedence.
+  proof:
+  - config-seed
+- text: The real config loader resolves steps, including its default and precedence.
+  proof:
+  - config-steps
+- text: The real config loader resolves width, including its default and precedence.
+  proof:
+  - config-width
+- text: The real config loader resolves height, including its default and precedence.
+  proof:
+  - config-height
 checks:
   optional:
   - mutants
   commands:
   - id: case-titan-image-body
-    why: The titan-image-body behavior is missing or differs from its pinned fixture.
+    why: Titan supports size,n,quality. Mapping splits non-None size on literal x into exactly two Python integers,
+      maps non-None n to numberOfImages, and maps hd/premium/high to premium, standard/medium/low to standard; auto/unknown
+      quality adds nothing. If any mapped field exists, replace optional.imageGenerationConfig entirely with that
+      new record. Body building pops imageGenerationConfig default {}, negativeText default None and taskType default
+      TEXT_IMAGE; include negativeText only when truthy. A second pop of imageGenerationConfig necessarily sees
+      its default after the first pop. Emit taskType,textToImageParams={text plus optional negativeText},imageGenerationConfig;
+      ignore remaining optional fields and retain explicit taskType=None. The unused Titan class defaults do not
+      enter this body.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_titan_image_body$/)'
   - id: case-stability1-text-prompts
-    why: The stability1-text-prompts behavior is missing or differs from its pinned fixture.
+    why: 'Stability 1 supports only size and maps a non-None size into top-level integer width,height. Deep-copy
+      options, remove exact user, replace each host os.linesep in text with a space, and add class config fields
+      only when absent, preserving explicit None. Emit text_prompts=[{text: normalized prompt,weight:1}], then overlay
+      inference params so a supplied text_prompts replaces it. Constructor cfg_scale,seed,steps,width,height all
+      default None and persist non-None values as class settings; get_config excludes dunder/functions/builtin/class/static
+      methods and None but retains single-underscore data. Do not inject the numerical defaults described in the
+      source docstring.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_stability1_text_prompts$/)'
   - id: case-stability3-prompt
-    why: The stability3-prompt behavior is missing or differs from its pinned fixture.
+    why: Stability 3 supports [] and returns optional params unchanged from mapping. Build prompt=text plus keyword-expanded
+      options, preserving all extras; an existing prompt causes a keyword-collision TypeError rather than an override.
+      There is no user removal or class-default merge in this family.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_stability3_prompt$/)'
   - id: case-nova-canvas-task-body
-    why: The nova-canvas-task-body behavior is missing or differs from its pinned fixture.
+    why: Nova supports n,size,quality in that order. Pop taskType default TEXT_IMAGE, imageGenerationConfig default
+      {}, and model_id default None from the caller options; overlay all remaining options on the nested image config.
+      For TEXT_IMAGE, COLOR_GUIDED_GENERATION and INPAINTING respectively remove textToImageParams,colorGuidedGenerationParams,inpaintingParams
+      from that merged config, default {}, and overlay its fields on text=text so an explicit text wins. Emit that
+      nested params record, taskType and remaining imageGenerationConfig. A different task, including None, raises
+      NotImplementedError Task type {task_type} is not supported. TypedDict constructors retain arbitrary fields
+      and values rather than enforcing annotations.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_nova_canvas_task_body$/)'
   - id: case-size-n-quality-map
-    why: The size-n-quality-map behavior is missing or differs from its pinned fixture.
+    why: Nova maps non-None size to integer top-level width,height and n to numberOfImages; hd/premium quality becomes
+      premium and standard becomes standard. Unlike Titan, high/medium/low/auto/unknown values are ignored and do
+      not replace an existing quality. Size parsing in Titan, Stability 1 and Nova preserves split/int failures
+      for malformed strings, accepts Python integer syntax and does not enforce positive or supported dimensions.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_size_n_quality_map$/)'
   - id: case-artifacts-to-b64-results
-    why: The artifacts-to-b64-results behavior is missing or differs from its pinned fixture.
+    why: Titan requires images and Stability 1 requires artifacts with each artifact.base64; missing accessed keys
+      fail directly. Stability 3 and Nova default absent images to an empty list. For all families overwrite only
+      model_response.data with ordered Image(b64_json=value) entries, preserving other response fields, with no
+      decoding, URL construction or download.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_artifacts_to_b64_results$/)'
   - id: case-image-provider-error
-    why: The image-provider-error behavior is missing or differs from its pinned fixture.
+    why: Stability 3 filters finish_reasons by truthiness, then raises B682 BedrockError 400 with the retained strings
+      joined by semicolon-space before mapping images; absent or all-falsey reasons pass. A malformed None/list
+      item keeps its native iteration/join failure. Nova ignores its response error field and simply maps images;
+      Titan and Stability 1 likewise do not invent provider-error validation. Nonmapping request config values fail
+      at their actual mapping/keyword-expansion step, before the later TypedDict constructor catches.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_image_provider_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_models.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_models.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*")"
       && grep -lq 'bedrock_other_image_models' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_models$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-image-family-selection
+    why: Choose Titan for case-sensitive amazon.titan substring, else Nova for amazon.nova-canvas, else Stability
+      3 for sd3 or sd3.5 or stable-image, else Stability 1. Falsey model uses Stability 1. These are substring checks
+      rather than strict provider prefixes, and Titan wins when a string contains multiple markers. Reuse the same
+      selector from B634 and B068.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_image_family_selection$/)'
+  - id: config-cfg-scale
+    why: cfg_scale lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_image_models_config_cases::case_[0-9]+_loads_cfg_scale$/)'
+  - id: config-seed
+    why: seed lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_image_models_config_cases::case_[0-9]+_loads_seed$/)'
+  - id: config-steps
+    why: steps lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_image_models_config_cases::case_[0-9]+_loads_steps$/)'
+  - id: config-width
+    why: width lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_image_models_config_cases::case_[0-9]+_loads_width$/)'
+  - id: config-height
+    why: height lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_image_models_config_cases::case_[0-9]+_loads_height$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/titan-image-body.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability1-text-prompts.yaml
@@ -193,27 +355,35 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/size-n-quality-map.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/artifacts-to-b64-results.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-family-selection.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/image_generation/amazon_titan_transformation.py: AmazonTitanImageGenerationConfig.cost_calculator
-  L142-L154 belong to B068; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py: AmazonStabilityConfig.cost_calculator
-  L133-L162 belong to B068; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py: AmazonStability3Config.cost_calculator
-  L108-L125 belong to B068; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py: AmazonNovaCanvasConfig.cost_calculator
-  L188-L205 belong to B068; reuse that implementation or its injected typed boundary.
+- 'amazon_titan_transformation.py AmazonTitanImageGenerationConfig.__init__ L30-L41 and get_config L44-L59: no caller
+  at the pin; the request transform does not consult these class attributes.'
+- 'amazon_stability3_transformation.py AmazonStability3Config.get_config L22-L37 and amazon_nova_canvas_transformation.py
+  AmazonNovaCanvasConfig.get_config L28-L43: no caller at the pin.'
+- B159 owns Python-only nonstring keyword-key validation; JSON object keys are strings, so Nova TypedDict constructor
+  error wrappers cannot be reached by a valid JSON object. Invalid mapping shapes fail earlier and are covered here.
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py: AmazonNovaCanvasConfig.get_config
+  L27-L43; AmazonNovaCanvasConfig.cost_calculator L187-L205 belong to B068.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py: AmazonStabilityConfig.cost_calculator
+  L132-L162 belong to B068.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py: AmazonStability3Config.get_config
+  L21-L37; AmazonStability3Config.cost_calculator L107-L125 belong to B068.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/amazon_titan_transformation.py: AmazonTitanImageGenerationConfig.cost_calculator
+  L141-L154 belong to B068.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.image_generation
+  L76-L139; BedrockImageGeneration.async_image_generation L141-L188; BedrockImageGeneration._extract_headers_from_optional_params
+  L190-L203; BedrockImageGeneration._prepare_request L205-L292; BedrockImageGeneration._get_request_body L294-L310;
+  BedrockImageGeneration._transform_response_dict_to_openai_response L312-L345 belong to B634.'
 pitfalls:
-- Preserve width/height/n, cfgScale/seed/quality/style/task fields and model selection; image prices stay B068.
+- Titan pops imageGenerationConfig twice, so the apparent second override is empty in ordinary execution.
+- TypedDict construction does not enforce the listed Nova parameter annotations or reject unknown fields.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

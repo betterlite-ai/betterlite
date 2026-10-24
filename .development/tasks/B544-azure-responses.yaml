@@ -21,12 +21,46 @@ description: >-
   L54-L75; AzureOpenAIOSeriesResponsesAPIConfig.is_o_series_model L77-L92.
 
 
-  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  Reuse BaseAzureLLM._base_validate_azure_environment from B2200 (litellm/llms/azure/common_utils.py); its implementation
   remains with that prerequisite.
 
 
-  Reuse BaseAzureLLM._get_base_azure_url from B531 (litellm/llms/azure/common_utils.py); its implementation remains
+  Reuse BaseAzureLLM._get_base_azure_url from B2200 (litellm/llms/azure/common_utils.py); its implementation remains
   with that prerequisite.
+
+
+  Named case contracts: responses_base_and_api_version: Use B2200 URL helper with route=/openai/responses and default
+  from AZURE_DEFAULT_RESPONSES_API_VERSION environment (default preview). Reuse B2200 key/token header validation
+  and its query precedence; advertise provider azure. strip_azure_model_prefix: Remove every responses/,o_series/,azure_ai/
+  occurrence in that order, not the azure/ prefix. Copy each dict tool having function, remove function and update
+  with its nested mapping so nested keys overwrite top-level keys; replace tools in caller options before B507 request
+  transformation. o_series_options: Recognize case-insensitive o_series substring or B174 supports_reasoning(model);
+  do not restrict this selector to o1/o3/o4 substrings. reasoning_null_fields: For reasoning items try SDK validation,
+  synthesize absent summary from reasoning_content (first100 plus ... when longer), dump exclude_none=True and remove
+  status. On any validation/type failure debug-log and filter the original item only: remove null status/content/encrypted_content,
+  retaining non-null status and unrelated null fields. Parent input validation runs first; then remove every status
+  field from type=message dictionaries. websocket_model_query: Native websocket support is True and model_in_websocket_url
+  is False. Missing None api_base raises ValueError api_base is required for Azure WebSocket. Strip trailing slash
+  and one existing /openai/v1/responses or /openai/responses suffix, append /openai/v1/responses, remove all query,
+  set wss only for original https and ws otherwise. resource_id_before_query: Append B206 encoded response_id and
+  optional /cancel or /input_items to the trimmed URL path while preserving scheme,authority,params,query,fragment.
+  Get/delete/cancel return {} data; input items include non-None after/before/limit/order, default20/desc, and comma-join
+  a truthy include list. cancel_response: JSON parsing exceptions become AzureOpenAIError carrying raw_response.text/status;
+  successful JSON is validated as ResponsesAPIResponse and validation failures propagate, matching the OpenAI cancellation
+  projection contract. azure_responses_capabilities: Remove context_management from B506 supported params; none-effort
+  support/default delegates to B532 Azure catalog policy. O-series also removes temperature from its advertised
+  list, but its mapper copies all values and drops temperature only when drop_params is truthy, with debug logging;
+  without drop it retains temperature.
+
+
+  Load AZURE_DEFAULT_RESPONSES_API_VERSION through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest azure_responses_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
 
 
   Implement crates/betterlite-azure/src/responses.rs with adjacent tests under responses/. Keep each Rust module
@@ -44,9 +78,9 @@ description: >-
 
   Write rstest function responses_cases in betterlite-azure with these exact named cases (one per oracle file):
   responses_base_and_api_version, strip_azure_model_prefix, o_series_options, reasoning_null_fields, websocket_model_query,
-  resource_id_before_query, cancel_response. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  resource_id_before_query, cancel_response, azure_responses_capabilities. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_responses* using HelperCase: kind: helper
@@ -63,9 +97,9 @@ description: >-
 
 
   Budget from 297 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 315 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 586 planned, 600 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 310 production lines, 230 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 710 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -84,11 +118,23 @@ scope:
   - crates/betterlite-azure/fuzz/Cargo.toml
   - crates/betterlite-azure/fuzz/fuzz_targets/azure_responses.rs
   - crates/betterlite-azure/fuzz/corpus/azure_responses/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/azure_responses.rs
+  - crates/betterlite-config/src/providers/azure/azure_responses/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_responses_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_responses*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L30-L353
-  why: >-
-    Own AzureOpenAIResponsesAPIConfig.custom_llm_provider, AzureOpenAIResponsesAPIConfig._supports_reasoning_effort_none,
+  why: Own AzureOpenAIResponsesAPIConfig.custom_llm_provider, AzureOpenAIResponsesAPIConfig._supports_reasoning_effort_none,
     AzureOpenAIResponsesAPIConfig._effort_resolves_to_none, AzureOpenAIResponsesAPIConfig.get_supported_openai_params,
     AzureOpenAIResponsesAPIConfig.validate_environment, AzureOpenAIResponsesAPIConfig.get_stripped_model_name, AzureOpenAIResponsesAPIConfig._handle_reasoning_item,
     AzureOpenAIResponsesAPIConfig._validate_input_param, AzureOpenAIResponsesAPIConfig.transform_responses_api_request,
@@ -99,43 +145,59 @@ references:
     AzureOpenAIResponsesAPIConfig.transform_cancel_response_api_response. Other functions in this file remain with
     the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/o_series_transformation.py#L35-L92
-  why: >-
-    Own AzureOpenAIOSeriesResponsesAPIConfig.get_supported_openai_params, AzureOpenAIOSeriesResponsesAPIConfig.map_openai_params,
+  why: Own AzureOpenAIOSeriesResponsesAPIConfig.get_supported_openai_params, AzureOpenAIOSeriesResponsesAPIConfig.map_openai_params,
     AzureOpenAIOSeriesResponsesAPIConfig.is_o_series_model. Other functions in this file remain with the owners
     listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L9
+  why: Responses API version override and preview default.
 dod:
-- text: >-
-    responses base and api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/responses-base-and-api-version.yaml.
+- text: 'responses_base_and_api_version: Use B2200 URL helper with route=/openai/responses and default from AZURE_DEFAULT_RESPONSES_API_VERSION
+    environment (default preview). Reuse B2200 key/token header validation and its query precedence; advertise provider
+    azure.'
   proof:
   - case-responses-base-and-api-version
   - oracle
   - helper-python
-- text: 'strip azure model prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/strip-azure-model-prefix.yaml.'
+- text: 'strip_azure_model_prefix: Remove every responses/,o_series/,azure_ai/ occurrence in that order, not the
+    azure/ prefix. Copy each dict tool having function, remove function and update with its nested mapping so nested
+    keys overwrite top-level keys; replace tools in caller options before B507 request transformation.'
   proof:
   - case-strip-azure-model-prefix
   - oracle
   - helper-python
-- text: 'o series options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/o-series-options.yaml.'
+- text: 'o_series_options: Recognize case-insensitive o_series substring or B174 supports_reasoning(model); do not
+    restrict this selector to o1/o3/o4 substrings.'
   proof:
   - case-o-series-options
   - oracle
   - helper-python
-- text: 'reasoning null fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/reasoning-null-fields.yaml.'
+- text: 'reasoning_null_fields: For reasoning items try SDK validation, synthesize absent summary from reasoning_content
+    (first100 plus ... when longer), dump exclude_none=True and remove status. On any validation/type failure debug-log
+    and filter the original item only: remove null status/content/encrypted_content, retaining non-null status and
+    unrelated null fields. Parent input validation runs first; then remove every status field from type=message
+    dictionaries.'
   proof:
   - case-reasoning-null-fields
   - oracle
   - helper-python
-- text: 'websocket model query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/websocket-model-query.yaml.'
+- text: 'websocket_model_query: Native websocket support is True and model_in_websocket_url is False. Missing None
+    api_base raises ValueError api_base is required for Azure WebSocket. Strip trailing slash and one existing /openai/v1/responses
+    or /openai/responses suffix, append /openai/v1/responses, remove all query, set wss only for original https
+    and ws otherwise.'
   proof:
   - case-websocket-model-query
   - oracle
   - helper-python
-- text: 'resource id before query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/resource-id-before-query.yaml.'
+- text: 'resource_id_before_query: Append B206 encoded response_id and optional /cancel or /input_items to the trimmed
+    URL path while preserving scheme,authority,params,query,fragment. Get/delete/cancel return {} data; input items
+    include non-None after/before/limit/order, default20/desc, and comma-join a truthy include list.'
   proof:
   - case-resource-id-before-query
   - oracle
   - helper-python
-- text: 'cancel response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-responses/cancel-response.yaml.'
+- text: 'cancel_response: JSON parsing exceptions become AzureOpenAIError carrying raw_response.text/status; successful
+    JSON is validated as ResponsesAPIResponse and validation failures propagate, matching the OpenAI cancellation
+    projection contract.'
   proof:
   - case-cancel-response
   - oracle
@@ -147,50 +209,79 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'azure_responses_capabilities: Remove context_management from B506 supported params; none-effort support/default
+    delegates to B532 Azure catalog policy. O-series also removes temperature from its advertised list, but its
+    mapper copies all values and drops temperature only when drop_params is truthy, with debug logging; without
+    drop it retains temperature.'
+  proof:
+  - case-azure-responses-capabilities
+  - oracle
+  - helper-python
+- text: The real config loader resolves AZURE_DEFAULT_RESPONSES_API_VERSION, including its default and precedence.
+  proof:
+  - config-azure-default-responses-api-version
 checks:
   optional:
   - mutants
   commands:
   - id: case-responses-base-and-api-version
-    why: The responses-base-and-api-version behavior is missing or differs from its pinned fixture.
+    why: Use B2200 URL helper with route=/openai/responses and default from AZURE_DEFAULT_RESPONSES_API_VERSION
+      environment (default preview). Reuse B2200 key/token header validation and its query precedence; advertise
+      provider azure.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_base_and_api_version$/)'
   - id: case-strip-azure-model-prefix
-    why: The strip-azure-model-prefix behavior is missing or differs from its pinned fixture.
+    why: Remove every responses/,o_series/,azure_ai/ occurrence in that order, not the azure/ prefix. Copy each
+      dict tool having function, remove function and update with its nested mapping so nested keys overwrite top-level
+      keys; replace tools in caller options before B507 request transformation.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_strip_azure_model_prefix$/)'
   - id: case-o-series-options
-    why: The o-series-options behavior is missing or differs from its pinned fixture.
+    why: Recognize case-insensitive o_series substring or B174 supports_reasoning(model); do not restrict this selector
+      to o1/o3/o4 substrings.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_o_series_options$/)'
   - id: case-reasoning-null-fields
-    why: The reasoning-null-fields behavior is missing or differs from its pinned fixture.
+    why: 'For reasoning items try SDK validation, synthesize absent summary from reasoning_content (first100 plus
+      ... when longer), dump exclude_none=True and remove status. On any validation/type failure debug-log and filter
+      the original item only: remove null status/content/encrypted_content, retaining non-null status and unrelated
+      null fields. Parent input validation runs first; then remove every status field from type=message dictionaries.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_reasoning_null_fields$/)'
   - id: case-websocket-model-query
-    why: The websocket-model-query behavior is missing or differs from its pinned fixture.
+    why: Native websocket support is True and model_in_websocket_url is False. Missing None api_base raises ValueError
+      api_base is required for Azure WebSocket. Strip trailing slash and one existing /openai/v1/responses or /openai/responses
+      suffix, append /openai/v1/responses, remove all query, set wss only for original https and ws otherwise.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_websocket_model_query$/)'
   - id: case-resource-id-before-query
-    why: The resource-id-before-query behavior is missing or differs from its pinned fixture.
+    why: Append B206 encoded response_id and optional /cancel or /input_items to the trimmed URL path while preserving
+      scheme,authority,params,query,fragment. Get/delete/cancel return {} data; input items include non-None after/before/limit/order,
+      default20/desc, and comma-join a truthy include list.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_resource_id_before_query$/)'
   - id: case-cancel-response
-    why: The cancel-response behavior is missing or differs from its pinned fixture.
+    why: JSON parsing exceptions become AzureOpenAIError carrying raw_response.text/status; successful JSON is validated
+      as ResponsesAPIResponse and validation failures propagate, matching the OpenAI cancellation projection contract.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_cancel_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_responses.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_responses.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_responses*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_responses*")"
       && grep -lq 'azure_responses' tools/oracle/fuzz/corpus/helper_case/azure_responses* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_responses$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_responses)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_responses)"
       && grep -q 'decode_azure_response_resource' crates/betterlite-azure/fuzz/fuzz_targets/azure_responses.rs &&
       cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_responses_corpus$/)'
+  - id: case-azure-responses-capabilities
+    why: Remove context_management from B506 supported params; none-effort support/default delegates to B532 Azure
+      catalog policy. O-series also removes temperature from its advertised list, but its mapper copies all values
+      and drops temperature only when drop_params is truthy, with debug logging; without drop it retains temperature.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_azure_responses_capabilities$/)'
+  - id: config-azure-default-responses-api-version
+    why: AZURE_DEFAULT_RESPONSES_API_VERSION lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_responses_config_cases::case_[0-9]+_loads_azure_default_responses_api_version$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-responses/responses-base-and-api-version.yaml
 - tools/oracle/cases/helpers/providers/azure-responses/strip-azure-model-prefix.yaml
@@ -199,6 +290,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-responses/websocket-model-query.yaml
 - tools/oracle/cases/helpers/providers/azure-responses/resource-id-before-query.yaml
 - tools/oracle/cases/helpers/providers/azure-responses/cancel-response.yaml
+- tools/oracle/cases/helpers/providers/azure-responses/azure-responses-capabilities.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -206,9 +298,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Azure response input replay drops reasoning fields for unsupported model families instead of applying the OpenAI
-  rule to every model.
+- Reasoning validation fallback retains a non-null status, while successful validation removes status unconditionally.
+- 'The method name get_stripped_model_name is misleading for azure/: only responses/, o_series/ and azure_ai/ are
+  replaced.'
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

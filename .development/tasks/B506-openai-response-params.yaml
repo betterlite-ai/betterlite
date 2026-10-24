@@ -8,7 +8,7 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/responses/transformation.py:
-  _bundled_openai_reasoning_models L60-L72; _DeleteResponse.json L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body
+  _bundled_openai_reasoning_models L59-L72; _DeleteResponse.json L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body
   L95-L97; _json_object_body L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider L107-L108; OpenAIResponsesAPIConfig.supports_native_file_search
   L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model
   L117-L126; OpenAIResponsesAPIConfig._model_map_lookup_name L129-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none
@@ -22,8 +22,39 @@ description: >-
   implementation remains with that prerequisite.
 
 
-  Reuse is_gpt_reasoning_series_name from B502 (litellm/llms/openai/chat/gpt_5_transformation.py); its implementation
+  Reuse is_gpt_reasoning_series_name from B668 (litellm/llms/openai/chat/gpt_5_transformation.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: minimum_output_tokens: Clamp integer max_output_tokens below 16 to OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS=16
+  for every model, retaining None/noninteger/at-least-16 values; this is a source constant, not an environment setting.
+  reasoning_unsupported_drop_or_error: Only provider OPENAI and a non-None requested reasoning.effort triggers capability
+  rejection; litellm.drop_params or drop_params drops the entire reasoning object, otherwise UnsupportedParamsError
+  400 names reasoning.effort and supports_reasoning. gpt5_temperature_default_effort: Run GPT sampling guards only
+  for unprefixed names or names whose first component is openai, then use B668 GPT-family recognition. Temperature
+  None or 1 survives; other values require supports_none and B502 explicit/default effort none, otherwise drop or
+  UnsupportedParamsError 400. top_p_with_reasoning: The presence of top_p, even None, requires the same none-effort
+  condition on GPT reasoning models; false drop flags raise UnsupportedParamsError 400 and true flags remove top_p.
+  unknown_catalog_model: Lookup the final slash-delimited model with provider openai; lookup exceptions permit reasoning.
+  An explicit supports_reasoning value wins, otherwise consult a maxsize=1 cached bundled OpenAI reasoning-model
+  set keyed by info.key. reasoning_summary_without_effort: A reasoning mapping/object without effort bypasses the
+  unsupported-effort guard; a dictionary is required for the subsequent GPT sampling guard to read effort. responses_parameter_set:
+  Supported fields are input, model, extra_headers, extra_query, extra_body, timeout and include, instructions,
+  max_output_tokens, metadata, parallel_tool_calls, previous_response_id, reasoning, store, background, stream,
+  temperature, text, tool_choice, tools, top_p, truncation, user, service_tier, safety_identifier, prompt, max_tool_calls,
+  prompt_cache_key, prompt_cache_retention, prompt_cache_options, stream_options, top_logprobs, partial_images and
+  context_management. Compare as a set; map_openai_params copies the map and does not itself filter unknown keys.
+  provider_capabilities: custom_llm_provider is OPENAI; supports_native_file_search is true and encrypted agent
+  messages are supported only for OPENAI/AZURE. JSON response protocol helpers directly return the supplied response.json
+  result.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
+
+
+  The direct _get_model_info_helper call is owned by B2219; its full lookup/failure behavior is part of this dependency,
+  not the SDK facade.
 
 
   Implement crates/betterlite-openai/src/response_params.rs with adjacent tests under response_params/. Keep each
@@ -41,10 +72,9 @@ description: >-
 
   Write rstest function response_params_cases in betterlite-openai with these exact named cases (one per oracle
   file): minimum_output_tokens, reasoning_unsupported_drop_or_error, gpt5_temperature_default_effort, top_p_with_reasoning,
-  unknown_catalog_model, reasoning_summary_without_effort. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  unknown_catalog_model, reasoning_summary_without_effort, responses_parameter_set, provider_capabilities. Each
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_response_params* using HelperCase: kind:
@@ -61,10 +91,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 164 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 190 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 448 planned, 450 maximum changed lines.
+  Budget from 165 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 180 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 520 planned, 525 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -86,8 +116,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L60-L281
-  why: >-
-    Own _bundled_openai_reasoning_models, _DeleteResponse.json, _JsonObjectResponse.json, _delete_response_body,
+  why: Own _bundled_openai_reasoning_models, _DeleteResponse.json, _JsonObjectResponse.json, _delete_response_body,
     _json_object_body, OpenAIResponsesAPIConfig.custom_llm_provider, OpenAIResponsesAPIConfig.supports_native_file_search,
     OpenAIResponsesAPIConfig.supports_encrypted_agent_messages, OpenAIResponsesAPIConfig._is_gpt_5_model, OpenAIResponsesAPIConfig._model_map_lookup_name,
     OpenAIResponsesAPIConfig._supports_reasoning_effort_none, OpenAIResponsesAPIConfig._effort_resolves_to_none,
@@ -95,37 +124,42 @@ references:
     OpenAIResponsesAPIConfig.get_supported_openai_params, OpenAIResponsesAPIConfig.map_openai_params. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: >-
-    minimum output tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/minimum-output-tokens.yaml.
+- text: 'minimum_output_tokens: Clamp integer max_output_tokens below 16 to OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS=16
+    for every model, retaining None/noninteger/at-least-16 values; this is a source constant, not an environment
+    setting.'
   proof:
   - case-minimum-output-tokens
   - oracle
   - helper-python
-- text: >-
-    reasoning unsupported drop or error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/reasoning-unsupported-drop-or-error.yaml.
+- text: 'reasoning_unsupported_drop_or_error: Only provider OPENAI and a non-None requested reasoning.effort triggers
+    capability rejection; litellm.drop_params or drop_params drops the entire reasoning object, otherwise UnsupportedParamsError
+    400 names reasoning.effort and supports_reasoning.'
   proof:
   - case-reasoning-unsupported-drop-or-error
   - oracle
   - helper-python
-- text: >-
-    gpt5 temperature default effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/gpt5-temperature-default-effort.yaml.
+- text: 'gpt5_temperature_default_effort: Run GPT sampling guards only for unprefixed names or names whose first
+    component is openai, then use B668 GPT-family recognition. Temperature None or 1 survives; other values require
+    supports_none and B502 explicit/default effort none, otherwise drop or UnsupportedParamsError 400.'
   proof:
   - case-gpt5-temperature-default-effort
   - oracle
   - helper-python
-- text: 'top p with reasoning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/top-p-with-reasoning.yaml.'
+- text: 'top_p_with_reasoning: The presence of top_p, even None, requires the same none-effort condition on GPT
+    reasoning models; false drop flags raise UnsupportedParamsError 400 and true flags remove top_p.'
   proof:
   - case-top-p-with-reasoning
   - oracle
   - helper-python
-- text: >-
-    unknown catalog model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/unknown-catalog-model.yaml.
+- text: 'unknown_catalog_model: Lookup the final slash-delimited model with provider openai; lookup exceptions permit
+    reasoning. An explicit supports_reasoning value wins, otherwise consult a maxsize=1 cached bundled OpenAI reasoning-model
+    set keyed by info.key.'
   proof:
   - case-unknown-catalog-model
   - oracle
   - helper-python
-- text: >-
-    reasoning summary without effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-params/reasoning-summary-without-effort.yaml.
+- text: 'reasoning_summary_without_effort: A reasoning mapping/object without effort bypasses the unsupported-effort
+    guard; a dictionary is required for the subsequent GPT sampling guard to read effort.'
   proof:
   - case-reasoning-summary-without-effort
   - oracle
@@ -138,47 +172,82 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'responses_parameter_set: Supported fields are input, model, extra_headers, extra_query, extra_body, timeout
+    and include, instructions, max_output_tokens, metadata, parallel_tool_calls, previous_response_id, reasoning,
+    store, background, stream, temperature, text, tool_choice, tools, top_p, truncation, user, service_tier, safety_identifier,
+    prompt, max_tool_calls, prompt_cache_key, prompt_cache_retention, prompt_cache_options, stream_options, top_logprobs,
+    partial_images and context_management. Compare as a set; map_openai_params copies the map and does not itself
+    filter unknown keys.'
+  proof:
+  - case-responses-parameter-set
+  - oracle
+  - helper-python
+- text: 'provider_capabilities: custom_llm_provider is OPENAI; supports_native_file_search is true and encrypted
+    agent messages are supported only for OPENAI/AZURE. JSON response protocol helpers directly return the supplied
+    response.json result.'
+  proof:
+  - case-provider-capabilities
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-minimum-output-tokens
-    why: The minimum-output-tokens behavior is missing or differs from its pinned fixture.
+    why: Clamp integer max_output_tokens below 16 to OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS=16 for every model,
+      retaining None/noninteger/at-least-16 values; this is a source constant, not an environment setting.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_minimum_output_tokens$/)'
   - id: case-reasoning-unsupported-drop-or-error
-    why: The reasoning-unsupported-drop-or-error behavior is missing or differs from its pinned fixture.
+    why: Only provider OPENAI and a non-None requested reasoning.effort triggers capability rejection; litellm.drop_params
+      or drop_params drops the entire reasoning object, otherwise UnsupportedParamsError 400 names reasoning.effort
+      and supports_reasoning.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_reasoning_unsupported_drop_or_error$/)'
   - id: case-gpt5-temperature-default-effort
-    why: The gpt5-temperature-default-effort behavior is missing or differs from its pinned fixture.
+    why: Run GPT sampling guards only for unprefixed names or names whose first component is openai, then use B668
+      GPT-family recognition. Temperature None or 1 survives; other values require supports_none and B502 explicit/default
+      effort none, otherwise drop or UnsupportedParamsError 400.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_gpt5_temperature_default_effort$/)'
   - id: case-top-p-with-reasoning
-    why: The top-p-with-reasoning behavior is missing or differs from its pinned fixture.
+    why: The presence of top_p, even None, requires the same none-effort condition on GPT reasoning models; false
+      drop flags raise UnsupportedParamsError 400 and true flags remove top_p.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_top_p_with_reasoning$/)'
   - id: case-unknown-catalog-model
-    why: The unknown-catalog-model behavior is missing or differs from its pinned fixture.
+    why: Lookup the final slash-delimited model with provider openai; lookup exceptions permit reasoning. An explicit
+      supports_reasoning value wins, otherwise consult a maxsize=1 cached bundled OpenAI reasoning-model set keyed
+      by info.key.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_unknown_catalog_model$/)'
   - id: case-reasoning-summary-without-effort
-    why: The reasoning-summary-without-effort behavior is missing or differs from its pinned fixture.
+    why: A reasoning mapping/object without effort bypasses the unsupported-effort guard; a dictionary is required
+      for the subsequent GPT sampling guard to read effort.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_reasoning_summary_without_effort$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_params.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_params.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_params*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_params*")"
       && grep -lq 'openai_response_params' tools/oracle/fuzz/corpus/helper_case/openai_response_params* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_response_params$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_params)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_params)"
       && grep -q 'decode_response_capability_error' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_params.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_params_corpus$/)'
+  - id: case-responses-parameter-set
+    why: Supported fields are input, model, extra_headers, extra_query, extra_body, timeout and include, instructions,
+      max_output_tokens, metadata, parallel_tool_calls, previous_response_id, reasoning, store, background, stream,
+      temperature, text, tool_choice, tools, top_p, truncation, user, service_tier, safety_identifier, prompt, max_tool_calls,
+      prompt_cache_key, prompt_cache_retention, prompt_cache_options, stream_options, top_logprobs, partial_images
+      and context_management. Compare as a set; map_openai_params copies the map and does not itself filter unknown
+      keys.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_responses_parameter_set$/)'
+  - id: case-provider-capabilities
+    why: custom_llm_provider is OPENAI; supports_native_file_search is true and encrypted agent messages are supported
+      only for OPENAI/AZURE. JSON response protocol helpers directly return the supplied response.json result.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_provider_capabilities$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-params/minimum-output-tokens.yaml
 - tools/oracle/cases/helpers/providers/openai-response-params/reasoning-unsupported-drop-or-error.yaml
@@ -186,40 +255,41 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-params/top-p-with-reasoning.yaml
 - tools/oracle/cases/helpers/providers/openai-response-params/unknown-catalog-model.yaml
 - tools/oracle/cases/helpers/providers/openai-response-params/reasoning-summary-without-effort.yaml
+- tools/oracle/cases/helpers/providers/openai-response-params/responses-parameter-set.yaml
+- tools/oracle/cases/helpers/providers/openai-response-params/provider-capabilities.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request L283-L311;
-  OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request
+  L283-L311; OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
   L330-L341; OpenAIResponsesAPIConfig._tool_with_object_parameters L343-L359; OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools
   L361-L391; OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids L393-L397; OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id
-  L400-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
-  L441-L444; OpenAIResponsesAPIConfig._combinator_gate_model L447-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
-  L453-L477; OpenAIResponsesAPIConfig._sanitized_tools L480-L488; OpenAIResponsesAPIConfig._validate_input_param
-  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response L558-L587;
-  OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url L604-L623;
-  OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
-  L659-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L669-L671; OpenAIResponsesAPIConfig.get_event_model_class
-  L674-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
-  L754-L756 belong to B508; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
+  L399-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
+  L440-L444; OpenAIResponsesAPIConfig._combinator_gate_model L446-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
+  L452-L477; OpenAIResponsesAPIConfig._sanitized_tools L479-L488; OpenAIResponsesAPIConfig._validate_input_param
+  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response
+  L558-L587; OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url
+  L604-L623; OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
+  L658-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L668-L671; OpenAIResponsesAPIConfig.get_event_model_class
+  L673-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
+  L754-L756 belong to B508.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
   L761-L777; OpenAIResponsesAPIConfig.transform_delete_response_api_response L779-L791; OpenAIResponsesAPIConfig.transform_get_response_api_request
   L796-L812; OpenAIResponsesAPIConfig.transform_get_response_api_response L814-L832; OpenAIResponsesAPIConfig.transform_list_input_items_request
   L837-L862; OpenAIResponsesAPIConfig.transform_list_input_items_response L864-L872; OpenAIResponsesAPIConfig.transform_cancel_response_api_request
   L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
-  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509; reuse that
-  implementation or its injected typed boundary.
+  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509.'
 pitfalls:
-- The Responses minimum max_output_tokens is 16 and is independent of the chat token floor.
+- A live map explicit supports_reasoning=false overrides the bundled set; only an absent declaration consults bundled
+  defaults.
+- The list from get_supported_openai_params is assembled from a set, so its ordering is not a wire contract.
+- reasoning.effort object attributes participate in rejection, but only a dictionary effort participates in the
+  later temperature gate.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: standard

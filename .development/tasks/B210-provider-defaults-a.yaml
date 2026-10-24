@@ -15,14 +15,24 @@ description: >-
   and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
   The listed provider-specific files each invoke this operation once; JSON table entries use named rstest rows plus
   representative registry-precedence cases.
+
+
+  For the bedrock_mantle branch at get_llm_provider_logic.py L633-L642, call B2207 Mantle endpoint/key policy and
+  split_mantle_region_prefix directly. Do not copy the provider algorithm into the defaults table or construct the
+  upper B625 transport config. B2207 owns the source config method called by this branch.
+
+
+  These pure policies live in betterlite-models below the executable provider dispatcher. Use catalog/wire DTOs
+  and closed config tags or caller-supplied policy projections, never an executable provider client. B010 reexports
+  ProviderId and composes the provider enum; do not import betterlite-provider or betterlite-core here.
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
-  - crates/betterlite-provider/src/provider_defaults_a.rs
-  - crates/betterlite-provider/src/provider_defaults_a/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/provider_defaults_a.rs
+  - crates/betterlite-models/src/provider_defaults_a/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
@@ -30,18 +40,15 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L566-L757
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L566-L757
   why: Exact default table branch ownership.
 dod:
-- text: >-
-    Each listed helper case compares its named production function with the pinned Python function, including precedence,
-    omissions and error facts.
+- text: Each listed helper case compares its named production function with the pinned Python function, including
+    precedence, omissions and error facts.
   proof:
   - oracle
   - helper-python
-- text: >-
-    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+- text: Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
     independently of corpus replay.
   proof:
   - behavior-tests
@@ -54,19 +61,16 @@ checks:
   commands:
   - id: behavior-tests
     why: new behavior tests are missing or fail
-    run: >-
-      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::b210_behavior_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b210_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'provider_defaults_a' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+      && grep -rlq 'provider_defaults_a' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -108,12 +112,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/provider-defaults-a/volcengine.yaml
 deviations: []
 out_of_scope:
-- >-
-  Identity and prefix parsing B209; final get_llm_provider integration B174; github_copilot/chatgpt authentication
+- Identity and prefix parsing B209; final get_llm_provider integration B174; github_copilot/chatgpt authentication
   flows B045, never called by these tests.
 pitfalls:
-- >-
-  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+- Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: security
 budget:

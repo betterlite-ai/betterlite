@@ -1,10 +1,9 @@
 id: B645
 title: Bedrock managed file listing and lifecycle
 description: >-
-  Add typed S3 XML listing response, pagination and authorized GET/HEAD/DELETE plans for managed files. Preserve
-  input/output bucket walk, purpose filtering, continuation tokens, LastModified conversion and source filtering
-  of unmanaged keys with a diagnostic. Use a maintained bounded XML parser with external entities disabled, and
-  fuzz its production parser.
+  Implement native S3 ListObjectsV2 pagination, authorized content GET and DELETE plans, and deletion responses.
+  Metadata retrieval is unsupported at this pin. Preserve input/output bucket walking, exact purpose filters and
+  silent omission of unauthorized keys; use a bounded namespace-aware XML decoder with a named DTD-rejection deviation.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
@@ -23,6 +22,68 @@ description: >-
   resolve prefixes. Limit total response bytes through B173 and preserve continuation-token fields.
 
 
+  Named case contracts: list_purpose_prefix: Use requested purpose from _s3_list_files_purpose only when a string,
+  otherwise None; walked purpose from string _s3_list_files_location, otherwise requested purpose. Query for None/empty
+  purpose uses common prefix litellm-, batch uses litellm-bedrock-files, and batch_output uses litellm-batch-outputs/,
+  prepending configured prefix plus slash. Unknown truthy purpose uses only list-type=2,max-keys=0. Known/default
+  prefix queries contain list-type=2,prefix={value}. The initial request writes both internal purpose/location keys,
+  including None. input_output_bucket_walk: For batch_output choose truthy trusted s3_output_bucket_name, AWS_S3_OUTPUT_BUCKET_NAME,
+  then B643 input bucket; other purposes use B643 input bucket directly. A second output location remains only when
+  walked purpose is None and output/input configured bucket strings differ, including differing prefixes on the
+  same bucket. After finishing the first location, set _s3_list_files_location=batch_output before signing its first
+  page. Explicit empty-string purpose behaves differently from None: it uses the broad query but never walks output
+  and filters every returned purpose out. pagination_continuation: Next-request returns None immediately for status>=400
+  without parsing. Otherwise parse XML and use a truthy direct-child NextContinuationToken regardless of IsTruncated,
+  keeping the walked purpose. If no token, switch to output only when still unlisted; otherwise None. Sign URL {endpoint}/{bucket}/
+  plus ? and urlencode of ordered listing query then continuation-token, using quote with safe empty, so spaces
+  are %20 rather than plus and slash is escaped. Return base URL and the unencoded query mapping separately; store
+  signed headers under _s3_signed_request_headers for B644 validate_environment. namespace_xml_list: decode_s3_listing
+  handles ElementTree wildcard-namespace behavior for direct-child Name,Contents,Key,Size,LastModified,NextContinuationToken:
+  prefixed, default and absent namespaces all work, but nested Contents do not become top-level entries. Use truthy
+  Name text as the listed bucket, otherwise the configured bucket without its prefix; do not override a foreign
+  XML Name with the configured bucket. At status>=400 raise B682 preserving status,text,headers,response before
+  parsing; lower statuses still parse, including empty204 bodies that fail XML parsing. unmanaged_key_filter: A
+  missing/empty Key silently omits its entry. Build raw file_id=s3://{XML_or_config_bucket}/{raw_key}, then B2208
+  authorize with configured bucket/prefix, the three managed prefixes and trusted legacy flag. Any authorization
+  ValueError silently omits the entry, without a warning/debug diagnostic. Authorized entries retain the raw key
+  and file_id rather than the validator's decoded return. Compute relative_key by raw configured-prefix length;
+  purpose=batch_output only when it starts literal litellm-batch-outputs/, otherwise batch. Final filtering uses
+  the originally requested purpose: None accepts both; every other string must exactly match. last_modified_and_size:
+  For authorized entries use int(Size text or0), permitting source signed-integer syntax and preserving conversion
+  failures. Missing/empty LastModified yields0; otherwise replace every Z by +00:00, parse fromisoformat and truncate
+  timestamp to int. Pin the oracle timezone for naive ISO timestamps, preserving offset behavior and pre-epoch truncation.
+  Invalid date/size errors propagate instead of silently omitting an authorized entry. filename is POSIX basename
+  of raw key, object=file,status=uploaded; trailing slash can produce an empty filename. file_retrieve_delete: Both
+  metadata retrieve request and response raise NotImplementedError BedrockFilesConfig does not support file retrieval.
+  DELETE first uses B643 _resolve_managed_s3_object, then target selection, then B2208 key encoding and S3 signature;
+  store signed headers under _s3_signed_request_headers and return URL with empty query. Content GET follows the
+  same path but first requires a truthy file_content_request.file_id or ValueError file_id is required for Bedrock
+  file content retrieval. No HEAD implementation is added. invalid_xml: Malformed/truncated XML propagates the parser
+  failure from both listing transforms, without an invented BedrockError status. Use the production namespace-aware
+  decoder for both paths and replay its corpus. Standalone Rust rejection cases cover DTD/internal-entity declarations
+  and configured byte/depth limits; those hardening cases are not claimed as successful Python equivalence. delete_response_context:
+  Only HTTP204 is deletion success. Other statuses raise B682 with original status when >=400, otherwise502; message
+  is truthy response.text or S3 file deletion returned HTTP {status}, and headers are preserved. After204, validate
+  logging_obj.model_call_details.additional_args as _S3DeleteContext with required nonempty string file_id, retaining
+  validation errors; return FileDeleted id from that logging context,deleted=True,object=file. Do not infer the
+  ID from response URL/body. s3_request_target: Merge as {litellm_params, then optional_params}, so request keys
+  win here; this differs from B644 upload's B596 deployment-authoritative merge. Validate as _BedrockS3RequestParams/AwsAuthParams
+  with optional s3_region_name,s3_endpoint_url,s3_access_key_id,s3_secret_access_key default None. Choose truthy
+  s3_region_name then aws_region_name, pass that preference to B591 _get_aws_region_name with model empty string,
+  then truthy s3_endpoint_url or https://s3.{region}.{B198 DNS suffix}, stripping trailing slashes. Bucket authorization
+  runs before this credential/endpoint selection on content/delete requests. Reuse B590/B644 config-loader cases.
+  bodiless_s3_signature: Resolve B594 S3 credentials from request_params.model_dump(exclude_none=True) and selected
+  region. Create an AWS request with the supplied GET/DELETE method, URL and only initial x-amz-content-sha256 equal
+  to SHA256 of empty bytes, then S3SigV4Auth service=s3 using the region directly. Return an immutable snapshot
+  of signed headers. Unlike the PUT signer, no Content-Type,Content-Language,Cache-Control,KMS/owner headers or
+  non-LLM region rewrite is added. Missing Python boto3 message remains Missing boto3 to call bedrock. Run 'pip
+  install boto3'.; reuse the compiled signing library.
+
+
+  Write standalone Rust test s3_listing_rejects_dtd_and_limits through decode_s3_listing; assert rejection of DTD/internal
+  entities and existing configured bounds, separately from Python oracle cases.
+
+
   Implement crates/betterlite-bedrock/src/s3_listing.rs with adjacent tests under s3_listing/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -38,10 +99,9 @@ description: >-
 
   Write rstest function s3_listing_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   list_purpose_prefix, input_output_bucket_walk, pagination_continuation, namespace_xml_list, unmanaged_key_filter,
-  last_modified_and_size, file_retrieve_delete, invalid_xml. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  last_modified_and_size, file_retrieve_delete, invalid_xml, delete_response_context, s3_request_target, bodiless_s3_signature.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_listing* using HelperCase:
@@ -73,9 +133,9 @@ description: >-
 
 
   Budget from 270 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 290 production lines, 147 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 604 planned, 625 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 300 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 760 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -104,61 +164,90 @@ references:
 - url: https://docs.rs/quick-xml/0.42.0/quick_xml/reader/struct.NsReader.html
   why: Namespace-aware S3 listing XML; plain Reader does not resolve namespace prefixes.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L294-L372
-  why: >-
-    Own _managed_listing_prefix, _listing_query, _requested_listing_purpose, _walked_listing_purpose, _output_location_still_unlisted,
+  why: Own _managed_listing_prefix, _listing_query, _requested_listing_purpose, _walked_listing_purpose, _output_location_still_unlisted,
     _listing_bucket_name, _listed_object_created_at, _listed_managed_file. Other functions in this file remain with
     the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1268-L1488
-  why: >-
-    Own BedrockFilesConfig.transform_retrieve_file_request, BedrockFilesConfig.transform_retrieve_file_response,
+  why: Own BedrockFilesConfig.transform_retrieve_file_request, BedrockFilesConfig.transform_retrieve_file_response,
     BedrockFilesConfig.transform_delete_file_request, BedrockFilesConfig.transform_delete_file_response, BedrockFilesConfig.transform_list_files_request,
     BedrockFilesConfig.transform_list_files_next_request, BedrockFilesConfig._signed_listing_request, BedrockFilesConfig.transform_list_files_response,
     BedrockFilesConfig.transform_file_content_request, BedrockFilesConfig._transform_s3_file_request, BedrockFilesConfig._s3_request_target,
     BedrockFilesConfig._sign_s3_request_without_body. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: >-
-    list purpose prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/list-purpose-prefix.yaml.
+- text: 'list_purpose_prefix: Use requested purpose from _s3_list_files_purpose only when a string, otherwise None;
+    walked purpose from string _s3_list_files_location, otherwise requested purpose. Query for None/empty purpose
+    uses common prefix litellm-, batch uses litellm-bedrock-files, and batch_output uses litellm-batch-outputs/,
+    prepending configured prefix plus slash. Unknown truthy purpose uses only list-type=2,max-keys=0. Known/default
+    prefix queries contain list-type=2,prefix={value}. The initial request writes both internal purpose/location
+    keys, including None.'
   proof:
   - case-list-purpose-prefix
   - oracle
   - helper-python
-- text: >-
-    input output bucket walk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/input-output-bucket-walk.yaml.
+- text: 'input_output_bucket_walk: For batch_output choose truthy trusted s3_output_bucket_name, AWS_S3_OUTPUT_BUCKET_NAME,
+    then B643 input bucket; other purposes use B643 input bucket directly. A second output location remains only
+    when walked purpose is None and output/input configured bucket strings differ, including differing prefixes
+    on the same bucket. After finishing the first location, set _s3_list_files_location=batch_output before signing
+    its first page. Explicit empty-string purpose behaves differently from None: it uses the broad query but never
+    walks output and filters every returned purpose out.'
   proof:
   - case-input-output-bucket-walk
   - oracle
   - helper-python
-- text: >-
-    pagination continuation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/pagination-continuation.yaml.
+- text: 'pagination_continuation: Next-request returns None immediately for status>=400 without parsing. Otherwise
+    parse XML and use a truthy direct-child NextContinuationToken regardless of IsTruncated, keeping the walked
+    purpose. If no token, switch to output only when still unlisted; otherwise None. Sign URL {endpoint}/{bucket}/
+    plus ? and urlencode of ordered listing query then continuation-token, using quote with safe empty, so spaces
+    are %20 rather than plus and slash is escaped. Return base URL and the unencoded query mapping separately; store
+    signed headers under _s3_signed_request_headers for B644 validate_environment.'
   proof:
   - case-pagination-continuation
   - oracle
   - helper-python
-- text: 'namespace xml list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/namespace-xml-list.yaml.'
+- text: 'namespace_xml_list: decode_s3_listing handles ElementTree wildcard-namespace behavior for direct-child
+    Name,Contents,Key,Size,LastModified,NextContinuationToken: prefixed, default and absent namespaces all work,
+    but nested Contents do not become top-level entries. Use truthy Name text as the listed bucket, otherwise the
+    configured bucket without its prefix; do not override a foreign XML Name with the configured bucket. At status>=400
+    raise B682 preserving status,text,headers,response before parsing; lower statuses still parse, including empty204
+    bodies that fail XML parsing.'
   proof:
   - case-namespace-xml-list
   - oracle
   - helper-python
-- text: >-
-    unmanaged key filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/unmanaged-key-filter.yaml.
+- text: 'unmanaged_key_filter: A missing/empty Key silently omits its entry. Build raw file_id=s3://{XML_or_config_bucket}/{raw_key},
+    then B2208 authorize with configured bucket/prefix, the three managed prefixes and trusted legacy flag. Any
+    authorization ValueError silently omits the entry, without a warning/debug diagnostic. Authorized entries retain
+    the raw key and file_id rather than the validator''s decoded return. Compute relative_key by raw configured-prefix
+    length; purpose=batch_output only when it starts literal litellm-batch-outputs/, otherwise batch. Final filtering
+    uses the originally requested purpose: None accepts both; every other string must exactly match.'
   proof:
   - case-unmanaged-key-filter
   - oracle
   - helper-python
-- text: >-
-    last modified and size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/last-modified-and-size.yaml.
+- text: 'last_modified_and_size: For authorized entries use int(Size text or0), permitting source signed-integer
+    syntax and preserving conversion failures. Missing/empty LastModified yields0; otherwise replace every Z by
+    +00:00, parse fromisoformat and truncate timestamp to int. Pin the oracle timezone for naive ISO timestamps,
+    preserving offset behavior and pre-epoch truncation. Invalid date/size errors propagate instead of silently
+    omitting an authorized entry. filename is POSIX basename of raw key, object=file,status=uploaded; trailing slash
+    can produce an empty filename.'
   proof:
   - case-last-modified-and-size
   - oracle
   - helper-python
-- text: >-
-    file retrieve delete: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/file-retrieve-delete.yaml.
+- text: 'file_retrieve_delete: Both metadata retrieve request and response raise NotImplementedError BedrockFilesConfig
+    does not support file retrieval. DELETE first uses B643 _resolve_managed_s3_object, then target selection, then
+    B2208 key encoding and S3 signature; store signed headers under _s3_signed_request_headers and return URL with
+    empty query. Content GET follows the same path but first requires a truthy file_content_request.file_id or ValueError
+    file_id is required for Bedrock file content retrieval. No HEAD implementation is added.'
   proof:
   - case-file-retrieve-delete
   - oracle
   - helper-python
-- text: 'invalid xml: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/invalid-xml.yaml.'
+- text: 'invalid_xml: Malformed/truncated XML propagates the parser failure from both listing transforms, without
+    an invented BedrockError status. Use the production namespace-aware decoder for both paths and replay its corpus.
+    Standalone Rust rejection cases cover DTD/internal-entity declarations and configured byte/depth limits; those
+    hardening cases are not claimed as successful Python equivalence.'
   proof:
   - case-invalid-xml
   - oracle
@@ -176,51 +265,115 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'delete_response_context: Only HTTP204 is deletion success. Other statuses raise B682 with original status
+    when >=400, otherwise502; message is truthy response.text or S3 file deletion returned HTTP {status}, and headers
+    are preserved. After204, validate logging_obj.model_call_details.additional_args as _S3DeleteContext with required
+    nonempty string file_id, retaining validation errors; return FileDeleted id from that logging context,deleted=True,object=file.
+    Do not infer the ID from response URL/body.'
+  proof:
+  - case-delete-response-context
+  - oracle
+  - helper-python
+- text: 's3_request_target: Merge as {litellm_params, then optional_params}, so request keys win here; this differs
+    from B644 upload''s B596 deployment-authoritative merge. Validate as _BedrockS3RequestParams/AwsAuthParams with
+    optional s3_region_name,s3_endpoint_url,s3_access_key_id,s3_secret_access_key default None. Choose truthy s3_region_name
+    then aws_region_name, pass that preference to B591 _get_aws_region_name with model empty string, then truthy
+    s3_endpoint_url or https://s3.{region}.{B198 DNS suffix}, stripping trailing slashes. Bucket authorization runs
+    before this credential/endpoint selection on content/delete requests. Reuse B590/B644 config-loader cases.'
+  proof:
+  - case-s3-request-target
+  - oracle
+  - helper-python
+- text: 'bodiless_s3_signature: Resolve B594 S3 credentials from request_params.model_dump(exclude_none=True) and
+    selected region. Create an AWS request with the supplied GET/DELETE method, URL and only initial x-amz-content-sha256
+    equal to SHA256 of empty bytes, then S3SigV4Auth service=s3 using the region directly. Return an immutable snapshot
+    of signed headers. Unlike the PUT signer, no Content-Type,Content-Language,Cache-Control,KMS/owner headers or
+    non-LLM region rewrite is added. Missing Python boto3 message remains Missing boto3 to call bedrock. Run ''pip
+    install boto3''.; reuse the compiled signing library.'
+  proof:
+  - case-bodiless-s3-signature
+  - oracle
+  - helper-python
+- text: The documented XML hardening deviation rejects DTD/entity declarations and configured parser limits.
+  proof:
+  - xml-hardening
+  - parser-corpus
 checks:
   optional:
   - mutants
   commands:
   - id: case-list-purpose-prefix
-    why: The list-purpose-prefix behavior is missing or differs from its pinned fixture.
+    why: Use requested purpose from _s3_list_files_purpose only when a string, otherwise None; walked purpose from
+      string _s3_list_files_location, otherwise requested purpose. Query for None/empty purpose uses common prefix
+      litellm-, batch uses litellm-bedrock-files, and batch_output uses litellm-batch-outputs/, prepending configured
+      prefix plus slash. Unknown truthy purpose uses only list-type=2,max-keys=0. Known/default prefix queries contain
+      list-type=2,prefix={value}. The initial request writes both internal purpose/location keys, including None.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_list_purpose_prefix$/)'
   - id: case-input-output-bucket-walk
-    why: The input-output-bucket-walk behavior is missing or differs from its pinned fixture.
+    why: 'For batch_output choose truthy trusted s3_output_bucket_name, AWS_S3_OUTPUT_BUCKET_NAME, then B643 input
+      bucket; other purposes use B643 input bucket directly. A second output location remains only when walked purpose
+      is None and output/input configured bucket strings differ, including differing prefixes on the same bucket.
+      After finishing the first location, set _s3_list_files_location=batch_output before signing its first page.
+      Explicit empty-string purpose behaves differently from None: it uses the broad query but never walks output
+      and filters every returned purpose out.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_input_output_bucket_walk$/)'
   - id: case-pagination-continuation
-    why: The pagination-continuation behavior is missing or differs from its pinned fixture.
+    why: Next-request returns None immediately for status>=400 without parsing. Otherwise parse XML and use a truthy
+      direct-child NextContinuationToken regardless of IsTruncated, keeping the walked purpose. If no token, switch
+      to output only when still unlisted; otherwise None. Sign URL {endpoint}/{bucket}/ plus ? and urlencode of
+      ordered listing query then continuation-token, using quote with safe empty, so spaces are %20 rather than
+      plus and slash is escaped. Return base URL and the unencoded query mapping separately; store signed headers
+      under _s3_signed_request_headers for B644 validate_environment.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_pagination_continuation$/)'
   - id: case-namespace-xml-list
-    why: The namespace-xml-list behavior is missing or differs from its pinned fixture.
+    why: 'decode_s3_listing handles ElementTree wildcard-namespace behavior for direct-child Name,Contents,Key,Size,LastModified,NextContinuationToken:
+      prefixed, default and absent namespaces all work, but nested Contents do not become top-level entries. Use
+      truthy Name text as the listed bucket, otherwise the configured bucket without its prefix; do not override
+      a foreign XML Name with the configured bucket. At status>=400 raise B682 preserving status,text,headers,response
+      before parsing; lower statuses still parse, including empty204 bodies that fail XML parsing.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_namespace_xml_list$/)'
   - id: case-unmanaged-key-filter
-    why: The unmanaged-key-filter behavior is missing or differs from its pinned fixture.
+    why: 'A missing/empty Key silently omits its entry. Build raw file_id=s3://{XML_or_config_bucket}/{raw_key},
+      then B2208 authorize with configured bucket/prefix, the three managed prefixes and trusted legacy flag. Any
+      authorization ValueError silently omits the entry, without a warning/debug diagnostic. Authorized entries
+      retain the raw key and file_id rather than the validator''s decoded return. Compute relative_key by raw configured-prefix
+      length; purpose=batch_output only when it starts literal litellm-batch-outputs/, otherwise batch. Final filtering
+      uses the originally requested purpose: None accepts both; every other string must exactly match.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_unmanaged_key_filter$/)'
   - id: case-last-modified-and-size
-    why: The last-modified-and-size behavior is missing or differs from its pinned fixture.
+    why: For authorized entries use int(Size text or0), permitting source signed-integer syntax and preserving conversion
+      failures. Missing/empty LastModified yields0; otherwise replace every Z by +00:00, parse fromisoformat and
+      truncate timestamp to int. Pin the oracle timezone for naive ISO timestamps, preserving offset behavior and
+      pre-epoch truncation. Invalid date/size errors propagate instead of silently omitting an authorized entry.
+      filename is POSIX basename of raw key, object=file,status=uploaded; trailing slash can produce an empty filename.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_last_modified_and_size$/)'
   - id: case-file-retrieve-delete
-    why: The file-retrieve-delete behavior is missing or differs from its pinned fixture.
+    why: Both metadata retrieve request and response raise NotImplementedError BedrockFilesConfig does not support
+      file retrieval. DELETE first uses B643 _resolve_managed_s3_object, then target selection, then B2208 key encoding
+      and S3 signature; store signed headers under _s3_signed_request_headers and return URL with empty query. Content
+      GET follows the same path but first requires a truthy file_content_request.file_id or ValueError file_id is
+      required for Bedrock file content retrieval. No HEAD implementation is added.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_file_retrieve_delete$/)'
   - id: case-invalid-xml
-    why: The invalid-xml behavior is missing or differs from its pinned fixture.
+    why: Malformed/truncated XML propagates the parser failure from both listing transforms, without an invented
+      BedrockError status. Use the production namespace-aware decoder for both paths and replay its corpus. Standalone
+      Rust rejection cases cover DTD/internal-entity declarations and configured byte/depth limits; those hardening
+      cases are not claimed as successful Python equivalence.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_invalid_xml$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_listing.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_listing.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_listing*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_listing*")"
       && grep -lq 'bedrock_services_s3_listing' tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_listing*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_s3_listing$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_listing)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_listing)"
       && grep -q 'decode_s3_listing' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_listing.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_listing_corpus$/)'
   - id: credential-identity-isolation
@@ -229,6 +382,32 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_listing_secret_safe_failure$/)'
+  - id: case-delete-response-context
+    why: Only HTTP204 is deletion success. Other statuses raise B682 with original status when >=400, otherwise502;
+      message is truthy response.text or S3 file deletion returned HTTP {status}, and headers are preserved. After204,
+      validate logging_obj.model_call_details.additional_args as _S3DeleteContext with required nonempty string
+      file_id, retaining validation errors; return FileDeleted id from that logging context,deleted=True,object=file.
+      Do not infer the ID from response URL/body.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_delete_response_context$/)'
+  - id: case-s3-request-target
+    why: Merge as {litellm_params, then optional_params}, so request keys win here; this differs from B644 upload's
+      B596 deployment-authoritative merge. Validate as _BedrockS3RequestParams/AwsAuthParams with optional s3_region_name,s3_endpoint_url,s3_access_key_id,s3_secret_access_key
+      default None. Choose truthy s3_region_name then aws_region_name, pass that preference to B591 _get_aws_region_name
+      with model empty string, then truthy s3_endpoint_url or https://s3.{region}.{B198 DNS suffix}, stripping trailing
+      slashes. Bucket authorization runs before this credential/endpoint selection on content/delete requests. Reuse
+      B590/B644 config-loader cases.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_s3_request_target$/)'
+  - id: case-bodiless-s3-signature
+    why: Resolve B594 S3 credentials from request_params.model_dump(exclude_none=True) and selected region. Create
+      an AWS request with the supplied GET/DELETE method, URL and only initial x-amz-content-sha256 equal to SHA256
+      of empty bytes, then S3SigV4Auth service=s3 using the region directly. Return an immutable snapshot of signed
+      headers. Unlike the PUT signer, no Content-Type,Content-Language,Cache-Control,KMS/owner headers or non-LLM
+      region rewrite is added. Missing Python boto3 message remains Missing boto3 to call bedrock. Run 'pip install
+      boto3'.; reuse the compiled signing library.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_bodiless_s3_signature$/)'
+  - id: xml-hardening
+    why: The documented bounded XML rejection is missing.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_rejects_dtd_and_limits$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/list-purpose-prefix.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/input-output-bucket-walk.yaml
@@ -238,50 +417,56 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/last-modified-and-size.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/file-retrieve-delete.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/invalid-xml.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/delete-response-context.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/s3-request-target.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-listing/bodiless-s3-signature.yaml
+deviations:
+- what: S3 listing XML containing DTD or entity declarations is rejected through the XML parse-error path; LiteLLM
+    ElementTree can accept internal entity declarations. Namespace-aware ordinary S3 XML remains compatible.
+  why: Bounded XML parsing must not expand declarations supplied by an upstream endpoint; use the existing transport
+    bounds and the production parser rejection category, without inventing a helper HTTP status.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1363-L1391
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394;
-  BedrockFilesConfig.custom_llm_provider L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment
-  L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
-  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
-  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
-  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
-  L1265-L1266 belong to B644; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
-  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
-  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
-  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
-  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
-  L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
-  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
-  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
-  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+- 'litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
-  no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
-  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
-  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
-  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
-  boundary.
+  no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model
+  L95-L96; _strip_llm_routing_prefix L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials
+  L192-L198; get_configured_s3_bucket_name L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets
+  L233-L250; _rejected_file_id L256-L266; _resolve_managed_s3_object L269-L279 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__
+  L392-L394; BedrockFilesConfig.custom_llm_provider L396-L398; BedrockFilesConfig.file_upload_http_method L400-L405;
+  BedrockFilesConfig.validate_environment L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460;
+  BedrockFilesConfig._get_s3_object_name_from_batch_jsonl L462-L478; BedrockFilesConfig.get_object_name L480-L504;
+  BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params L549-L550;
+  BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
+  L1265-L1266 belong to B644.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response
+  L1490-L1503; BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537;
+  BedrockJsonlFilesTransformation._get_s3_object_name L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file
+  L1555-L1590 belong to B646.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record
+  L574-L614; BedrockFilesConfig._is_titan_v2_embed_model L638-L681; BedrockFilesConfig._lookup_provider_specific_field
+  L683-L715; BedrockFilesConfig._coerce_embedding_input_to_string L717-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params
+  L773-L819 belong to B647.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L821-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L845-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L857-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
+  L1026-L1108 belong to B648.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- Preserve input/output bucket walk, purpose filtering, continuation tokens, LastModified conversion and source
-  filtering of unmanaged keys with a diagnostic.
+- An empty-string purpose has the broad listing query but filters out every result and disables the output-bucket
+  walk.
+- An authorized listing entry retains its raw percent-encoded key, even though authorization checked a decoded form.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

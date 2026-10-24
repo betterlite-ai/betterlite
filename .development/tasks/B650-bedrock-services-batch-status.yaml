@@ -12,7 +12,45 @@ description: >-
   L530-L567; BedrockBatchesConfig.transform_retrieve_batch_response L569-L653; BedrockBatchesConfig.get_error_class
   L655-L659. litellm/llms/bedrock/batches/handler.py: _sigv4_config L36-L39; _extract_region_from_bedrock_arn L42-L50;
   _extract_job_id_from_arn L53-L57; _predict_output_file_uri L60-L79; _record_counts_from_response L82-L92; _to_epoch
-  L95-L102.
+  L95-L102. litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027.
+
+
+  Named case contracts: batch_status_table: decode_batch_status uses exactly the B649 creation status map: Submitted/Validating
+  validating; Scheduled/InProgress in_progress; PartiallyCompleted/Completed completed; Failed failed; Stopping
+  cancelling; Stopped cancelled; Expired expired. Run the same table cases in both tasks. object batch, endpoint
+  /v1/chat/completions,completion_window 24h,jobArn default empty,error_file_id/finalizing_at/expired_at/cancelling_at/request_counts
+  None. unknown_status_default: Missing status defaults Submitted; explicit None or any unknown status stringifies
+  and falls back validating without warning. JSON parse failure -> ValueError Failed to parse Bedrock batch response:
+  {error}; no own non-2xx guard. Preserve malformed record-shape failure rather than silently replacing with {}.
+  timestamps_and_null_fields: ISO parser converts str(value), replaces every Z with +00:00, truncates timestamp
+  toward zero, and silently returns None on malformed/falsey input. Pin oracle timezone for naive inputs. created_at
+  from submitTime or current clock (epoch0 also falls back); in_progress_at from lastModifiedTime only Validating/Scheduled/InProgress;
+  completed_at from endTime only Completed/PartiallyCompleted; failed_at only Failed; cancelled_at only Stopped;
+  expires_at from jobExpirationTime for every status. Other timestamp fields remain None. record_counts: Handler
+  helper requires totalRecordCount and successRecordCount Python ints, accepting bool and negative values; missing/wrong
+  type yields None. failed is integer errorRecordCount (bool included), otherwise0. Do not clamp totals or derive
+  failures by subtraction. This helper is used by B651, while generic transform_retrieve_batch_response keeps request_counts
+  None. output_uri_prediction: Require truthy output_prefix,input_uri,job_id and nonempty final slash component
+  of input_uri. Append slash to output_prefix only if absent, then job_id/basename.out. Preserve percent encoding
+  and query text literally; no S3 authorization, listing or read. Missing ingredients return None. _extract_job_id_from_arn
+  requires literal :model-invocation-job/ anywhere, then returns final slash component or None; it does not validate
+  ARN. errors_and_metadata: Truthy response message produces Errors object=list with one BatchError message and
+  code=str(raw HTTP status), otherwise errors None. Enrich only jobName,clientRequestToken,modelId,roleArn,timeoutDurationInHours,vpcConfig;
+  omit None, JSON-dump dict/list (SDK unserializable fallback str), stringify other values with Python semantics.
+  No warning, OpenAI sixteen-key limit or safe_dumps here. Both get_error_class methods delegate to B682 BedrockError
+  with unchanged status,message,headers. retrieve_signed_request: Require B198 is_bedrock_arn prefix or ValueError
+  Invalid batch_id format. Expected ARN, got: {batch_id}; split colon fewer than6 -> Invalid ARN format: {batch_id};
+  region not matching ^[a-z][a-z0-9-]*$ -> Invalid region in ARN: {batch_id}. URL https://bedrock.{arn_region}.{partition_suffix}/model-invocation-job/{quote(full_arn,safe="")}.
+  Merge B596 then B595 sign service bedrock/method GET/data={}; return GET,url,headers,data=None. Do not overwrite
+  signer aws_region_name with ARN region: URL and signing region can differ at the pin. file_config_shapes: Require
+  nested dicts inputDataConfig.s3InputDataConfig, otherwise input_file_id empty. Require nested dicts outputDataConfig.s3OutputDataConfig,
+  otherwise output_file_id None; absent outer/nested dictionaries default {}, so missing s3Uri in valid dictionaries
+  yields empty string. This generic projection exposes the supplied output prefix and does not call the handler
+  prediction helper. handler_region_and_time: _extract_region_from_bedrock_arn returns fourth colon component only
+  when at least4 parts and third is bedrock; empty/errors -> None, without ARN-prefix or region-regex validation.
+  _to_epoch accepts int/float including bool and datetime, truncates to integer; None/strings -> None, while nonfinite
+  float conversion raises. _sigv4_config sets signature_version=v4. These B651 SDK-seam helpers differ from the
+  stricter generic request/ISO parser above.
 
 
   Implement crates/betterlite-bedrock/src/batch_status.rs with adjacent tests under batch_status/. Keep each Rust
@@ -30,10 +68,9 @@ description: >-
 
   Write rstest function batch_status_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   batch_status_table, unknown_status_default, timestamps_and_null_fields, record_counts, output_uri_prediction,
-  errors_and_metadata, titan_batch_token_usage. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  errors_and_metadata, retrieve_signed_request, file_config_shapes, handler_region_and_time. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_status* using HelperCase:
@@ -50,10 +87,10 @@ description: >-
   success/failure categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 271 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 290 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 561 planned, 575 maximum changed lines.
+  Budget from 276 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 310 production lines, 285 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -75,54 +112,64 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L396-L659
-  why: >-
-    Own BedrockBatchesConfig.transform_retrieve_batch_request, BedrockBatchesConfig._parse_timestamps_and_status,
+  why: Own BedrockBatchesConfig.transform_retrieve_batch_request, BedrockBatchesConfig._parse_timestamps_and_status,
     BedrockBatchesConfig._extract_file_configs, BedrockBatchesConfig._extract_errors_and_metadata, BedrockBatchesConfig.transform_retrieve_batch_response,
     BedrockBatchesConfig.get_error_class. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L36-L102
-  why: >-
-    Own _sigv4_config, _extract_region_from_bedrock_arn, _extract_job_id_from_arn, _predict_output_file_uri, _record_counts_from_response,
-    _to_epoch. Other functions in this file remain with the owners listed below.
+  why: Own _sigv4_config, _extract_region_from_bedrock_arn, _extract_job_id_from_arn, _predict_output_file_uri,
+    _record_counts_from_response, _to_epoch. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L2023-L2027
+  why: Own CommonBatchFilesUtils.get_error_class with its direct callers below higher composition.
 dod:
-- text: >-
-    batch status table: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/batch-status-table.yaml.
+- text: 'batch_status_table: decode_batch_status uses exactly the B649 creation status map: Submitted/Validating
+    validating; Scheduled/InProgress in_progress; PartiallyCompleted/Completed completed; Failed failed; Stopping
+    cancelling; Stopped cancelled; Expired expired. Run the same table cases in both tasks. object batch, endpoint
+    /v1/chat/completions,completion_window 24h,jobArn default empty,error_file_id/finalizing_at/expired_at/cancelling_at/request_counts
+    None.'
   proof:
   - case-batch-status-table
   - oracle
   - helper-python
-- text: >-
-    unknown status default: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/unknown-status-default.yaml.
+- text: 'unknown_status_default: Missing status defaults Submitted; explicit None or any unknown status stringifies
+    and falls back validating without warning. JSON parse failure -> ValueError Failed to parse Bedrock batch response:
+    {error}; no own non-2xx guard. Preserve malformed record-shape failure rather than silently replacing with {}.'
   proof:
   - case-unknown-status-default
   - oracle
   - helper-python
-- text: >-
-    timestamps and null fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/timestamps-and-null-fields.yaml.
+- text: 'timestamps_and_null_fields: ISO parser converts str(value), replaces every Z with +00:00, truncates timestamp
+    toward zero, and silently returns None on malformed/falsey input. Pin oracle timezone for naive inputs. created_at
+    from submitTime or current clock (epoch0 also falls back); in_progress_at from lastModifiedTime only Validating/Scheduled/InProgress;
+    completed_at from endTime only Completed/PartiallyCompleted; failed_at only Failed; cancelled_at only Stopped;
+    expires_at from jobExpirationTime for every status. Other timestamp fields remain None.'
   proof:
   - case-timestamps-and-null-fields
   - oracle
   - helper-python
-- text: 'record counts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/record-counts.yaml.'
+- text: 'record_counts: Handler helper requires totalRecordCount and successRecordCount Python ints, accepting bool
+    and negative values; missing/wrong type yields None. failed is integer errorRecordCount (bool included), otherwise0.
+    Do not clamp totals or derive failures by subtraction. This helper is used by B651, while generic transform_retrieve_batch_response
+    keeps request_counts None.'
   proof:
   - case-record-counts
   - oracle
   - helper-python
-- text: >-
-    output uri prediction: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/output-uri-prediction.yaml.
+- text: 'output_uri_prediction: Require truthy output_prefix,input_uri,job_id and nonempty final slash component
+    of input_uri. Append slash to output_prefix only if absent, then job_id/basename.out. Preserve percent encoding
+    and query text literally; no S3 authorization, listing or read. Missing ingredients return None. _extract_job_id_from_arn
+    requires literal :model-invocation-job/ anywhere, then returns final slash component or None; it does not validate
+    ARN.'
   proof:
   - case-output-uri-prediction
   - oracle
   - helper-python
-- text: >-
-    errors and metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/errors-and-metadata.yaml.
+- text: 'errors_and_metadata: Truthy response message produces Errors object=list with one BatchError message and
+    code=str(raw HTTP status), otherwise errors None. Enrich only jobName,clientRequestToken,modelId,roleArn,timeoutDurationInHours,vpcConfig;
+    omit None, JSON-dump dict/list (SDK unserializable fallback str), stringify other values with Python semantics.
+    No warning, OpenAI sixteen-key limit or safe_dumps here. Both get_error_class methods delegate to B682 BedrockError
+    with unchanged status,message,headers.'
   proof:
   - case-errors-and-metadata
-  - oracle
-  - helper-python
-- text: >-
-    titan batch token usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-status/titan-batch-token-usage.yaml.
-  proof:
-  - case-titan-batch-token-usage
   - oracle
   - helper-python
 - text: New bedrock_services_batch_status seeds parse as the intended call variant and replay through the shared
@@ -132,50 +179,109 @@ dod:
 - text: decode_batch_status has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'retrieve_signed_request: Require B198 is_bedrock_arn prefix or ValueError Invalid batch_id format. Expected
+    ARN, got: {batch_id}; split colon fewer than6 -> Invalid ARN format: {batch_id}; region not matching ^[a-z][a-z0-9-]*$
+    -> Invalid region in ARN: {batch_id}. URL https://bedrock.{arn_region}.{partition_suffix}/model-invocation-job/{quote(full_arn,safe="")}.
+    Merge B596 then B595 sign service bedrock/method GET/data={}; return GET,url,headers,data=None. Do not overwrite
+    signer aws_region_name with ARN region: URL and signing region can differ at the pin.'
+  proof:
+  - case-retrieve-signed-request
+  - oracle
+  - helper-python
+- text: 'file_config_shapes: Require nested dicts inputDataConfig.s3InputDataConfig, otherwise input_file_id empty.
+    Require nested dicts outputDataConfig.s3OutputDataConfig, otherwise output_file_id None; absent outer/nested
+    dictionaries default {}, so missing s3Uri in valid dictionaries yields empty string. This generic projection
+    exposes the supplied output prefix and does not call the handler prediction helper.'
+  proof:
+  - case-file-config-shapes
+  - oracle
+  - helper-python
+- text: 'handler_region_and_time: _extract_region_from_bedrock_arn returns fourth colon component only when at least4
+    parts and third is bedrock; empty/errors -> None, without ARN-prefix or region-regex validation. _to_epoch accepts
+    int/float including bool and datetime, truncates to integer; None/strings -> None, while nonfinite float conversion
+    raises. _sigv4_config sets signature_version=v4. These B651 SDK-seam helpers differ from the stricter generic
+    request/ISO parser above.'
+  proof:
+  - case-handler-region-and-time
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-batch-status-table
-    why: The batch-status-table behavior is missing or differs from its pinned fixture.
+    why: 'decode_batch_status uses exactly the B649 creation status map: Submitted/Validating validating; Scheduled/InProgress
+      in_progress; PartiallyCompleted/Completed completed; Failed failed; Stopping cancelling; Stopped cancelled;
+      Expired expired. Run the same table cases in both tasks. object batch, endpoint /v1/chat/completions,completion_window
+      24h,jobArn default empty,error_file_id/finalizing_at/expired_at/cancelling_at/request_counts None.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_batch_status_table$/)'
   - id: case-unknown-status-default
-    why: The unknown-status-default behavior is missing or differs from its pinned fixture.
+    why: 'Missing status defaults Submitted; explicit None or any unknown status stringifies and falls back validating
+      without warning. JSON parse failure -> ValueError Failed to parse Bedrock batch response: {error}; no own
+      non-2xx guard. Preserve malformed record-shape failure rather than silently replacing with {}.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_unknown_status_default$/)'
   - id: case-timestamps-and-null-fields
-    why: The timestamps-and-null-fields behavior is missing or differs from its pinned fixture.
+    why: ISO parser converts str(value), replaces every Z with +00:00, truncates timestamp toward zero, and silently
+      returns None on malformed/falsey input. Pin oracle timezone for naive inputs. created_at from submitTime or
+      current clock (epoch0 also falls back); in_progress_at from lastModifiedTime only Validating/Scheduled/InProgress;
+      completed_at from endTime only Completed/PartiallyCompleted; failed_at only Failed; cancelled_at only Stopped;
+      expires_at from jobExpirationTime for every status. Other timestamp fields remain None.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_timestamps_and_null_fields$/)'
   - id: case-record-counts
-    why: The record-counts behavior is missing or differs from its pinned fixture.
+    why: Handler helper requires totalRecordCount and successRecordCount Python ints, accepting bool and negative
+      values; missing/wrong type yields None. failed is integer errorRecordCount (bool included), otherwise0. Do
+      not clamp totals or derive failures by subtraction. This helper is used by B651, while generic transform_retrieve_batch_response
+      keeps request_counts None.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_record_counts$/)'
   - id: case-output-uri-prediction
-    why: The output-uri-prediction behavior is missing or differs from its pinned fixture.
+    why: Require truthy output_prefix,input_uri,job_id and nonempty final slash component of input_uri. Append slash
+      to output_prefix only if absent, then job_id/basename.out. Preserve percent encoding and query text literally;
+      no S3 authorization, listing or read. Missing ingredients return None. _extract_job_id_from_arn requires literal
+      :model-invocation-job/ anywhere, then returns final slash component or None; it does not validate ARN.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_output_uri_prediction$/)'
   - id: case-errors-and-metadata
-    why: The errors-and-metadata behavior is missing or differs from its pinned fixture.
+    why: Truthy response message produces Errors object=list with one BatchError message and code=str(raw HTTP status),
+      otherwise errors None. Enrich only jobName,clientRequestToken,modelId,roleArn,timeoutDurationInHours,vpcConfig;
+      omit None, JSON-dump dict/list (SDK unserializable fallback str), stringify other values with Python semantics.
+      No warning, OpenAI sixteen-key limit or safe_dumps here. Both get_error_class methods delegate to B682 BedrockError
+      with unchanged status,message,headers.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_errors_and_metadata$/)'
-  - id: case-titan-batch-token-usage
-    why: The titan-batch-token-usage behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_titan_batch_token_usage$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_status*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_status*")"
       && grep -lq 'bedrock_services_batch_status' tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_status*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_batch_status$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_status)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_status)"
       && grep -q 'decode_batch_status' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_status.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_status_corpus$/)'
+  - id: case-retrieve-signed-request
+    why: 'Require B198 is_bedrock_arn prefix or ValueError Invalid batch_id format. Expected ARN, got: {batch_id};
+      split colon fewer than6 -> Invalid ARN format: {batch_id}; region not matching ^[a-z][a-z0-9-]*$ -> Invalid
+      region in ARN: {batch_id}. URL https://bedrock.{arn_region}.{partition_suffix}/model-invocation-job/{quote(full_arn,safe="")}.
+      Merge B596 then B595 sign service bedrock/method GET/data={}; return GET,url,headers,data=None. Do not overwrite
+      signer aws_region_name with ARN region: URL and signing region can differ at the pin.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_retrieve_signed_request$/)'
+  - id: case-file-config-shapes
+    why: Require nested dicts inputDataConfig.s3InputDataConfig, otherwise input_file_id empty. Require nested dicts
+      outputDataConfig.s3OutputDataConfig, otherwise output_file_id None; absent outer/nested dictionaries default
+      {}, so missing s3Uri in valid dictionaries yields empty string. This generic projection exposes the supplied
+      output prefix and does not call the handler prediction helper.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_file_config_shapes$/)'
+  - id: case-handler-region-and-time
+    why: _extract_region_from_bedrock_arn returns fourth colon component only when at least4 parts and third is
+      bedrock; empty/errors -> None, without ARN-prefix or region-regex validation. _to_epoch accepts int/float
+      including bool and datetime, truncates to integer; None/strings -> None, while nonfinite float conversion
+      raises. _sigv4_config sets signature_version=v4. These B651 SDK-seam helpers differ from the stricter generic
+      request/ISO parser above.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_handler_region_and_time$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/batch-status-table.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/unknown-status-default.yaml
@@ -183,32 +289,95 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/record-counts.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/output-uri-prediction.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-status/errors-and-metadata.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-batch-status/titan-batch-token-usage.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-status/retrieve-signed-request.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-status/file-config-shapes.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-status/handler-region-and-time.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/batches/transformation.py: _build_s3_input_config L55-L58; _build_s3_output_config L61-L72;
-  _validate_bedrock_tags L75-L82; titan_embedding_usage_from_batch_output L85-L96; BedrockBatchesConfig.__init__
-  L104-L106; BedrockBatchesConfig.custom_llm_provider L109-L110; BedrockBatchesConfig._get_bare_model_name_from_s3_key
-  L113-L120; BedrockBatchesConfig.validate_environment L147-L162; BedrockBatchesConfig.get_complete_batch_url L164-L186;
+- 'litellm/llms/bedrock/batches/transformation.py: BedrockBatchesConfig.is_unmanaged_s3_batch_input_file_id L123-L132;
+  BedrockBatchesConfig.get_bare_model_name_from_s3_file L135-L145 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/batches/handler.py: BedrockBatchesHandler.cancel_batch L114-L182;
+  BedrockBatchesHandler._handle_async_invoke_status L184-L259; BedrockBatchesHandler._handle_model_invocation_job_status
+  L261-L406 belong to B651.'
+- 'Function ownership inventory litellm/llms/bedrock/batches/transformation.py: _build_s3_input_config L55-L58;
+  _build_s3_output_config L61-L72; _validate_bedrock_tags L75-L82; titan_embedding_usage_from_batch_output L85-L96;
+  BedrockBatchesConfig.__init__ L104-L106; BedrockBatchesConfig.custom_llm_provider L108-L110; BedrockBatchesConfig._get_bare_model_name_from_s3_key
+  L112-L120; BedrockBatchesConfig.validate_environment L147-L162; BedrockBatchesConfig.get_complete_batch_url L164-L186;
   BedrockBatchesConfig.transform_create_batch_request L188-L299; BedrockBatchesConfig.transform_create_batch_response
-  L301-L373; BedrockBatchesConfig._get_openai_compatible_batch_metadata L376-L394 belong to B649; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/batches/transformation.py: BedrockBatchesConfig.is_unmanaged_s3_batch_input_file_id L123-L132;
-  BedrockBatchesConfig.get_bare_model_name_from_s3_file L135-L145 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/batches/handler.py: BedrockBatchesHandler.cancel_batch L115-L182; BedrockBatchesHandler._handle_async_invoke_status
-  L185-L259; BedrockBatchesHandler._handle_model_invocation_job_status L262-L406 belong to B651; reuse that implementation
-  or its injected typed boundary.
+  L301-L373; BedrockBatchesConfig._get_openai_compatible_batch_metadata L375-L394 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/batches/transformation.py: BedrockBatchesConfig.is_unmanaged_s3_batch_input_file_id
+  L122-L132; BedrockBatchesConfig.get_bare_model_name_from_s3_file L134-L145 have no caller at the pin; do not implement
+  or add cases.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
+  _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
+  L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
+  L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
+  L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
+  bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
+  L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
+  normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- Preserve unknown-status fallback to validating and any source warning rather than strict rejection; derive stable
-  timestamp values through injected time.
+- Generic retrieval accepts ISO timestamp strings; the native handler helper ignores strings and accepts datetime/numbers
+  instead.
+- Generic retrieval returns the raw output prefix, whereas the native handler uses a predicted object URI; do not
+  make them share one response projection.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

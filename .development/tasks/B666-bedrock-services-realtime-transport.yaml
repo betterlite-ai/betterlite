@@ -5,10 +5,9 @@ description: >-
   HTTP connector housed in betterlite-http. Reuse established credentials, TLS/proxy and deadlines; no SDK may read
   ambient env or create a hidden production client. Expose a bounded session input/output pair consumed by the event
   bridge. Preserve first-message configuration, credential failure, provider failure and close sequencing; track
-  and join all session work. Split connection setup from the source _run_session/_bridge orchestration through an
-  injected session-runner callback: this slice opens/closes the native connection and calls that typed callback,
-  while B667 supplies event pumping. Local fixture callbacks prove setup and cleanup without importing the later
-  bridge.
+  and join all session work. This final transport/session part calls B667 forwarding pumps directly; B667 depends
+  only on the lower event/session traits and never on this task. Do not hide a reversed ownership edge behind an
+  injected session-runner callback.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/handler.py:
@@ -19,6 +18,40 @@ description: >-
   an injected Smithy HttpClient/connector, credentials, region and disabled retries through B173. A reqwest-only
   connector does not prove bidirectional HTTP/2 support: test interleaved request/response events through the chosen
   HTTP/2 connector.
+
+
+  Named case contracts: bidirectional_runtime_target: Before credentials/connection call B665 _pending_session_update,
+  rejecting committed replay. Region onlyfallsback through B591 when explicit aws_region_name isNone; empty explicit
+  is retained. Endpoint precedence api_base isnotNone (includingempty),then aws_bedrock_runtime_endpoint isnotNone,else
+  https://bedrock-runtime.{region}.{B198 DNS}. Ignore api_key,timeout and unrelatedkwargs in this ownedPythonpreparation;
+  no bearer auth or provider-localtimeout. Invoke SDK operation with model_id exactlysupplied, without modelroute
+  stripping. initial_session_configuration: Create fresh B661 transformation state,openstream,then send session.created
+  only when pending_session_update isNone; even empty pending string suppresses it. Initial seven state fields allNone.
+  No initial Bedrock sessionStart/promptStart is sent automatically; B667 forwards/replays clientupdate. Failure
+  openingstream or sendingcreated escapesbeforebridge but still closesownedSDKclient. credential_failure: Build
+  AwsAuthParams from access_key,secret_key,session_token,session_name,profile_name,role_name,web_identity_token,sts_endpoint,external_id,session_tags
+  and call B594 resolve_credentials via B595 run_aws_signing withselectedregion. None result -> B682401 message
+  No AWS credentials found for Bedrock realtime. Set aws_* params in litellm_params or configure credentials in
+  the environment. Otherwise freezecredentials through same blocking seam and pass explicit access/secret/token
+  to staticSDKresolver. Keep source errors for malformedsessiontags/credentiallookup; no ambientSDKcredential chainafterthispoint.
+  upstream_session_failure: Afterbridge collect B664 leftover usage events filteredB665 and append to logged events.
+  If any, B250 dispatch_success_handlers(list,prefer_async_handlers=True) is enqueued through B191 ensure_initialized_and_enqueue,then
+  model_call_details.realtime_session_success_logged=True. This happens BEFORE checkingproviderfailure; enqueue
+  failure prevents flagassignment. No logs ->noflag. Providerfailure withclient_disconnected logs stream failed
+  after the client disconnected andreturnsnormally; otherwise B665 _raise_provider_failure records/mutates committedscope
+  andraisesmappederror. session_close_sequence: Once SDKclientcreated, finallyclose it via B665 helper regardless
+  of open/session/bridge/logging failure; closeExceptionsuppressed. Pumps perform B667 inputhalfclose/clientEOFclose.
+  Providerfailure nevertriggers an extra forcedclientclose here. NativeRAII/taskguards mustcancel andjoinbothdirections
+  when outerfuture isdropped; prove with existing aws_duplex_cancel_reaps_io test in betterlite-http. bridge_completion_race:
+  Start B667 client and provider pumps,collect successfully forwarded selected loggingevents,waitFIRST_COMPLETED.
+  client_disconnected is true only if clienttaskdone,notcancelled,and noexception at thispoint. CancelBOTHtasks
+  thenjoinboth with exceptionscollected. Provider_failure is client exception first,elseprovider exception,elseNone;
+  cancellation/BaseException without Exception membership isnotfailure. Preserve events collected before failure.
+  python_sdk_boundary: Oracle captures AsyncBedrockRuntimeConfig.resolve endpoint_uri,region,StaticCredentialsResolver,transport
+  and InvokeModelWithBidirectionalStreamOperationInput; Rust uses aws-sdk-bedrockruntime with explicitconnector/credentials.
+  Python package import/version checks belongB159; absentpackageerror isnotmanufactured in nativegateway. The liveSDK
+  seam is replacedbeforeexternalIO inoracle; RustHTTP/2fixture separatelyproves interleavedrequest/response before
+  requestEOF.
 
 
   Implement crates/betterlite-bedrock/src/realtime_transport.rs with adjacent tests under realtime_transport/. Keep
@@ -36,9 +69,9 @@ description: >-
 
   Write rstest function realtime_transport_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): bidirectional_runtime_target, initial_session_configuration, credential_failure, upstream_session_failure,
-  session_close_sequence. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  session_close_sequence, bridge_completion_race, python_sdk_boundary. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport* using HelperCase:
@@ -73,13 +106,14 @@ description: >-
 
 
   Budget from 191 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 335 production lines, 170 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 625 planned, 625 maximum changed lines. The production allowance includes 120 lines for the referenced
+  docstrings; SDK overloads share an async implementation): 335 production lines, 300 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 790 planned, 800 maximum changed lines. The production allowance includes 120 lines for the referenced
   SDK protocol that LiteLLM delegates.
 
    Keep at most one event per direction in flight and await its sink before pulling the next event, matching the
-  source forwarding awaits; introduce no queue-size setting or unbounded intermediate event list.
+  source forwarding awaits; introduce no queue-size setting or extra protocol queue; retain the source ordered logged-event
+  handoff to the common logging worker.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -104,38 +138,54 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*
   lint_tables: false
 references:
-- url: https://docs.rs/aws-sdk-bedrockruntime/1.150.0/aws_sdk_bedrockruntime/client/struct.Client.html#method.invoke_model_with_bidirectional_stream
+- url: https://docs.rs/aws-sdk-bedrockruntime/latest/aws_sdk_bedrockruntime/struct.Client.html#method.invoke_model_with_bidirectional_stream
   why: The actual bidirectional operation and input/output event stream builders.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L457
   why: Own BedrockRealtime.async_realtime, BedrockRealtime._run_session, BedrockRealtime._bridge. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: >-
-    bidirectional runtime target: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/bidirectional-runtime-target.yaml.
+- text: 'bidirectional_runtime_target: Before credentials/connection call B665 _pending_session_update, rejecting
+    committed replay. Region onlyfallsback through B591 when explicit aws_region_name isNone; empty explicit is
+    retained. Endpoint precedence api_base isnotNone (includingempty),then aws_bedrock_runtime_endpoint isnotNone,else
+    https://bedrock-runtime.{region}.{B198 DNS}. Ignore api_key,timeout and unrelatedkwargs in this ownedPythonpreparation;
+    no bearer auth or provider-localtimeout. Invoke SDK operation with model_id exactlysupplied, without modelroute
+    stripping.'
   proof:
   - case-bidirectional-runtime-target
   - oracle
   - helper-python
-- text: >-
-    initial session configuration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/initial-session-configuration.yaml.
+- text: 'initial_session_configuration: Create fresh B661 transformation state,openstream,then send session.created
+    only when pending_session_update isNone; even empty pending string suppresses it. Initial seven state fields
+    allNone. No initial Bedrock sessionStart/promptStart is sent automatically; B667 forwards/replays clientupdate.
+    Failure openingstream or sendingcreated escapesbeforebridge but still closesownedSDKclient.'
   proof:
   - case-initial-session-configuration
   - oracle
   - helper-python
-- text: >-
-    credential failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/credential-failure.yaml.
+- text: 'credential_failure: Build AwsAuthParams from access_key,secret_key,session_token,session_name,profile_name,role_name,web_identity_token,sts_endpoint,external_id,session_tags
+    and call B594 resolve_credentials via B595 run_aws_signing withselectedregion. None result -> B682401 message
+    No AWS credentials found for Bedrock realtime. Set aws_* params in litellm_params or configure credentials in
+    the environment. Otherwise freezecredentials through same blocking seam and pass explicit access/secret/token
+    to staticSDKresolver. Keep source errors for malformedsessiontags/credentiallookup; no ambientSDKcredential
+    chainafterthispoint.'
   proof:
   - case-credential-failure
   - oracle
   - helper-python
-- text: >-
-    upstream session failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/upstream-session-failure.yaml.
+- text: 'upstream_session_failure: Afterbridge collect B664 leftover usage events filteredB665 and append to logged
+    events. If any, B250 dispatch_success_handlers(list,prefer_async_handlers=True) is enqueued through B191 ensure_initialized_and_enqueue,then
+    model_call_details.realtime_session_success_logged=True. This happens BEFORE checkingproviderfailure; enqueue
+    failure prevents flagassignment. No logs ->noflag. Providerfailure withclient_disconnected logs stream failed
+    after the client disconnected andreturnsnormally; otherwise B665 _raise_provider_failure records/mutates committedscope
+    andraisesmappederror.'
   proof:
   - case-upstream-session-failure
   - oracle
   - helper-python
-- text: >-
-    session close sequence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/session-close-sequence.yaml.
+- text: 'session_close_sequence: Once SDKclientcreated, finallyclose it via B665 helper regardless of open/session/bridge/logging
+    failure; closeExceptionsuppressed. Pumps perform B667 inputhalfclose/clientEOFclose. Providerfailure nevertriggers
+    an extra forcedclientclose here. NativeRAII/taskguards mustcancel andjoinbothdirections when outerfuture isdropped;
+    prove with existing aws_duplex_cancel_reaps_io test in betterlite-http.'
   proof:
   - case-session-close-sequence
   - oracle
@@ -156,35 +206,69 @@ dod:
 - text: Connector cancellation joins both IO directions.
   proof:
   - duplex-cancellation
+- text: 'bridge_completion_race: Start B667 client and provider pumps,collect successfully forwarded selected loggingevents,waitFIRST_COMPLETED.
+    client_disconnected is true only if clienttaskdone,notcancelled,and noexception at thispoint. CancelBOTHtasks
+    thenjoinboth with exceptionscollected. Provider_failure is client exception first,elseprovider exception,elseNone;
+    cancellation/BaseException without Exception membership isnotfailure. Preserve events collected before failure.'
+  proof:
+  - case-bridge-completion-race
+  - oracle
+  - helper-python
+- text: 'python_sdk_boundary: Oracle captures AsyncBedrockRuntimeConfig.resolve endpoint_uri,region,StaticCredentialsResolver,transport
+    and InvokeModelWithBidirectionalStreamOperationInput; Rust uses aws-sdk-bedrockruntime with explicitconnector/credentials.
+    Python package import/version checks belongB159; absentpackageerror isnotmanufactured in nativegateway. The
+    liveSDK seam is replacedbeforeexternalIO inoracle; RustHTTP/2fixture separatelyproves interleavedrequest/response
+    before requestEOF.'
+  proof:
+  - case-python-sdk-boundary
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-bidirectional-runtime-target
-    why: The bidirectional-runtime-target behavior is missing or differs from its pinned fixture.
+    why: Before credentials/connection call B665 _pending_session_update, rejecting committed replay. Region onlyfallsback
+      through B591 when explicit aws_region_name isNone; empty explicit is retained. Endpoint precedence api_base
+      isnotNone (includingempty),then aws_bedrock_runtime_endpoint isnotNone,else https://bedrock-runtime.{region}.{B198
+      DNS}. Ignore api_key,timeout and unrelatedkwargs in this ownedPythonpreparation; no bearer auth or provider-localtimeout.
+      Invoke SDK operation with model_id exactlysupplied, without modelroute stripping.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_bidirectional_runtime_target$/)'
   - id: case-initial-session-configuration
-    why: The initial-session-configuration behavior is missing or differs from its pinned fixture.
+    why: Create fresh B661 transformation state,openstream,then send session.created only when pending_session_update
+      isNone; even empty pending string suppresses it. Initial seven state fields allNone. No initial Bedrock sessionStart/promptStart
+      is sent automatically; B667 forwards/replays clientupdate. Failure openingstream or sendingcreated escapesbeforebridge
+      but still closesownedSDKclient.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_initial_session_configuration$/)'
   - id: case-credential-failure
-    why: The credential-failure behavior is missing or differs from its pinned fixture.
+    why: Build AwsAuthParams from access_key,secret_key,session_token,session_name,profile_name,role_name,web_identity_token,sts_endpoint,external_id,session_tags
+      and call B594 resolve_credentials via B595 run_aws_signing withselectedregion. None result -> B682401 message
+      No AWS credentials found for Bedrock realtime. Set aws_* params in litellm_params or configure credentials
+      in the environment. Otherwise freezecredentials through same blocking seam and pass explicit access/secret/token
+      to staticSDKresolver. Keep source errors for malformedsessiontags/credentiallookup; no ambientSDKcredential
+      chainafterthispoint.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_credential_failure$/)'
   - id: case-upstream-session-failure
-    why: The upstream-session-failure behavior is missing or differs from its pinned fixture.
+    why: Afterbridge collect B664 leftover usage events filteredB665 and append to logged events. If any, B250 dispatch_success_handlers(list,prefer_async_handlers=True)
+      is enqueued through B191 ensure_initialized_and_enqueue,then model_call_details.realtime_session_success_logged=True.
+      This happens BEFORE checkingproviderfailure; enqueue failure prevents flagassignment. No logs ->noflag. Providerfailure
+      withclient_disconnected logs stream failed after the client disconnected andreturnsnormally; otherwise B665
+      _raise_provider_failure records/mutates committedscope andraisesmappederror.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_upstream_session_failure$/)'
   - id: case-session-close-sequence
-    why: The session-close-sequence behavior is missing or differs from its pinned fixture.
+    why: Once SDKclientcreated, finallyclose it via B665 helper regardless of open/session/bridge/logging failure;
+      closeExceptionsuppressed. Pumps perform B667 inputhalfclose/clientEOFclose. Providerfailure nevertriggers
+      an extra forcedclientclose here. NativeRAII/taskguards mustcancel andjoinbothdirections when outerfuture isdropped;
+      prove with existing aws_duplex_cancel_reaps_io test in betterlite-http.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_session_close_sequence$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_transport.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_transport.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*")"
       && grep -lq 'bedrock_services_realtime_transport' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_transport$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -200,34 +284,48 @@ checks:
   - id: duplex-cancellation
     why: Dropping a duplex session leaves request or response IO running.
     run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::aws_duplex_cancel_reaps_io$/)'
+  - id: case-bridge-completion-race
+    why: Start B667 client and provider pumps,collect successfully forwarded selected loggingevents,waitFIRST_COMPLETED.
+      client_disconnected is true only if clienttaskdone,notcancelled,and noexception at thispoint. CancelBOTHtasks
+      thenjoinboth with exceptionscollected. Provider_failure is client exception first,elseprovider exception,elseNone;
+      cancellation/BaseException without Exception membership isnotfailure. Preserve events collected before failure.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_bridge_completion_race$/)'
+  - id: case-python-sdk-boundary
+    why: Oracle captures AsyncBedrockRuntimeConfig.resolve endpoint_uri,region,StaticCredentialsResolver,transport
+      and InvokeModelWithBidirectionalStreamOperationInput; Rust uses aws-sdk-bedrockruntime with explicitconnector/credentials.
+      Python package import/version checks belongB159; absentpackageerror isnotmanufactured in nativegateway. The
+      liveSDK seam is replacedbeforeexternalIO inoracle; RustHTTP/2fixture separatelyproves interleavedrequest/response
+      before requestEOF.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_python_sdk_boundary$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/bidirectional-runtime-target.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/initial-session-configuration.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/credential-failure.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/upstream-session-failure.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/session-close-sequence.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/bridge-completion-race.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/python-sdk-boundary.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock L459-L511; BedrockRealtime._forward_bedrock_to_client
-  L513-L589 belong to B667; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/handler.py: _as_bedrock_error L63-L67; _json_dict L70-L71; _json_str L74-L75; _should_log_event
-  L78-L86; RealtimeClientWebSocket.receive_text L94-L94; RealtimeClientWebSocket.send_text L96-L96; RealtimeClientWebSocket.close
-  L98-L98; BedrockInputStream.send L102-L102; BedrockInputStream.close L104-L104; BedrockPayloadPart.bytes_ L109-L109;
-  BedrockOutputChunk.value L114-L114; BedrockOutputStream.receive L118-L118; BedrockBidirectionalStream.input_stream
-  L123-L123; BedrockBidirectionalStream.await_output L125-L125; ClosableBedrockRuntimeClient.close L130-L130; _installed_sdk_version
-  L133-L137; _sdk_import_error L140-L149; _close_bedrock_client L152-L157; _client_messages L167-L175; _pending_session_update
-  L178-L190; _raise_provider_failure L193-L198; _parse_client_message L201-L205; _ack_session_update L208-L232;
-  BedrockRealtime.__init__ L238-L240 belong to B665; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: _as_bedrock_error L63-L67; _json_dict
+  L70-L71; _json_str L74-L75; _should_log_event L78-L86; RealtimeClientWebSocket.receive_text L94-L94; RealtimeClientWebSocket.send_text
+  L96-L96; RealtimeClientWebSocket.close L98-L98; BedrockInputStream.send L102-L102; BedrockInputStream.close L104-L104;
+  BedrockPayloadPart.bytes_ L108-L109; BedrockOutputChunk.value L113-L114; BedrockOutputStream.receive L118-L118;
+  BedrockBidirectionalStream.input_stream L122-L123; BedrockBidirectionalStream.await_output L125-L125; ClosableBedrockRuntimeClient.close
+  L130-L130; _installed_sdk_version L133-L137; _sdk_import_error L140-L149; _close_bedrock_client L152-L157; _client_messages
+  L167-L175; _pending_session_update L178-L190; _raise_provider_failure L193-L198; _parse_client_message L201-L205;
+  _ack_session_update L208-L232; BedrockRealtime.__init__ L238-L240 belong to B665.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock
+  L459-L511; BedrockRealtime._forward_bedrock_to_client L513-L589 belong to B667.'
 pitfalls:
-- Preserve first-message configuration, credential failure, provider failure and close sequencing; track and join
-  all session work.
+- Success-handler logging runs before a provider failure is rethrown, so a failed session can still record already-served
+  usage.
+- The source timeout argument is unused; adding a provider-local timeout would change the observable session lifetime.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

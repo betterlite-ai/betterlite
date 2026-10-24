@@ -6,6 +6,10 @@ description: >-
   diagnostics and exact Decimal totals.
 
 
+  For Bedrock embedding batch output, _get_batch_job_usage_from_response_body calls B649 titan_embedding_usage_from_batch_output
+  directly; reuse its key-presence and bool-exclusion cases.
+
+
   Implement crates/betterlite-core/src/api/batch_output_usage.rs. Use BatchOutputUsageInput and BatchOutputUsageResult
   with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
   through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential

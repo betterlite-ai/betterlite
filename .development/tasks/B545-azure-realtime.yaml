@@ -32,6 +32,33 @@ description: >-
   override.
 
 
+  Named case contracts: beta_realtime_deployment_query: Beta appends /openai/realtime with URL-encoded api-version
+  and deployment model, plus truthy intent; no OpenAI-Beta header is sent upstream. In async_realtime missing api_base
+  None raises ValueError api_base is required for Azure OpenAI calls; missing api_version None raises api_version
+  is required for Azure OpenAI calls only for beta. ga_realtime_url: Replace https:// with wss:// only; do not rewrite
+  http:// or trim trailing slash/path/query. Append /openai/v1/realtime; include requested model only when intent
+  is not transcription and query_params is None or has a model key. Ignore its model value and all arbitrary query
+  keys; append truthy intent. api_key_versus_token: Handshake uses only truthy api-key, otherwise only Authorization:
+  Bearer <truthy azure_ad_token>. With neither, ValueError Missing Azure credentials for the realtime endpoint.
+  Set an api_key, or configure Azure AD auth (azure_ad_token, tenant_id/client_id/client_secret, or a managed identity);
+  this occurs before the connection try. client_beta_protocol: A nonempty string configured_protocol wins verbatim;
+  otherwise intent=transcription forces GA, else B1005 client beta header chooses beta versus GA. Construction treats
+  GA/V1 case-insensitively; all other configured values select beta. calls_and_transcription_headers: HTTP environment
+  validation copies headers then overwrites api-key with key-or-empty and Content-Type=application/json; ephemeral-call
+  headers contain only api-key=<ephemeral key>. The websocket transport forwards the shared SSL context unchanged,
+  unlike B528 False-to-True adaptation. handshake_error: InvalidStatus calls B1004 close_after_upstream_handshake_refusal
+  with upstream status. Other exceptions best-effort send B1004 realtime_error_event(Internal server error,error_type=server_error),
+  then close1011 reason Internal server error; suppress failures from either send or close. Missing base/version/credentials
+  errors are outside this catch. http_version_2024_12_17: HTTP base resolves explicit,litellm.api_base,AZURE_API_BASE,empty;
+  HTTP key resolves explicit,litellm.api_key,AZURE_API_KEY,empty (not azure_key/AZURE_OPENAI_API_KEY). Strip trailing
+  slashes and append /openai/realtime/client_secrets, /calls or /transcription_sessions with api-version from explicit,AZURE_API_VERSION,2024-12-17;
+  litellm.api_version is not read.
+
+
+  Reuse B528 for the REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES loader and its configured value; this consumer adds
+  no second config field or loader test. The named behavior cases still test the configured value at this call boundary.
+
+
   Implement crates/betterlite-azure/src/realtime.rs with adjacent tests under realtime/. Keep each Rust module at
   most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -48,8 +75,8 @@ description: >-
   Write rstest function realtime_cases in betterlite-azure with these exact named cases (one per oracle file): beta_realtime_deployment_query,
   ga_realtime_url, api_version_query, api_key_versus_token, client_beta_protocol, calls_and_transcription_headers,
   handshake_error, http_version_2024_12_17. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_realtime* using HelperCase: kind: helper
@@ -63,23 +90,14 @@ description: >-
   needed, is B002.
 
 
-  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/realtime.rs
-  and its loader wiring: REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES. Module-level settings enter litellm_settings;
-  deployment settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified
-  above and in the linked branches; existing key owners remain unchanged. Write config rstest azure_realtime_config_cases
-  with named cases loads_realtime_websocket_max_message_size_bytes, plus rejects_unrelated_key. Each loads case
-  calls the real config loader with that key and asserts the resolved value, default, precedence and secret redaction
-  where applicable. Seed B002 config_yaml with new azure_realtime* files for every key; reuse its parser/fuzz target.
-
-
   Write standalone azure_realtime_message_cap_closes_1009 in betterlite-azure for this Rust-specific invariant;
   it is not a Python oracle case.
 
 
   Budget from 165 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 195 production lines, 139 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 474 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 225 production lines, 230 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 40 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 630 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -95,40 +113,29 @@ scope:
   - tools/oracle/helpers/azure_realtime.py
   - tools/oracle/cases/helpers/providers/azure-realtime/**
   - tools/oracle/fuzz/corpus/helper_case/azure_realtime*
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/settings.rs
-  - crates/betterlite-config/src/model.rs
-  - crates/betterlite-config/src/env.rs
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/azure.rs
-  - crates/betterlite-config/src/providers/azure/realtime.rs
-  - crates/betterlite-config/src/providers/azure/realtime/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/azure_realtime_config.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L42-L202
-  why: >-
-    Own azure_realtime_protocol_for_client, _ProxyClientWebSocket.send_text, _ProxyClientWebSocket.close, AzureOpenAIRealtime.get_auth_headers,
+  why: Own azure_realtime_protocol_for_client, _ProxyClientWebSocket.send_text, _ProxyClientWebSocket.close, AzureOpenAIRealtime.get_auth_headers,
     AzureOpenAIRealtime._construct_url, AzureOpenAIRealtime.async_realtime. Other functions in this file remain
     with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/http_transformation.py#L11-L47
-  why: >-
-    Own AzureRealtimeHTTPConfig.get_api_base, AzureRealtimeHTTPConfig.get_api_key, AzureRealtimeHTTPConfig.get_complete_url,
+  why: Own AzureRealtimeHTTPConfig.get_api_base, AzureRealtimeHTTPConfig.get_api_key, AzureRealtimeHTTPConfig.get_complete_url,
     AzureRealtimeHTTPConfig.validate_environment, AzureRealtimeHTTPConfig.get_realtime_calls_url, AzureRealtimeHTTPConfig.get_transcription_session_url,
     AzureRealtimeHTTPConfig.get_realtime_calls_headers. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: >-
-    beta realtime deployment query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/beta-realtime-deployment-query.yaml.
+- text: 'beta_realtime_deployment_query: Beta appends /openai/realtime with URL-encoded api-version and deployment
+    model, plus truthy intent; no OpenAI-Beta header is sent upstream. In async_realtime missing api_base None raises
+    ValueError api_base is required for Azure OpenAI calls; missing api_version None raises api_version is required
+    for Azure OpenAI calls only for beta.'
   proof:
   - case-beta-realtime-deployment-query
   - oracle
   - helper-python
-- text: 'ga realtime url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/ga-realtime-url.yaml.'
+- text: 'ga_realtime_url: Replace https:// with wss:// only; do not rewrite http:// or trim trailing slash/path/query.
+    Append /openai/v1/realtime; include requested model only when intent is not transcription and query_params is
+    None or has a model key. Ignore its model value and all arbitrary query keys; append truthy intent.'
   proof:
   - case-ga-realtime-url
   - oracle
@@ -138,28 +145,40 @@ dod:
   - case-api-version-query
   - oracle
   - helper-python
-- text: 'api key versus token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/api-key-versus-token.yaml.'
+- text: 'api_key_versus_token: Handshake uses only truthy api-key, otherwise only Authorization: Bearer <truthy
+    azure_ad_token>. With neither, ValueError Missing Azure credentials for the realtime endpoint. Set an api_key,
+    or configure Azure AD auth (azure_ad_token, tenant_id/client_id/client_secret, or a managed identity); this
+    occurs before the connection try.'
   proof:
   - case-api-key-versus-token
   - oracle
   - helper-python
-- text: 'client beta protocol: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/client-beta-protocol.yaml.'
+- text: 'client_beta_protocol: A nonempty string configured_protocol wins verbatim; otherwise intent=transcription
+    forces GA, else B1005 client beta header chooses beta versus GA. Construction treats GA/V1 case-insensitively;
+    all other configured values select beta.'
   proof:
   - case-client-beta-protocol
   - oracle
   - helper-python
-- text: >-
-    calls and transcription headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/calls-and-transcription-headers.yaml.
+- text: 'calls_and_transcription_headers: HTTP environment validation copies headers then overwrites api-key with
+    key-or-empty and Content-Type=application/json; ephemeral-call headers contain only api-key=<ephemeral key>.
+    The websocket transport forwards the shared SSL context unchanged, unlike B528 False-to-True adaptation.'
   proof:
   - case-calls-and-transcription-headers
   - oracle
   - helper-python
-- text: 'handshake error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/handshake-error.yaml.'
+- text: 'handshake_error: InvalidStatus calls B1004 close_after_upstream_handshake_refusal with upstream status.
+    Other exceptions best-effort send B1004 realtime_error_event(Internal server error,error_type=server_error),
+    then close1011 reason Internal server error; suppress failures from either send or close. Missing base/version/credentials
+    errors are outside this catch.'
   proof:
   - case-handshake-error
   - oracle
   - helper-python
-- text: 'http version 2024 12 17: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/http-version-2024-12-17.yaml.'
+- text: 'http_version_2024_12_17: HTTP base resolves explicit,litellm.api_base,AZURE_API_BASE,empty; HTTP key resolves
+    explicit,litellm.api_key,AZURE_API_KEY,empty (not azure_key/AZURE_OPENAI_API_KEY). Strip trailing slashes and
+    append /openai/realtime/client_secrets, /calls or /transcription_sessions with api-version from explicit,AZURE_API_VERSION,2024-12-17;
+    litellm.api_version is not read.'
   proof:
   - case-http-version-2024-12-17
   - oracle
@@ -167,11 +186,6 @@ dod:
 - text: New azure_realtime seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
-- text: REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES is accepted by the config loader with the documented default and
-    precedence.
-  proof:
-  - config-realtime-websocket-max-message-size-bytes
-  - config-corpus
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
   - config-unknown-key
@@ -183,54 +197,64 @@ checks:
   - mutants
   commands:
   - id: case-beta-realtime-deployment-query
-    why: The beta-realtime-deployment-query behavior is missing or differs from its pinned fixture.
+    why: Beta appends /openai/realtime with URL-encoded api-version and deployment model, plus truthy intent; no
+      OpenAI-Beta header is sent upstream. In async_realtime missing api_base None raises ValueError api_base is
+      required for Azure OpenAI calls; missing api_version None raises api_version is required for Azure OpenAI
+      calls only for beta.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_beta_realtime_deployment_query$/)'
   - id: case-ga-realtime-url
-    why: The ga-realtime-url behavior is missing or differs from its pinned fixture.
+    why: Replace https:// with wss:// only; do not rewrite http:// or trim trailing slash/path/query. Append /openai/v1/realtime;
+      include requested model only when intent is not transcription and query_params is None or has a model key.
+      Ignore its model value and all arbitrary query keys; append truthy intent.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_ga_realtime_url$/)'
   - id: case-api-version-query
-    why: The api-version-query behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/api-version-query.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_api_version_query$/)'
   - id: case-api-key-versus-token
-    why: The api-key-versus-token behavior is missing or differs from its pinned fixture.
+    why: 'Handshake uses only truthy api-key, otherwise only Authorization: Bearer <truthy azure_ad_token>. With
+      neither, ValueError Missing Azure credentials for the realtime endpoint. Set an api_key, or configure Azure
+      AD auth (azure_ad_token, tenant_id/client_id/client_secret, or a managed identity); this occurs before the
+      connection try.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_api_key_versus_token$/)'
   - id: case-client-beta-protocol
-    why: The client-beta-protocol behavior is missing or differs from its pinned fixture.
+    why: A nonempty string configured_protocol wins verbatim; otherwise intent=transcription forces GA, else B1005
+      client beta header chooses beta versus GA. Construction treats GA/V1 case-insensitively; all other configured
+      values select beta.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_client_beta_protocol$/)'
   - id: case-calls-and-transcription-headers
-    why: The calls-and-transcription-headers behavior is missing or differs from its pinned fixture.
+    why: HTTP environment validation copies headers then overwrites api-key with key-or-empty and Content-Type=application/json;
+      ephemeral-call headers contain only api-key=<ephemeral key>. The websocket transport forwards the shared SSL
+      context unchanged, unlike B528 False-to-True adaptation.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_calls_and_transcription_headers$/)'
   - id: case-handshake-error
-    why: The handshake-error behavior is missing or differs from its pinned fixture.
+    why: InvalidStatus calls B1004 close_after_upstream_handshake_refusal with upstream status. Other exceptions
+      best-effort send B1004 realtime_error_event(Internal server error,error_type=server_error), then close1011
+      reason Internal server error; suppress failures from either send or close. Missing base/version/credentials
+      errors are outside this catch.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_handshake_error$/)'
   - id: case-http-version-2024-12-17
-    why: The http-version-2024-12-17 behavior is missing or differs from its pinned fixture.
+    why: HTTP base resolves explicit,litellm.api_base,AZURE_API_BASE,empty; HTTP key resolves explicit,litellm.api_key,AZURE_API_KEY,empty
+      (not azure_key/AZURE_OPENAI_API_KEY). Strip trailing slashes and append /openai/realtime/client_secrets, /calls
+      or /transcription_sessions with api-version from explicit,AZURE_API_VERSION,2024-12-17; litellm.api_version
+      is not read.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_http_version_2024_12_17$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_realtime.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_realtime.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_realtime*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_realtime*")"
       && grep -lq 'azure_realtime' tools/oracle/fuzz/corpus/helper_case/azure_realtime* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_realtime$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: config-realtime-websocket-max-message-size-bytes
-    why: The REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_realtime_config_cases::case_[0-9]+_loads_realtime_websocket_max_message_size_bytes$/)'
-      && grep -lq 'REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES' crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_realtime_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: message-cap-closes-1009
     why: The message cap closes 1009 invariant has no passing production test.
@@ -245,9 +269,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-realtime/handshake-error.yaml
 - tools/oracle/cases/helpers/providers/azure-realtime/http-version-2024-12-17.yaml
 deviations:
-- what: >-
-    Websocket messages are capped at 16 MiB by default; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides the
-    cap. LiteLLM defaults this variable to None, allowing unlimited frames; excess messages close with websocket
+- what: Websocket messages are capped at 16 MiB by default; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides
+    the cap. LiteLLM defaults this variable to None, allowing unlimited frames; excess messages close with websocket
     code 1009.
   why: Bounded external buffers are required; this names the visible default difference rather than assuming LiteLLM
     already caps messages.
@@ -258,9 +281,12 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 - 'litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller
+  at the pin; do not implement or add cases.'
 pitfalls:
-- Preserve Azure authentication/header shape and exception-close mapping.
+- A supplied empty query mapping suppresses GA model insertion, while None inserts the requested deployment.
+- Unlike the OpenAI websocket URL builder, Azure concatenates paths without clearing an existing path or query.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

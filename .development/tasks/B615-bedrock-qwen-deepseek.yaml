@@ -1,8 +1,9 @@
 id: B615
 title: Bedrock Qwen and DeepSeek reasoning replies
 description: >-
-  Add Qwen2/Qwen3/DeepSeek parameter, prompt and reply projections, sharing native base transport and bounded reasoning-tag
-  decoding. Preserve usage, finish reasons and reasoning_content separately from visible text; local templates only.
+  Add Qwen2/Qwen3/DeepSeek parameter, prompt and reply projections, sharing native base transport. Qwen renders
+  its fixed local prompt format and preserves generated reasoning tags as visible text; only DeepSeek extracts reasoning
+  through B218.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py:
@@ -13,12 +14,63 @@ description: >-
   AmazonDeepSeekR1Config.transform_response L32-L79.
 
 
-  Reuse AmazonInvokeConfig.__init__ from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  Reuse AmazonInvokeConfig.__init__ from B2205 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
   its implementation remains with that prerequisite.
 
 
   The DeepSeekR1StreamingIterator and its stream-chunk case belong to B609; this leaf only normalizes buffered replies
   and parameters.
+
+
+  Named case contracts: qwen2_output: Qwen2 prefers truthy generation, then text defaulting to empty, despite its
+  docstring emphasizing text. Qwen3 uses generation only, defaulting to empty without a truthiness fallback. Remove
+  exactly one leading <|im_start|>assistant
+   and one trailing <|im_end|>, with no whitespace trimming. If choices exists and is nonempty, update only its
+  first message and force finish_reason=stop; otherwise leave choices untouched. Neither path rewrites response
+  model/id/created. qwen3_chat_prompt: Join blocks with newline and always append <|im_start|>assistant
+  , even for empty input. System,user,assistant,tool use <|im_start|>{role}
+
+  {content}<|im_end|>; missing content is empty, explicit None renders None. Unknown/missing roles are omitted.
+  For user list content concatenate text items (missing text defaults empty) and replace every image_url item with
+  <|vision_start|><|image_pad|><|vision_end|>; ignore other types and never fetch the URL. Non-user lists retain
+  Python display formatting. qwen3_options: Qwen3 class defaults max_tokens,temperature,top_p,top_k,stop are None;
+  constructor updates only non-None values then calls B2205. Supported names are max_tokens,temperature,top_p,top_k,stop,stream,
+  and mapping copies exactly those names unchanged. Request projection includes prompt and only supplied max_tokens->max_gen_len,temperature,top_p,top_k,stop,
+  including explicit None. It omits stream, authentication keys and unknown fields without mutating options. It
+  does not load class defaults inside transform_request. qwen3_reasoning_content: Qwen replies do not split <think>
+  tags or set reasoning_content. Preserve them verbatim in visible content after the exact wrapper removal. Any
+  existing reasoning fields remain unchanged. deepseek_buffered_response: First call B612 base reply conversion,
+  including its token/clock/error behavior. Only if request_data.prompt is truthy and its trimmed value ends with
+  <think>, and the first reply content is truthy, prepend <think> and call B218 _parse_content_for_reasoning. Rebuild
+  the first message preserving its dumped fields; replace content with parsed content and merge a truthy parsed
+  reasoning string into provider_specific_fields.reasoning_content. Empty reasoning leaves that key unchanged. No
+  later choices are processed; absent trigger leaves the entire reply unchanged. qwen3_tool_prompt: For an assistant
+  with a truthy list of tool_calls, omit its content and emit one block per call: <|im_start|>assistant
+
+  <tool_call>
+
+  {"name": "{name}", "arguments": "{arguments}"}
+
+  </tool_call><|im_end|>. Missing function/name/arguments default to empty mappings/strings. Interpolate arguments
+  without JSON escaping or parsing, even when already JSON or containing quotes; malformed nested values fail as
+  the source does. Empty or non-list tool_calls use the ordinary assistant content block. qwen_usage_and_failure:
+  Only a present usage key replaces usage; prompt_tokens,completion_tokens,total_tokens each independently default
+  to 0, so total is not recomputed. Missing usage preserves prior usage. JSON, shape and conversion errors are re-raised
+  unchanged after optional logging_obj.post_call(input=messages,api_key=api_key,original_response=raw_response,additional_args={error:str(error)});
+  no BedrockError status is synthesized. Exercise both Qwen variants with the same cases.
+
+
+  Qwen2 inherits the Qwen3 request/options implementation. No Hugging Face template acquisition occurs on either
+  Qwen path. The existing decode_qwen_reply production decoder must select Qwen2 versus Qwen3 projection; replay
+  the same malformed-byte corpus through both, rather than placing a separate parser in each adapter.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  Direct constructor/helper prerequisites used by this slice: B220. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-bedrock/src/qwen_deepseek.rs with adjacent tests under qwen_deepseek/. Keep each Rust
@@ -35,10 +87,10 @@ description: >-
 
 
   Write rstest function qwen_deepseek_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  qwen2_output, qwen3_chat_prompt, qwen3_options, qwen3_reasoning_content, deepseek_buffered_response. Each case
-  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
-  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
-  registration; this task must not register a duplicate axum route.
+  qwen2_output, qwen3_chat_prompt, qwen3_options, qwen3_reasoning_content, deepseek_buffered_response, qwen3_tool_prompt,
+  qwen_usage_and_failure. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek* using HelperCase: kind:
@@ -56,9 +108,9 @@ description: >-
 
 
   Budget from 247 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 515 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 260 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 55 parser target/replay lines, 50 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 760 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -77,45 +129,73 @@ scope:
   - crates/betterlite-bedrock/fuzz/Cargo.toml
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_qwen.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_qwen/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_qwen_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_qwen*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py#L37-L95
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py#L37-L95
   why: Own AmazonQwen2Config.transform_response. Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L38-L219
-  why: >-
-    Own AmazonQwen3Config.__init__, AmazonQwen3Config.get_supported_openai_params, AmazonQwen3Config.map_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L38-L219
+  why: Own AmazonQwen3Config.__init__, AmazonQwen3Config.get_supported_openai_params, AmazonQwen3Config.map_openai_params,
     AmazonQwen3Config.transform_request, AmazonQwen3Config._convert_messages_to_prompt, AmazonQwen3Config.transform_response.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L32-L79
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L32-L79
   why: Own AmazonDeepSeekR1Config.transform_response. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: 'qwen2 output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen2-output.yaml.'
+- text: "qwen2_output: Qwen2 prefers truthy generation, then text defaulting to empty, despite its docstring emphasizing\
+    \ text. Qwen3 uses generation only, defaulting to empty without a truthiness fallback. Remove exactly one leading\
+    \ <|im_start|>assistant\n and one trailing <|im_end|>, with no whitespace trimming. If choices exists and is\
+    \ nonempty, update only its first message and force finish_reason=stop; otherwise leave choices untouched. Neither\
+    \ path rewrites response model/id/created."
   proof:
   - case-qwen2-output
   - oracle
   - helper-python
-- text: 'qwen3 chat prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-chat-prompt.yaml.'
+- text: 'qwen3_chat_prompt: Join blocks with newline and always append <|im_start|>assistant
+
+    , even for empty input. System,user,assistant,tool use <|im_start|>{role}
+
+    {content}<|im_end|>; missing content is empty, explicit None renders None. Unknown/missing roles are omitted.
+    For user list content concatenate text items (missing text defaults empty) and replace every image_url item
+    with <|vision_start|><|image_pad|><|vision_end|>; ignore other types and never fetch the URL. Non-user lists
+    retain Python display formatting.'
   proof:
   - case-qwen3-chat-prompt
   - oracle
   - helper-python
-- text: 'qwen3 options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-options.yaml.'
+- text: 'qwen3_options: Qwen3 class defaults max_tokens,temperature,top_p,top_k,stop are None; constructor updates
+    only non-None values then calls B2205. Supported names are max_tokens,temperature,top_p,top_k,stop,stream, and
+    mapping copies exactly those names unchanged. Request projection includes prompt and only supplied max_tokens->max_gen_len,temperature,top_p,top_k,stop,
+    including explicit None. It omits stream, authentication keys and unknown fields without mutating options. It
+    does not load class defaults inside transform_request.'
   proof:
   - case-qwen3-options
   - oracle
   - helper-python
-- text: >-
-    qwen3 reasoning content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-reasoning-content.yaml.
+- text: 'qwen3_reasoning_content: Qwen replies do not split <think> tags or set reasoning_content. Preserve them
+    verbatim in visible content after the exact wrapper removal. Any existing reasoning fields remain unchanged.'
   proof:
   - case-qwen3-reasoning-content
   - oracle
   - helper-python
-- text: >-
-    deepseek buffered response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/deepseek-buffered-response.yaml.
+- text: 'deepseek_buffered_response: First call B612 base reply conversion, including its token/clock/error behavior.
+    Only if request_data.prompt is truthy and its trimmed value ends with <think>, and the first reply content is
+    truthy, prepend <think> and call B218 _parse_content_for_reasoning. Rebuild the first message preserving its
+    dumped fields; replace content with parsed content and merge a truthy parsed reasoning string into provider_specific_fields.reasoning_content.
+    Empty reasoning leaves that key unchanged. No later choices are processed; absent trigger leaves the entire
+    reply unchanged.'
   proof:
   - case-deepseek-buffered-response
   - oracle
@@ -127,63 +207,153 @@ dod:
 - text: decode_qwen_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'qwen3_tool_prompt: For an assistant with a truthy list of tool_calls, omit its content and emit one block
+    per call: <|im_start|>assistant
+
+    <tool_call>
+
+    {"name": "{name}", "arguments": "{arguments}"}
+
+    </tool_call><|im_end|>. Missing function/name/arguments default to empty mappings/strings. Interpolate arguments
+    without JSON escaping or parsing, even when already JSON or containing quotes; malformed nested values fail
+    as the source does. Empty or non-list tool_calls use the ordinary assistant content block.'
+  proof:
+  - case-qwen3-tool-prompt
+  - oracle
+  - helper-python
+- text: 'qwen_usage_and_failure: Only a present usage key replaces usage; prompt_tokens,completion_tokens,total_tokens
+    each independently default to 0, so total is not recomputed. Missing usage preserves prior usage. JSON, shape
+    and conversion errors are re-raised unchanged after optional logging_obj.post_call(input=messages,api_key=api_key,original_response=raw_response,additional_args={error:str(error)});
+    no BedrockError status is synthesized. Exercise both Qwen variants with the same cases.'
+  proof:
+  - case-qwen-usage-and-failure
+  - oracle
+  - helper-python
+- text: The real config loader resolves AmazonQwen3Config.max_tokens, including its default and precedence.
+  proof:
+  - config-amazonqwen3config-max-tokens
+- text: The real config loader resolves AmazonQwen3Config.temperature, including its default and precedence.
+  proof:
+  - config-amazonqwen3config-temperature
+- text: The real config loader resolves AmazonQwen3Config.top_p, including its default and precedence.
+  proof:
+  - config-amazonqwen3config-top-p
+- text: The real config loader resolves AmazonQwen3Config.top_k, including its default and precedence.
+  proof:
+  - config-amazonqwen3config-top-k
+- text: The real config loader resolves AmazonQwen3Config.stop, including its default and precedence.
+  proof:
+  - config-amazonqwen3config-stop
 checks:
   optional:
   - mutants
   commands:
   - id: case-qwen2-output
-    why: The qwen2-output behavior is missing or differs from its pinned fixture.
+    why: "Qwen2 prefers truthy generation, then text defaulting to empty, despite its docstring emphasizing text.\
+      \ Qwen3 uses generation only, defaulting to empty without a truthiness fallback. Remove exactly one leading\
+      \ <|im_start|>assistant\n and one trailing <|im_end|>, with no whitespace trimming. If choices exists and\
+      \ is nonempty, update only its first message and force finish_reason=stop; otherwise leave choices untouched.\
+      \ Neither path rewrites response model/id/created."
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen2_output$/)'
   - id: case-qwen3-chat-prompt
-    why: The qwen3-chat-prompt behavior is missing or differs from its pinned fixture.
+    why: 'Join blocks with newline and always append <|im_start|>assistant
+
+      , even for empty input. System,user,assistant,tool use <|im_start|>{role}
+
+      {content}<|im_end|>; missing content is empty, explicit None renders None. Unknown/missing roles are omitted.
+      For user list content concatenate text items (missing text defaults empty) and replace every image_url item
+      with <|vision_start|><|image_pad|><|vision_end|>; ignore other types and never fetch the URL. Non-user lists
+      retain Python display formatting.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_chat_prompt$/)'
   - id: case-qwen3-options
-    why: The qwen3-options behavior is missing or differs from its pinned fixture.
+    why: Qwen3 class defaults max_tokens,temperature,top_p,top_k,stop are None; constructor updates only non-None
+      values then calls B2205. Supported names are max_tokens,temperature,top_p,top_k,stop,stream, and mapping copies
+      exactly those names unchanged. Request projection includes prompt and only supplied max_tokens->max_gen_len,temperature,top_p,top_k,stop,
+      including explicit None. It omits stream, authentication keys and unknown fields without mutating options.
+      It does not load class defaults inside transform_request.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_options$/)'
   - id: case-qwen3-reasoning-content
-    why: The qwen3-reasoning-content behavior is missing or differs from its pinned fixture.
+    why: Qwen replies do not split <think> tags or set reasoning_content. Preserve them verbatim in visible content
+      after the exact wrapper removal. Any existing reasoning fields remain unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_reasoning_content$/)'
   - id: case-deepseek-buffered-response
-    why: The deepseek-buffered-response behavior is missing or differs from its pinned fixture.
+    why: First call B612 base reply conversion, including its token/clock/error behavior. Only if request_data.prompt
+      is truthy and its trimmed value ends with <think>, and the first reply content is truthy, prepend <think>
+      and call B218 _parse_content_for_reasoning. Rebuild the first message preserving its dumped fields; replace
+      content with parsed content and merge a truthy parsed reasoning string into provider_specific_fields.reasoning_content.
+      Empty reasoning leaves that key unchanged. No later choices are processed; absent trigger leaves the entire
+      reply unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_deepseek_buffered_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_qwen_deepseek.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_qwen_deepseek.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*")"
       && grep -lq 'bedrock_qwen_deepseek' tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_qwen_deepseek$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek)"
       && grep -q 'decode_qwen_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs && cargo
       nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_qwen_deepseek_corpus$/)'
+  - id: case-qwen3-tool-prompt
+    why: 'For an assistant with a truthy list of tool_calls, omit its content and emit one block per call: <|im_start|>assistant
+
+      <tool_call>
+
+      {"name": "{name}", "arguments": "{arguments}"}
+
+      </tool_call><|im_end|>. Missing function/name/arguments default to empty mappings/strings. Interpolate arguments
+      without JSON escaping or parsing, even when already JSON or containing quotes; malformed nested values fail
+      as the source does. Empty or non-list tool_calls use the ordinary assistant content block.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_tool_prompt$/)'
+  - id: case-qwen-usage-and-failure
+    why: Only a present usage key replaces usage; prompt_tokens,completion_tokens,total_tokens each independently
+      default to 0, so total is not recomputed. Missing usage preserves prior usage. JSON, shape and conversion
+      errors are re-raised unchanged after optional logging_obj.post_call(input=messages,api_key=api_key,original_response=raw_response,additional_args={error:str(error)});
+      no BedrockError status is synthesized. Exercise both Qwen variants with the same cases.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen_usage_and_failure$/)'
+  - id: config-amazonqwen3config-max-tokens
+    why: AmazonQwen3Config.max_tokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_qwen_config_cases::case_[0-9]+_loads_amazonqwen3config_max_tokens$/)'
+  - id: config-amazonqwen3config-temperature
+    why: AmazonQwen3Config.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_qwen_config_cases::case_[0-9]+_loads_amazonqwen3config_temperature$/)'
+  - id: config-amazonqwen3config-top-p
+    why: AmazonQwen3Config.top_p lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_qwen_config_cases::case_[0-9]+_loads_amazonqwen3config_top_p$/)'
+  - id: config-amazonqwen3config-top-k
+    why: AmazonQwen3Config.top_k lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_qwen_config_cases::case_[0-9]+_loads_amazonqwen3config_top_k$/)'
+  - id: config-amazonqwen3config-stop
+    why: AmazonQwen3Config.stop lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_qwen_config_cases::case_[0-9]+_loads_amazonqwen3config_stop$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen2-output.yaml
 - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-chat-prompt.yaml
 - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-options.yaml
 - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-reasoning-content.yaml
 - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/deepseek-buffered-response.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-tool-prompt.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen-usage-and-failure.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py: AmazonDeepseekR1ResponseIterator.__init__
-  L83-L85; AmazonDeepseekR1ResponseIterator.chunk_parser L87-L121 belong to B609; reuse that implementation or its
-  injected typed boundary.
+- anthropic_claude2_transformation.py get_legacy_anthropic_model_names L63-L68 is the shared selector B2231.
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py:
+  AmazonDeepseekR1ResponseIterator.__init__ L83-L85; AmazonDeepseekR1ResponseIterator.chunk_parser L87-L121 belong
+  to B609.'
 pitfalls:
-- DeepSeek reasoning_content remains distinct from visible text and its streaming iterator belongs to B609.
+- Qwen2 actually prefers generation over text, contrary to the emphasis in its docstring.
+- Qwen3 tool argument strings are interpolated into the prompt without JSON escaping.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

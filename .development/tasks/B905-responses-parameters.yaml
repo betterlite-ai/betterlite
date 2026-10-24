@@ -2,9 +2,9 @@ id: B905
 title: Responses parameters
 description: >-
   Add Responses parameter projection and prompt-managed input shaping using B175 ParameterMapping, B213 dot paths
-  and B206 metadata projection. Inputs include allowed_openai_params, drop_params, additional_drop_params, stream_options,
-  text_format, metadata, previous_response_id and forwarded MCP headers; distinguish omitted values from explicit
-  false and preserve dropped-field diagnostics.
+  and B668 add_openai_metadata projection. Inputs include allowed_openai_params, drop_params, additional_drop_params,
+  stream_options, text_format, metadata, previous_response_id and forwarded MCP headers; distinguish omitted values
+  from explicit false and preserve dropped-field diagnostics.
 
 
   Implement crates/betterlite-core/src/api/responses_parameters.rs. Use ResponsesParametersInput and ResponsesParametersResult

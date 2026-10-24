@@ -1,0 +1,203 @@
+id: B2222
+title: Fireworks catalog metadata primitives
+description: >-
+  Lower Fireworks resource-name and capability lookup below shared metadata queries and the Fireworks provider.
+  Preserve the raw catalog semantics; this task performs no provider request or parameter mapping.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/fireworks_ai/common_utils.py:
+  resolve_fireworks_resource_name L66-L74. litellm/llms/fireworks_ai/chat/transformation.py: _get_fireworks_index
+  L534-L555; _matches_on_hyphen_boundary L557-L569; _short_model_name L571-L576; _firerouter_family_cost_keys L578-L583;
+  _get_model_cost_capability_exact L585-L597; _get_model_cost_capability L599-L620; get_model_cost_key L622-L623;
+  get_provider_info L625-L651.
+
+
+  Named case contracts: resource_names: Remove one fireworks_ai/ prefix. Preserve accounts/... names, FW- names
+  and any name containing #. Prefix routers/... or models/... with accounts/fireworks/. A -fast suffix, exact firerouter/auto/auto-instant,
+  or firerouter/ prefix maps under accounts/fireworks/routers/; all others map under accounts/fireworks/models/.
+  Cost keys prepend fireworks_ai/ to that resolved name. exact_capability: Short names remove fireworks_ai/ then
+  accounts/fireworks/models/. Try original model, fireworks_ai/short, fireworks_ai/accounts/fireworks/models/short,
+  then fireworks_ai/accounts/fireworks/routers/firerouter only when the resolved resource starts accounts/fireworks/routers/firerouter/.
+  Return the first non-None capability even when it is not a bool; malformed non-None entries propagate errors.
+  indexed_fuzzy_capability: Build an index only for fireworks_ai/ catalog keys with dict entries and nonempty short
+  keys, stripping accounts/fireworks/models/. Cache by catalog identity and B2217 mutation generation, not length.
+  When no exact capability exists, allow equal names or matches at hyphen word boundaries, choose the longest key;
+  equal-length ties retain insertion order. Missing capability None is skipped; False and non-bool values survive.
+  provider_defaults: Return supports_function_calling=True and supports_prompt_caching=True by default. A non-None
+  function-calling value overrides even with False. Include supports_reasoning only when truthy; include supports_vision
+  and supports_pdf_input when non-None, preserving False. No other flags or metadata are inferred.
+
+
+  Implement crates/betterlite-models/src/fireworks_catalog_metadata.rs with adjacent tests under fireworks_catalog_metadata/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation fireworks_catalog_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function fireworks_catalog_metadata_cases in betterlite-models with these exact named cases (one
+  per oracle file): resource_names, exact_capability, indexed_fuzzy_capability, provider_defaults. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata* using HelperCase:
+  kind: helper and the externally tagged fireworks_catalog_metadata variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_fireworks_catalog_metadata that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 102 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 190 production lines, 225 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 555 planned, 575 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/fireworks_catalog_metadata.rs
+  - crates/betterlite-models/src/fireworks_catalog_metadata/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/fireworks_catalog_metadata.rs
+  - tools/oracle/src/helpers/fireworks_catalog_metadata/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/fireworks_catalog_metadata.py
+  - tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/**
+  - tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/common_utils.py#L66-L74
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L534-L555
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L557-L569
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L571-L576
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L578-L583
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L585-L597
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L599-L620
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L622-L623
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L625-L651
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New fireworks_catalog_metadata seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'resource_names: Remove one fireworks_ai/ prefix. Preserve accounts/... names, FW- names and any name containing
+    #. Prefix routers/... or models/... with accounts/fireworks/. A -fast suffix, exact firerouter/auto/auto-instant,
+    or firerouter/ prefix maps under accounts/fireworks/routers/; all others map under accounts/fireworks/models/.
+    Cost keys prepend fireworks_ai/ to that resolved name.'
+  proof:
+  - case-resource-names
+  - oracle
+  - helper-python
+- text: 'exact_capability: Short names remove fireworks_ai/ then accounts/fireworks/models/. Try original model,
+    fireworks_ai/short, fireworks_ai/accounts/fireworks/models/short, then fireworks_ai/accounts/fireworks/routers/firerouter
+    only when the resolved resource starts accounts/fireworks/routers/firerouter/. Return the first non-None capability
+    even when it is not a bool; malformed non-None entries propagate errors.'
+  proof:
+  - case-exact-capability
+  - oracle
+  - helper-python
+- text: 'indexed_fuzzy_capability: Build an index only for fireworks_ai/ catalog keys with dict entries and nonempty
+    short keys, stripping accounts/fireworks/models/. Cache by catalog identity and B2217 mutation generation, not
+    length. When no exact capability exists, allow equal names or matches at hyphen word boundaries, choose the
+    longest key; equal-length ties retain insertion order. Missing capability None is skipped; False and non-bool
+    values survive.'
+  proof:
+  - case-indexed-fuzzy-capability
+  - oracle
+  - helper-python
+- text: 'provider_defaults: Return supports_function_calling=True and supports_prompt_caching=True by default. A
+    non-None function-calling value overrides even with False. Include supports_reasoning only when truthy; include
+    supports_vision and supports_pdf_input when non-None, preserving False. No other flags or metadata are inferred.'
+  proof:
+  - case-provider-defaults
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/fireworks_catalog_metadata.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata*")"
+      && grep -lq 'fireworks_catalog_metadata' tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_fireworks_catalog_metadata$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-resource-names
+    why: 'Remove one fireworks_ai/ prefix. Preserve accounts/... names, FW- names and any name containing #. Prefix
+      routers/... or models/... with accounts/fireworks/. A -fast suffix, exact firerouter/auto/auto-instant, or
+      firerouter/ prefix maps under accounts/fireworks/routers/; all others map under accounts/fireworks/models/.
+      Cost keys prepend fireworks_ai/ to that resolved name.'
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::fireworks_catalog_metadata_cases::case_[0-9]+_resource_names$/)'
+  - id: case-exact-capability
+    why: Short names remove fireworks_ai/ then accounts/fireworks/models/. Try original model, fireworks_ai/short,
+      fireworks_ai/accounts/fireworks/models/short, then fireworks_ai/accounts/fireworks/routers/firerouter only
+      when the resolved resource starts accounts/fireworks/routers/firerouter/. Return the first non-None capability
+      even when it is not a bool; malformed non-None entries propagate errors.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::fireworks_catalog_metadata_cases::case_[0-9]+_exact_capability$/)'
+  - id: case-indexed-fuzzy-capability
+    why: Build an index only for fireworks_ai/ catalog keys with dict entries and nonempty short keys, stripping
+      accounts/fireworks/models/. Cache by catalog identity and B2217 mutation generation, not length. When no exact
+      capability exists, allow equal names or matches at hyphen word boundaries, choose the longest key; equal-length
+      ties retain insertion order. Missing capability None is skipped; False and non-bool values survive.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::fireworks_catalog_metadata_cases::case_[0-9]+_indexed_fuzzy_capability$/)'
+  - id: case-provider-defaults
+    why: Return supports_function_calling=True and supports_prompt_caching=True by default. A non-None function-calling
+      value overrides even with False. Include supports_reasoning only when truthy; include supports_vision and
+      supports_pdf_input when non-None, preserving False. No other flags or metadata are inferred.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::fireworks_catalog_metadata_cases::case_[0-9]+_provider_defaults$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/resource-names.yaml
+- tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/exact-capability.yaml
+- tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/indexed-fuzzy-capability.yaml
+- tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/provider-defaults.yaml
+deviations: []
+out_of_scope:
+- Fireworks constructors/configuration and transport remain B041 except the constructor moved to the shared metadata
+  factory B2220. Common utils session-affinity/auth helpers remain B041/B176; other chat transformations remain
+  B041.
+- 'Function ownership inventory litellm/llms/fireworks_ai/chat/transformation.py: _map_reasoning_effort L53-L61;
+  _extract_fireworks_hidden_params L64-L80; _json_schema_response_format L83-L84; _bool_from_kwargs L90-L95; effort_from_chat_template_kwargs
+  L98-L108; FireworksAIConfig.get_config L197-L199; FireworksAIConfig.validate_environment L201-L225; FireworksAIConfig.get_supported_openai_params
+  L227-L300; FireworksAIConfig.map_openai_params L302-L349; FireworksAIConfig.map_extra_body_params L351-L385; FireworksAIConfig._translate_truncate_prompt_tokens
+  L387-L398; FireworksAIConfig._translate_chat_template_kwargs L400-L434; FireworksAIConfig.translate_guided_params
+  L436-L462; FireworksAIConfig._transform_tools L464-L473; FireworksAIConfig._transform_messages_helper L475-L524;
+  FireworksAIConfig.transform_request L653-L683; FireworksAIConfig._handle_message_content_with_tool_calls L685-L708;
+  FireworksAIConfig.transform_response L710-L764; FireworksAIConfig.get_model_response_iterator L766-L776; FireworksAIConfig._get_openai_compatible_provider_info
+  L778-L788; FireworksAIConfig.get_models L790-L817; FireworksAIConfig.get_api_key L819-L826; FireworksAIChatCompletionStreamingHandler.chunk_parser
+  L830-L838 belong to B041.'
+- 'Function ownership inventory litellm/llms/fireworks_ai/chat/transformation.py: FireworksAIConfig.__init__ L163-L195
+  belong to B2220.'
+pitfalls:
+- The source casts capability values without validating bool, so truthiness and non-None tests differ.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: standard

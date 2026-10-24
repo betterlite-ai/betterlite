@@ -14,10 +14,25 @@ description: >-
   oracle operation for it.
 
 
-  Install these completed leaf operations: B652 Bedrock InvokeAgent requests and trace replies; B653 Bedrock AgentCore
-  invocation preparation; B654 Bedrock AgentCore JSON and SSE replies; B655 Bedrock AgentCore streaming adapters;
-  B656 Bedrock Claude Platform workspace routes. Each dispatch fixture must reach its leaf with a fake transport
-  and assert the resulting request or reply; accept already normalized settings and reuse leaf errors.
+  Install these completed leaf operations: B652 Bedrock InvokeAgent requests and B2209 trace replies; B653 Bedrock
+  AgentCore invocation preparation; B654 Bedrock AgentCore JSON and SSE replies; B655 Bedrock AgentCore streaming
+  adapters; B656 Bedrock Claude Platform workspace routes. Each dispatch fixture must reach its leaf with a fake
+  transport and assert the resulting request or reply; accept already normalized settings and reuse leaf errors.
+
+
+  Named case contracts: invoke_agent: Dispatch B652 request and B2209 trace/event reply with injected fixture frames;
+  preserve service=bedrock, session ID and its fake streaming behavior. agentcore_json: Dispatch B653 preparation
+  and B654 buffered JSON/SSE response; retain ARN endpoint and selected JWT versus signed headers. agentcore_stream:
+  Dispatch B655 live line stream with B653 inputs; cover both SSE and JSON two-chunk fallback, preserving leaf errors.
+  claude_platform_chat: Dispatch B656 chat with B2211 resolved workspace settings and Anthropic request/reply behavior.
+  claude_platform_messages: Dispatch B656 native Messages with its different header precedence and model-prefix
+  stripping.
+
+
+  Each named composition case uses separate fixture rows for its operations, invokes the existing native dispatcher
+  and then the actual leaf prepare/send/project functions, and asserts captured upstream request and returned typed
+  result. Include a leaf failure per family to detect accidental error rewriting. This composition reads no new
+  config/env values and registers no HTTP route; defaults, headers, warnings and parsers remain with the named leaves.
 
 
   Implement crates/betterlite-provider/src/bedrock_agent_dispatch.rs with adjacent tests under bedrock_agent_dispatch/.
@@ -35,9 +50,8 @@ description: >-
 
   Write rstest function bedrock_agent_dispatch_cases in betterlite-provider with these exact named cases (one per
   oracle file): invoke_agent, agentcore_json, agentcore_stream, claude_platform_chat, claude_platform_messages.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch* using HelperCase: kind:
@@ -57,9 +71,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 105 behavior/config-test lines, 105 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 130 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 395 planned, 400 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 535 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -98,28 +112,32 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L29-L48
   why: Operation contract delegated to B656; only native dispatcher wiring is added here.
 dod:
-- text: 'invoke agent: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/invoke-agent.yaml.'
+- text: 'invoke_agent: Dispatch B652 request and B2209 trace/event reply with injected fixture frames; preserve
+    service=bedrock, session ID and its fake streaming behavior.'
   proof:
   - case-invoke-agent
   - oracle
   - helper-python
-- text: 'agentcore json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/agentcore-json.yaml.'
+- text: 'agentcore_json: Dispatch B653 preparation and B654 buffered JSON/SSE response; retain ARN endpoint and
+    selected JWT versus signed headers.'
   proof:
   - case-agentcore-json
   - oracle
   - helper-python
-- text: 'agentcore stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/agentcore-stream.yaml.'
+- text: 'agentcore_stream: Dispatch B655 live line stream with B653 inputs; cover both SSE and JSON two-chunk fallback,
+    preserving leaf errors.'
   proof:
   - case-agentcore-stream
   - oracle
   - helper-python
-- text: 'claude platform chat: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/claude-platform-chat.yaml.'
+- text: 'claude_platform_chat: Dispatch B656 chat with B2211 resolved workspace settings and Anthropic request/reply
+    behavior.'
   proof:
   - case-claude-platform-chat
   - oracle
   - helper-python
-- text: >-
-    claude platform messages: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/claude-platform-messages.yaml.
+- text: 'claude_platform_messages: Dispatch B656 native Messages with its different header precedence and model-prefix
+    stripping.'
   proof:
   - case-claude-platform-messages
   - oracle
@@ -136,30 +154,31 @@ checks:
   - mutants
   commands:
   - id: case-invoke-agent
-    why: The invoke-agent behavior is missing or differs from its pinned fixture.
+    why: Dispatch B652 request and B2209 trace/event reply with injected fixture frames; preserve service=bedrock,
+      session ID and its fake streaming behavior.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_agent_dispatch_cases::case_[0-9]+_invoke_agent$/)'
   - id: case-agentcore-json
-    why: The agentcore-json behavior is missing or differs from its pinned fixture.
+    why: Dispatch B653 preparation and B654 buffered JSON/SSE response; retain ARN endpoint and selected JWT versus
+      signed headers.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_agent_dispatch_cases::case_[0-9]+_agentcore_json$/)'
   - id: case-agentcore-stream
-    why: The agentcore-stream behavior is missing or differs from its pinned fixture.
+    why: Dispatch B655 live line stream with B653 inputs; cover both SSE and JSON two-chunk fallback, preserving
+      leaf errors.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_agent_dispatch_cases::case_[0-9]+_agentcore_stream$/)'
   - id: case-claude-platform-chat
-    why: The claude-platform-chat behavior is missing or differs from its pinned fixture.
+    why: Dispatch B656 chat with B2211 resolved workspace settings and Anthropic request/reply behavior.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_agent_dispatch_cases::case_[0-9]+_claude_platform_chat$/)'
   - id: case-claude-platform-messages
-    why: The claude-platform-messages behavior is missing or differs from its pinned fixture.
+    why: Dispatch B656 native Messages with its different header precedence and model-prefix stripping.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_agent_dispatch_cases::case_[0-9]+_claude_platform_messages$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_agent_dispatch.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_agent_dispatch.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch*")"
       && grep -lq 'bedrock_agent_dispatch' tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_agent_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -174,49 +193,45 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/claude-platform-messages.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._extract_sse_json L294-L309; AmazonAgentCoreConfig._extract_usage_from_event
-  L311-L321; AmazonAgentCoreConfig._extract_content_delta L323-L334; AmazonAgentCoreConfig._extract_content_from_message
-  L336-L345; AmazonAgentCoreConfig._calculate_usage L347-L380; AmazonAgentCoreConfig._parse_json_response L382-L453;
-  AmazonAgentCoreConfig._get_parsed_response L455-L480; AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response
-  L986-L1051 belong to B654; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._stream_agentcore_response_sync L531-L632;
-  AmazonAgentCoreConfig.get_sync_custom_stream_wrapper L634-L750; AmazonAgentCoreConfig._stream_agentcore_response
-  L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper L855-L971 belong to B655; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__ L55-L57; AmazonAgentCoreConfig.get_supported_openai_params
-  L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75; AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request
-  L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn L158-L169; AmazonAgentCoreConfig._extract_region_from_arn
-  L171-L180; AmazonAgentCoreConfig._get_runtime_session_id L182-L194; AmazonAgentCoreConfig._get_runtime_user_id
-  L196-L203; AmazonAgentCoreConfig.transform_request L205-L271; AmazonAgentCoreConfig._should_forward_multimodal_content
-  L274-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper L974-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body
-  L979-L984; AmazonAgentCoreConfig.validate_environment L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066;
-  AmazonAgentCoreConfig.should_fake_stream L1068-L1075 belong to B653; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_agent/transformation.py: AmazonInvokeAgentConfig.__init__ L49-L51; AmazonInvokeAgentConfig.get_supported_openai_params
-  L53-L61; AmazonInvokeAgentConfig.map_openai_params L63-L73; AmazonInvokeAgentConfig.get_complete_url L75-L106;
-  AmazonInvokeAgentConfig.sign_request L108-L129; AmazonInvokeAgentConfig._get_agent_id_and_alias_id L131-L142;
-  AmazonInvokeAgentConfig._get_session_id L144-L146; AmazonInvokeAgentConfig.transform_request L148-L162; AmazonInvokeAgentConfig._parse_aws_event_stream
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__
+  L55-L57; AmazonAgentCoreConfig.get_supported_openai_params L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75;
+  AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn
+  L158-L169; AmazonAgentCoreConfig._extract_region_from_arn L171-L180; AmazonAgentCoreConfig._get_runtime_session_id
+  L182-L194; AmazonAgentCoreConfig._get_runtime_user_id L196-L203; AmazonAgentCoreConfig.transform_request L205-L271;
+  AmazonAgentCoreConfig._should_forward_multimodal_content L273-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper
+  L973-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body L978-L984; AmazonAgentCoreConfig.validate_environment
+  L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066; AmazonAgentCoreConfig.should_fake_stream L1068-L1075
+  belong to B653.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._extract_sse_json
+  L294-L309; AmazonAgentCoreConfig._extract_usage_from_event L311-L321; AmazonAgentCoreConfig._extract_content_delta
+  L323-L334; AmazonAgentCoreConfig._extract_content_from_message L336-L345; AmazonAgentCoreConfig._calculate_usage
+  L347-L380; AmazonAgentCoreConfig._parse_json_response L382-L453; AmazonAgentCoreConfig._get_parsed_response L455-L480;
+  AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response L986-L1051 belong
+  to B654.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._stream_agentcore_response_sync
+  L531-L632; AmazonAgentCoreConfig.get_sync_custom_stream_wrapper L634-L750; AmazonAgentCoreConfig._stream_agentcore_response
+  L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper L855-L971 belong to B655.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_agent/transformation.py: AmazonInvokeAgentConfig._parse_aws_event_stream
   L164-L224; AmazonInvokeAgentConfig._parse_message_from_event L226-L264; AmazonInvokeAgentConfig._extract_headers_from_event
   L266-L280; AmazonInvokeAgentConfig._get_response_stream_shape L282-L285; AmazonInvokeAgentConfig._extract_response_content
   L287-L308; AmazonInvokeAgentConfig._extract_usage_info L310-L341; AmazonInvokeAgentConfig._is_trace_event L343-L348;
   AmazonInvokeAgentConfig._get_trace_data L350-L357; AmazonInvokeAgentConfig._extract_and_update_preprocessing_usage
   L359-L382; AmazonInvokeAgentConfig._extract_orchestration_model L384-L396; AmazonInvokeAgentConfig._build_model_response
-  L398-L428; AmazonInvokeAgentConfig.transform_response L430-L473; AmazonInvokeAgentConfig.validate_environment
-  L475-L485; AmazonInvokeAgentConfig.get_error_class L487-L488; AmazonInvokeAgentConfig.should_fake_stream L490-L496
-  belong to B652; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/claude_platform/common_utils.py: filter_claude_platform_request_body L29-L48; resolve_unsupported_override
-  L51-L72; strip_claude_platform_route L75-L78; BedrockClaudePlatformMixin.get_error_class L82-L88; BedrockClaudePlatformMixin._get_workspace_id
-  L91-L104; BedrockClaudePlatformMixin._get_required_aws_region_name L106-L123; BedrockClaudePlatformMixin.get_complete_url
-  L125-L145; BedrockClaudePlatformMixin.sign_request L147-L170 belong to B656; reuse that implementation or its
-  injected typed boundary.
+  L398-L428; AmazonInvokeAgentConfig.transform_response L430-L473 belong to B2209.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_agent/transformation.py: AmazonInvokeAgentConfig.__init__
+  L49-L51; AmazonInvokeAgentConfig.get_supported_openai_params L53-L61; AmazonInvokeAgentConfig.map_openai_params
+  L63-L73; AmazonInvokeAgentConfig.get_complete_url L75-L106; AmazonInvokeAgentConfig.sign_request L108-L129; AmazonInvokeAgentConfig._get_agent_id_and_alias_id
+  L131-L142; AmazonInvokeAgentConfig._get_session_id L144-L146; AmazonInvokeAgentConfig.transform_request L148-L162;
+  AmazonInvokeAgentConfig.validate_environment L475-L485; AmazonInvokeAgentConfig.get_error_class L487-L488; AmazonInvokeAgentConfig.should_fake_stream
+  L490-L496 belong to B652.'
+- 'Function ownership inventory litellm/llms/bedrock/claude_platform/common_utils.py: filter_claude_platform_request_body
+  L29-L48; resolve_unsupported_override L51-L72; strip_claude_platform_route L75-L78; BedrockClaudePlatformMixin.get_error_class
+  L82-L88; BedrockClaudePlatformMixin._get_workspace_id L90-L104; BedrockClaudePlatformMixin._get_required_aws_region_name
+  L106-L123; BedrockClaudePlatformMixin.get_complete_url L125-L145; BedrockClaudePlatformMixin.sign_request L147-L170
+  belong to B2211.'
 pitfalls:
 - AgentCore and InvokeAgent use different signing services and runtime path shapes.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

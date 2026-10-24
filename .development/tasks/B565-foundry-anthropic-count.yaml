@@ -1,9 +1,9 @@
 id: B565
 title: Foundry Anthropic token counting
 description: >-
-  Add Foundry Anthropic count-token endpoint and auth overrides with the same native-count selection/fallback contract
-  as Anthropic. Preserve configured base and count route construction, including native messages transformations;
-  no tokenizer assets are downloaded.
+  Add Foundry Anthropic count-token endpoint and auth overrides with its own explicit error-result contract. Preserve
+  configured base and count route construction, including native messages transformations; no tokenizer assets are
+  downloaded.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/anthropic/count_tokens/handler.py:
@@ -13,12 +13,46 @@ description: >-
   L25-L64; AzureAIAnthropicCountTokensConfig.get_count_tokens_endpoint L66-L88.
 
 
-  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  Reuse BaseAzureLLM._base_validate_azure_environment from B2200 (litellm/llms/azure/common_utils.py); its implementation
   remains with that prerequisite.
 
 
   Reuse AnthropicError.__init__ from B567 (litellm/llms/anthropic/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: count_tokens_endpoint: Strip trailing slashes, append /anthropic only when that substring
+  is absent anywhere, then always append /v1/messages/count_tokens. Existing messages/count_tokens suffixes are
+  duplicated rather than normalized; query text can suppress /anthropic insertion. azure_auth_and_beta: Send Content-Type=application/json,
+  anthropic-version=2023-06-01, anthropic-beta from ANTHROPIC_TOKEN_COUNTING_BETA_VERSION (default token-counting-2024-11-01),
+  x-api-key=explicit key. Insert api_key into params only when absent, then merge B2200 auth; native x-api-key remains
+  even with a different params key or Bearer auth. native_count_result: Only provider azure_ai selects this counter.
+  Falsey messages return None without requests (contents unused). Success maps input_tokens default 0, request_model/model_used,
+  tokenizer_type=azure_ai_anthropic_api and preserves original_response; result None returns None. optional_native_selection:
+  Resolve truthy deployment litellm_params.api_key/api_base then AZURE_AI_API_KEY/AZURE_AI_API_BASE, without global
+  fallbacks. Missing key logs No Azure AI API key found for token counting; missing base logs No Azure AI API base
+  found for token counting; both return None. Credentials are required here even if params could support Entra auth.
+  count_failure_error_result: Handler validates and transforms via B585, posts JSON with explicit timeout even zero
+  or litellm.request_timeout otherwise; only status 200 succeeds. Preserve raw non-200 status/text and HTTPStatusError
+  status/text as AnthropicError; other exceptions become 500 CountTokens processing error: <error>. Counter catches
+  AnthropicError and returns error=true, total_tokens=0, error_message and original status; arbitrary exception
+  gives status 500. It does not perform a local tokenizer fallback. count_error_warnings: Counter AnthropicError
+  warns Azure AI Anthropic CountTokens API error: status=<status>, message=<message>; generic exception warns Error
+  calling Azure AI Anthropic CountTokens API: <error>. Preserve distinction between error records and missing-input
+  None.
+
+
+  Reuse the B585 config loaders for ANTHROPIC_TOKEN_COUNTING_BETA_VERSION and the shared transport loader for request_timeout/REQUEST_TIMEOUT;
+  load AZURE_AI_API_KEY/AZURE_AI_API_BASE through B549. No new downloader or local fallback is introduced.
+
+
+  Write standalone Rust test anthropic_count_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test anthropic_count_secret_safe_failure in betterlite-foundry: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-foundry/src/anthropic_count.rs with adjacent tests under anthropic_count/. Keep each
@@ -35,10 +69,10 @@ description: >-
 
 
   Write rstest function anthropic_count_cases in betterlite-foundry with these exact named cases (one per oracle
-  file): count_tokens_endpoint, azure_auth_and_beta, native_count_result, count_failure_local_fallback, optional_native_selection.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): count_tokens_endpoint, azure_auth_and_beta, native_count_result, optional_native_selection, count_failure_error_result,
+  count_error_warnings. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count* using HelperCase: kind:
@@ -56,9 +90,9 @@ description: >-
 
 
   Budget from 203 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 230 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 475 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 210 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 585 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -83,38 +117,38 @@ references:
   why: Own AzureAIAnthropicCountTokensHandler.handle_count_tokens_request. Other functions in this file remain with
     the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py#L22-L121
-  why: >-
-    Own AzureAIAnthropicTokenCounter.should_use_token_counting_api, AzureAIAnthropicTokenCounter.count_tokens. Other
-    functions in this file remain with the owners listed below.
+  why: Own AzureAIAnthropicTokenCounter.should_use_token_counting_api, AzureAIAnthropicTokenCounter.count_tokens.
+    Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/transformation.py#L25-L88
-  why: >-
-    Own AzureAIAnthropicCountTokensConfig.get_required_headers, AzureAIAnthropicCountTokensConfig.get_count_tokens_endpoint.
+  why: Own AzureAIAnthropicCountTokensConfig.get_required_headers, AzureAIAnthropicCountTokensConfig.get_count_tokens_endpoint.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    count tokens endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-tokens-endpoint.yaml.
+- text: 'count_tokens_endpoint: Strip trailing slashes, append /anthropic only when that substring is absent anywhere,
+    then always append /v1/messages/count_tokens. Existing messages/count_tokens suffixes are duplicated rather
+    than normalized; query text can suppress /anthropic insertion.'
   proof:
   - case-count-tokens-endpoint
   - oracle
   - helper-python
-- text: 'azure auth and beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/azure-auth-and-beta.yaml.'
+- text: 'azure_auth_and_beta: Send Content-Type=application/json, anthropic-version=2023-06-01, anthropic-beta from
+    ANTHROPIC_TOKEN_COUNTING_BETA_VERSION (default token-counting-2024-11-01), x-api-key=explicit key. Insert api_key
+    into params only when absent, then merge B2200 auth; native x-api-key remains even with a different params key
+    or Bearer auth.'
   proof:
   - case-azure-auth-and-beta
   - oracle
   - helper-python
-- text: 'native count result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/native-count-result.yaml.'
+- text: 'native_count_result: Only provider azure_ai selects this counter. Falsey messages return None without requests
+    (contents unused). Success maps input_tokens default 0, request_model/model_used, tokenizer_type=azure_ai_anthropic_api
+    and preserves original_response; result None returns None.'
   proof:
   - case-native-count-result
   - oracle
   - helper-python
-- text: >-
-    count failure local fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-failure-local-fallback.yaml.
-  proof:
-  - case-count-failure-local-fallback
-  - oracle
-  - helper-python
-- text: >-
-    optional native selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/optional-native-selection.yaml.
+- text: 'optional_native_selection: Resolve truthy deployment litellm_params.api_key/api_base then AZURE_AI_API_KEY/AZURE_AI_API_BASE,
+    without global fallbacks. Missing key logs No Azure AI API key found for token counting; missing base logs No
+    Azure AI API base found for token counting; both return None. Credentials are required here even if params could
+    support Entra auth.'
   proof:
   - case-optional-native-selection
   - oracle
@@ -127,50 +161,94 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'count_failure_error_result: Handler validates and transforms via B585, posts JSON with explicit timeout
+    even zero or litellm.request_timeout otherwise; only status 200 succeeds. Preserve raw non-200 status/text and
+    HTTPStatusError status/text as AnthropicError; other exceptions become 500 CountTokens processing error: <error>.
+    Counter catches AnthropicError and returns error=true, total_tokens=0, error_message and original status; arbitrary
+    exception gives status 500. It does not perform a local tokenizer fallback.'
+  proof:
+  - case-count-failure-error-result
+  - oracle
+  - helper-python
+- text: 'count_error_warnings: Counter AnthropicError warns Azure AI Anthropic CountTokens API error: status=<status>,
+    message=<message>; generic exception warns Error calling Azure AI Anthropic CountTokens API: <error>. Preserve
+    distinction between error records and missing-input None.'
+  proof:
+  - case-count-error-warnings
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-count-tokens-endpoint
-    why: The count-tokens-endpoint behavior is missing or differs from its pinned fixture.
+    why: Strip trailing slashes, append /anthropic only when that substring is absent anywhere, then always append
+      /v1/messages/count_tokens. Existing messages/count_tokens suffixes are duplicated rather than normalized;
+      query text can suppress /anthropic insertion.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_tokens_endpoint$/)'
   - id: case-azure-auth-and-beta
-    why: The azure-auth-and-beta behavior is missing or differs from its pinned fixture.
+    why: Send Content-Type=application/json, anthropic-version=2023-06-01, anthropic-beta from ANTHROPIC_TOKEN_COUNTING_BETA_VERSION
+      (default token-counting-2024-11-01), x-api-key=explicit key. Insert api_key into params only when absent,
+      then merge B2200 auth; native x-api-key remains even with a different params key or Bearer auth.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_azure_auth_and_beta$/)'
   - id: case-native-count-result
-    why: The native-count-result behavior is missing or differs from its pinned fixture.
+    why: Only provider azure_ai selects this counter. Falsey messages return None without requests (contents unused).
+      Success maps input_tokens default 0, request_model/model_used, tokenizer_type=azure_ai_anthropic_api and preserves
+      original_response; result None returns None.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_native_count_result$/)'
-  - id: case-count-failure-local-fallback
-    why: The count-failure-local-fallback behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_failure_local_fallback$/)'
   - id: case-optional-native-selection
-    why: The optional-native-selection behavior is missing or differs from its pinned fixture.
+    why: Resolve truthy deployment litellm_params.api_key/api_base then AZURE_AI_API_KEY/AZURE_AI_API_BASE, without
+      global fallbacks. Missing key logs No Azure AI API key found for token counting; missing base logs No Azure
+      AI API base found for token counting; both return None. Credentials are required here even if params could
+      support Entra auth.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_optional_native_selection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic_count.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic_count.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count*")"
       && grep -lq 'foundry_anthropic_count' tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic_count$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count)"
       && grep -q 'decode_foundry_count_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_anthropic_count.rs
       && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_anthropic_count_corpus$/)'
+  - id: case-count-failure-error-result
+    why: 'Handler validates and transforms via B585, posts JSON with explicit timeout even zero or litellm.request_timeout
+      otherwise; only status 200 succeeds. Preserve raw non-200 status/text and HTTPStatusError status/text as AnthropicError;
+      other exceptions become 500 CountTokens processing error: <error>. Counter catches AnthropicError and returns
+      error=true, total_tokens=0, error_message and original status; arbitrary exception gives status 500. It does
+      not perform a local tokenizer fallback.'
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_failure_error_result$/)'
+  - id: case-count-error-warnings
+    why: 'Counter AnthropicError warns Azure AI Anthropic CountTokens API error: status=<status>, message=<message>;
+      generic exception warns Error calling Azure AI Anthropic CountTokens API: <error>. Preserve distinction between
+      error records and missing-input None.'
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_error_warnings$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-tokens-endpoint.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic-count/azure-auth-and-beta.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic-count/native-count-result.yaml
-- tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-failure-local-fallback.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic-count/optional-native-selection.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-failure-error-result.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-error-warnings.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -178,9 +256,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve configured base and count route construction, including native messages transformations; no tokenizer
-  assets are downloaded.
+- The counter refuses an absent API key before calling Azure auth, even when Entra credentials are configured.
+- The endpoint builder appends count_tokens to an already complete count endpoint.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

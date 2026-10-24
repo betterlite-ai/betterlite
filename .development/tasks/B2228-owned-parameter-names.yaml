@@ -1,0 +1,329 @@
+id: B2228
+title: Shared owned-parameter names
+description: >-
+  Provide the single LiteLLM-owned keyword registry below request filtering, provider batch conversion and SDK wrappers.
+  Port the declared wire-name projection and membership predicate without enabling those settings or accepting trusted
+  state from requests. Field names are data shared by their owning feature tasks, not a second request deserializer.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/types/litellm_params.py:
+  wire L61-L62; registry declarations and wire_names/owned_wire_names L370-L391. litellm/types/utils.py: all_litellm_params
+  registry and is_litellm_owned_kwarg L3963-L3972.
+
+
+  Named case contracts: wire_name_projection: wire(name) returns immutable metadata with key wire_name. wire_names
+  walks dataclass fields in declaration order, selecting metadata.wire_name when present or the field name otherwise.
+  owned_wire_names walks each root leaf in order, requires each leaf type to be a dataclass, and concatenates its
+  wire names; invalid leaves raise TypeError {Root}.{field} is not a dataclass leaf. Do not recursively descend
+  beyond this one root/leaf level. owned_name_registry: Concatenate leaf wire names from ConnectionSettings, LiteLLMOptions
+  and InternalState, then artifacts self/use_client/model_config/rust, then StandardCallbackDynamicParams annotations
+  and inherited CustomPricingLiteLLMParams fields. Preserve declaration order/duplicates in the exported list; predicate
+  membership uses exact case-sensitive names. The exact known literals are listed below and require a named row
+  for each source declaration. internal_prefix_membership: is_litellm_owned_kwarg returns true for a registered
+  name or any string starting with the exact INTERNAL_KWARG_PREFIX literal _litellm_. The prefix itself matches;
+  litellm_ without the leading underscore is not a wildcard. Unknown ordinary names return false without warnings.
+  This is classification only, not authorization or config support. subset_registries: AGENTIC_LOOP_KWARG_NAMES
+  concatenates AgenticLoopState then AgenticLoopOptions wire names; BEDROCK_BATCH_KWARG_NAMES is BedrockBatchConnection
+  wire names only. Preserve no-log and underscore aliases rather than the Rust/dataclass field spellings; allowed_openai_params
+  remains owned even though B648 deliberately exempts it during filtering.
+
+
+  The registry literal membership rows are api_key, api_base, api_version, region_name, headers, provider_specific_header,
+  client, shared_session, ssl_verify, request_timeout, force_timeout, stream_timeout, max_retries, tenant_id, client_id,
+  client_secret, azure_username, azure_password, azure_scope, azure_ad_token_provider, litellm_credential_name,
+  configurable_clientside_auth_params, use_xai_oauth, aws_batch_role_arn, s3_bucket_name, s3_region_name, s3_endpoint_url,
+  s3_output_bucket_name, s3_bucket_owner, s3_access_key_id, s3_secret_access_key, s3_encryption_key_id, bedrock_tags,
+  custom_llm_provider, azure, use_litellm_proxy, use_chat_completions_api, use_in_pass_through, allowed_openai_params,
+  fallbacks, context_window_fallback_dict, num_retries, retry_policy, retry_strategy, routing_strategy, cooldown_time,
+  allowed_model_region, enable_tag_filtering, fastest_response, provider_affinity_header, search_tool_name, model_list,
+  model_info, rpm, tpm, itpm, otpm, default_api_key_rpm_limit, default_api_key_tpm_limit, max_parallel_requests,
+  weight, order, tag_regex, max_file_size_mb, silent_model, auto_router_config_path, auto_router_config, auto_router_default_model,
+  auto_router_embedding_model, auto_router_max_input_chars, auto_router_routing_compression, auto_router_model_compression,
+  complexity_router_config, complexity_router_default_model, adaptive_router_config, adaptive_router_default_model,
+  quality_router_config, quality_router_default_model, caching, cache, ttl, enable_prompt_caching, caching_groups,
+  cost_per_query, base_model, max_budget, budget_duration, id, metadata, litellm_metadata, tags, litellm_trace_id,
+  litellm_session_id, litellm_request_debug, logger_fn, verbose, no-log, log_client_error_tracebacks, max_agentic_loops,
+  guardrails, prompt_id, prompt_variables, prompt_version, prompt_environment, prompt_label, litellm_system_prompt,
+  custom_prompt_dict, roles, final_prompt_value, bos_token, eos_token, hf_model_name, supports_system_message, ensure_alternating_roles,
+  user_continue_message, assistant_continue_message, disable_add_transform_inline_image_block, merge_reasoning_content_in_choices,
+  enable_json_schema_validation, complete_response, keepalive_seconds, allow_client_keepalive_override, stream_chunk_size,
+  mock_response, mock_timeout, litellm_call_id, completion_call_id, model_alias_map, data_residency, litellm_logging_obj,
+  preset_cache_key, cache_key, stream_response, _context_compaction_state, _agentic_loop_depth, _agentic_loop_fingerprints,
+  _agentic_loop_api_surface, _code_interpreter_interception_active, _code_interpreter_interception_sandbox_key,
+  _code_interpreter_interception_session_scoped, _code_interpreter_interception_converted_stream, _websearch_interception_emit_native_blocks,
+  _websearch_interception_converted_stream, _headroom_interception_converted_stream, _router_weights, fallback_depth,
+  max_fallbacks, attempted_targets, proxy_server_request, secret_fields, litellm_trusted_callback_vars, _litellm_addressed_response_id,
+  _litellm_strip_stream_usage, client_side_timeout, model_file_id_mapping, acompletion, aembedding, aimg_generation,
+  atext_completion, text_completion, allm_passthrough_route, async_call, langfuse_public_key, langfuse_secret, langfuse_secret_key,
+  langfuse_host, langfuse_environment, langfuse_span_scope, langfuse_prompt_version, gcs_bucket_name, gcs_path_service_account,
+  langsmith_api_key, langsmith_project, langsmith_base_url, langsmith_sampling_rate, langsmith_tenant_id, humanloop_api_key,
+  arize_api_key, arize_space_key, arize_space_id, arize_success_sampling_rate, arize_error_sampling_rate, posthog_api_key,
+  posthog_api_url, wandb_api_key, weave_project_id, dd_api_key, dd_site, dd_agent_host, dd_agent_port, newrelic_api_key,
+  newrelic_region, signoz_ingestion_endpoint, signoz_ingestion_key, turn_off_message_logging, litellm_disabled_callbacks,
+  input_cost_per_token, output_cost_per_token, input_cost_per_character, output_cost_per_character, cache_read_input_token_cost,
+  cache_creation_input_token_cost, tiered_pricing, cost_per_second, input_cost_per_second, output_cost_per_second,
+  output_cost_per_second_1080p, output_cost_per_second_480p, output_cost_per_second_720p, output_cost_per_second_768p,
+  output_cost_per_second_2k, output_cost_per_second_4k, output_cost_per_image_512, output_cost_per_image_1024, output_cost_per_image_1536,
+  input_cost_per_pixel, output_cost_per_pixel, input_cost_per_token_flex, input_cost_per_token_priority, input_cost_per_token_balanced,
+  input_cost_per_token_ultrafast, cache_creation_input_token_cost_above_1hr, cache_creation_input_token_cost_above_200k_tokens,
+  cache_creation_input_token_cost_above_272k_tokens, cache_creation_input_token_cost_above_272k_tokens_priority,
+  cache_creation_input_token_cost_above_272k_tokens_flex, cache_creation_input_token_cost_above_272k_tokens_ultrafast,
+  cache_creation_input_token_cost_flex, cache_creation_input_token_cost_priority, cache_creation_input_token_cost_ultrafast,
+  cache_creation_input_audio_token_cost, cache_read_input_token_cost_flex, cache_read_input_token_cost_priority,
+  cache_read_input_token_cost_balanced, cache_read_input_token_cost_ultrafast, cache_read_input_token_cost_above_200k_tokens,
+  cache_read_input_token_cost_above_200k_tokens_priority, cache_read_input_token_cost_above_272k_tokens_priority,
+  cache_read_input_token_cost_above_272k_tokens_flex, cache_read_input_token_cost_above_272k_tokens_ultrafast, cache_read_input_token_cost_batches,
+  cache_read_input_token_cost_above_200k_tokens_batches, cache_read_input_token_cost_above_272k_tokens_batches,
+  cache_creation_input_token_cost_batches, cache_creation_input_token_cost_above_200k_tokens_batches, cache_creation_input_token_cost_above_272k_tokens_batches,
+  cache_read_input_audio_token_cost, cache_read_input_image_token_cost, input_cost_per_character_above_128k_tokens,
+  input_cost_per_audio_token, input_cost_per_token_cache_hit, input_cost_per_token_above_128k_tokens, input_cost_per_token_above_200k_tokens,
+  input_cost_per_token_above_200k_tokens_priority, input_cost_per_token_above_272k_tokens_priority, input_cost_per_token_above_272k_tokens_flex,
+  input_cost_per_token_above_272k_tokens_ultrafast, input_cost_per_token_above_200k_tokens_batches, input_cost_per_token_above_272k_tokens_batches,
+  input_cost_per_query, input_cost_per_image, input_cost_per_image_above_128k_tokens, input_cost_per_audio_per_second,
+  input_cost_per_audio_per_second_above_128k_tokens, input_cost_per_video_per_second, input_cost_per_video_per_second_above_128k_tokens,
+  input_cost_per_video_per_second_above_15s_interval, input_cost_per_video_per_second_above_8s_interval, input_cost_per_audio_token_batches,
+  input_cost_per_image_token_batches, input_cost_per_token_batches, input_cost_per_video_token_batches, output_cost_per_token_batches,
+  output_cost_per_token_flex, output_cost_per_token_priority, output_cost_per_token_balanced, output_cost_per_token_ultrafast,
+  output_cost_per_audio_token, output_cost_per_token_above_128k_tokens, output_cost_per_token_above_200k_tokens,
+  output_cost_per_token_above_200k_tokens_priority, output_cost_per_token_above_272k_tokens_priority, output_cost_per_token_above_272k_tokens_flex,
+  output_cost_per_token_above_272k_tokens_ultrafast, output_cost_per_token_above_200k_tokens_batches, output_cost_per_token_above_272k_tokens_batches,
+  output_cost_per_character_above_128k_tokens, output_cost_per_image, output_cost_per_image_token, output_cost_per_video_token,
+  output_cost_per_reasoning_token, output_cost_per_reasoning_token_flex, output_cost_per_reasoning_token_priority,
+  output_cost_per_video_per_second, output_cost_per_audio_per_second, search_context_cost_per_query, google_maps_grounding_cost_per_query,
+  citation_cost_per_token, cache_read_input_token_cost_above_272k_tokens, cache_read_input_token_cost_above_512k_tokens,
+  input_cost_per_image_token, input_cost_per_video_token, input_cost_per_token_above_272k_tokens, input_cost_per_token_above_512k_tokens,
+  output_cost_per_token_above_272k_tokens, output_cost_per_token_above_512k_tokens, output_vector_size, ocr_cost_per_page,
+  ocr_cost_per_page_batches, ocr_cost_per_credit, annotation_cost_per_page, annotation_cost_per_page_batches, regional_processing_uplift_multiplier_eu,
+  regional_processing_uplift_multiplier_us, regional_endpoint_uplift_multiplier, self, use_client, model_config,
+  rust. These names classify existing fields only; no new environment or config setting is introduced.
+
+
+  Write standalone Rust test owned_parameter_names_credential_identity_isolation in betterlite-context: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test owned_parameter_names_secret_safe_failure in betterlite-context: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Implement crates/betterlite-context/src/owned_parameter_names.rs with adjacent tests under owned_parameter_names/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation owned_parameter_names in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function owned_parameter_names_cases in betterlite-context with these exact named cases (one per
+  oracle file): wire_name_projection, owned_name_registry, internal_prefix_membership, subset_registries. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API
+  tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/owned_parameter_names* using HelperCase: kind:
+  helper and the externally tagged owned_parameter_names variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_owned_parameter_names that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 24 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 315 production lines, 205 behavior/config-test lines, 110 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/owned_parameter_names.rs
+  - crates/betterlite-context/src/owned_parameter_names/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/owned_parameter_names.rs
+  - tools/oracle/src/helpers/owned_parameter_names/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/owned_parameter_names.py
+  - tools/oracle/cases/helpers/providers/owned-parameter-names/**
+  - tools/oracle/fuzz/corpus/helper_case/owned_parameter_names*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L61-L62
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L370-L391
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3963-L3972
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L65-L367
+  why: Wire-name declarations and aliases projected by the registry, not newly enabled settings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3651-L3843
+  why: Callback and inherited pricing field names.
+dod:
+- text: New owned_parameter_names seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'wire_name_projection: wire(name) returns immutable metadata with key wire_name. wire_names walks dataclass
+    fields in declaration order, selecting metadata.wire_name when present or the field name otherwise. owned_wire_names
+    walks each root leaf in order, requires each leaf type to be a dataclass, and concatenates its wire names; invalid
+    leaves raise TypeError {Root}.{field} is not a dataclass leaf. Do not recursively descend beyond this one root/leaf
+    level.'
+  proof:
+  - case-wire-name-projection
+  - oracle
+  - helper-python
+- text: 'owned_name_registry: Concatenate leaf wire names from ConnectionSettings, LiteLLMOptions and InternalState,
+    then artifacts self/use_client/model_config/rust, then StandardCallbackDynamicParams annotations and inherited
+    CustomPricingLiteLLMParams fields. Preserve declaration order/duplicates in the exported list; predicate membership
+    uses exact case-sensitive names. The exact known literals are listed below and require a named row for each
+    source declaration.'
+  proof:
+  - case-owned-name-registry
+  - oracle
+  - helper-python
+- text: 'internal_prefix_membership: is_litellm_owned_kwarg returns true for a registered name or any string starting
+    with the exact INTERNAL_KWARG_PREFIX literal _litellm_. The prefix itself matches; litellm_ without the leading
+    underscore is not a wildcard. Unknown ordinary names return false without warnings. This is classification only,
+    not authorization or config support.'
+  proof:
+  - case-internal-prefix-membership
+  - oracle
+  - helper-python
+- text: 'subset_registries: AGENTIC_LOOP_KWARG_NAMES concatenates AgenticLoopState then AgenticLoopOptions wire
+    names; BEDROCK_BATCH_KWARG_NAMES is BedrockBatchConnection wire names only. Preserve no-log and underscore aliases
+    rather than the Rust/dataclass field spellings; allowed_openai_params remains owned even though B648 deliberately
+    exempts it during filtering.'
+  proof:
+  - case-subset-registries
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/owned_parameter_names.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/owned_parameter_names*")"
+      && grep -lq 'owned_parameter_names' tools/oracle/fuzz/corpus/helper_case/owned_parameter_names* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_owned_parameter_names$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-wire-name-projection
+    why: wire(name) returns immutable metadata with key wire_name. wire_names walks dataclass fields in declaration
+      order, selecting metadata.wire_name when present or the field name otherwise. owned_wire_names walks each
+      root leaf in order, requires each leaf type to be a dataclass, and concatenates its wire names; invalid leaves
+      raise TypeError {Root}.{field} is not a dataclass leaf. Do not recursively descend beyond this one root/leaf
+      level.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_cases::case_[0-9]+_wire_name_projection$/)'
+  - id: case-owned-name-registry
+    why: Concatenate leaf wire names from ConnectionSettings, LiteLLMOptions and InternalState, then artifacts self/use_client/model_config/rust,
+      then StandardCallbackDynamicParams annotations and inherited CustomPricingLiteLLMParams fields. Preserve declaration
+      order/duplicates in the exported list; predicate membership uses exact case-sensitive names. The exact known
+      literals are listed below and require a named row for each source declaration.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_cases::case_[0-9]+_owned_name_registry$/)'
+  - id: case-internal-prefix-membership
+    why: is_litellm_owned_kwarg returns true for a registered name or any string starting with the exact INTERNAL_KWARG_PREFIX
+      literal _litellm_. The prefix itself matches; litellm_ without the leading underscore is not a wildcard. Unknown
+      ordinary names return false without warnings. This is classification only, not authorization or config support.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_cases::case_[0-9]+_internal_prefix_membership$/)'
+  - id: case-subset-registries
+    why: AGENTIC_LOOP_KWARG_NAMES concatenates AgenticLoopState then AgenticLoopOptions wire names; BEDROCK_BATCH_KWARG_NAMES
+      is BedrockBatchConnection wire names only. Preserve no-log and underscore aliases rather than the Rust/dataclass
+      field spellings; allowed_openai_params remains owned even though B648 deliberately exempts it during filtering.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_cases::case_[0-9]+_subset_registries$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::owned_parameter_names_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/owned-parameter-names/wire-name-projection.yaml
+- tools/oracle/cases/helpers/providers/owned-parameter-names/owned-name-registry.yaml
+- tools/oracle/cases/helpers/providers/owned-parameter-names/internal-prefix-membership.yaml
+- tools/oracle/cases/helpers/providers/owned-parameter-names/subset-registries.yaml
+deviations: []
+out_of_scope:
+- All typed setting/state model declarations and _int_from_decimal_string validation remain B176 and their feature
+  owners. StandardCallbackDynamicParams and CustomPricingLiteLLMParams records retain their existing logging/cost
+  owners; this task owns only their exported name projection. All other types/utils.py methods remain with their
+  wire/API owners.
+- 'Function ownership inventory litellm/types/utils.py: LiteLLMBatch.__contains__ L4324-L4326; LiteLLMBatch.get
+  L4328-L4330; LiteLLMBatch.__getitem__ L4332-L4334; LiteLLMBatch.json L4336-L4341 belong to B1035.'
+- 'Function ownership inventory litellm/types/utils.py: _nested_selector L94-L111; SafeAttributeModel.__delattr__
+  L131-L146; ChatCompletionTokenLogprob.ensure_top_logprobs_is_list L1135-L1146; ChatCompletionTokenLogprob.__contains__
+  L1148-L1150; ChatCompletionTokenLogprob.get L1152-L1154; ChatCompletionTokenLogprob.__getitem__ L1156-L1158; ChoiceLogprobs.__contains__
+  L1165-L1167; ChoiceLogprobs.get L1169-L1171; ChoiceLogprobs.__getitem__ L1173-L1175; Function.__init__ L1187-L1209;
+  Function.__contains__ L1211-L1213; Function.get L1215-L1217; Function.__getitem__ L1219-L1221; Function.__setitem__
+  L1223-L1225; ChatCompletionDeltaToolCall.__contains__ L1234-L1236; ChatCompletionDeltaToolCall.get L1238-L1240;
+  ChatCompletionDeltaToolCall.__getitem__ L1242-L1244; ChatCompletionDeltaToolCall.__setitem__ L1246-L1248; _CustomToolCallAccess.__contains__
+  L1252-L1253; _CustomToolCallAccess.get L1255-L1256; _CustomToolCallAccess.__getitem__ L1258-L1259; _CustomToolCallAccess.__setitem__
+  L1261-L1262; ChatCompletionMessageToolCall.__init__ L1289-L1310; ChatCompletionMessageToolCall.__contains__ L1312-L1314;
+  ChatCompletionMessageToolCall.get L1316-L1318; ChatCompletionMessageToolCall.__getitem__ L1320-L1322; ChatCompletionMessageToolCall.__setitem__
+  L1324-L1326; ChatCompletionAudioResponse.__init__ L1347-L1359; ChatCompletionAudioResponse.__contains__ L1361-L1363;
+  ChatCompletionAudioResponse.get L1365-L1367; ChatCompletionAudioResponse.__getitem__ L1369-L1371; ChatCompletionAudioResponse.__setitem__
+  L1373-L1375; add_provider_specific_fields L1384-L1387; Message.__init__ L1403-L1485; Message.get L1487-L1489;
+  Message.__getitem__ L1491-L1493; Message.__setitem__ L1495-L1497; Message.json L1499-L1504; Delta.__init__ L1526-L1625;
+  Delta.__contains__ L1627-L1629; Delta.get L1631-L1633; Delta.__getitem__ L1635-L1637; Delta.__setitem__ L1639-L1641;
+  Choices.__init__ L1652-L1702; Choices.__contains__ L1704-L1706; Choices.get L1708-L1710; Choices.__getitem__ L1712-L1714;
+  Choices.__setitem__ L1716-L1718; text_tokens_without_nested_reasoning L1721-L1729; PromptTokensDetailsWrapper.__setattr__
+  L1796-L1801; PromptTokensDetailsWrapper.__init__ L1803-L1843; ServerToolUse.__getitem__ L1851-L1854; Usage.__init__
+  L1874-L1987; Usage.__contains__ L1989-L1991; Usage.get L1993-L1995; Usage.__getitem__ L1997-L1999; Usage.__setitem__
+  L2001-L2003; StreamingChoices.__init__ L2007-L2038; StreamingChoices.__contains__ L2040-L2042; StreamingChoices.get
+  L2044-L2046; StreamingChoices.__getitem__ L2048-L2050; StreamingChoices.__setitem__ L2052-L2054; StreamingChatCompletionChunk.__init__
+  L2058-L2065; ModelResponseBase.set_provider_response_headers L2092-L2094; ModelResponseBase.model_dump L2096-L2100;
+  ModelResponseStream.__init__ L2107-L2159; ModelResponseStream.__contains__ L2161-L2163; ModelResponseStream.get
+  L2165-L2167; ModelResponseStream.__getitem__ L2169-L2171; ModelResponseStream.json L2173-L2178; ModelResponse.__init__
+  L2185-L2258; ModelResponse.__contains__ L2260-L2262; ModelResponse.get L2264-L2266; ModelResponse.__getitem__
+  L2268-L2270; ModelResponse.json L2272-L2277; Embedding.get L2285-L2287; Embedding.__getitem__ L2289-L2291; Embedding.__setitem__
+  L2293-L2295; EmbeddingResponse.__init__ L2315-L2347; EmbeddingResponse.__contains__ L2349-L2351; EmbeddingResponse.get
+  L2353-L2355; EmbeddingResponse.__getitem__ L2357-L2359; EmbeddingResponse.__setitem__ L2361-L2363; EmbeddingResponse.json
+  L2365-L2370; TextChoices.__init__ L2381-L2398; TextChoices.__contains__ L2400-L2402; TextChoices.get L2404-L2406;
+  TextChoices.__getitem__ L2408-L2410; TextChoices.__setitem__ L2412-L2414; TextChoices.json L2416-L2421; TextCompletionResponse.__init__
+  L2452-L2512; TextCompletionResponse.__contains__ L2514-L2516; TextCompletionResponse.get L2518-L2520; TextCompletionResponse.__getitem__
+  L2522-L2524; TextCompletionResponse.__setitem__ L2526-L2528; ImageObject.__init__ L2552-L2562; ImageObject.__contains__
+  L2564-L2566; ImageObject.get L2568-L2570; ImageObject.__getitem__ L2572-L2574; ImageObject.__setitem__ L2576-L2578;
+  ImageObject.json L2580-L2585; ImageResponse._serialize_image_data L2624-L2653; ImageResponse.__init__ L2655-L2700;
+  ImageResponse.__contains__ L2702-L2704; ImageResponse.get L2706-L2708; ImageResponse.__getitem__ L2710-L2712;
+  ImageResponse.__setitem__ L2714-L2716; ImageResponse.json L2718-L2723; TranscriptionResponse.__init__ L2751-L2752;
+  TranscriptionResponse.__contains__ L2754-L2756; TranscriptionResponse.get L2758-L2760; TranscriptionResponse.__getitem__
+  L2762-L2764; TranscriptionResponse.__setitem__ L2766-L2768; TranscriptionResponse.json L2770-L2775; AdapterCompletionStreamWrapper.__init__
+  L2811-L2812; AdapterCompletionStreamWrapper.__iter__ L2814-L2815; AdapterCompletionStreamWrapper.__aiter__ L2817-L2818;
+  AdapterCompletionStreamWrapper.__next__ L2820-L2830; AdapterCompletionStreamWrapper.__anext__ L2832-L2840; CustomStreamingDecoder.aiter_bytes
+  L3622-L3625; CustomStreamingDecoder.iter_bytes L3627-L3630; CustomPricingLiteLLMParams.strip_custom_pricing_fields
+  L3845-L3854; shared_backend_model_info L3866-L3874; is_server_derived_pricing_key L3886-L3894; without_server_derived_pricing
+  L3901-L3912; echoed_cost_map_pricing_fields L3915-L3925; echoed_cost_map_fields L3928-L3943; pricing_override_fields
+  L3946-L3953; BudgetConfig.__init__ L3998-L4007; LiteLLMLoggingBaseClass.pre_call L4251-L4252; LiteLLMLoggingBaseClass.post_call
+  L4254-L4255; LiteLLMFineTuningJob.__init__ L4311-L4317; LiteLLMRealtimeStreamLoggingObject._serialize_results
+  L4354-L4356; LiteLLMRealtimeStreamLoggingObject.__contains__ L4358-L4360; LiteLLMRealtimeStreamLoggingObject.get
+  L4362-L4364; LiteLLMRealtimeStreamLoggingObject.__getitem__ L4366-L4368; LiteLLMRealtimeStreamLoggingObject.json
+  L4370-L4375; DynamicPromptManagementParamLiteral.list_all_params L4477-L4479 belong to B158.'
+- 'Function ownership inventory litellm/types/utils.py: _generate_id L122-L123; is_custom_tool_call_dict L1329-L1330;
+  chat_completion_tool_call_from_dict L1333-L1340 belong to B2214.'
+pitfalls:
+- The source name is no-log, not no_log; testing only Rust field names leaks that parameter upstream.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

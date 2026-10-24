@@ -11,6 +11,48 @@ description: >-
   L144-L176; BedrockEmbedding._transform_response L178-L252.
 
 
+  Named case contracts: signed_embedding_request: _sign_get_request signs method GET with data=None, supplied headers
+  and URL, SigV4 service bedrock and the supplied region, then returns the prepared request. Use the B595 signing
+  library implementation; no bearer override is applied. Missing boto3 is the Python-only ImportError Missing boto3
+  to call bedrock. Run 'pip install boto3'.; the Rust signer is compiled in. provider_json_response: Create a B173
+  client only when the supplied client is absent or the wrong sync/async handler type. Pass timeout only when not
+  None; numeric int/float values become the equivalent HTTP timeout, while an existing timeout record is retained.
+  Async client provider is BEDROCK. POST exact URL, signed headers and JSON-dumped data, then raise_for_status and
+  decode_embedding_response on response bytes. Supplied compatible clients retain their own timeout. JSON decoding
+  failures occur after the transport catch block and propagate as decoder errors; other transport failures are not
+  converted by this method. embedding_usage: For regular replies choose exact model amazon.titan-embed-image-v1
+  -> B627 multimodal with batch_data, amazon.titan-embed-text-v1 and amazon.titan-embed-g1-text-02 -> B627 G1, amazon.titan-embed-text-v2:0
+  -> B627 V2, before selecting provider=twelvelabs -> B629 or nova -> B628, both with batch_data. Preserve delegated
+  data, usage and model. No matching branch raises generic Exception Unable to map model response to known provider
+  format. model={model}. Cohere replies are not transformed here. http_error: Sync and async POST catch HTTPStatusError
+  and raise B682 BedrockError preserving response status,text,headers and response. Catch timeout separately as
+  status 408 with Timeout error occurred. and B682 default fields. A malformed successful JSON body is not mislabeled
+  as an HTTP-status failure. embedding_credentials: Call B590 pop_aws_auth_params, then pop aws_region_name from
+  the caller options. If the region is None, read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string
+  values count, including empty strings, and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2.
+  An explicit region bypasses both lookups and is not validated by this helper. Any bearer_token other than None,
+  including empty string, bypasses B594 resolve_credentials and returns credentials=None. Otherwise resolve with
+  the extracted auth fields and chosen region. Reuse B590/B591 config loaders rather than duplicate the keys. async_embedding_single_arn:
+  Only truthy is_async_invoke with exactly one response containing invocationArn enters the async reply branch,
+  including an explicit None ARN. Delegate twelvelabs to B629 and nova to B628; all other providers return one index-0
+  object=embedding with empty vector, zero prompt/total usage and HiddenParams._invocation_arn. Multiple ARN records
+  or an absent ARN instead take regular model/provider dispatch, including its failures. Exercise the same placeholder
+  shape as B628/B629.
+
+
+  Write standalone Rust test bedrock_embedding_io_credential_identity_isolation in betterlite-bedrock: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test bedrock_embedding_io_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B682. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-bedrock/src/bedrock_embedding_io.rs with adjacent tests under bedrock_embedding_io/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -25,10 +67,9 @@ description: >-
 
 
   Write rstest function bedrock_embedding_io_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): signed_embedding_request, provider_json_response, embedding_usage, http_error. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  file): signed_embedding_request, provider_json_response, embedding_usage, http_error, embedding_credentials, async_embedding_single_arn.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_embedding_io* using HelperCase: kind:
@@ -46,9 +87,9 @@ description: >-
 
 
   Budget from 164 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 190 production lines, 81 behavior/config-test lines,
-  71 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 437 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 205 production lines, 235 behavior/config-test lines,
+  95 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -70,29 +111,40 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L51-L252
-  why: >-
-    Own _sign_get_request, BedrockEmbedding._load_credentials, BedrockEmbedding._load_credentials, BedrockEmbedding._load_credentials,
+  why: Own _sign_get_request, BedrockEmbedding._load_credentials, BedrockEmbedding._load_credentials, BedrockEmbedding._load_credentials,
     BedrockEmbedding._make_sync_call, BedrockEmbedding._make_async_call, BedrockEmbedding._transform_response. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    signed embedding request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-embedding-io/signed-embedding-request.yaml.
+- text: 'signed_embedding_request: _sign_get_request signs method GET with data=None, supplied headers and URL,
+    SigV4 service bedrock and the supplied region, then returns the prepared request. Use the B595 signing library
+    implementation; no bearer override is applied. Missing boto3 is the Python-only ImportError Missing boto3 to
+    call bedrock. Run ''pip install boto3''.; the Rust signer is compiled in.'
   proof:
   - case-signed-embedding-request
   - oracle
   - helper-python
-- text: >-
-    provider json response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-embedding-io/provider-json-response.yaml.
+- text: 'provider_json_response: Create a B173 client only when the supplied client is absent or the wrong sync/async
+    handler type. Pass timeout only when not None; numeric int/float values become the equivalent HTTP timeout,
+    while an existing timeout record is retained. Async client provider is BEDROCK. POST exact URL, signed headers
+    and JSON-dumped data, then raise_for_status and decode_embedding_response on response bytes. Supplied compatible
+    clients retain their own timeout. JSON decoding failures occur after the transport catch block and propagate
+    as decoder errors; other transport failures are not converted by this method.'
   proof:
   - case-provider-json-response
   - oracle
   - helper-python
-- text: 'embedding usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-embedding-io/embedding-usage.yaml.'
+- text: 'embedding_usage: For regular replies choose exact model amazon.titan-embed-image-v1 -> B627 multimodal
+    with batch_data, amazon.titan-embed-text-v1 and amazon.titan-embed-g1-text-02 -> B627 G1, amazon.titan-embed-text-v2:0
+    -> B627 V2, before selecting provider=twelvelabs -> B629 or nova -> B628, both with batch_data. Preserve delegated
+    data, usage and model. No matching branch raises generic Exception Unable to map model response to known provider
+    format. model={model}. Cohere replies are not transformed here.'
   proof:
   - case-embedding-usage
   - oracle
   - helper-python
-- text: 'http error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-embedding-io/http-error.yaml.'
+- text: 'http_error: Sync and async POST catch HTTPStatusError and raise B682 BedrockError preserving response status,text,headers
+    and response. Catch timeout separately as status 408 with Timeout error occurred. and B682 default fields. A
+    malformed successful JSON body is not mislabeled as an HTTP-status failure.'
   proof:
   - case-http-error
   - oracle
@@ -105,60 +157,117 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'embedding_credentials: Call B590 pop_aws_auth_params, then pop aws_region_name from the caller options.
+    If the region is None, read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including
+    empty strings, and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2. An explicit region bypasses
+    both lookups and is not validated by this helper. Any bearer_token other than None, including empty string,
+    bypasses B594 resolve_credentials and returns credentials=None. Otherwise resolve with the extracted auth fields
+    and chosen region. Reuse B590/B591 config loaders rather than duplicate the keys.'
+  proof:
+  - case-embedding-credentials
+  - oracle
+  - helper-python
+- text: 'async_embedding_single_arn: Only truthy is_async_invoke with exactly one response containing invocationArn
+    enters the async reply branch, including an explicit None ARN. Delegate twelvelabs to B629 and nova to B628;
+    all other providers return one index-0 object=embedding with empty vector, zero prompt/total usage and HiddenParams._invocation_arn.
+    Multiple ARN records or an absent ARN instead take regular model/provider dispatch, including its failures.
+    Exercise the same placeholder shape as B628/B629.'
+  proof:
+  - case-async-embedding-single-arn
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-signed-embedding-request
-    why: The signed-embedding-request behavior is missing or differs from its pinned fixture.
+    why: _sign_get_request signs method GET with data=None, supplied headers and URL, SigV4 service bedrock and
+      the supplied region, then returns the prepared request. Use the B595 signing library implementation; no bearer
+      override is applied. Missing boto3 is the Python-only ImportError Missing boto3 to call bedrock. Run 'pip
+      install boto3'.; the Rust signer is compiled in.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_signed_embedding_request$/)'
   - id: case-provider-json-response
-    why: The provider-json-response behavior is missing or differs from its pinned fixture.
+    why: Create a B173 client only when the supplied client is absent or the wrong sync/async handler type. Pass
+      timeout only when not None; numeric int/float values become the equivalent HTTP timeout, while an existing
+      timeout record is retained. Async client provider is BEDROCK. POST exact URL, signed headers and JSON-dumped
+      data, then raise_for_status and decode_embedding_response on response bytes. Supplied compatible clients retain
+      their own timeout. JSON decoding failures occur after the transport catch block and propagate as decoder errors;
+      other transport failures are not converted by this method.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_provider_json_response$/)'
   - id: case-embedding-usage
-    why: The embedding-usage behavior is missing or differs from its pinned fixture.
+    why: For regular replies choose exact model amazon.titan-embed-image-v1 -> B627 multimodal with batch_data,
+      amazon.titan-embed-text-v1 and amazon.titan-embed-g1-text-02 -> B627 G1, amazon.titan-embed-text-v2:0 -> B627
+      V2, before selecting provider=twelvelabs -> B629 or nova -> B628, both with batch_data. Preserve delegated
+      data, usage and model. No matching branch raises generic Exception Unable to map model response to known provider
+      format. model={model}. Cohere replies are not transformed here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_embedding_usage$/)'
   - id: case-http-error
-    why: The http-error behavior is missing or differs from its pinned fixture.
+    why: Sync and async POST catch HTTPStatusError and raise B682 BedrockError preserving response status,text,headers
+      and response. Catch timeout separately as status 408 with Timeout error occurred. and B682 default fields.
+      A malformed successful JSON body is not mislabeled as an HTTP-status failure.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_http_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_embedding_io.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_embedding_io.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_embedding_io*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_embedding_io*")"
       && grep -lq 'bedrock_embedding_io' tools/oracle/fuzz/corpus/helper_case/bedrock_embedding_io* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_embedding_io$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_embedding_io)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_embedding_io)"
       && grep -q 'decode_embedding_response' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_embedding_io.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_embedding_io_corpus$/)'
+  - id: case-embedding-credentials
+    why: Call B590 pop_aws_auth_params, then pop aws_region_name from the caller options. If the region is None,
+      read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including empty strings,
+      and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2. An explicit region bypasses both lookups
+      and is not validated by this helper. Any bearer_token other than None, including empty string, bypasses B594
+      resolve_credentials and returns credentials=None. Otherwise resolve with the extracted auth fields and chosen
+      region. Reuse B590/B591 config loaders rather than duplicate the keys.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_embedding_credentials$/)'
+  - id: case-async-embedding-single-arn
+    why: Only truthy is_async_invoke with exactly one response containing invocationArn enters the async reply branch,
+      including an explicit None ARN. Delegate twelvelabs to B629 and nova to B628; all other providers return one
+      index-0 object=embedding with empty vector, zero prompt/total usage and HiddenParams._invocation_arn. Multiple
+      ARN records or an absent ARN instead take regular model/provider dispatch, including its failures. Exercise
+      the same placeholder shape as B628/B629.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_cases::case_[0-9]+_async_embedding_single_arn$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_embedding_io_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-embedding-io/signed-embedding-request.yaml
 - tools/oracle/cases/helpers/providers/bedrock-embedding-io/provider-json-response.yaml
 - tools/oracle/cases/helpers/providers/bedrock-embedding-io/embedding-usage.yaml
 - tools/oracle/cases/helpers/providers/bedrock-embedding-io/http-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-embedding-io/embedding-credentials.yaml
+- tools/oracle/cases/helpers/providers/bedrock-embedding-io/async-embedding-single-arn.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._get_async_invoke_status L587-L667 belong to B632; reuse
-  that implementation or its injected typed boundary.
 - 'litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding.async_embeddings L108-L109 have no caller at the pin;
   do not port them.'
-- >-
-  litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._single_func_embeddings L254-L320; BedrockEmbedding._async_single_func_embeddings
-  L322-L391; BedrockEmbedding.embeddings L393-L585 belong to B631; reuse that implementation or its injected typed
-  boundary.
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._single_func_embeddings
+  L254-L320; BedrockEmbedding._async_single_func_embeddings L322-L391; BedrockEmbedding.embeddings L393-L585 belong
+  to B631.'
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._get_async_invoke_status
+  L587-L667 belong to B632.'
 pitfalls:
 - Embedding JSON response normalization differs between family shapes even when the HTTP status is successful.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 625
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -1,7 +1,7 @@
 id: B657
 title: Bedrock Responses and inline-image policy
 description: >-
-  Add BedrockResponsesConfig for model-selected Mantle/runtime URLs, bearer/signature preparation and Responses
+  Add BedrockResponsesConfig for model-selected Bedrock Runtime URLs, bearer/signature preparation and Responses
   request projection. Preserve supported parameter gates and native file-search capability. Remote image traversal
   identifies URL blocks but cannot download them under the current policy; supplied inline images use existing bounded
   media processing.
@@ -38,6 +38,55 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: bedrock_responses_model_route: for_model rejects falsey model or false B690 bedrock_supports_openai_responses
+  after removing one leading chat_completions/. Otherwise instantiate this Runtime config (not Mantle); constructor
+  stores sync/async fetch seams and delegates the no-op BaseResponses initializer B2202. custom_llm_provider bedrock.
+  _without_chat_completions_route only removes a leading prefix once. responses_bearer_auth: Bearer selector is
+  truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads GenericLiteLLMParams.api_key,
+  returns caller headers unchanged if falsey resolved token, otherwise overrides Authorization with Bearer {token}.
+  sign_request returns supplied headers,None when the same selector succeeds and does not add Authorization itself.
+  responses_sigv4: Without bearer, delegate B595 _sign_request service bedrock and original parameters/model/stream/fake_stream
+  without passing api_key. Error factory B682 preserves status,message,headers including x-amzn-RequestId, unlike
+  the OpenAI blank-response factory. response_option_gates: Call B506 map_openai_params first with original drop_params.
+  Remove key background whenever present, even False/None; warn Bedrock Runtime Responses API: dropping unsupported
+  parameter(s) {sorted tuple} that the endpoint rejects. This removal does not depend on drop_params. If tools not
+  list, leave it untouched. Otherwise B907 retains exactly function,mcp,custom,apply_patch,namespace,tool_search,computer
+  types and all nondict entries; unknown/missing types dropped. Warn Bedrock Runtime Responses API: dropping unsupported
+  tool type(s) {list of sorted unique stringified types} (supported: {sorted allowed types}). when any dropped,
+  omit tools if none retained, else preserve retained order. Empty original tools with no drops remains []. native_file_search_flag:
+  supports_native_file_search=False. File-search/server tools are not enabled merely because an OpenAI Responses
+  request format is accepted; use the same unsupported-tool case for file_search and web_search. inline_image_traversal:
+  Only list input is traversed. For dict items inspect content then output in that order, each accepting a list
+  or single dict. Select dict blocks of exact type input_image or computer_screenshot with string image_url starting
+  case-sensitive http:// or https://. Ignore nested URL objects,input_file,nonstring URLs,uppercase schemes,s3://,data:
+  and deeper nested blocks. Collect distinct URLs in first-seen order. remote_url_current_rejection: Both sync and
+  async production paths reject a recognized remote image URL requiring bytes with ImageFetchError400 before transport
+  and with zero network calls, under the open request-download decision. The pinned oracle uses injected failing
+  fetch callbacks to compare this failure seam; test local no-network policy separately. Merge the old remote_image_no_fetch
+  duplicate. No actual downloader is built. Source sync would fetch distinct URLs in order, async gathers them,
+  but neither is enabled in betterlite. responses_runtime_url: Resolve region with B591 _get_aws_region_name(litellm_params,model=None).
+  Override chain truthy explicit api_base,litellm_params.aws_bedrock_runtime_endpoint,AWS_BEDROCK_RUNTIME_ENDPOINT;
+  else B591 partition-aware runtime endpoint. Trim trailing slashes then remove first matching suffix in order /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1;
+  append /openai/v1/responses. Preserve unrecognized path/query suffixes; no Mantle host selection. inline_image_replacement:
+  Pure inline_remote_image_urls returns input unchanged for nonlist input or empty supplied mapping. Otherwise shallow-copy
+  items/fields only when content/output is list/dict, replace recognized block.image_url by mapping[url], preserve
+  all other fields/order; missing mapping entry raises KeyError, no fallback fetch. Test this pure replacement using
+  fixture data URIs without performing downloads. codex_input_rewrite: After the inline stage call B907 normalize_codex_input_items.
+  If rewritten_types nonempty warn Bedrock Runtime Responses API: rewrote Codex input item type(s) {types} that
+  the endpoint rejects. Then B507 transform_responses_api_request receives model without leading chat_completions/,normalized
+  input and unchanged params/headers. Reuse all B907 normalization fixtures and B507 parent request/default cases;
+  no hoist_additional_tools call is added here.
+
+
+  Write standalone Rust test runtime_responses_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test runtime_responses_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-bedrock/src/responses.rs with adjacent tests under responses/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -53,10 +102,9 @@ description: >-
 
   Write rstest function responses_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   bedrock_responses_model_route, responses_bearer_auth, responses_sigv4, response_option_gates, native_file_search_flag,
-  inline_image_traversal, remote_image_no_fetch, remote_url_current_rejection. Each case exercises its named outcome
-  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
-  both client response and captured upstream request. Existing API tasks retain route registration; this task must
-  not register a duplicate axum route.
+  inline_image_traversal, remote_url_current_rejection, responses_runtime_url, inline_image_replacement, codex_input_rewrite.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses* using HelperCase:
@@ -72,9 +120,9 @@ description: >-
 
 
   Budget from 225 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 479 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 270 production lines, 300 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 710 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -93,8 +141,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
-  why: >-
-    Own _without_chat_completions_route, resolve_bedrock_bearer_token, _remote_image_url, _blocks_under, _image_blocks,
+  why: Own _without_chat_completions_route, resolve_bedrock_bearer_token, _remote_image_url, _blocks_under, _image_blocks,
     collect_remote_image_urls, _inline_block, _inline_value, _inline_item, inline_remote_image_urls, BedrockOpenAIResponsesConfig.__init__,
     BedrockOpenAIResponsesConfig.for_model, BedrockOpenAIResponsesConfig.custom_llm_provider, BedrockOpenAIResponsesConfig.get_error_class,
     BedrockOpenAIResponsesConfig.get_complete_url, BedrockOpenAIResponsesConfig.supports_native_file_search, BedrockOpenAIResponsesConfig.validate_environment,
@@ -102,49 +149,60 @@ references:
     BedrockOpenAIResponsesConfig.async_transform_responses_api_request, BedrockOpenAIResponsesConfig._transform_inlined_request.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    bedrock responses model route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/bedrock-responses-model-route.yaml.
+- text: 'bedrock_responses_model_route: for_model rejects falsey model or false B690 bedrock_supports_openai_responses
+    after removing one leading chat_completions/. Otherwise instantiate this Runtime config (not Mantle); constructor
+    stores sync/async fetch seams and delegates the no-op BaseResponses initializer B2202. custom_llm_provider bedrock.
+    _without_chat_completions_route only removes a leading prefix once.'
   proof:
   - case-bedrock-responses-model-route
   - oracle
   - helper-python
-- text: >-
-    responses bearer auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-bearer-auth.yaml.
+- text: 'responses_bearer_auth: Bearer selector is truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment
+    reads GenericLiteLLMParams.api_key, returns caller headers unchanged if falsey resolved token, otherwise overrides
+    Authorization with Bearer {token}. sign_request returns supplied headers,None when the same selector succeeds
+    and does not add Authorization itself.'
   proof:
   - case-responses-bearer-auth
   - oracle
   - helper-python
-- text: 'responses sigv4: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-sigv4.yaml.'
+- text: 'responses_sigv4: Without bearer, delegate B595 _sign_request service bedrock and original parameters/model/stream/fake_stream
+    without passing api_key. Error factory B682 preserves status,message,headers including x-amzn-RequestId, unlike
+    the OpenAI blank-response factory.'
   proof:
   - case-responses-sigv4
   - oracle
   - helper-python
-- text: >-
-    response option gates: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/response-option-gates.yaml.
+- text: 'response_option_gates: Call B506 map_openai_params first with original drop_params. Remove key background
+    whenever present, even False/None; warn Bedrock Runtime Responses API: dropping unsupported parameter(s) {sorted
+    tuple} that the endpoint rejects. This removal does not depend on drop_params. If tools not list, leave it untouched.
+    Otherwise B907 retains exactly function,mcp,custom,apply_patch,namespace,tool_search,computer types and all
+    nondict entries; unknown/missing types dropped. Warn Bedrock Runtime Responses API: dropping unsupported tool
+    type(s) {list of sorted unique stringified types} (supported: {sorted allowed types}). when any dropped, omit
+    tools if none retained, else preserve retained order. Empty original tools with no drops remains [].'
   proof:
   - case-response-option-gates
   - oracle
   - helper-python
-- text: >-
-    native file search flag: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/native-file-search-flag.yaml.
+- text: 'native_file_search_flag: supports_native_file_search=False. File-search/server tools are not enabled merely
+    because an OpenAI Responses request format is accepted; use the same unsupported-tool case for file_search and
+    web_search.'
   proof:
   - case-native-file-search-flag
   - oracle
   - helper-python
-- text: >-
-    inline image traversal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-traversal.yaml.
+- text: 'inline_image_traversal: Only list input is traversed. For dict items inspect content then output in that
+    order, each accepting a list or single dict. Select dict blocks of exact type input_image or computer_screenshot
+    with string image_url starting case-sensitive http:// or https://. Ignore nested URL objects,input_file,nonstring
+    URLs,uppercase schemes,s3://,data: and deeper nested blocks. Collect distinct URLs in first-seen order.'
   proof:
   - case-inline-image-traversal
   - oracle
   - helper-python
-- text: >-
-    remote image no fetch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-image-no-fetch.yaml.
-  proof:
-  - case-remote-image-no-fetch
-  - oracle
-  - helper-python
-- text: >-
-    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-current-rejection.yaml.
+- text: 'remote_url_current_rejection: Both sync and async production paths reject a recognized remote image URL
+    requiring bytes with ImageFetchError400 before transport and with zero network calls, under the open request-download
+    decision. The pinned oracle uses injected failing fetch callbacks to compare this failure seam; test local no-network
+    policy separately. Merge the old remote_image_no_fetch duplicate. No actual downloader is built. Source sync
+    would fetch distinct URLs in order, async gathers them, but neither is enabled in betterlite.'
   proof:
   - case-remote-url-current-rejection
   - oracle
@@ -153,47 +211,120 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'responses_runtime_url: Resolve region with B591 _get_aws_region_name(litellm_params,model=None). Override
+    chain truthy explicit api_base,litellm_params.aws_bedrock_runtime_endpoint,AWS_BEDROCK_RUNTIME_ENDPOINT; else
+    B591 partition-aware runtime endpoint. Trim trailing slashes then remove first matching suffix in order /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1;
+    append /openai/v1/responses. Preserve unrecognized path/query suffixes; no Mantle host selection.'
+  proof:
+  - case-responses-runtime-url
+  - oracle
+  - helper-python
+- text: 'inline_image_replacement: Pure inline_remote_image_urls returns input unchanged for nonlist input or empty
+    supplied mapping. Otherwise shallow-copy items/fields only when content/output is list/dict, replace recognized
+    block.image_url by mapping[url], preserve all other fields/order; missing mapping entry raises KeyError, no
+    fallback fetch. Test this pure replacement using fixture data URIs without performing downloads.'
+  proof:
+  - case-inline-image-replacement
+  - oracle
+  - helper-python
+- text: 'codex_input_rewrite: After the inline stage call B907 normalize_codex_input_items. If rewritten_types nonempty
+    warn Bedrock Runtime Responses API: rewrote Codex input item type(s) {types} that the endpoint rejects. Then
+    B507 transform_responses_api_request receives model without leading chat_completions/,normalized input and unchanged
+    params/headers. Reuse all B907 normalization fixtures and B507 parent request/default cases; no hoist_additional_tools
+    call is added here.'
+  proof:
+  - case-codex-input-rewrite
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-bedrock-responses-model-route
-    why: The bedrock-responses-model-route behavior is missing or differs from its pinned fixture.
+    why: for_model rejects falsey model or false B690 bedrock_supports_openai_responses after removing one leading
+      chat_completions/. Otherwise instantiate this Runtime config (not Mantle); constructor stores sync/async fetch
+      seams and delegates the no-op BaseResponses initializer B2202. custom_llm_provider bedrock. _without_chat_completions_route
+      only removes a leading prefix once.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_bedrock_responses_model_route$/)'
   - id: case-responses-bearer-auth
-    why: The responses-bearer-auth behavior is missing or differs from its pinned fixture.
+    why: Bearer selector is truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads
+      GenericLiteLLMParams.api_key, returns caller headers unchanged if falsey resolved token, otherwise overrides
+      Authorization with Bearer {token}. sign_request returns supplied headers,None when the same selector succeeds
+      and does not add Authorization itself.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_bearer_auth$/)'
   - id: case-responses-sigv4
-    why: The responses-sigv4 behavior is missing or differs from its pinned fixture.
+    why: Without bearer, delegate B595 _sign_request service bedrock and original parameters/model/stream/fake_stream
+      without passing api_key. Error factory B682 preserves status,message,headers including x-amzn-RequestId, unlike
+      the OpenAI blank-response factory.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_sigv4$/)'
   - id: case-response-option-gates
-    why: The response-option-gates behavior is missing or differs from its pinned fixture.
+    why: 'Call B506 map_openai_params first with original drop_params. Remove key background whenever present, even
+      False/None; warn Bedrock Runtime Responses API: dropping unsupported parameter(s) {sorted tuple} that the
+      endpoint rejects. This removal does not depend on drop_params. If tools not list, leave it untouched. Otherwise
+      B907 retains exactly function,mcp,custom,apply_patch,namespace,tool_search,computer types and all nondict
+      entries; unknown/missing types dropped. Warn Bedrock Runtime Responses API: dropping unsupported tool type(s)
+      {list of sorted unique stringified types} (supported: {sorted allowed types}). when any dropped, omit tools
+      if none retained, else preserve retained order. Empty original tools with no drops remains [].'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_response_option_gates$/)'
   - id: case-native-file-search-flag
-    why: The native-file-search-flag behavior is missing or differs from its pinned fixture.
+    why: supports_native_file_search=False. File-search/server tools are not enabled merely because an OpenAI Responses
+      request format is accepted; use the same unsupported-tool case for file_search and web_search.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_native_file_search_flag$/)'
   - id: case-inline-image-traversal
-    why: The inline-image-traversal behavior is missing or differs from its pinned fixture.
+    why: 'Only list input is traversed. For dict items inspect content then output in that order, each accepting
+      a list or single dict. Select dict blocks of exact type input_image or computer_screenshot with string image_url
+      starting case-sensitive http:// or https://. Ignore nested URL objects,input_file,nonstring URLs,uppercase
+      schemes,s3://,data: and deeper nested blocks. Collect distinct URLs in first-seen order.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_inline_image_traversal$/)'
-  - id: case-remote-image-no-fetch
-    why: The remote-image-no-fetch behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_image_no_fetch$/)'
   - id: case-remote-url-current-rejection
-    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    why: Both sync and async production paths reject a recognized remote image URL requiring bytes with ImageFetchError400
+      before transport and with zero network calls, under the open request-download decision. The pinned oracle
+      uses injected failing fetch callbacks to compare this failure seam; test local no-network policy separately.
+      Merge the old remote_image_no_fetch duplicate. No actual downloader is built. Source sync would fetch distinct
+      URLs in order, async gathers them, but neither is enabled in betterlite.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_url_current_rejection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_responses.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_responses.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*")"
       && grep -lq 'bedrock_services_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_responses$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-responses-runtime-url
+    why: Resolve region with B591 _get_aws_region_name(litellm_params,model=None). Override chain truthy explicit
+      api_base,litellm_params.aws_bedrock_runtime_endpoint,AWS_BEDROCK_RUNTIME_ENDPOINT; else B591 partition-aware
+      runtime endpoint. Trim trailing slashes then remove first matching suffix in order /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1;
+      append /openai/v1/responses. Preserve unrecognized path/query suffixes; no Mantle host selection.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_runtime_url$/)'
+  - id: case-inline-image-replacement
+    why: Pure inline_remote_image_urls returns input unchanged for nonlist input or empty supplied mapping. Otherwise
+      shallow-copy items/fields only when content/output is list/dict, replace recognized block.image_url by mapping[url],
+      preserve all other fields/order; missing mapping entry raises KeyError, no fallback fetch. Test this pure
+      replacement using fixture data URIs without performing downloads.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_inline_image_replacement$/)'
+  - id: case-codex-input-rewrite
+    why: 'After the inline stage call B907 normalize_codex_input_items. If rewritten_types nonempty warn Bedrock
+      Runtime Responses API: rewrote Codex input item type(s) {types} that the endpoint rejects. Then B507 transform_responses_api_request
+      receives model without leading chat_completions/,normalized input and unchanged params/headers. Reuse all
+      B907 normalization fixtures and B507 parent request/default cases; no hoist_additional_tools call is added
+      here.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_codex_input_rewrite$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::runtime_responses_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::runtime_responses_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/bedrock-responses-model-route.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-bearer-auth.yaml
@@ -201,13 +332,13 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/response-option-gates.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/native-file-search-flag.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-traversal.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-image-no-fetch.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-current-rejection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-runtime-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-replacement.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/codex-input-rewrite.yaml
 deviations:
-- what: >-
-    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
-    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
-    only supplied bytes or already authorized local file handles may be read.
+- what: Request http(s) images that need local bytes fail with ImageFetchError status400 before any outbound fetch.
+    Inline data and source-forwarded s3:// or other descriptors keep their pinned handling.
   why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
     feature that depends on fetching.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
@@ -217,8 +348,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve supported parameter gates and native file-search capability.
+- background is dropped by key presence, so even background=False produces the warning.
+- Image traversal reaches only content/output fields, not an arbitrary recursive scan of the Responses request.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 725
   max_new_expects: 0
-review_level: standard
+review_level: security

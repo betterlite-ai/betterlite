@@ -1,10 +1,10 @@
 id: B598
 title: Bedrock model capabilities and route selection
 description: >-
-  Add BedrockRoute selection over catalog capabilities, explicit route prefixes, request-only Converse requirements,
-  Mantle endpoint settings and model-name normalization. Return closed route/config tags; leaf routing never executes
-  another provider. Consume BEDROCK_MANTLE_API_BASE from B690 resolved settings. Preserve unknown-model/cache-point
-  permissiveness and metadata-driven strict-tools/effort ceilings with source fallback diagnostics.
+  Implement BedrockRoute selection from exact explicit route prefixes, model catalog flags and raw request requirements.
+  Return closed route tags without constructing or invoking another provider. Reuse B2203 model normalization and
+  B596 trusted metadata ownership. Preserve request filtering before route choice and source fallback to invoke;
+  B690 owns Mantle endpoint settings and other capability predicates.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
@@ -15,14 +15,52 @@ description: >-
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
   L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493.
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route L1417-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model L1431-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix L1473-L1486;
+  BedrockModelInfo._explicit_mantle_route L1489-L1493.
 
 
   Reuse bedrock_request_metadata_is_owned from B596 (litellm/llms/bedrock/request_metadata.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: explicit_route_prefixes: Check route tokens in this priority order: invoke/,claude_platform/,converse_like/,converse/,agent/,agentcore/,async_invoke/,openai/,mantle/.
+  A token matches startswith or immediately after any slash, not bare substring; priority is mapping order, not
+  earliest token position in model. bedrock_mantle/ must not match mantle/. Each explicit token returns its route
+  without request fallback checks. Explicit chat_completions/ is checked after all of those and may fall back to
+  converse. gpt_runtime_default_capability: Parse version with (^|[./])openai\.gpt-(\d{1,3})(?!\d)(?:\.(\d{1,3})(?!\d))?;
+  missing minor=0, no end anchor after major/minor, gpt-oss fails. Version >=(5,6) and any exact supported_endpoints
+  list/tuple containing /v1/chat/completions selects default native route. Check catalog keys in order original,
+  B2203 routing-stripped, B2203 region-stripped (duplicates allowed); non-None malformed entries raise validation
+  errors, not silently ignored. Feature flags require literal True, not truthiness. bedrock_model_is_openai_gpt
+  simply tests version parse, including earlier/future versions. converse_only_request_fields: Any non-None guardrailConfig,performanceConfig,serviceTier,requestMetadata,outputConfig,thinking,additionalModelRequestFields,top_k,stop,model_id
+  forces native-chat fallback to converse, including false/empty values. B596 operator metadata ownership also forces
+  fallback even if no values resolve. Only evaluate fallback when request_params supplied; None stays chat_completions.
+  response_format_needs_converse: None/text mapping stays native. Nondict response_format stays native only with
+  supports_bedrock_runtime_chat_completions_response_format literal True. Dict requires type=json_schema plus presence
+  of json_schema key (value mayNone) and that same flag. Every other dict including json_object/empty/json_schema
+  without key falls back to converse. tools_with_reasoning: With no truthy tools or functions, no tools fallback.
+  Otherwise native remains only if supports_bedrock_runtime_chat_completions_tools_with_reasoning literal True or
+  reasoning_effort exactly string none; missing/None/other effort uses converse. Empty tools/functions do not trigger
+  this check. additional_drop_before_route: bedrock_route_for_request removes all exact additional_drop_params keys
+  from raw request into a new mapping before route selection, including stop/model_id/tools/reasoning_effort. Mapping
+  and transport must consume the same route result. Do not mutate original request or apply OpenAI mapping before
+  this decision. catalog_and_unknown_route: After explicit routes, replace first bedrock/ occurrence anywhere and
+  check leading nova-2/ or nova/ ->converse. Any substring :application-inference-profile/ ->converse. Then default
+  native GPT check. Then B2203 base/routing-stripped ids in litellm.bedrock_converse_models ->converse; otherwise
+  regex (^|[./])openai\. on base id ->converse; unknown ->invoke without error. Preserve nova/ARN and cross-region/throughput
+  effects through B2203 cases. route_helpers_and_workspace_keys: without_bedrock_route_prefix replaces every converse/
+  then chat_completions/ occurrence, not just a leading prefix. get_claude_platform_model removes first claude_platform/
+  anywhere. _explicit_converse_route,_explicit_claude_platform_route,_explicit_mantle_route use the same segment-boundary
+  predicate. map_claude_platform_auth_params copies workspace_id,aws_workspace_id,anthropic_workspace_id whenever
+  present including None/empty and overwrites optional values, leaving unrelated keys untouched. model_info_passthrough:
+  get_api_base/api_key return the supplied value unchanged including None/empty, with no environment defaults. validate_environment
+  returns headers unchanged, get_models returns[]. Token-counter factory belongs to B641 so this lower route task
+  never depends on a counter that uses its routes. reverse_tool_name_lookup: get_bedrock_tool_name checks exact
+  key in litellm.bedrock_tool_name_mappings.cache_dict and returns stored value when present, otherwise input unchanged;
+  no sanitization or fallback name here. Inject the shared parsed tool-name mapping as per-call context; producer
+  ownership stays with message conversion.
 
 
   Implement crates/betterlite-bedrock/src/model_routes.rs with adjacent tests under model_routes/. Keep each Rust
@@ -40,10 +78,10 @@ description: >-
 
   Write rstest function model_routes_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   explicit_route_prefixes, gpt_runtime_default_capability, converse_only_request_fields, response_format_needs_converse,
-  tools_with_reasoning, additional_drop_before_route, cross_region_model_normalization, throughput_suffix. Each
-  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
-  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  tools_with_reasoning, additional_drop_before_route, catalog_and_unknown_route, route_helpers_and_workspace_keys,
+  model_info_passthrough, reverse_tool_name_lookup. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_model_routes* using HelperCase: kind:
@@ -58,10 +96,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 257 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 280 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 509 planned, 525 maximum changed lines.
+  Budget from 250 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 275 production lines, 275 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 690 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,116 +120,179 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L753-L766
   why: Own get_bedrock_tool_name. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L796-L989
-  why: >-
-    Own is_bedrock_application_inference_profile_arn, without_bedrock_route_prefix, _model_cost_entry, _bedrock_price_map_entries,
+  why: Own is_bedrock_application_inference_profile_arn, without_bedrock_route_prefix, _model_cost_entry, _bedrock_price_map_entries,
     _bedrock_price_map_flag, _price_map_entry_lists_endpoint, _openai_gpt_version, bedrock_runtime_chat_completions_is_default,
     bedrock_runtime_chat_completions_serves_tools_with_reasoning, bedrock_runtime_chat_completions_enforces_response_format,
     bedrock_model_is_openai_gpt, _response_format_needs_converse, bedrock_request_needs_converse, _chat_completions_unless_converse_needed,
     bedrock_route_for_request. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1273-L1324
-  why: >-
-    Own BedrockModelInfo.get_api_base, BedrockModelInfo.get_api_key, BedrockModelInfo.validate_environment, BedrockModelInfo.get_models,
+  why: Own BedrockModelInfo.get_api_base, BedrockModelInfo.get_api_key, BedrockModelInfo.validate_environment, BedrockModelInfo.get_models,
     BedrockModelInfo.get_token_counter. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1347-L1449
-  why: >-
-    Own BedrockModelInfo.get_bedrock_route, BedrockModelInfo._explicit_converse_route, BedrockModelInfo._explicit_claude_platform_route,
+  why: Own BedrockModelInfo.get_bedrock_route, BedrockModelInfo._explicit_converse_route, BedrockModelInfo._explicit_claude_platform_route,
     BedrockModelInfo.get_claude_platform_model, BedrockModelInfo.map_claude_platform_auth_params. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1473-L1493
   why: Own BedrockModelInfo._model_has_route_prefix, BedrockModelInfo._explicit_mantle_route. Other functions in
     this file remain with the owners listed below.
 dod:
-- text: >-
-    explicit route prefixes: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/explicit-route-prefixes.yaml.
+- text: 'explicit_route_prefixes: Check route tokens in this priority order: invoke/,claude_platform/,converse_like/,converse/,agent/,agentcore/,async_invoke/,openai/,mantle/.
+    A token matches startswith or immediately after any slash, not bare substring; priority is mapping order, not
+    earliest token position in model. bedrock_mantle/ must not match mantle/. Each explicit token returns its route
+    without request fallback checks. Explicit chat_completions/ is checked after all of those and may fall back
+    to converse.'
   proof:
   - case-explicit-route-prefixes
   - oracle
   - helper-python
-- text: >-
-    gpt runtime default capability: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/gpt-runtime-default-capability.yaml.
+- text: 'gpt_runtime_default_capability: Parse version with (^|[./])openai\.gpt-(\d{1,3})(?!\d)(?:\.(\d{1,3})(?!\d))?;
+    missing minor=0, no end anchor after major/minor, gpt-oss fails. Version >=(5,6) and any exact supported_endpoints
+    list/tuple containing /v1/chat/completions selects default native route. Check catalog keys in order original,
+    B2203 routing-stripped, B2203 region-stripped (duplicates allowed); non-None malformed entries raise validation
+    errors, not silently ignored. Feature flags require literal True, not truthiness. bedrock_model_is_openai_gpt
+    simply tests version parse, including earlier/future versions.'
   proof:
   - case-gpt-runtime-default-capability
   - oracle
   - helper-python
-- text: >-
-    converse only request fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/converse-only-request-fields.yaml.
+- text: 'converse_only_request_fields: Any non-None guardrailConfig,performanceConfig,serviceTier,requestMetadata,outputConfig,thinking,additionalModelRequestFields,top_k,stop,model_id
+    forces native-chat fallback to converse, including false/empty values. B596 operator metadata ownership also
+    forces fallback even if no values resolve. Only evaluate fallback when request_params supplied; None stays chat_completions.'
   proof:
   - case-converse-only-request-fields
   - oracle
   - helper-python
-- text: >-
-    response format needs converse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/response-format-needs-converse.yaml.
+- text: 'response_format_needs_converse: None/text mapping stays native. Nondict response_format stays native only
+    with supports_bedrock_runtime_chat_completions_response_format literal True. Dict requires type=json_schema
+    plus presence of json_schema key (value mayNone) and that same flag. Every other dict including json_object/empty/json_schema
+    without key falls back to converse.'
   proof:
   - case-response-format-needs-converse
   - oracle
   - helper-python
-- text: 'tools with reasoning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/tools-with-reasoning.yaml.'
+- text: 'tools_with_reasoning: With no truthy tools or functions, no tools fallback. Otherwise native remains only
+    if supports_bedrock_runtime_chat_completions_tools_with_reasoning literal True or reasoning_effort exactly string
+    none; missing/None/other effort uses converse. Empty tools/functions do not trigger this check.'
   proof:
   - case-tools-with-reasoning
   - oracle
   - helper-python
-- text: >-
-    additional drop before route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/additional-drop-before-route.yaml.
+- text: 'additional_drop_before_route: bedrock_route_for_request removes all exact additional_drop_params keys from
+    raw request into a new mapping before route selection, including stop/model_id/tools/reasoning_effort. Mapping
+    and transport must consume the same route result. Do not mutate original request or apply OpenAI mapping before
+    this decision.'
   proof:
   - case-additional-drop-before-route
-  - oracle
-  - helper-python
-- text: >-
-    cross region model normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/cross-region-model-normalization.yaml.
-  proof:
-  - case-cross-region-model-normalization
-  - oracle
-  - helper-python
-- text: 'throughput suffix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-model-routes/throughput-suffix.yaml.'
-  proof:
-  - case-throughput-suffix
   - oracle
   - helper-python
 - text: New bedrock_model_routes seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
   - helper-case-corpus
+- text: 'catalog_and_unknown_route: After explicit routes, replace first bedrock/ occurrence anywhere and check
+    leading nova-2/ or nova/ ->converse. Any substring :application-inference-profile/ ->converse. Then default
+    native GPT check. Then B2203 base/routing-stripped ids in litellm.bedrock_converse_models ->converse; otherwise
+    regex (^|[./])openai\. on base id ->converse; unknown ->invoke without error. Preserve nova/ARN and cross-region/throughput
+    effects through B2203 cases.'
+  proof:
+  - case-catalog-and-unknown-route
+  - oracle
+  - helper-python
+- text: 'route_helpers_and_workspace_keys: without_bedrock_route_prefix replaces every converse/ then chat_completions/
+    occurrence, not just a leading prefix. get_claude_platform_model removes first claude_platform/ anywhere. _explicit_converse_route,_explicit_claude_platform_route,_explicit_mantle_route
+    use the same segment-boundary predicate. map_claude_platform_auth_params copies workspace_id,aws_workspace_id,anthropic_workspace_id
+    whenever present including None/empty and overwrites optional values, leaving unrelated keys untouched.'
+  proof:
+  - case-route-helpers-and-workspace-keys
+  - oracle
+  - helper-python
+- text: 'model_info_passthrough: get_api_base/api_key return the supplied value unchanged including None/empty,
+    with no environment defaults. validate_environment returns headers unchanged, get_models returns[]. Token-counter
+    factory belongs to B641 so this lower route task never depends on a counter that uses its routes.'
+  proof:
+  - case-model-info-passthrough
+  - oracle
+  - helper-python
+- text: 'reverse_tool_name_lookup: get_bedrock_tool_name checks exact key in litellm.bedrock_tool_name_mappings.cache_dict
+    and returns stored value when present, otherwise input unchanged; no sanitization or fallback name here. Inject
+    the shared parsed tool-name mapping as per-call context; producer ownership stays with message conversion.'
+  proof:
+  - case-reverse-tool-name-lookup
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-explicit-route-prefixes
-    why: The explicit-route-prefixes behavior is missing or differs from its pinned fixture.
+    why: 'Check route tokens in this priority order: invoke/,claude_platform/,converse_like/,converse/,agent/,agentcore/,async_invoke/,openai/,mantle/.
+      A token matches startswith or immediately after any slash, not bare substring; priority is mapping order,
+      not earliest token position in model. bedrock_mantle/ must not match mantle/. Each explicit token returns
+      its route without request fallback checks. Explicit chat_completions/ is checked after all of those and may
+      fall back to converse.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_explicit_route_prefixes$/)'
   - id: case-gpt-runtime-default-capability
-    why: The gpt-runtime-default-capability behavior is missing or differs from its pinned fixture.
+    why: Parse version with (^|[./])openai\.gpt-(\d{1,3})(?!\d)(?:\.(\d{1,3})(?!\d))?; missing minor=0, no end anchor
+      after major/minor, gpt-oss fails. Version >=(5,6) and any exact supported_endpoints list/tuple containing
+      /v1/chat/completions selects default native route. Check catalog keys in order original, B2203 routing-stripped,
+      B2203 region-stripped (duplicates allowed); non-None malformed entries raise validation errors, not silently
+      ignored. Feature flags require literal True, not truthiness. bedrock_model_is_openai_gpt simply tests version
+      parse, including earlier/future versions.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_gpt_runtime_default_capability$/)'
   - id: case-converse-only-request-fields
-    why: The converse-only-request-fields behavior is missing or differs from its pinned fixture.
+    why: Any non-None guardrailConfig,performanceConfig,serviceTier,requestMetadata,outputConfig,thinking,additionalModelRequestFields,top_k,stop,model_id
+      forces native-chat fallback to converse, including false/empty values. B596 operator metadata ownership also
+      forces fallback even if no values resolve. Only evaluate fallback when request_params supplied; None stays
+      chat_completions.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_converse_only_request_fields$/)'
   - id: case-response-format-needs-converse
-    why: The response-format-needs-converse behavior is missing or differs from its pinned fixture.
+    why: None/text mapping stays native. Nondict response_format stays native only with supports_bedrock_runtime_chat_completions_response_format
+      literal True. Dict requires type=json_schema plus presence of json_schema key (value mayNone) and that same
+      flag. Every other dict including json_object/empty/json_schema without key falls back to converse.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_response_format_needs_converse$/)'
   - id: case-tools-with-reasoning
-    why: The tools-with-reasoning behavior is missing or differs from its pinned fixture.
+    why: With no truthy tools or functions, no tools fallback. Otherwise native remains only if supports_bedrock_runtime_chat_completions_tools_with_reasoning
+      literal True or reasoning_effort exactly string none; missing/None/other effort uses converse. Empty tools/functions
+      do not trigger this check.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_tools_with_reasoning$/)'
   - id: case-additional-drop-before-route
-    why: The additional-drop-before-route behavior is missing or differs from its pinned fixture.
+    why: bedrock_route_for_request removes all exact additional_drop_params keys from raw request into a new mapping
+      before route selection, including stop/model_id/tools/reasoning_effort. Mapping and transport must consume
+      the same route result. Do not mutate original request or apply OpenAI mapping before this decision.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_additional_drop_before_route$/)'
-  - id: case-cross-region-model-normalization
-    why: The cross-region-model-normalization behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_cross_region_model_normalization$/)'
-  - id: case-throughput-suffix
-    why: The throughput-suffix behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_throughput_suffix$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_model_routes.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_model_routes.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_model_routes*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_model_routes*")"
       && grep -lq 'bedrock_model_routes' tools/oracle/fuzz/corpus/helper_case/bedrock_model_routes* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_model_routes$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-catalog-and-unknown-route
+    why: After explicit routes, replace first bedrock/ occurrence anywhere and check leading nova-2/ or nova/ ->converse.
+      Any substring :application-inference-profile/ ->converse. Then default native GPT check. Then B2203 base/routing-stripped
+      ids in litellm.bedrock_converse_models ->converse; otherwise regex (^|[./])openai\. on base id ->converse;
+      unknown ->invoke without error. Preserve nova/ARN and cross-region/throughput effects through B2203 cases.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_catalog_and_unknown_route$/)'
+  - id: case-route-helpers-and-workspace-keys
+    why: without_bedrock_route_prefix replaces every converse/ then chat_completions/ occurrence, not just a leading
+      prefix. get_claude_platform_model removes first claude_platform/ anywhere. _explicit_converse_route,_explicit_claude_platform_route,_explicit_mantle_route
+      use the same segment-boundary predicate. map_claude_platform_auth_params copies workspace_id,aws_workspace_id,anthropic_workspace_id
+      whenever present including None/empty and overwrites optional values, leaving unrelated keys untouched.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_route_helpers_and_workspace_keys$/)'
+  - id: case-model-info-passthrough
+    why: get_api_base/api_key return the supplied value unchanged including None/empty, with no environment defaults.
+      validate_environment returns headers unchanged, get_models returns[]. Token-counter factory belongs to B641
+      so this lower route task never depends on a counter that uses its routes.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_model_info_passthrough$/)'
+  - id: case-reverse-tool-name-lookup
+    why: get_bedrock_tool_name checks exact key in litellm.bedrock_tool_name_mappings.cache_dict and returns stored
+      value when present, otherwise input unchanged; no sanitization or fallback name here. Inject the shared parsed
+      tool-name mapping as per-call context; producer ownership stays with message conversion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::model_routes_cases::case_[0-9]+_reverse_tool_name_lookup$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-model-routes/explicit-route-prefixes.yaml
 - tools/oracle/cases/helpers/providers/bedrock-model-routes/gpt-runtime-default-capability.yaml
@@ -199,74 +300,77 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-model-routes/response-format-needs-converse.yaml
 - tools/oracle/cases/helpers/providers/bedrock-model-routes/tools-with-reasoning.yaml
 - tools/oracle/cases/helpers/providers/bedrock-model-routes/additional-drop-before-route.yaml
-- tools/oracle/cases/helpers/providers/bedrock-model-routes/cross-region-model-normalization.yaml
-- tools/oracle/cases/helpers/providers/bedrock-model-routes/throughput-suffix.yaml
+- tools/oracle/cases/helpers/providers/bedrock-model-routes/catalog-and-unknown-route.yaml
+- tools/oracle/cases/helpers/providers/bedrock-model-routes/route-helpers-and-workspace-keys.yaml
+- tools/oracle/cases/helpers/providers/bedrock-model-routes/model-info-passthrough.yaml
+- tools/oracle/cases/helpers/providers/bedrock-model-routes/reverse-tool-name-lookup.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- Unrecognized Bedrock models fall back to invoke; route selection does not invent an unknown-route error.
+- When several route tokens occur in a model id, the route table order wins rather than their position in the string.
+- A json_schema key present with None can pass the native-route gate; that gate does not validate the schema body.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: standard

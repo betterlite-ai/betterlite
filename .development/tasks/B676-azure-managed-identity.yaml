@@ -14,7 +14,48 @@ description: >-
   Endpoint selection matches the pinned ManagedIdentityCredential: IDENTITY_ENDPOINT+IDENTITY_HEADER uses Service
   Fabric when IDENTITY_SERVER_THUMBPRINT exists or App Service otherwise; IDENTITY_ENDPOINT+IMDS_ENDPOINT uses Azure
   Arc; MSI_ENDPOINT uses Azure ML with MSI_SECRET or Cloud Shell without it; complete workload identity settings
-  use B530 federation; otherwise use IMDS.
+  use B530 federation; otherwise use IMDS. A truthy IDENTITY_ENDPOINT without IDENTITY_HEADER or IMDS_ENDPOINT leaves
+  the selected credential empty; it does not fall through to IMDS.
+
+
+  Named case contracts: system_assigned_imds: GET {AZURE_POD_IDENTITY_AUTHORITY_HOST default http://169.254.169.254,
+  stripped of leading/trailing /}/metadata/identity/oauth2/token with api-version=2018-02-01, resource from exactly
+  one scope with trailing /.default removed, Metadata: true, x-client-SKU: MSAL.Python, x-client-Ver: 1.37.0 and
+  injected UUID x-ms-client-request-id. No user identity query for system-assigned identity. client_id_query: A
+  truthy client_id adds client_id; empty string means system-assigned. The wrapper passes no identity_config, so
+  object_id/resource_id public SDK options are not new gateway config keys. imds_unavailable: Probe in a credential
+  chain only, unless explicitly overridden by the chain: connection_timeout=1 and retry_total=0, no Metadata header
+  in the probe. A response establishes availability except 403 containing unreachable; no response gives CredentialUnavailableError
+  with ManagedIdentityCredential authentication unavailable, no response from the IMDS endpoint. Normal 400 means
+  No identity has been assigned to this resource.; other HTTP failures become ClientAuthenticationError, while malformed
+  JSON is unavailable. token_expiry: MSAL requires truthy access_token and expires_in, converts expires_in to int,
+  defaults token_type Bearer, and the SDK returns expires_on=int(clock)+expires_in; error payloads use the unavailable-message
+  prefix plus Token request error: ({error}) {error_description}. Preserve missing/zero duration and malformed numeric
+  outcomes rather than silently returning a token. workload_selection: Workload selection follows hosted endpoints
+  and requires truthy AZURE_AUTHORITY_HOST, AZURE_TENANT_ID and AZURE_FEDERATED_TOKEN_FILE. Then client_id argument
+  or AZURE_CLIENT_ID must be truthy, otherwise raise the SDK Workload identity was selected but no client ID was
+  provided error. Call B530 with the resolved local token-file bytes; no browser or command is used. imds_retry_policy:
+  Normal transport connection timeout is 2 seconds; retry statuses 404,410,429,500..599 with five retries, factor0.8/cap60.
+  A 410 switches factor to2.5 (0,5,10,20,40 seconds), then a different status resets the factor. Inject a scheduler;
+  do not sleep in tests. hosted_selection_order: Cover Service Fabric (IDENTITY_ENDPOINT+IDENTITY_HEADER+IDENTITY_SERVER_THUMBPRINT),
+  App Service (first two), Arc (IDENTITY_ENDPOINT+IMDS_ENDPOINT), Azure ML (MSI_ENDPOINT+MSI_SECRET), Cloud Shell
+  (MSI_ENDPOINT only), workload and IMDS in that order. Empty env values are false for this outer selection; when
+  a MSAL-backed credential is selected its inner environment detection uses key presence, which can choose a hosted
+  protocol even with empty values. partial_identity_endpoint: A lone truthy IDENTITY_ENDPOINT produces CredentialUnavailableError:
+  No managed identity endpoint found. \nThe Target Azure platform could not be determined from environment variables.
+  \nVisit https://aka.ms/azsdk/python/identity/managedidentitycredential/troubleshoot to troubleshoot this issue.
+  No IMDS request is sent.
+
+
+  All seven hosted-environment inputs default absent; preserve absence separately from an explicitly empty string.
+  B699 owns hosted wire protocols and B2213 owns Arc challenge/file handling. B673 supplies shared SDK authority/token
+  primitives, B530 federation; this task does not depend on upper credential selector B677. Shared SDK MSAL cache
+  mechanics are implemented through the lower cache primitive, not a second provider HTTP pool.
+
+
+  Pin SDK fixture capture to azure-identity 1.25.2 and msal 1.37.0 from LiteLLM uv.lock; reject fixture generation
+  with a different version. The old 1.26.0 references were not the locked dependency. Capture the public credential
+  transport path, not unused legacy request factories retained in the SDK.
 
 
   Implement crates/betterlite-azure/src/azure_managed_identity.rs with adjacent tests under azure_managed_identity/.
@@ -31,10 +72,10 @@ description: >-
 
 
   Write rstest function azure_managed_identity_cases in betterlite-azure with these exact named cases (one per oracle
-  file): system_assigned_imds, client_id_query, imds_unavailable, token_expiry, workload_selection. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  file): system_assigned_imds, client_id_query, imds_unavailable, token_expiry, workload_selection, imds_retry_policy,
+  hosted_selection_order, partial_identity_endpoint. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_managed_identity* using HelperCase: kind:
@@ -78,9 +119,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 230 production lines, 169 behavior/config-test lines, 95 combined
-  Rust/Python adapter lines, 55 parser target/replay lines, 46 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 635 planned, 650 maximum changed lines. The production allowance includes 195 lines for the referenced
+  SDK overloads share an async implementation): 265 production lines, 245 behavior/config-test lines, 115 combined
+  Rust/Python adapter lines, 60 parser target/replay lines, 60 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 780 planned, 800 maximum changed lines. The production allowance includes 195 lines for the referenced
   SDK protocol that LiteLLM delegates.
 scope:
   paths:
@@ -117,31 +158,49 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   lint_tables: false
 references:
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/managed_identity.py#L73-L151
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/managed_identity.py#L73-L151
+  why: Credential behavior in the azure-identity 1.25.2 from the pinned LiteLLM uv.lock; capture its transport seam
+    instead of copying its Python SDK internals.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/imds.py#L22-L182
+  why: Probe, retry and error policy.
+- url: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L412-L503
+  why: Actual nested environment selection and IMDS transport.
 dod:
-- text: 'system assigned imds: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/system-assigned-imds.yaml.'
+- text: 'system_assigned_imds: GET {AZURE_POD_IDENTITY_AUTHORITY_HOST default http://169.254.169.254, stripped of
+    leading/trailing /}/metadata/identity/oauth2/token with api-version=2018-02-01, resource from exactly one scope
+    with trailing /.default removed, Metadata: true, x-client-SKU: MSAL.Python, x-client-Ver: 1.37.0 and injected
+    UUID x-ms-client-request-id. No user identity query for system-assigned identity.'
   proof:
   - case-system-assigned-imds
   - oracle
   - helper-python
-- text: 'client id query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/client-id-query.yaml.'
+- text: 'client_id_query: A truthy client_id adds client_id; empty string means system-assigned. The wrapper passes
+    no identity_config, so object_id/resource_id public SDK options are not new gateway config keys.'
   proof:
   - case-client-id-query
   - oracle
   - helper-python
-- text: 'imds unavailable: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/imds-unavailable.yaml.'
+- text: 'imds_unavailable: Probe in a credential chain only, unless explicitly overridden by the chain: connection_timeout=1
+    and retry_total=0, no Metadata header in the probe. A response establishes availability except 403 containing
+    unreachable; no response gives CredentialUnavailableError with ManagedIdentityCredential authentication unavailable,
+    no response from the IMDS endpoint. Normal 400 means No identity has been assigned to this resource.; other
+    HTTP failures become ClientAuthenticationError, while malformed JSON is unavailable.'
   proof:
   - case-imds-unavailable
   - oracle
   - helper-python
-- text: 'token expiry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/token-expiry.yaml.'
+- text: 'token_expiry: MSAL requires truthy access_token and expires_in, converts expires_in to int, defaults token_type
+    Bearer, and the SDK returns expires_on=int(clock)+expires_in; error payloads use the unavailable-message prefix
+    plus Token request error: ({error}) {error_description}. Preserve missing/zero duration and malformed numeric
+    outcomes rather than silently returning a token.'
   proof:
   - case-token-expiry
   - oracle
   - helper-python
-- text: 'workload selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/workload-selection.yaml.'
+- text: 'workload_selection: Workload selection follows hosted endpoints and requires truthy AZURE_AUTHORITY_HOST,
+    AZURE_TENANT_ID and AZURE_FEDERATED_TOKEN_FILE. Then client_id argument or AZURE_CLIENT_ID must be truthy, otherwise
+    raise the SDK Workload identity was selected but no client ID was provided error. Call B530 with the resolved
+    local token-file bytes; no browser or command is used.'
   proof:
   - case-workload-selection
   - oracle
@@ -190,86 +249,113 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'imds_retry_policy: Normal transport connection timeout is 2 seconds; retry statuses 404,410,429,500..599
+    with five retries, factor0.8/cap60. A 410 switches factor to2.5 (0,5,10,20,40 seconds), then a different status
+    resets the factor. Inject a scheduler; do not sleep in tests.'
+  proof:
+  - case-imds-retry-policy
+  - oracle
+  - helper-python
+- text: 'hosted_selection_order: Cover Service Fabric (IDENTITY_ENDPOINT+IDENTITY_HEADER+IDENTITY_SERVER_THUMBPRINT),
+    App Service (first two), Arc (IDENTITY_ENDPOINT+IMDS_ENDPOINT), Azure ML (MSI_ENDPOINT+MSI_SECRET), Cloud Shell
+    (MSI_ENDPOINT only), workload and IMDS in that order. Empty env values are false for this outer selection; when
+    a MSAL-backed credential is selected its inner environment detection uses key presence, which can choose a hosted
+    protocol even with empty values.'
+  proof:
+  - case-hosted-selection-order
+  - oracle
+  - helper-python
+- text: 'partial_identity_endpoint: A lone truthy IDENTITY_ENDPOINT produces CredentialUnavailableError: No managed
+    identity endpoint found. \nThe Target Azure platform could not be determined from environment variables. \nVisit
+    https://aka.ms/azsdk/python/identity/managedidentitycredential/troubleshoot to troubleshoot this issue. No IMDS
+    request is sent.'
+  proof:
+  - case-partial-identity-endpoint
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-system-assigned-imds
-    why: The system-assigned-imds behavior is missing or differs from its pinned fixture.
+    why: 'GET {AZURE_POD_IDENTITY_AUTHORITY_HOST default http://169.254.169.254, stripped of leading/trailing /}/metadata/identity/oauth2/token
+      with api-version=2018-02-01, resource from exactly one scope with trailing /.default removed, Metadata: true,
+      x-client-SKU: MSAL.Python, x-client-Ver: 1.37.0 and injected UUID x-ms-client-request-id. No user identity
+      query for system-assigned identity.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_system_assigned_imds$/)'
   - id: case-client-id-query
-    why: The client-id-query behavior is missing or differs from its pinned fixture.
+    why: A truthy client_id adds client_id; empty string means system-assigned. The wrapper passes no identity_config,
+      so object_id/resource_id public SDK options are not new gateway config keys.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_client_id_query$/)'
   - id: case-imds-unavailable
-    why: The imds-unavailable behavior is missing or differs from its pinned fixture.
+    why: 'Probe in a credential chain only, unless explicitly overridden by the chain: connection_timeout=1 and
+      retry_total=0, no Metadata header in the probe. A response establishes availability except 403 containing
+      unreachable; no response gives CredentialUnavailableError with ManagedIdentityCredential authentication unavailable,
+      no response from the IMDS endpoint. Normal 400 means No identity has been assigned to this resource.; other
+      HTTP failures become ClientAuthenticationError, while malformed JSON is unavailable.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_imds_unavailable$/)'
   - id: case-token-expiry
-    why: The token-expiry behavior is missing or differs from its pinned fixture.
+    why: 'MSAL requires truthy access_token and expires_in, converts expires_in to int, defaults token_type Bearer,
+      and the SDK returns expires_on=int(clock)+expires_in; error payloads use the unavailable-message prefix plus
+      Token request error: ({error}) {error_description}. Preserve missing/zero duration and malformed numeric outcomes
+      rather than silently returning a token.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_token_expiry$/)'
   - id: case-workload-selection
-    why: The workload-selection behavior is missing or differs from its pinned fixture.
+    why: Workload selection follows hosted endpoints and requires truthy AZURE_AUTHORITY_HOST, AZURE_TENANT_ID and
+      AZURE_FEDERATED_TOKEN_FILE. Then client_id argument or AZURE_CLIENT_ID must be truthy, otherwise raise the
+      SDK Workload identity was selected but no client ID was provided error. Call B530 with the resolved local
+      token-file bytes; no browser or command is used.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_workload_selection$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_managed_identity.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_managed_identity.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_managed_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_managed_identity*")"
       && grep -lq 'azure_managed_identity' tools/oracle/fuzz/corpus/helper_case/azure_managed_identity* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_managed_identity$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_managed_identity)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_managed_identity)"
       && grep -q 'decode_imds_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs && cargo
       nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_managed_identity_corpus$/)'
   - id: config-identity-endpoint
     why: The IDENTITY_ENDPOINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_endpoint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_endpoint$/)'
       && grep -lq 'IDENTITY_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-identity-header
     why: The IDENTITY_HEADER setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_header$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_header$/)'
       && grep -lq 'IDENTITY_HEADER' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-identity-server-thumbprint
     why: The IDENTITY_SERVER_THUMBPRINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_server_thumbprint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_server_thumbprint$/)'
       && grep -lq 'IDENTITY_SERVER_THUMBPRINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-imds-endpoint
     why: The IMDS_ENDPOINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_imds_endpoint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_imds_endpoint$/)'
       && grep -lq 'IMDS_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-msi-endpoint
     why: The MSI_ENDPOINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_endpoint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_endpoint$/)'
       && grep -lq 'MSI_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-msi-secret
     why: The MSI_SECRET setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_secret$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_secret$/)'
       && grep -lq 'MSI_SECRET' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-azure-pod-identity-authority-host
     why: The AZURE_POD_IDENTITY_AUTHORITY_HOST setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_azure_pod_identity_authority_host$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_azure_pod_identity_authority_host$/)'
       && grep -lq 'AZURE_POD_IDENTITY_AUTHORITY_HOST' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
@@ -277,17 +363,38 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_secret_safe_failure$/)'
+  - id: case-imds-retry-policy
+    why: Normal transport connection timeout is 2 seconds; retry statuses 404,410,429,500..599 with five retries,
+      factor0.8/cap60. A 410 switches factor to2.5 (0,5,10,20,40 seconds), then a different status resets the factor.
+      Inject a scheduler; do not sleep in tests.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_imds_retry_policy$/)'
+  - id: case-hosted-selection-order
+    why: Cover Service Fabric (IDENTITY_ENDPOINT+IDENTITY_HEADER+IDENTITY_SERVER_THUMBPRINT), App Service (first
+      two), Arc (IDENTITY_ENDPOINT+IMDS_ENDPOINT), Azure ML (MSI_ENDPOINT+MSI_SECRET), Cloud Shell (MSI_ENDPOINT
+      only), workload and IMDS in that order. Empty env values are false for this outer selection; when a MSAL-backed
+      credential is selected its inner environment detection uses key presence, which can choose a hosted protocol
+      even with empty values.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_hosted_selection_order$/)'
+  - id: case-partial-identity-endpoint
+    why: 'A lone truthy IDENTITY_ENDPOINT produces CredentialUnavailableError: No managed identity endpoint found.
+      \nThe Target Azure platform could not be determined from environment variables. \nVisit https://aka.ms/azsdk/python/identity/managedidentitycredential/troubleshoot
+      to troubleshoot this issue. No IMDS request is sent.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_partial_identity_endpoint$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-managed-identity/system-assigned-imds.yaml
 - tools/oracle/cases/helpers/providers/azure-managed-identity/client-id-query.yaml
 - tools/oracle/cases/helpers/providers/azure-managed-identity/imds-unavailable.yaml
 - tools/oracle/cases/helpers/providers/azure-managed-identity/token-expiry.yaml
 - tools/oracle/cases/helpers/providers/azure-managed-identity/workload-selection.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/imds-retry-policy.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/hosted-selection-order.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/partial-identity-endpoint.yaml
 deviations: []
 out_of_scope: []
 pitfalls:
-- The client-id inference branch precedes certificate inference in the Python provider selector.
+- The SDK outer selector tests truthiness, but MSAL protocol selection tests environment-key presence.
+- A configured pod authority skips the availability probe even when its value is empty.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

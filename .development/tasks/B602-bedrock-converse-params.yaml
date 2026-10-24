@@ -3,7 +3,7 @@ title: Bedrock Converse parameter composition
 description: >-
   Compose ConverseOptions into inferenceConfig, additionalModelRequestFields, toolConfig, cache points and service-tier/metadata
   inputs. Preserve top_k handling, minimum token guards, context-management translation and parallelToolUse compatibility;
-  all unsupported-field drops produce names and diagnostics.
+  some unsupported values drop silently while reasoning branches emit the exact diagnostics below.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/converse_transformation.py:
@@ -24,12 +24,54 @@ description: >-
   its implementation remains with that prerequisite.
 
 
-  Reuse AnthropicConfig.map_openai_context_management_to_anthropic from B576 (litellm/llms/anthropic/chat/transformation.py);
+  Reuse AnthropicConfig.map_openai_context_management_to_anthropic from B2201 (litellm/llms/anthropic/chat/transformation.py);
   its implementation remains with that prerequisite.
 
 
   Reuse AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model from B688 (litellm/llms/anthropic/common_utils.py);
   its implementation remains with that prerequisite.
+
+
+  Named case contracts: inference_config_options: Process input order; max_tokens/max_completion_tokens overwrite
+  maxTokens last-wins. If Pythonint includingbool and B600 GPT/Grokmin predicate, clamp to16; all other values copiedunchanged.
+  stream copied as-is. stop empty string skipped, otherstring singleton, any nonstring copiedto stopSequences includingNone/empty
+  list. Responseformat onlydict usesB601; tools onlylist usesB601. temperature/top_p maptopP with B688 Anthropic
+  sampling gate for anthropicbase. Nonsampling othermodel ->UnsupportedParamsError400 <model> does not support <param>=<value>.
+  To drop unsupported params, set `litellm.drop_params = True`. unless truthyglobal/percalldrop; dropthen silent.
+  Unrecognizedparams ignored. additional_model_fields: parallel_tool_calls stores _parallel_tool_use_config.tool_choice={type:auto,disable_parallel_tool_use:not
+  value} usingtruthiness. DeepSeek thinking always debug Dropping unsupported `thinking` param for Bedrock model=<model>;
+  it reasons natively. anddoesnotassign (preexisting thinkingnotremoved). GPT thinking silentlynotassigned. DeepSeekR1
+  stringeffort debug Dropping unsupported `reasoning_effort` param for Bedrock model=<model>; it always reasons
+  and rejects it. Otherstringeffort delegatesB600; nonstringignored. Dictoutput_config copiedthen B690normalized;
+  processingorderdeterminesoverride. Emptydict web_search_options enablesB600 groundingsystemtool throughB2202 append.
+  service_tier: Stringauto mapsdefault; default/flex/priority ->serviceTier{type:<value>}. Unknown/casevariation/empty/nonstring
+  silentlyignored, leavingexistingserviceTier. No newlyinventedvalidationerror. request_metadata: Only non-None
+  dictrequestMetadata invokesB596 validator andassigns aftervalidation; non-dictvalues silentlyignored atthismappinglayer.
+  ReplaysameB596 size/type/character400 cases fordictinputs (not unreachable notdictvalidatorcase). cache_point_ttl:
+  Absent/cache_controlNone orB690 rejectsmodel ->None. Any othercache_control value includingfalse/empty/nondict
+  yields cachePoint{type:default}; ignoretypefield. Honor ttl onlydictvalue5m/1h, modelnon-None andB690 is_claude_4_5_on_bedrock;
+  otherwiseomit silently. system/content_block wrappershavesamewirecachePoint. Overloadpass declarations are notindependentemptyimplementations.
+  top_k: _transform_inference_params pops top_k andoverwrites topK evenifexisting, thenpreserves typed InferenceConfig
+  fields. _handle_top_k_value pops topK ifpresent else top_k; bothpresent leaves top_k behind. ChosenNone produces{}.
+  Anthropic delegatesB688 sampling gate withoutputkeytop_k; Novabase returns{inferenceConfig:{topK:value}}; allotherfamilies
+  drop silently afterpop. parallel_tool_config: Merge eachparallelconfig key: ifbothvalueandexistingadditionalvalue
+  aredict, combine generated thenexisting then generatedkeys excepttype. Thus existingtype wins butgenerateddisable_parallel_tool_use
+  wins. Othergeneratedvalues replaceexisting. Preserveunrelatedadditionalfields. _drop_tool_choice_type_conflicting_with_tool_config
+  removesonly type fromdictadditional.tool_choice, keepingempty dictandsiblingkeys. thinking_budget_with_max_tokens:
+  Unless modelcontainsgpt-oss orB600 Nova2, runupdate: B600 minimumclampfirst evenwithoutenabledthinking; B2202
+  thinkingdetection plus neithermaxtokenkey inoriginal (presenceincludingNone) allowsdictbudgetnon-None ->maxTokens=budget+DEFAULT_MAX_TOKENS
+  envdefault4096 ownedB2202. ExistingoptionalmaxTokens overwritten. ExplicitNone max-tokenkey blocksautoaddition;
+  preservefloatbudget arithmetic if supplied. adaptive_thinking_fallback: adaptive thinking onnonadaptive nonGPT/nonDeepSeek
+  ->B569 medium budget then capagainst truthymax_completion_tokens-or-max_tokens. Successfulcapassigned; failure
+  warns Dropping adaptive `thinking` for model=<model>: max_tokens is too small to fit the minimum thinking budget.
+  butdoesnotdelete existingoptional thinking. Otherthinking copiedthen B688 legacytranslation. Keep siblingB577/B576
+  samecap/errorliteral wherecalled, with thisdistinctpreexisting-stateoutcome. final_forced_tool_downgrade: After
+  allparams, B2202 is_thinking_enabled(optional_params) plus dictool_choice containing any or tool ->info <model>
+  does not support forced tool use (tool_choice='required' or specific tool) when reasoning is enabled. Changing
+  tool_choice to 'auto'. Replacewholechoice with{auto:{}}. Detectionusesfinaloptions, notoriginal; adaptivealone
+  notenabled unlessreasoning_effort exists perB2202. context_management: Listcontextmanagement goesB2201 mapper
+  andassignsonlynon-None; dictpassesunchanged includingempty/noedits. Invalidtypes ignored. Do notremove anexistingcontext_managementwhenmapperreturns
+  None; B683 filtersitlater.
 
 
   Implement crates/betterlite-bedrock/src/converse_params.rs with adjacent tests under converse_params/. Keep each
@@ -47,10 +89,9 @@ description: >-
 
   Write rstest function converse_params_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): inference_config_options, additional_model_fields, service_tier, request_metadata, cache_point_ttl, top_k,
-  parallel_tool_config, thinking_budget_with_max_tokens. Each case exercises its named outcome independently; use
-  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
-  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  parallel_tool_config, thinking_budget_with_max_tokens, adaptive_thinking_fallback, final_forced_tool_downgrade,
+  context_management. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. Existing API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_params* using HelperCase: kind:
@@ -66,9 +107,9 @@ description: >-
 
 
   Budget from 287 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 305 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 534 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 275 production lines, 285 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 700 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -87,59 +128,79 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1010-L1199
-  why: >-
-    Own AmazonConverseConfig.map_openai_params, AmazonConverseConfig._map_request_metadata_param, AmazonConverseConfig._map_context_management_param,
+  why: Own AmazonConverseConfig.map_openai_params, AmazonConverseConfig._map_request_metadata_param, AmazonConverseConfig._map_context_management_param,
     AmazonConverseConfig._map_service_tier_param. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1271-L1353
-  why: >-
-    Own AmazonConverseConfig.update_optional_params_with_thinking_tokens, AmazonConverseConfig.get_cache_point_block,
+  why: Own AmazonConverseConfig.update_optional_params_with_thinking_tokens, AmazonConverseConfig.get_cache_point_block,
     AmazonConverseConfig.get_cache_point_block, AmazonConverseConfig.get_cache_point_block, AmazonConverseConfig._build_cache_point_block.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1508-L1567
-  why: >-
-    Own AmazonConverseConfig._transform_inference_params, AmazonConverseConfig._handle_top_k_value, AmazonConverseConfig._merge_parallel_tool_use_config,
+  why: Own AmazonConverseConfig._transform_inference_params, AmazonConverseConfig._handle_top_k_value, AmazonConverseConfig._merge_parallel_tool_use_config,
     AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config. Other functions in this file remain
     with the owners listed below.
 dod:
-- text: >-
-    inference config options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/inference-config-options.yaml.
+- text: 'inference_config_options: Process input order; max_tokens/max_completion_tokens overwrite maxTokens last-wins.
+    If Pythonint includingbool and B600 GPT/Grokmin predicate, clamp to16; all other values copiedunchanged. stream
+    copied as-is. stop empty string skipped, otherstring singleton, any nonstring copiedto stopSequences includingNone/empty
+    list. Responseformat onlydict usesB601; tools onlylist usesB601. temperature/top_p maptopP with B688 Anthropic
+    sampling gate for anthropicbase. Nonsampling othermodel ->UnsupportedParamsError400 <model> does not support
+    <param>=<value>. To drop unsupported params, set `litellm.drop_params = True`. unless truthyglobal/percalldrop;
+    dropthen silent. Unrecognizedparams ignored.'
   proof:
   - case-inference-config-options
   - oracle
   - helper-python
-- text: >-
-    additional model fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/additional-model-fields.yaml.
+- text: 'additional_model_fields: parallel_tool_calls stores _parallel_tool_use_config.tool_choice={type:auto,disable_parallel_tool_use:not
+    value} usingtruthiness. DeepSeek thinking always debug Dropping unsupported `thinking` param for Bedrock model=<model>;
+    it reasons natively. anddoesnotassign (preexisting thinkingnotremoved). GPT thinking silentlynotassigned. DeepSeekR1
+    stringeffort debug Dropping unsupported `reasoning_effort` param for Bedrock model=<model>; it always reasons
+    and rejects it. Otherstringeffort delegatesB600; nonstringignored. Dictoutput_config copiedthen B690normalized;
+    processingorderdeterminesoverride. Emptydict web_search_options enablesB600 groundingsystemtool throughB2202
+    append.'
   proof:
   - case-additional-model-fields
   - oracle
   - helper-python
-- text: 'service tier: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/service-tier.yaml.'
+- text: 'service_tier: Stringauto mapsdefault; default/flex/priority ->serviceTier{type:<value>}. Unknown/casevariation/empty/nonstring
+    silentlyignored, leavingexistingserviceTier. No newlyinventedvalidationerror.'
   proof:
   - case-service-tier
   - oracle
   - helper-python
-- text: 'request metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/request-metadata.yaml.'
+- text: 'request_metadata: Only non-None dictrequestMetadata invokesB596 validator andassigns aftervalidation; non-dictvalues
+    silentlyignored atthismappinglayer. ReplaysameB596 size/type/character400 cases fordictinputs (not unreachable
+    notdictvalidatorcase).'
   proof:
   - case-request-metadata
   - oracle
   - helper-python
-- text: 'cache point ttl: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/cache-point-ttl.yaml.'
+- text: 'cache_point_ttl: Absent/cache_controlNone orB690 rejectsmodel ->None. Any othercache_control value includingfalse/empty/nondict
+    yields cachePoint{type:default}; ignoretypefield. Honor ttl onlydictvalue5m/1h, modelnon-None andB690 is_claude_4_5_on_bedrock;
+    otherwiseomit silently. system/content_block wrappershavesamewirecachePoint. Overloadpass declarations are notindependentemptyimplementations.'
   proof:
   - case-cache-point-ttl
   - oracle
   - helper-python
-- text: 'top k: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/top-k.yaml.'
+- text: 'top_k: _transform_inference_params pops top_k andoverwrites topK evenifexisting, thenpreserves typed InferenceConfig
+    fields. _handle_top_k_value pops topK ifpresent else top_k; bothpresent leaves top_k behind. ChosenNone produces{}.
+    Anthropic delegatesB688 sampling gate withoutputkeytop_k; Novabase returns{inferenceConfig:{topK:value}}; allotherfamilies
+    drop silently afterpop.'
   proof:
   - case-top-k
   - oracle
   - helper-python
-- text: 'parallel tool config: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/parallel-tool-config.yaml.'
+- text: 'parallel_tool_config: Merge eachparallelconfig key: ifbothvalueandexistingadditionalvalue aredict, combine
+    generated thenexisting then generatedkeys excepttype. Thus existingtype wins butgenerateddisable_parallel_tool_use
+    wins. Othergeneratedvalues replaceexisting. Preserveunrelatedadditionalfields. _drop_tool_choice_type_conflicting_with_tool_config
+    removesonly type fromdictadditional.tool_choice, keepingempty dictandsiblingkeys.'
   proof:
   - case-parallel-tool-config
   - oracle
   - helper-python
-- text: >-
-    thinking budget with max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-params/thinking-budget-with-max-tokens.yaml.
+- text: 'thinking_budget_with_max_tokens: Unless modelcontainsgpt-oss orB600 Nova2, runupdate: B600 minimumclampfirst
+    evenwithoutenabledthinking; B2202 thinkingdetection plus neithermaxtokenkey inoriginal (presenceincludingNone)
+    allowsdictbudgetnon-None ->maxTokens=budget+DEFAULT_MAX_TOKENS envdefault4096 ownedB2202. ExistingoptionalmaxTokens
+    overwritten. ExplicitNone max-tokenkey blocksautoaddition; preservefloatbudget arithmetic if supplied.'
   proof:
   - case-thinking-budget-with-max-tokens
   - oracle
@@ -148,47 +209,111 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'adaptive_thinking_fallback: adaptive thinking onnonadaptive nonGPT/nonDeepSeek ->B569 medium budget then
+    capagainst truthymax_completion_tokens-or-max_tokens. Successfulcapassigned; failure warns Dropping adaptive
+    `thinking` for model=<model>: max_tokens is too small to fit the minimum thinking budget. butdoesnotdelete existingoptional
+    thinking. Otherthinking copiedthen B688 legacytranslation. Keep siblingB577/B576 samecap/errorliteral wherecalled,
+    with thisdistinctpreexisting-stateoutcome.'
+  proof:
+  - case-adaptive-thinking-fallback
+  - oracle
+  - helper-python
+- text: 'final_forced_tool_downgrade: After allparams, B2202 is_thinking_enabled(optional_params) plus dictool_choice
+    containing any or tool ->info <model> does not support forced tool use (tool_choice=''required'' or specific
+    tool) when reasoning is enabled. Changing tool_choice to ''auto''. Replacewholechoice with{auto:{}}. Detectionusesfinaloptions,
+    notoriginal; adaptivealone notenabled unlessreasoning_effort exists perB2202.'
+  proof:
+  - case-final-forced-tool-downgrade
+  - oracle
+  - helper-python
+- text: 'context_management: Listcontextmanagement goesB2201 mapper andassignsonlynon-None; dictpassesunchanged
+    includingempty/noedits. Invalidtypes ignored. Do notremove anexistingcontext_managementwhenmapperreturns None;
+    B683 filtersitlater.'
+  proof:
+  - case-context-management
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-inference-config-options
-    why: The inference-config-options behavior is missing or differs from its pinned fixture.
+    why: Process input order; max_tokens/max_completion_tokens overwrite maxTokens last-wins. If Pythonint includingbool
+      and B600 GPT/Grokmin predicate, clamp to16; all other values copiedunchanged. stream copied as-is. stop empty
+      string skipped, otherstring singleton, any nonstring copiedto stopSequences includingNone/empty list. Responseformat
+      onlydict usesB601; tools onlylist usesB601. temperature/top_p maptopP with B688 Anthropic sampling gate for
+      anthropicbase. Nonsampling othermodel ->UnsupportedParamsError400 <model> does not support <param>=<value>.
+      To drop unsupported params, set `litellm.drop_params = True`. unless truthyglobal/percalldrop; dropthen silent.
+      Unrecognizedparams ignored.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_inference_config_options$/)'
   - id: case-additional-model-fields
-    why: The additional-model-fields behavior is missing or differs from its pinned fixture.
+    why: parallel_tool_calls stores _parallel_tool_use_config.tool_choice={type:auto,disable_parallel_tool_use:not
+      value} usingtruthiness. DeepSeek thinking always debug Dropping unsupported `thinking` param for Bedrock model=<model>;
+      it reasons natively. anddoesnotassign (preexisting thinkingnotremoved). GPT thinking silentlynotassigned.
+      DeepSeekR1 stringeffort debug Dropping unsupported `reasoning_effort` param for Bedrock model=<model>; it
+      always reasons and rejects it. Otherstringeffort delegatesB600; nonstringignored. Dictoutput_config copiedthen
+      B690normalized; processingorderdeterminesoverride. Emptydict web_search_options enablesB600 groundingsystemtool
+      throughB2202 append.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_additional_model_fields$/)'
   - id: case-service-tier
-    why: The service-tier behavior is missing or differs from its pinned fixture.
+    why: Stringauto mapsdefault; default/flex/priority ->serviceTier{type:<value>}. Unknown/casevariation/empty/nonstring
+      silentlyignored, leavingexistingserviceTier. No newlyinventedvalidationerror.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_service_tier$/)'
   - id: case-request-metadata
-    why: The request-metadata behavior is missing or differs from its pinned fixture.
+    why: Only non-None dictrequestMetadata invokesB596 validator andassigns aftervalidation; non-dictvalues silentlyignored
+      atthismappinglayer. ReplaysameB596 size/type/character400 cases fordictinputs (not unreachable notdictvalidatorcase).
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_request_metadata$/)'
   - id: case-cache-point-ttl
-    why: The cache-point-ttl behavior is missing or differs from its pinned fixture.
+    why: Absent/cache_controlNone orB690 rejectsmodel ->None. Any othercache_control value includingfalse/empty/nondict
+      yields cachePoint{type:default}; ignoretypefield. Honor ttl onlydictvalue5m/1h, modelnon-None andB690 is_claude_4_5_on_bedrock;
+      otherwiseomit silently. system/content_block wrappershavesamewirecachePoint. Overloadpass declarations are
+      notindependentemptyimplementations.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_cache_point_ttl$/)'
   - id: case-top-k
-    why: The top-k behavior is missing or differs from its pinned fixture.
+    why: _transform_inference_params pops top_k andoverwrites topK evenifexisting, thenpreserves typed InferenceConfig
+      fields. _handle_top_k_value pops topK ifpresent else top_k; bothpresent leaves top_k behind. ChosenNone produces{}.
+      Anthropic delegatesB688 sampling gate withoutputkeytop_k; Novabase returns{inferenceConfig:{topK:value}};
+      allotherfamilies drop silently afterpop.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_top_k$/)'
   - id: case-parallel-tool-config
-    why: The parallel-tool-config behavior is missing or differs from its pinned fixture.
+    why: 'Merge eachparallelconfig key: ifbothvalueandexistingadditionalvalue aredict, combine generated thenexisting
+      then generatedkeys excepttype. Thus existingtype wins butgenerateddisable_parallel_tool_use wins. Othergeneratedvalues
+      replaceexisting. Preserveunrelatedadditionalfields. _drop_tool_choice_type_conflicting_with_tool_config removesonly
+      type fromdictadditional.tool_choice, keepingempty dictandsiblingkeys.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_parallel_tool_config$/)'
   - id: case-thinking-budget-with-max-tokens
-    why: The thinking-budget-with-max-tokens behavior is missing or differs from its pinned fixture.
+    why: 'Unless modelcontainsgpt-oss orB600 Nova2, runupdate: B600 minimumclampfirst evenwithoutenabledthinking;
+      B2202 thinkingdetection plus neithermaxtokenkey inoriginal (presenceincludingNone) allowsdictbudgetnon-None
+      ->maxTokens=budget+DEFAULT_MAX_TOKENS envdefault4096 ownedB2202. ExistingoptionalmaxTokens overwritten. ExplicitNone
+      max-tokenkey blocksautoaddition; preservefloatbudget arithmetic if supplied.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_thinking_budget_with_max_tokens$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_params.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_params.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_params*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_params*")"
       && grep -lq 'bedrock_converse_params' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_params* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_params$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-adaptive-thinking-fallback
+    why: 'adaptive thinking onnonadaptive nonGPT/nonDeepSeek ->B569 medium budget then capagainst truthymax_completion_tokens-or-max_tokens.
+      Successfulcapassigned; failure warns Dropping adaptive `thinking` for model=<model>: max_tokens is too small
+      to fit the minimum thinking budget. butdoesnotdelete existingoptional thinking. Otherthinking copiedthen B688
+      legacytranslation. Keep siblingB577/B576 samecap/errorliteral wherecalled, with thisdistinctpreexisting-stateoutcome.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_adaptive_thinking_fallback$/)'
+  - id: case-final-forced-tool-downgrade
+    why: After allparams, B2202 is_thinking_enabled(optional_params) plus dictool_choice containing any or tool
+      ->info <model> does not support forced tool use (tool_choice='required' or specific tool) when reasoning is
+      enabled. Changing tool_choice to 'auto'. Replacewholechoice with{auto:{}}. Detectionusesfinaloptions, notoriginal;
+      adaptivealone notenabled unlessreasoning_effort exists perB2202.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_final_forced_tool_downgrade$/)'
+  - id: case-context-management
+    why: Listcontextmanagement goesB2201 mapper andassignsonlynon-None; dictpassesunchanged includingempty/noedits.
+      Invalidtypes ignored. Do notremove anexistingcontext_managementwhenmapperreturns None; B683 filtersitlater.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_params_cases::case_[0-9]+_context_management$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-params/inference-config-options.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-params/additional-model-fields.yaml
@@ -198,80 +323,71 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-params/top-k.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-params/parallel-tool-config.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-params/thinking-budget-with-max-tokens.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-params/adaptive-thinking-fallback.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-params/final-forced-tool-downgrade.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-params/context-management.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__ L143-L154; AmazonConverseConfig.custom_llm_provider
-  L157-L158; AmazonConverseConfig.get_config_blocks L161-L166; AmazonConverseConfig.get_config L299-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model
-  L388-L389; AmazonConverseConfig._requires_min_max_tokens L392-L393; AmazonConverseConfig._is_nova_2_model L395-L444;
-  AmazonConverseConfig._map_web_search_options L446-L473; AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config
-  L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort
-  L572-L591; AmazonConverseConfig._clamp_thinking_budget_tokens L594-L609; AmazonConverseConfig._is_deepseek_model
-  L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615; AmazonConverseConfig._model_accepts_anthropic_thinking_param
-  L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param L633-L639; AmazonConverseConfig._supports_sampling_params
-  L642-L656; AmazonConverseConfig.get_supported_openai_params L658-L733; AmazonConverseConfig._auto_tool_choice
-  L736-L737 belong to B600; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
-  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
-  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
-  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+- 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata
+  L316-L385 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__
+  L143-L154; AmazonConverseConfig.custom_llm_provider L156-L158; AmazonConverseConfig.get_config_blocks L160-L166;
+  AmazonConverseConfig.get_config L298-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model L387-L389; AmazonConverseConfig._requires_min_max_tokens
+  L391-L393; AmazonConverseConfig._is_nova_2_model L395-L444; AmazonConverseConfig._map_web_search_options L446-L473;
+  AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter
+  L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort L571-L591; AmazonConverseConfig._clamp_thinking_budget_tokens
+  L593-L609; AmazonConverseConfig._is_deepseek_model L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615;
+  AmazonConverseConfig._model_accepts_anthropic_thinking_param L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param
+  L633-L639; AmazonConverseConfig._supports_sampling_params L641-L656; AmazonConverseConfig.get_supported_openai_params
+  L658-L733; AmazonConverseConfig._auto_tool_choice L735-L737 belong to B600.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values
+  L739-L768; AmazonConverseConfig.get_supported_image_types L770-L771; AmazonConverseConfig.get_supported_document_types
+  L773-L774; AmazonConverseConfig.get_supported_video_types L776-L777; AmazonConverseConfig.get_all_supported_content_types
+  L779-L780; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
+  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
+  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L908-L919; AmazonConverseConfig._add_additional_properties_to_schema
+  L921-L955; AmazonConverseConfig._create_output_config_for_response_format L957-L996; AmazonConverseConfig._apply_tool_call_transformation
+  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L168-L218; AmazonConverseConfig._has_orphaned_tool_blocks L220-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L227-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L280-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1355-L1357; AmazonConverseConfig._opens_with_tool_result L1359-L1371; AmazonConverseConfig._system_run_before
   L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
   L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
-  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
-  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
-  belong to B603; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values L739-L768; AmazonConverseConfig.get_supported_image_types
-  L770-L771; AmazonConverseConfig.get_supported_document_types L773-L774; AmazonConverseConfig.get_supported_video_types
-  L776-L777; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
-  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
-  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L909-L919; AmazonConverseConfig._add_additional_properties_to_schema
-  L922-L955; AmazonConverseConfig._create_output_config_for_response_format L958-L996; AmazonConverseConfig._apply_tool_call_transformation
-  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
-  have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
-  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
-  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
-  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
-  belong to B683; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response L2079-L2105; AmazonConverseConfig._transform_response
-  L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709; AmazonConverseConfig.validate_environment L2711-L2724;
-  AmazonConverseConfig.should_fake_stream L2726-L2752 belong to B607; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
-  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
-  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
-  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
-  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
-  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed
-  L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
-  L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
-  L2483-L2525 belong to B606; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata L316-L385
-  belong to B596; reuse that implementation or its injected typed boundary.
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1461-L1465;
+  AmazonConverseConfig._converted_text_block L1467-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params
+  L1569-L1684; AmazonConverseConfig._transform_request_helper L1861-L1970; AmazonConverseConfig._async_transform_request
+  L1972-L2014; AmazonConverseConfig.transform_request L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077
+  belong to B604.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content
+  L2107-L2117; AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details
+  L2141-L2159; AmazonConverseConfig.thinking_tokens_from_additional_fields L2161-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2172-L2175; AmazonConverseConfig._usage_count L2177-L2183; AmazonConverseConfig._cache_read_count L2185-L2188;
+  AmazonConverseConfig._cache_write_count L2190-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names
+  L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed L2287-L2317; AmazonConverseConfig._translate_message_content
+  L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations L2390-L2457; AmazonConverseConfig._unwrap_bedrock_properties
+  L2459-L2480; AmazonConverseConfig._filter_json_mode_tools L2482-L2525 belong to B606.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response
+  L2079-L2105; AmazonConverseConfig._transform_response L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709;
+  AmazonConverseConfig.validate_environment L2711-L2724; AmazonConverseConfig.should_fake_stream L2726-L2752 belong
+  to B607.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
+  L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
-- >-
-  Preserve top_k handling, minimum token guards, context-management translation and parallelToolUse compatibility;
-  all unsupported-field drops produce names and diagnostics.
+- A failed adaptive fallback warns but leaves preexisting optional thinking untouched; removing it changes this
+  branch.
+- topK wins over top_k during extraction, leaving the unused spelling in inference_params when both were supplied.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: standard

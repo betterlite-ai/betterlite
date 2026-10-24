@@ -18,10 +18,46 @@ description: >-
   L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
   BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
   L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517. litellm/llms/bedrock/common_utils.py:
-  _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions L781-L783; extract_model_name_from_bedrock_arn
-  L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path L821-L831; strip_bedrock_throughput_suffix
-  L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name L1332-L1334;
-  BedrockModelInfo.get_base_model L1337-L1339.
+  .
+
+
+  Named case contracts: non_llm_region_precedence: Explicit aws_region_name non-None validates. Else begin us-west-2;
+  AWS_REGION_NAME non-None string overrides, then AWS_REGION non-None string overrides it, including empty -> validation
+  failure. No SDK session or AWS_DEFAULT_REGION lookup in this branch. provider_selection_order: Invoke strips one
+  leading invoke/, gives case-insensitive nova substring priority, then checks first dot component, then first slash
+  component, then ordered substring matches cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot;
+  unmatched returns None. Embedding also prioritizes nova, then second dot component before first, then ordered
+  cohere,amazon,twelvelabs,nova substring fallback. Preserve case sensitivity outside the nova shortcut. model_id_encoding_and_mutation:
+  Pop model_id from optional_params; non-None override is quoted with safe="" and returned, including empty string.
+  Otherwise strip B2203 routing prefixes, percent-encode ARN beginning arn: and return before other rewrites. For
+  non-ARN remove first invoke/ occurrence anywhere; selected providers llama,deepseek_r1,openai,qwen2,qwen3,stability,moonshot
+  remove every occurrence of their spec prefix. Only when no earlier provider branch matched, remove every nova-2/
+  or otherwise nova/ occurrence, then quote through the spec helper. Already percent-encoded overrides encode percent
+  again; do not decode before quoting. llm_region_precedence: Explicit aws_region_name non-None validates even empty.
+  Otherwise non-None model_id argument is the only ARN candidate (invalid override blocks model ARN fallback); valid
+  ARN supplies region. Then AWS_REGION_NAME non-None string, AWS_REGION non-None string, SDK Session.region_name
+  truthy, finally us-west-2. SDK exceptions also use us-west-2. ARN region requires B198 ARN detector plus colon
+  component3 matching lowercase [a-z0-9-]+; malformed/missing returns None. Final region always passes B198 validation.
+  sts_region_and_kwargs: STS endpoint hostname regex (?:^|\.)sts(?:-fips)?\.([a-z0-9-]+)\.(?:amazonaws\.com(?:\.cn)?|vpce\.amazonaws\.com)
+  supplies signing region, including vpce and fips forms; source has no end anchor, so preserve matching hostname
+  suffixes. Region fallback is truthy AWS_REGION, AWS_DEFAULT_REGION, then configured region. STS kwargs always
+  include verify from B590, endpoint_url iff notNone including empty, region_name iff notNone including empty. runtime_endpoint_precedence:
+  Choose api_base when notNone including empty, else aws_bedrock_runtime_endpoint non-None string including empty,
+  else truthy resolved AWS_BEDROCK_RUNTIME_ENDPOINT string, else https://<service>.<region>.<B198 partition DNS
+  suffix>. service=bedrock-runtime by default/unknown endpoint_type, bedrock-agent-runtime for agent, bedrock-agentcore
+  for agentcore. Return aws_bedrock_runtime_endpoint when it is a string other than None, else a truthy string from
+  AWS_BEDROCK_RUNTIME_ENDPOINT, else endpoint_url as proxy_endpoint_url. This may differ from an explicit api_base,
+  but it never defaults to None. Partition DNS must handle aws-cn/us-gov.
+
+
+  B2203 owns all pure model/region catalog normalization and is a direct prerequisite. B198 owns ARN detection,
+  region validation and partition DNS; B590 owns TLS access. Resolve AWS_REGION_NAME,AWS_REGION,AWS_DEFAULT_REGION,AWS_BEDROCK_RUNTIME_ENDPOINT
+  through this task’s real config loader; no live boto3 network discovery is needed for local Session.region_name
+  fixtures.
+
+
+  BedrockModelInfo.get_base_model belong to B2203; delegate those calls directly and retain only the remaining owned
+  bodies.
 
 
   Implement crates/betterlite-bedrock/src/aws_endpoints.rs with adjacent tests under aws_endpoints/. Keep each Rust
@@ -39,10 +75,10 @@ description: >-
 
   Write rstest function aws_endpoints_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   model_arn_region, explicit_region_precedence, environment_profile_fallback, non_llm_region_precedence, invalid_region,
-  arn_model_path_encoding, inference_profile_model_id, china_partition, runtime_agent_agentcore_endpoints, sts_region_from_endpoint.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  arn_model_path_encoding, inference_profile_model_id, china_partition, runtime_agent_agentcore_endpoints, sts_region_from_endpoint,
+  provider_selection_order, model_id_encoding_and_mutation, llm_region_precedence, sts_region_and_kwargs, runtime_endpoint_precedence.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints* using HelperCase: kind:
@@ -68,9 +104,9 @@ description: >-
   target.
 
 
-  Budget from 372 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 385 production lines, 163 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 37 config/loader lines and 25 module/dispatch/shared-seed
+  Budget from 297 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 245 production lines, 260 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 60 config/loader lines and 25 module/dispatch/shared-seed
   wiring lines; 705 planned, 725 maximum changed lines.
 scope:
   paths:
@@ -108,8 +144,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L538-L872
-  why: >-
-    Own BaseAWSLLM._get_aws_region_from_model_arn, BaseAWSLLM._get_provider_from_model_path, BaseAWSLLM.get_bedrock_invoke_provider,
+  why: Own BaseAWSLLM._get_aws_region_from_model_arn, BaseAWSLLM._get_provider_from_model_path, BaseAWSLLM.get_bedrock_invoke_provider,
     BaseAWSLLM.get_bedrock_model_id, BaseAWSLLM._get_model_id_from_model_with_spec, BaseAWSLLM.encode_model_id,
     BaseAWSLLM.get_bedrock_embedding_provider, BaseAWSLLM._get_aws_region_name, BaseAWSLLM._validate_aws_region_name,
     BaseAWSLLM._parse_sts_region_from_endpoint, BaseAWSLLM._resolve_sts_region, BaseAWSLLM._build_sts_client_kwargs,
@@ -119,14 +154,9 @@ references:
   why: Own BaseAWSLLM.get_runtime_endpoint, BaseAWSLLM._select_default_endpoint_url. Other functions in this file
     remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L773-L831
-  why: >-
-    Own _get_all_bedrock_regions, get_bedrock_cross_region_inference_regions, extract_model_name_from_bedrock_arn,
+  why: Own _get_all_bedrock_regions, get_bedrock_cross_region_inference_regions, extract_model_name_from_bedrock_arn,
     strip_bedrock_routing_prefix, split_bedrock_region_path. Other functions in this file remain with the owners
     listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L992-L1002
-  why: Own strip_bedrock_throughput_suffix. Other functions in this file remain with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1064-L1099
-  why: Own get_bedrock_base_model. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1332-L1339
   why: Own BedrockModelInfo.get_non_litellm_routing_model_name, BedrockModelInfo.get_base_model. Other functions
     in this file remain with the owners listed below.
@@ -136,20 +166,19 @@ dod:
   - case-model-arn-region
   - oracle
   - helper-python
-- text: >-
-    explicit region precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/explicit-region-precedence.yaml.
+- text: 'explicit region precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/explicit-region-precedence.yaml.'
   proof:
   - case-explicit-region-precedence
   - oracle
   - helper-python
-- text: >-
-    environment profile fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/environment-profile-fallback.yaml.
+- text: 'environment profile fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/environment-profile-fallback.yaml.'
   proof:
   - case-environment-profile-fallback
   - oracle
   - helper-python
-- text: >-
-    non llm region precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/non-llm-region-precedence.yaml.
+- text: 'non_llm_region_precedence: Explicit aws_region_name non-None validates. Else begin us-west-2; AWS_REGION_NAME
+    non-None string overrides, then AWS_REGION non-None string overrides it, including empty -> validation failure.
+    No SDK session or AWS_DEFAULT_REGION lookup in this branch.'
   proof:
   - case-non-llm-region-precedence
   - oracle
@@ -159,14 +188,12 @@ dod:
   - case-invalid-region
   - oracle
   - helper-python
-- text: >-
-    arn model path encoding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/arn-model-path-encoding.yaml.
+- text: 'arn model path encoding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/arn-model-path-encoding.yaml.'
   proof:
   - case-arn-model-path-encoding
   - oracle
   - helper-python
-- text: >-
-    inference profile model id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/inference-profile-model-id.yaml.
+- text: 'inference profile model id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/inference-profile-model-id.yaml.'
   proof:
   - case-inference-profile-model-id
   - oracle
@@ -176,14 +203,12 @@ dod:
   - case-china-partition
   - oracle
   - helper-python
-- text: >-
-    runtime agent agentcore endpoints: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/runtime-agent-agentcore-endpoints.yaml.
+- text: 'runtime agent agentcore endpoints: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/runtime-agent-agentcore-endpoints.yaml.'
   proof:
   - case-runtime-agent-agentcore-endpoints
   - oracle
   - helper-python
-- text: >-
-    sts region from endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/sts-region-from-endpoint.yaml.
+- text: 'sts region from endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/sts-region-from-endpoint.yaml.'
   proof:
   - case-sts-region-from-endpoint
   - oracle
@@ -211,81 +236,156 @@ dod:
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
   - config-unknown-key
+- text: 'provider_selection_order: Invoke strips one leading invoke/, gives case-insensitive nova substring priority,
+    then checks first dot component, then first slash component, then ordered substring matches cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot;
+    unmatched returns None. Embedding also prioritizes nova, then second dot component before first, then ordered
+    cohere,amazon,twelvelabs,nova substring fallback. Preserve case sensitivity outside the nova shortcut.'
+  proof:
+  - case-provider-selection-order
+  - oracle
+  - helper-python
+- text: 'model_id_encoding_and_mutation: Pop model_id from optional_params; non-None override is quoted with safe=""
+    and returned, including empty string. Otherwise strip B2203 routing prefixes, percent-encode ARN beginning arn:
+    and return before other rewrites. For non-ARN remove first invoke/ occurrence anywhere; selected providers llama,deepseek_r1,openai,qwen2,qwen3,stability,moonshot
+    remove every occurrence of their spec prefix. Only when no earlier provider branch matched, remove every nova-2/
+    or otherwise nova/ occurrence, then quote through the spec helper. Already percent-encoded overrides encode
+    percent again; do not decode before quoting.'
+  proof:
+  - case-model-id-encoding-and-mutation
+  - oracle
+  - helper-python
+- text: 'llm_region_precedence: Explicit aws_region_name non-None validates even empty. Otherwise non-None model_id
+    argument is the only ARN candidate (invalid override blocks model ARN fallback); valid ARN supplies region.
+    Then AWS_REGION_NAME non-None string, AWS_REGION non-None string, SDK Session.region_name truthy, finally us-west-2.
+    SDK exceptions also use us-west-2. ARN region requires B198 ARN detector plus colon component3 matching lowercase
+    [a-z0-9-]+; malformed/missing returns None. Final region always passes B198 validation.'
+  proof:
+  - case-llm-region-precedence
+  - oracle
+  - helper-python
+- text: 'sts_region_and_kwargs: STS endpoint hostname regex (?:^|\.)sts(?:-fips)?\.([a-z0-9-]+)\.(?:amazonaws\.com(?:\.cn)?|vpce\.amazonaws\.com)
+    supplies signing region, including vpce and fips forms; source has no end anchor, so preserve matching hostname
+    suffixes. Region fallback is truthy AWS_REGION, AWS_DEFAULT_REGION, then configured region. STS kwargs always
+    include verify from B590, endpoint_url iff notNone including empty, region_name iff notNone including empty.'
+  proof:
+  - case-sts-region-and-kwargs
+  - oracle
+  - helper-python
+- text: 'runtime_endpoint_precedence: Choose api_base when notNone including empty, else aws_bedrock_runtime_endpoint
+    non-None string including empty, else truthy resolved AWS_BEDROCK_RUNTIME_ENDPOINT string, else https://<service>.<region>.<B198
+    partition DNS suffix>. service=bedrock-runtime by default/unknown endpoint_type, bedrock-agent-runtime for agent,
+    bedrock-agentcore for agentcore. Return aws_bedrock_runtime_endpoint when it is a string other than None, else
+    a truthy string from AWS_BEDROCK_RUNTIME_ENDPOINT, else endpoint_url as proxy_endpoint_url. This may differ
+    from an explicit api_base, but it never defaults to None. Partition DNS must handle aws-cn/us-gov.'
+  proof:
+  - case-runtime-endpoint-precedence
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-model-arn-region
-    why: The model-arn-region behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/model-arn-region.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_model_arn_region$/)'
   - id: case-explicit-region-precedence
-    why: The explicit-region-precedence behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/explicit-region-precedence.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_explicit_region_precedence$/)'
   - id: case-environment-profile-fallback
-    why: The environment-profile-fallback behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/environment-profile-fallback.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_environment_profile_fallback$/)'
   - id: case-non-llm-region-precedence
-    why: The non-llm-region-precedence behavior is missing or differs from its pinned fixture.
+    why: Explicit aws_region_name non-None validates. Else begin us-west-2; AWS_REGION_NAME non-None string overrides,
+      then AWS_REGION non-None string overrides it, including empty -> validation failure. No SDK session or AWS_DEFAULT_REGION
+      lookup in this branch.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_non_llm_region_precedence$/)'
   - id: case-invalid-region
-    why: The invalid-region behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/invalid-region.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_invalid_region$/)'
   - id: case-arn-model-path-encoding
-    why: The arn-model-path-encoding behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/arn-model-path-encoding.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_arn_model_path_encoding$/)'
   - id: case-inference-profile-model-id
-    why: The inference-profile-model-id behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/inference-profile-model-id.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_inference_profile_model_id$/)'
   - id: case-china-partition
-    why: The china-partition behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/china-partition.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_china_partition$/)'
   - id: case-runtime-agent-agentcore-endpoints
-    why: The runtime-agent-agentcore-endpoints behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/runtime-agent-agentcore-endpoints.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_runtime_agent_agentcore_endpoints$/)'
   - id: case-sts-region-from-endpoint
-    why: The sts-region-from-endpoint behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/sts-region-from-endpoint.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_sts_region_from_endpoint$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_aws_endpoints.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_aws_endpoints.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints*")"
       && grep -lq 'bedrock_aws_endpoints' tools/oracle/fuzz/corpus/helper_case/bedrock_aws_endpoints* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_aws_endpoints$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-aws-region-name
     why: The AWS_REGION_NAME setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_region_name$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_region_name$/)'
       && grep -lq 'AWS_REGION_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*
   - id: config-aws-region
     why: The AWS_REGION setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_region$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_region$/)'
       && grep -lq 'AWS_REGION' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*
   - id: config-aws-default-region
     why: The AWS_DEFAULT_REGION setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_default_region$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_default_region$/)'
       && grep -lq 'AWS_DEFAULT_REGION' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*
   - id: config-aws-bedrock-runtime-endpoint
     why: The AWS_BEDROCK_RUNTIME_ENDPOINT setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_bedrock_runtime_endpoint$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_loads_aws_bedrock_runtime_endpoint$/)'
       && grep -lq 'AWS_BEDROCK_RUNTIME_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_endpoints_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_endpoints*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: case-provider-selection-order
+    why: Invoke strips one leading invoke/, gives case-insensitive nova substring priority, then checks first dot
+      component, then first slash component, then ordered substring matches cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot;
+      unmatched returns None. Embedding also prioritizes nova, then second dot component before first, then ordered
+      cohere,amazon,twelvelabs,nova substring fallback. Preserve case sensitivity outside the nova shortcut.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_provider_selection_order$/)'
+  - id: case-model-id-encoding-and-mutation
+    why: 'Pop model_id from optional_params; non-None override is quoted with safe="" and returned, including empty
+      string. Otherwise strip B2203 routing prefixes, percent-encode ARN beginning arn: and return before other
+      rewrites. For non-ARN remove first invoke/ occurrence anywhere; selected providers llama,deepseek_r1,openai,qwen2,qwen3,stability,moonshot
+      remove every occurrence of their spec prefix. Only when no earlier provider branch matched, remove every nova-2/
+      or otherwise nova/ occurrence, then quote through the spec helper. Already percent-encoded overrides encode
+      percent again; do not decode before quoting.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_model_id_encoding_and_mutation$/)'
+  - id: case-llm-region-precedence
+    why: Explicit aws_region_name non-None validates even empty. Otherwise non-None model_id argument is the only
+      ARN candidate (invalid override blocks model ARN fallback); valid ARN supplies region. Then AWS_REGION_NAME
+      non-None string, AWS_REGION non-None string, SDK Session.region_name truthy, finally us-west-2. SDK exceptions
+      also use us-west-2. ARN region requires B198 ARN detector plus colon component3 matching lowercase [a-z0-9-]+;
+      malformed/missing returns None. Final region always passes B198 validation.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_llm_region_precedence$/)'
+  - id: case-sts-region-and-kwargs
+    why: STS endpoint hostname regex (?:^|\.)sts(?:-fips)?\.([a-z0-9-]+)\.(?:amazonaws\.com(?:\.cn)?|vpce\.amazonaws\.com)
+      supplies signing region, including vpce and fips forms; source has no end anchor, so preserve matching hostname
+      suffixes. Region fallback is truthy AWS_REGION, AWS_DEFAULT_REGION, then configured region. STS kwargs always
+      include verify from B590, endpoint_url iff notNone including empty, region_name iff notNone including empty.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_sts_region_and_kwargs$/)'
+  - id: case-runtime-endpoint-precedence
+    why: Choose api_base when notNone including empty, else aws_bedrock_runtime_endpoint non-None string including
+      empty, else truthy resolved AWS_BEDROCK_RUNTIME_ENDPOINT string, else https://<service>.<region>.<B198 partition
+      DNS suffix>. service=bedrock-runtime by default/unknown endpoint_type, bedrock-agent-runtime for agent, bedrock-agentcore
+      for agentcore. Return aws_bedrock_runtime_endpoint when it is a string other than None, else a truthy string
+      from AWS_BEDROCK_RUNTIME_ENDPOINT, else endpoint_url as proxy_endpoint_url. This may differ from an explicit
+      api_base, but it never defaults to None. Partition DNS must handle aws-cn/us-gov.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_endpoints_cases::case_[0-9]+_runtime_endpoint_precedence$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/model-arn-region.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/explicit-region-precedence.yaml
@@ -297,107 +397,111 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/china-partition.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/runtime-agent-agentcore-endpoints.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/sts-region-from-endpoint.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/provider-selection-order.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/model-id-encoding-and-mutation.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/llm-region-precedence.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/sts-region-and-kwargs.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-endpoints/runtime-endpoint-precedence.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params
+  L81-L97; build_web_identity_session_policy L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194;
+  AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__ L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key
+  L273-L279; BaseAWSLLM._get_or_set_cached_credentials L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L313-L319;
+  BaseAWSLLM._is_auth_with_aws_role L321-L323; BaseAWSLLM._is_auth_with_aws_profile L325-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple
+  L329-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key L337-L343; BaseAWSLLM._auth_with_aws_profile L1392-L1402;
+  BaseAWSLLM._auth_with_aws_session_token L1404-L1423; BaseAWSLLM._auth_with_access_key_and_secret_key L1425-L1448;
+  BaseAWSLLM._auth_with_env_vars L1450-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials L1462-L1469 belong
+  to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name
+  L874-L910; BaseAWSLLM._is_already_running_as_role L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214
+  belong to B592.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience
+  L971-L988; BaseAWSLLM._auth_with_web_identity_token L990-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155;
+  BaseAWSLLM._handle_irsa_same_account L1157-L1191 belong to B593.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L345-L510; BaseAWSLLM.resolve_credentials
+  L512-L525; BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1257-L1390 belong to B594.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1519-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params L1527-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1536-L1568; BaseAWSLLM.get_request_headers L1570-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655;
+  BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
+  L1770-L1779 belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
-  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
-  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role
-  L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214 belong to B592; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token
-  L991-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191
-  belong to B593; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
-  L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
-  L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
-  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779 belong to B595; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params L81-L97; build_web_identity_session_policy
-  L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194; AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__
-  L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key L273-L279; BaseAWSLLM._get_or_set_cached_credentials
-  L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L314-L319; BaseAWSLLM._is_auth_with_aws_role L322-L323;
-  BaseAWSLLM._is_auth_with_aws_profile L326-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple L330-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key
-  L338-L343; BaseAWSLLM._auth_with_aws_profile L1393-L1402; BaseAWSLLM._auth_with_aws_session_token L1405-L1423;
-  BaseAWSLLM._auth_with_access_key_and_secret_key L1426-L1448; BaseAWSLLM._auth_with_env_vars L1451-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials
-  L1463-L1469 belong to B590; reuse that implementation or its injected typed boundary.
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- >-
-  Keep LLM fallback us-west-2 and the distinct non-LLM precedence; STS endpoint-region precedence is independent.
-  api_base and runtime overrides are operator destinations.
+- LLM region lookup gives AWS_REGION_NAME priority, while the non-LLM branch lets AWS_REGION overwrite it.
+- An explicit model_id blocks ARN-region fallback to model even when that override is not an ARN.
 budget:
   max_changed_lines: 725
   max_new_expects: 0

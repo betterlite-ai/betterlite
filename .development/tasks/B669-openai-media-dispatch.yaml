@@ -21,6 +21,24 @@ description: >-
   normalized settings and reuse leaf errors.
 
 
+  Named case contracts: image_generation: Dispatch both DALL-E and GPT-image models through B511 and compare its
+  prepared URL, body and reply; do not select editing from a shared image response type. image_edit: Dispatch B512
+  multipart edits, including image/mask field names and duplicate input-image parts. image_variation: Dispatch B513
+  /images/variations independently of /images/edits. speech: Dispatch B514 binary speech with request model/voice
+  and exact upstream bytes. transcription: Dispatch B515 audio transcription with multipart file and leaf response
+  projection. video_create: Dispatch B525 create with decoded character IDs and its multipart policy. video_lifecycle:
+  Parameterize B525 list, retrieve status, delete, content and remix operations; assert distinct method/path, encoded-ID
+  handling, JSON versus binary output and leaf failure propagation. video_extended_operations: Parameterize B526
+  edit, extension, create character and get character; assert each reaches its own leaf and retains its typed video/character
+  result.
+
+
+  Each parameterized operation uses a distinct fixture row in the named case file and reaches the existing leaf
+  production entry point. The composition layer introduces no new defaults, headers, errors, parsers or config keys:
+  leaf-owned outcomes and warnings pass through unchanged. Test at least one leaf error per family to detect accidental
+  conversion to unsupported_operation. No HTTP route is registered or called by these helper cases.
+
+
   Implement crates/betterlite-provider/src/openai_media_dispatch.rs with adjacent tests under openai_media_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
   a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
@@ -35,10 +53,10 @@ description: >-
 
 
   Write rstest function openai_media_dispatch_cases in betterlite-provider with these exact named cases (one per
-  oracle file): image_generation, image_edit, image_variation, speech, transcription, video_create. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  oracle file): image_generation, image_edit, image_variation, speech, transcription, video_create, video_lifecycle,
+  video_extended_operations. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_media_dispatch* using HelperCase: kind:
@@ -58,9 +76,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 114 behavior/config-test lines, 109 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 145 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 408 planned, 425 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 550 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -103,32 +121,33 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L463-L474
   why: Operation contract delegated to B526; only native dispatcher wiring is added here.
 dod:
-- text: 'image generation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/image-generation.yaml.'
+- text: 'image_generation: Dispatch both DALL-E and GPT-image models through B511 and compare its prepared URL,
+    body and reply; do not select editing from a shared image response type.'
   proof:
   - case-image-generation
   - oracle
   - helper-python
-- text: 'image edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/image-edit.yaml.'
+- text: 'image_edit: Dispatch B512 multipart edits, including image/mask field names and duplicate input-image parts.'
   proof:
   - case-image-edit
   - oracle
   - helper-python
-- text: 'image variation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/image-variation.yaml.'
+- text: 'image_variation: Dispatch B513 /images/variations independently of /images/edits.'
   proof:
   - case-image-variation
   - oracle
   - helper-python
-- text: 'speech: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/speech.yaml.'
+- text: 'speech: Dispatch B514 binary speech with request model/voice and exact upstream bytes.'
   proof:
   - case-speech
   - oracle
   - helper-python
-- text: 'transcription: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/transcription.yaml.'
+- text: 'transcription: Dispatch B515 audio transcription with multipart file and leaf response projection.'
   proof:
   - case-transcription
   - oracle
   - helper-python
-- text: 'video create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-media-dispatch/video-create.yaml.'
+- text: 'video_create: Dispatch B525 create with decoded character IDs and its multipart policy.'
   proof:
   - case-video-create
   - oracle
@@ -140,44 +159,63 @@ dod:
 - text: unsupported operation holds at this task’s owned boundary.
   proof:
   - unsupported-operation
+- text: 'video_lifecycle: Parameterize B525 list, retrieve status, delete, content and remix operations; assert
+    distinct method/path, encoded-ID handling, JSON versus binary output and leaf failure propagation.'
+  proof:
+  - case-video-lifecycle
+  - oracle
+  - helper-python
+- text: 'video_extended_operations: Parameterize B526 edit, extension, create character and get character; assert
+    each reaches its own leaf and retains its typed video/character result.'
+  proof:
+  - case-video-extended-operations
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-image-generation
-    why: The image-generation behavior is missing or differs from its pinned fixture.
+    why: Dispatch both DALL-E and GPT-image models through B511 and compare its prepared URL, body and reply; do
+      not select editing from a shared image response type.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_image_generation$/)'
   - id: case-image-edit
-    why: The image-edit behavior is missing or differs from its pinned fixture.
+    why: Dispatch B512 multipart edits, including image/mask field names and duplicate input-image parts.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_image_edit$/)'
   - id: case-image-variation
-    why: The image-variation behavior is missing or differs from its pinned fixture.
+    why: Dispatch B513 /images/variations independently of /images/edits.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_image_variation$/)'
   - id: case-speech
-    why: The speech behavior is missing or differs from its pinned fixture.
+    why: Dispatch B514 binary speech with request model/voice and exact upstream bytes.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_speech$/)'
   - id: case-transcription
-    why: The transcription behavior is missing or differs from its pinned fixture.
+    why: Dispatch B515 audio transcription with multipart file and leaf response projection.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_transcription$/)'
   - id: case-video-create
-    why: The video-create behavior is missing or differs from its pinned fixture.
+    why: Dispatch B525 create with decoded character IDs and its multipart policy.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_video_create$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_media_dispatch.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_media_dispatch.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_media_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_media_dispatch*")"
       && grep -lq 'openai_media_dispatch' tools/oracle/fuzz/corpus/helper_case/openai_media_dispatch* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_media_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: unsupported-operation
     why: The unsupported operation invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_unsupported_operation$/)'
+  - id: case-video-lifecycle
+    why: Parameterize B525 list, retrieve status, delete, content and remix operations; assert distinct method/path,
+      encoded-ID handling, JSON versus binary output and leaf failure propagation.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_video_lifecycle$/)'
+  - id: case-video-extended-operations
+    why: Parameterize B526 edit, extension, create character and get character; assert each reaches its own leaf
+      and retains its typed video/character result.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_media_dispatch_cases::case_[0-9]+_video_extended_operations$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-media-dispatch/image-generation.yaml
 - tools/oracle/cases/helpers/providers/openai-media-dispatch/image-edit.yaml
@@ -185,115 +223,95 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-media-dispatch/speech.yaml
 - tools/oracle/cases/helpers/providers/openai-media-dispatch/transcription.yaml
 - tools/oracle/cases/helpers/providers/openai-media-dispatch/video-create.yaml
+- tools/oracle/cases/helpers/providers/openai-media-dispatch/video-lifecycle.yaml
+- tools/oracle/cases/helpers/providers/openai-media-dispatch/video-extended-operations.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
-  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
-  belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
-  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
-  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
+  port them.'
+- 'Function ownership inventory litellm/llms/openai/image_edit/__init__.py: get_openai_image_edit_config L15-L31
+  belong to B512.'
+- 'Function ownership inventory litellm/llms/openai/image_generation/__init__.py: get_openai_image_generation_config
+  L22-L28 belong to B511.'
+- 'Function ownership inventory litellm/llms/openai/image_variations/handler.py: OpenAIImageVariationsHandler.get_sync_client
+  L21-L32; OpenAIImageVariationsHandler.get_async_client L34-L41; OpenAIImageVariationsHandler.async_image_variations
+  L43-L110; OpenAIImageVariationsHandler.image_variations L112-L227 belong to B513.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
   L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
-  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
   L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
-  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
-  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
-  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
-  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L889-L1011 belong to B004.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
+  OpenAIChatCompletion.make_openai_embedding_request L1200-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request
+  L1217-L1232; OpenAIChatCompletion.aembedding L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to
+  B006.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config
+  L81-L98; MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params
+  L105-L109 belong to B036.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454;
+  OpenAIChatCompletion.image_generation L1456-L1554 belong to B511.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client
+  L1683-L1711; OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
   L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
   L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
   L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
-  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069;
-  OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
+  L1986-L2026 belong to B516.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client
+  L2041-L2069; OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
   L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
-  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
+  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
   L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
-  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2343-L2353; OpenAIAssistantsAPI.get_assistants L2356-L2366; OpenAIAssistantsAPI.get_assistants
+  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2342-L2353; OpenAIAssistantsAPI.get_assistants L2355-L2366; OpenAIAssistantsAPI.get_assistants
   L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
   OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
-  to B519; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
-  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
-  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
-  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
-  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
-  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
-  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
-- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
-  port them.'
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
-  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
-  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params
-  L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages
-  L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request
-  L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator
-  L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser L329-L336 belong to B668; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.transform_video_create_character_request L463-L474;
-  OpenAIVideoConfig.transform_video_create_character_response L476-L481; OpenAIVideoConfig.transform_video_get_character_request
-  L483-L493; OpenAIVideoConfig.transform_video_get_character_response L495-L500; OpenAIVideoConfig.transform_video_edit_request
-  L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
-  L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.__init__ L47-L48; OpenAIVideoConfig.get_supported_openai_params
-  L50-L63; OpenAIVideoConfig.map_openai_params L65-L72; OpenAIVideoConfig.validate_environment L74-L91; OpenAIVideoConfig.get_complete_url
-  L93-L105; OpenAIVideoConfig.use_multipart_form_data L107-L108; OpenAIVideoConfig.transform_video_create_request
+  to B519.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2567-L2580; OpenAIAssistantsAPI.add_message L2582-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2669-L2681; OpenAIAssistantsAPI.get_messages L2683-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2772-L2785;
+  OpenAIAssistantsAPI.create_thread L2787-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2891-L2903; OpenAIAssistantsAPI.get_thread L2905-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3073-L3093; OpenAIAssistantsAPI.run_thread
+  L3095-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config
+  L174-L176; OpenAIConfig.get_supported_openai_params L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params
+  L207-L212; OpenAIConfig._transform_messages L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class
+  L254-L259; OpenAIConfig.transform_request L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment
+  L300-L313; OpenAIConfig.get_model_response_iterator L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser
+  L329-L336 belong to B668.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
+  no caller at the pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/llms/openai/transcriptions/handler.py: OpenAIAudioTranscription.make_openai_audio_transcriptions_request
+  L27-L40; OpenAIAudioTranscription.make_sync_openai_audio_transcriptions_request L42-L54; OpenAIAudioTranscription.audio_transcriptions
+  L56-L148; OpenAIAudioTranscription.async_audio_transcriptions L150-L222 belong to B515.'
+- 'Function ownership inventory litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.__init__ L47-L48;
+  OpenAIVideoConfig.get_supported_openai_params L50-L63; OpenAIVideoConfig.map_openai_params L65-L72; OpenAIVideoConfig.validate_environment
+  L74-L91; OpenAIVideoConfig.get_complete_url L93-L105; OpenAIVideoConfig.use_multipart_form_data L107-L108; OpenAIVideoConfig.transform_video_create_request
   L110-L146; OpenAIVideoConfig.transform_video_create_response L177-L200; OpenAIVideoConfig.transform_video_content_request
   L202-L232; OpenAIVideoConfig.transform_video_remix_request L234-L262; OpenAIVideoConfig.transform_video_content_response
   L264-L270; OpenAIVideoConfig.transform_video_remix_response L272-L299; OpenAIVideoConfig.transform_video_list_request
   L301-L334; OpenAIVideoConfig.transform_video_list_response L336-L375; OpenAIVideoConfig.transform_video_delete_request
   L377-L399; OpenAIVideoConfig.transform_video_delete_response L401-L412; OpenAIVideoConfig.transform_video_status_retrieve_request
   L414-L434; OpenAIVideoConfig.transform_video_status_retrieve_response L436-L452; OpenAIVideoConfig.get_error_class
-  L454-L461 belong to B525; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig._decode_character_ids_in_create_video_request
+  L454-L461 belong to B525.'
+- 'Function ownership inventory litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.transform_video_create_character_request
+  L463-L474; OpenAIVideoConfig.transform_video_create_character_response L476-L481; OpenAIVideoConfig.transform_video_get_character_request
+  L483-L493; OpenAIVideoConfig.transform_video_get_character_response L495-L500; OpenAIVideoConfig.transform_video_edit_request
+  L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
+  L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526.'
+- 'Function ownership inventory litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig._decode_character_ids_in_create_video_request
   L148-L175; OpenAIVideoConfig._add_image_to_files L574-L586; OpenAIVideoConfig._video_file_tuple L588-L595; OpenAIVideoConfig._add_video_to_files
-  L597-L603; OpenAIVideoConfig._get_video_content_type L605-L628 belong to B672; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/openai/image_generation/__init__.py: get_openai_image_generation_config L22-L28 belong to B511; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/openai/image_edit/__init__.py: get_openai_image_edit_config L15-L31 belong to B512; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/openai/image_variations/handler.py: OpenAIImageVariationsHandler.get_sync_client L21-L32; OpenAIImageVariationsHandler.get_async_client
-  L34-L41; OpenAIImageVariationsHandler.async_image_variations L43-L110; OpenAIImageVariationsHandler.image_variations
-  L112-L227 belong to B513; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/transcriptions/handler.py: OpenAIAudioTranscription.make_openai_audio_transcriptions_request
-  L27-L40; OpenAIAudioTranscription.make_sync_openai_audio_transcriptions_request L42-L54; OpenAIAudioTranscription.audio_transcriptions
-  L56-L148; OpenAIAudioTranscription.async_audio_transcriptions L150-L222 belong to B515; reuse that implementation
-  or its injected typed boundary.
+  L597-L603; OpenAIVideoConfig._get_video_content_type L605-L628 belong to B672.'
 pitfalls:
 - Image variation and image editing must select different upstream routes even though they share reply records.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

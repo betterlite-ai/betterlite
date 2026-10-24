@@ -1,13 +1,54 @@
 id: B691
 title: Bedrock Invoke and Converse streaming HTTP helpers
 description: >-
-  Port raw Invoke make_call/make_sync_call and Converse make_sync_call as reusable asynchronous HTTP opening/stream
-  ownership helpers. Reuse B599 AWS frame decoding and B173 pooling; the Converse/Invoke caller injects its response
-  projection.
+  Implement the three raw Bedrock stream-opening helpers over B173 pooled transport. B609 owns provider stream selection/iteration,
+  B608 owns the Converse projection, and B607 owns buffered fake-stream response conversion. Keep the distinct sync
+  Converse error-body behavior and the Invoke/async exception mappings while sharing the native transport implementation.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/converse_handler.py:
   make_sync_call L26-L85. litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360.
+
+
+  Named case contracts: invoke_stream_url: POST supplied api_base unchanged with supplied headers and data, stream=not
+  fake_stream. Sync Invoke uses signed_json_body whenever non-None including empty bytes, otherwise data; async
+  uses data only. No URL/model path or retries added here. Default Invoke clients copy ssl_verify from logging_obj.litellm_params
+  only when truthy; explicitFalse/empty is omitted, so default TLS policy applies. A supplied client bypasses this
+  client-construction policy. http_error_before_frame: All helpers require status exactly200 (201/204 also fail).
+  Invoke sync/async status failures ->B682 BedrockError with original status, headers, response and error_response_text
+  (unread body ->reason_phrase, no read). Existing BedrockError rethrows; HTTPStatusError maps its response likewise;
+  TimeoutException ->408 Timeout error occurred.; any other opening/conversion/logging exception ->500 str(error).
+  Errors raised later by returned iterator are outside this catch. converse_stream_headers: Sync Converse uses default
+  _get_httpx_client without SSL kwargs. Non200 explicitly response.read then str(bytes) as error message, retaining
+  bytes-repr escapes, original status/headers/response; no Invoke generic/timeout catch applies here. Nonfake path
+  constructs B608 base decoder with model/json_mode and B609 iter_bytes over response.iter_bytes(chunk_size=stream_chunk_size),
+  forwarding response headers to tally and returning them unchanged. fake_stream_projection: For every helper fake_stream
+  truthy sends stream=false, then B607 _transform_response with fresh ModelResponse, stream=true, optional_params={},
+  api_key empty, originaldata/messages and globalencoding. json_mode is not passed to this buffered converter; it
+  is supplied only to B609 MockResponseIterator afterwards. This can differ from ordinary buffered conversion and
+  its synthetic-tool finish override. Nonfake Invoke selects B609 _stream_decoder with sync flag and provider. post_call_before_consumption:
+  After opening and constructing iterator, log B249 post_call with input=messages,api_key empty, original_response
+  literal first stream response received, complete_input_dict=data. Log occurs before the consumer reads a first
+  frame, including empty/invalid streams. Fake conversion may already log its buffered response first; preserve
+  both calls. Return iterator and original response headers.
+
+
+  Write standalone Rust test bedrock_http_stream_body_lifetime: returned stream retains pooled client/response until
+  EOF, consumer cancellation or error, then drops/closes it without retry. This is the native B173/B005 resource
+  invariant, not a Python helper oracle case.
+
+
+  Write standalone Rust test bedrock_http_stream_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test bedrock_http_stream_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B600. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-bedrock/src/bedrock_http_stream.rs with adjacent tests under bedrock_http_stream/.
@@ -24,10 +65,9 @@ description: >-
 
 
   Write rstest function bedrock_http_stream_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): invoke_stream_url, http_error_before_frame, converse_stream_headers, cancel_body. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  file): invoke_stream_url, http_error_before_frame, converse_stream_headers, fake_stream_projection, post_call_before_consumption.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream* using HelperCase: kind:
@@ -43,9 +83,9 @@ description: >-
 
 
   Budget from 216 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 81 behavior/config-test lines,
-  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 432 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 225 production lines, 255 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -68,99 +108,159 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L185-L360
   why: Own make_call, make_sync_call. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'invoke stream url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/invoke-stream-url.yaml.'
+- text: 'invoke_stream_url: POST supplied api_base unchanged with supplied headers and data, stream=not fake_stream.
+    Sync Invoke uses signed_json_body whenever non-None including empty bytes, otherwise data; async uses data only.
+    No URL/model path or retries added here. Default Invoke clients copy ssl_verify from logging_obj.litellm_params
+    only when truthy; explicitFalse/empty is omitted, so default TLS policy applies. A supplied client bypasses
+    this client-construction policy.'
   proof:
   - case-invoke-stream-url
   - oracle
   - helper-python
-- text: >-
-    http error before frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/http-error-before-frame.yaml.
+- text: 'http_error_before_frame: All helpers require status exactly200 (201/204 also fail). Invoke sync/async status
+    failures ->B682 BedrockError with original status, headers, response and error_response_text (unread body ->reason_phrase,
+    no read). Existing BedrockError rethrows; HTTPStatusError maps its response likewise; TimeoutException ->408
+    Timeout error occurred.; any other opening/conversion/logging exception ->500 str(error). Errors raised later
+    by returned iterator are outside this catch.'
   proof:
   - case-http-error-before-frame
   - oracle
   - helper-python
-- text: >-
-    converse stream headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/converse-stream-headers.yaml.
+- text: 'converse_stream_headers: Sync Converse uses default _get_httpx_client without SSL kwargs. Non200 explicitly
+    response.read then str(bytes) as error message, retaining bytes-repr escapes, original status/headers/response;
+    no Invoke generic/timeout catch applies here. Nonfake path constructs B608 base decoder with model/json_mode
+    and B609 iter_bytes over response.iter_bytes(chunk_size=stream_chunk_size), forwarding response headers to tally
+    and returning them unchanged.'
   proof:
   - case-converse-stream-headers
-  - oracle
-  - helper-python
-- text: 'cancel body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/cancel-body.yaml.'
-  proof:
-  - case-cancel-body
   - oracle
   - helper-python
 - text: New bedrock_http_stream seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
   - helper-case-corpus
+- text: 'fake_stream_projection: For every helper fake_stream truthy sends stream=false, then B607 _transform_response
+    with fresh ModelResponse, stream=true, optional_params={}, api_key empty, originaldata/messages and globalencoding.
+    json_mode is not passed to this buffered converter; it is supplied only to B609 MockResponseIterator afterwards.
+    This can differ from ordinary buffered conversion and its synthetic-tool finish override. Nonfake Invoke selects
+    B609 _stream_decoder with sync flag and provider.'
+  proof:
+  - case-fake-stream-projection
+  - oracle
+  - helper-python
+- text: 'post_call_before_consumption: After opening and constructing iterator, log B249 post_call with input=messages,api_key
+    empty, original_response literal first stream response received, complete_input_dict=data. Log occurs before
+    the consumer reads a first frame, including empty/invalid streams. Fake conversion may already log its buffered
+    response first; preserve both calls. Return iterator and original response headers.'
+  proof:
+  - case-post-call-before-consumption
+  - oracle
+  - helper-python
+- text: Opened stream owns and releases body/client on EOF, cancellation and error with no retry.
+  proof:
+  - body-lifetime
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-invoke-stream-url
-    why: The invoke-stream-url behavior is missing or differs from its pinned fixture.
+    why: POST supplied api_base unchanged with supplied headers and data, stream=not fake_stream. Sync Invoke uses
+      signed_json_body whenever non-None including empty bytes, otherwise data; async uses data only. No URL/model
+      path or retries added here. Default Invoke clients copy ssl_verify from logging_obj.litellm_params only when
+      truthy; explicitFalse/empty is omitted, so default TLS policy applies. A supplied client bypasses this client-construction
+      policy.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_invoke_stream_url$/)'
   - id: case-http-error-before-frame
-    why: The http-error-before-frame behavior is missing or differs from its pinned fixture.
+    why: All helpers require status exactly200 (201/204 also fail). Invoke sync/async status failures ->B682 BedrockError
+      with original status, headers, response and error_response_text (unread body ->reason_phrase, no read). Existing
+      BedrockError rethrows; HTTPStatusError maps its response likewise; TimeoutException ->408 Timeout error occurred.;
+      any other opening/conversion/logging exception ->500 str(error). Errors raised later by returned iterator
+      are outside this catch.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_http_error_before_frame$/)'
   - id: case-converse-stream-headers
-    why: The converse-stream-headers behavior is missing or differs from its pinned fixture.
+    why: Sync Converse uses default _get_httpx_client without SSL kwargs. Non200 explicitly response.read then str(bytes)
+      as error message, retaining bytes-repr escapes, original status/headers/response; no Invoke generic/timeout
+      catch applies here. Nonfake path constructs B608 base decoder with model/json_mode and B609 iter_bytes over
+      response.iter_bytes(chunk_size=stream_chunk_size), forwarding response headers to tally and returning them
+      unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_converse_stream_headers$/)'
-  - id: case-cancel-body
-    why: The cancel-body behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_cancel_body$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_http_stream.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_http_stream.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream*")"
       && grep -lq 'bedrock_http_stream' tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_http_stream$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-fake-stream-projection
+    why: For every helper fake_stream truthy sends stream=false, then B607 _transform_response with fresh ModelResponse,
+      stream=true, optional_params={}, api_key empty, originaldata/messages and globalencoding. json_mode is not
+      passed to this buffered converter; it is supplied only to B609 MockResponseIterator afterwards. This can differ
+      from ordinary buffered conversion and its synthetic-tool finish override. Nonfake Invoke selects B609 _stream_decoder
+      with sync flag and provider.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_fake_stream_projection$/)'
+  - id: case-post-call-before-consumption
+    why: After opening and constructing iterator, log B249 post_call with input=messages,api_key empty, original_response
+      literal first stream response received, complete_input_dict=data. Log occurs before the consumer reads a first
+      frame, including empty/invalid streams. Fake conversion may already log its buffered response first; preserve
+      both calls. Return iterator and original response headers.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_post_call_before_consumption$/)'
+  - id: body-lifetime
+    why: Stream ownership lacks a native cancellation/error assertion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_body_lifetime$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-http-stream/invoke-stream-url.yaml
 - tools/oracle/cases/helpers/providers/bedrock-http-stream/http-error-before-frame.yaml
 - tools/oracle/cases/helpers/providers/bedrock-http-stream/converse-stream-headers.yaml
-- tools/oracle/cases/helpers/providers/bedrock-http-stream/cancel-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/fake-stream-projection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/post-call-before-consumption.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
-  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
-  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
-  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
-  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
-  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
-  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
-  belong to B608; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
-  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
-  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
-  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
-  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
-  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+- 'litellm/llms/bedrock/chat/__init__.py: get_bedrock_event_stream_decoder L9-L25 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_handler.py: BedrockConverseLLM.__init__ L89-L90;
+  BedrockConverseLLM.async_streaming L92-L163; BedrockConverseLLM.async_completion L165-L262; BedrockConverseLLM.completion
+  L264-L504 belong to B610.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _response_header L363-L364; _EventStreamTally.__init__
   L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
-  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
-  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_handler.py: BedrockConverseLLM.__init__ L89-L90; BedrockConverseLLM.async_streaming
-  L92-L163; BedrockConverseLLM.async_completion L165-L262; BedrockConverseLLM.completion L264-L504 belong to B610;
-  reuse that implementation or its injected typed boundary.
+  L383-L403; AWSEventStreamDecoder._parse_message_from_event L788-L813 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418;
+  AWSEventStreamDecoder.check_empty_tool_call_args L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str
+  L442-L447; AWSEventStreamDecoder.translate_thinking_blocks L449-L472; AWSEventStreamDecoder._initialize_converse_response_id
+  L474-L483; AWSEventStreamDecoder._handle_converse_start_event L485-L528; AWSEventStreamDecoder._handle_converse_delta_event
+  L530-L585; AWSEventStreamDecoder._handle_converse_stop_event L587-L609; AWSEventStreamDecoder.converse_chunk_parser
+  L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743 belong to B608.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; AWSEventStreamDecoder.iter_bytes
+  L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833;
+  AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853;
+  AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871;
+  AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__
+  L884-L885; MockResponseIterator._handle_json_mode_chunk L887-L913; MockResponseIterator._chunk_parser L915-L953;
+  MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__ L962-L963; MockResponseIterator.__anext__
+  L965-L969 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110;
+  AmazonCohereChatConfig.get_config L112-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611.'
 pitfalls:
-- Streaming HTTP ownership remains with the returned stream until close or cancellation.
+- The post-call message says first stream response received before any event is consumed; do not delay it until
+  the first parsed chunk.
+- Sync Converse reads an error body and uses bytes repr, while Invoke uses unread-response reason_phrase without
+  reading.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 625
   max_new_expects: 0
-review_level: standard
+review_level: security

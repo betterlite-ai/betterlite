@@ -2,7 +2,7 @@ id: B593
 title: AWS web identity and IRSA role chains
 description: >-
   Add WebIdentityCredentials and IRSA same-account/cross-account flow using configured token sources and the existing
-  STS adapter. Treat the unverified JWT audience only as the pinned routing hint, never as authentication verification.
+  STS adapter. Treat the unverified JWT audience only as the pinned diagnostic hint, never as authentication verification.
   Preserve scoped web-identity session policy, target role identity and failure propagation; reads are from operator-chosen
   local token files or secret-manager values.
 
@@ -10,6 +10,45 @@ description: >-
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/base_aws_llm.py:
   BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token L991-L1088; BaseAWSLLM._handle_irsa_cross_account
   L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191.
+
+
+  Named case contracts: jwt_audience_hint: Require exactly3 dot segments; decode only the middle base64url segment
+  with padding to multiple4, parse _WebIdentityTokenClaims aud as optional string/list[str] and iss optionalstring.
+  Unknown claims ignored. Return None if both absent/None, else exact aud=<Python repr>, iss=<Python repr>; empty
+  aud/iss still reported. No signature/header validation and no role/region routing follows these claims. web_identity_assume_role:
+  Reject input beginning os.environ/ or exactly matching any environment variable name before get_secret with AwsAuthError400
+  Invalid web identity token reference. Resolved B129 get_secret None ->401 OIDC token could not be retrieved from
+  secret manager.; empty token is forwarded. STS kwargs from B591; call AssumeRoleWithWebIdentity with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600,
+  compact JSON B590 Policy, optional ExternalId whenever non-None including empty. No session tags forwarded in
+  this flow. secure_transport_session_policy: Replay B590 web_identity_policy exact four Sid/action lists, Version2012-10-17,
+  Resource*, Allow and aws:SecureTransport="true" at the STS call seam; serialize compact separators. This source
+  policy is a permission ceiling, not a suggested list. same_account_irsa: No explicit local file read or credential
+  injection: use default STS client with B591 kwargs, optional debug GetCallerIdentity failure ignored, then AssumeRole
+  with B590 RoleArn/RoleSessionName/ExternalId/Tags. Session name is supplied, not generated in this helper. cross_account_irsa:
+  Read only operator-selected local AWS_WEB_IDENTITY_TOKEN_FILE, strip whitespace, create first STS client with
+  B591 endpoint/TLS/region, assume IRSA RoleArn and caller session name with WebIdentityToken only (no DurationSeconds,Policy,ExternalId,Tags).
+  Create second client with returned AccessKeyId/SecretAccessKey/SessionToken plus same kwargs. GetCallerIdentity
+  is debug-only; failure logs Failed to get caller identity: <error> and continues. Then AssumeRole target with
+  B590 external-id/tags presence policy and return raw response. malformed_token: Wrong segment count, base64/JSON
+  errors or invalid aud/iss types return None; do not turn diagnostic parsing failure into a second authentication
+  failure. Fuzz decode_web_identity_claims using the full untrusted token bytes through split, base64url and JSON
+  parsing, rather than a test-only intermediate payload parser. sts_credentials_missing: Missing Credentials/required
+  fields/PackedPolicySize, local read errors and SDK Session construction failures propagate; no ambient fallback
+  in any owned helper. B594 alone decides whether a rejected AssumeRole may fall back. invalid_identity_token_error:
+  Only SDK InvalidIdentityTokenException maps to AwsAuthError401 AWS STS rejected the web identity token: <exception>.<optional
+  detail>, where detail is a leading space followed by Token aud=<repr>, iss=<repr> only when the input is string
+  with reportable claims. Preserve original exception cause. Other STS exceptions propagate unchanged; no fabricated
+  param/code. packed_policy_warning_and_ttl: Read mandatory Credentials fields and mandatory PackedPolicySize. Warn
+  The policy size is greater than 75% of the allowed size, PackedPolicySize: <value> only when value > integer BEDROCK_MAX_POLICY_SIZE
+  env default75; equality does not warn and literal75% stays unchanged if threshold configured. SDK Session uses
+  access/secret/token and region_name; get_credentials result returns with B5903540-second TTL regardless of response
+  Expiration.
+
+
+  Load BEDROCK_MAX_POLICY_SIZE through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest bedrock_web_identity_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
 
 
   Implement crates/betterlite-bedrock/src/web_identity.rs with adjacent tests under web_identity/. Keep each Rust
@@ -27,9 +66,9 @@ description: >-
 
   Write rstest function web_identity_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   jwt_audience_hint, web_identity_assume_role, secure_transport_session_policy, same_account_irsa, cross_account_irsa,
-  malformed_token, sts_credentials_missing. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  malformed_token, sts_credentials_missing, invalid_identity_token_error, packed_policy_warning_and_ttl. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API
+  tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_web_identity* using HelperCase: kind:
@@ -40,8 +79,9 @@ description: >-
 
 
   Outside-byte boundary: decode_web_identity_claims consumes base64url JWT payload bytes used solely for audience
-  routing in crates/betterlite-bedrock/src/web_identity.rs (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_web_identity.rs
-  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity.
+  diagnostics in crates/betterlite-bedrock/src/web_identity.rs (or its scoped child module). Add cargo-fuzz target
+  crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_web_identity.rs calling that exact production function, with
+  new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity.
   The adjacent test replays_the_bedrock_web_identity_corpus uses the same function and asserts expected success/failure
   categories; never introduce a parser solely for fuzzing.
 
@@ -61,9 +101,9 @@ description: >-
 
 
   Budget from 167 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 195 production lines, 138 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 496 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 260 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 60 parser target/replay lines, 35 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 735 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,47 +122,76 @@ scope:
   - crates/betterlite-bedrock/fuzz/Cargo.toml
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_web_identity.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_web_identity.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_web_identity/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_web_identity_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_web_identity*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L972-L1191
-  why: >-
-    Own BaseAWSLLM._unverified_web_identity_audience, BaseAWSLLM._auth_with_web_identity_token, BaseAWSLLM._handle_irsa_cross_account,
+  why: Own BaseAWSLLM._unverified_web_identity_audience, BaseAWSLLM._auth_with_web_identity_token, BaseAWSLLM._handle_irsa_cross_account,
     BaseAWSLLM._handle_irsa_same_account. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'jwt audience hint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/jwt-audience-hint.yaml.'
+- text: 'jwt_audience_hint: Require exactly3 dot segments; decode only the middle base64url segment with padding
+    to multiple4, parse _WebIdentityTokenClaims aud as optional string/list[str] and iss optionalstring. Unknown
+    claims ignored. Return None if both absent/None, else exact aud=<Python repr>, iss=<Python repr>; empty aud/iss
+    still reported. No signature/header validation and no role/region routing follows these claims.'
   proof:
   - case-jwt-audience-hint
   - oracle
   - helper-python
-- text: >-
-    web identity assume role: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/web-identity-assume-role.yaml.
+- text: 'web_identity_assume_role: Reject input beginning os.environ/ or exactly matching any environment variable
+    name before get_secret with AwsAuthError400 Invalid web identity token reference. Resolved B129 get_secret None
+    ->401 OIDC token could not be retrieved from secret manager.; empty token is forwarded. STS kwargs from B591;
+    call AssumeRoleWithWebIdentity with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600, compact JSON
+    B590 Policy, optional ExternalId whenever non-None including empty. No session tags forwarded in this flow.'
   proof:
   - case-web-identity-assume-role
   - oracle
   - helper-python
-- text: >-
-    secure transport session policy: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/secure-transport-session-policy.yaml.
+- text: 'secure_transport_session_policy: Replay B590 web_identity_policy exact four Sid/action lists, Version2012-10-17,
+    Resource*, Allow and aws:SecureTransport="true" at the STS call seam; serialize compact separators. This source
+    policy is a permission ceiling, not a suggested list.'
   proof:
   - case-secure-transport-session-policy
   - oracle
   - helper-python
-- text: 'same account irsa: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/same-account-irsa.yaml.'
+- text: 'same_account_irsa: No explicit local file read or credential injection: use default STS client with B591
+    kwargs, optional debug GetCallerIdentity failure ignored, then AssumeRole with B590 RoleArn/RoleSessionName/ExternalId/Tags.
+    Session name is supplied, not generated in this helper.'
   proof:
   - case-same-account-irsa
   - oracle
   - helper-python
-- text: 'cross account irsa: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/cross-account-irsa.yaml.'
+- text: 'cross_account_irsa: Read only operator-selected local AWS_WEB_IDENTITY_TOKEN_FILE, strip whitespace, create
+    first STS client with B591 endpoint/TLS/region, assume IRSA RoleArn and caller session name with WebIdentityToken
+    only (no DurationSeconds,Policy,ExternalId,Tags). Create second client with returned AccessKeyId/SecretAccessKey/SessionToken
+    plus same kwargs. GetCallerIdentity is debug-only; failure logs Failed to get caller identity: <error> and continues.
+    Then AssumeRole target with B590 external-id/tags presence policy and return raw response.'
   proof:
   - case-cross-account-irsa
   - oracle
   - helper-python
-- text: 'malformed token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/malformed-token.yaml.'
+- text: 'malformed_token: Wrong segment count, base64/JSON errors or invalid aud/iss types return None; do not turn
+    diagnostic parsing failure into a second authentication failure. Fuzz decode_web_identity_claims using the full
+    untrusted token bytes through split, base64url and JSON parsing, rather than a test-only intermediate payload
+    parser.'
   proof:
   - case-malformed-token
   - oracle
   - helper-python
-- text: >-
-    sts credentials missing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-web-identity/sts-credentials-missing.yaml.
+- text: 'sts_credentials_missing: Missing Credentials/required fields/PackedPolicySize, local read errors and SDK
+    Session construction failures propagate; no ambient fallback in any owned helper. B594 alone decides whether
+    a rejected AssumeRole may fall back.'
   proof:
   - case-sts-credentials-missing
   - oracle
@@ -141,48 +210,84 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'invalid_identity_token_error: Only SDK InvalidIdentityTokenException maps to AwsAuthError401 AWS STS rejected
+    the web identity token: <exception>.<optional detail>, where detail is a leading space followed by Token aud=<repr>,
+    iss=<repr> only when the input is string with reportable claims. Preserve original exception cause. Other STS
+    exceptions propagate unchanged; no fabricated param/code.'
+  proof:
+  - case-invalid-identity-token-error
+  - oracle
+  - helper-python
+- text: 'packed_policy_warning_and_ttl: Read mandatory Credentials fields and mandatory PackedPolicySize. Warn The
+    policy size is greater than 75% of the allowed size, PackedPolicySize: <value> only when value > integer BEDROCK_MAX_POLICY_SIZE
+    env default75; equality does not warn and literal75% stays unchanged if threshold configured. SDK Session uses
+    access/secret/token and region_name; get_credentials result returns with B5903540-second TTL regardless of response
+    Expiration.'
+  proof:
+  - case-packed-policy-warning-and-ttl
+  - oracle
+  - helper-python
+- text: The real config loader resolves BEDROCK_MAX_POLICY_SIZE, including its default and precedence.
+  proof:
+  - config-bedrock-max-policy-size
 checks:
   optional:
   - mutants
   commands:
   - id: case-jwt-audience-hint
-    why: The jwt-audience-hint behavior is missing or differs from its pinned fixture.
+    why: Require exactly3 dot segments; decode only the middle base64url segment with padding to multiple4, parse
+      _WebIdentityTokenClaims aud as optional string/list[str] and iss optionalstring. Unknown claims ignored. Return
+      None if both absent/None, else exact aud=<Python repr>, iss=<Python repr>; empty aud/iss still reported. No
+      signature/header validation and no role/region routing follows these claims.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_jwt_audience_hint$/)'
   - id: case-web-identity-assume-role
-    why: The web-identity-assume-role behavior is missing or differs from its pinned fixture.
+    why: Reject input beginning os.environ/ or exactly matching any environment variable name before get_secret
+      with AwsAuthError400 Invalid web identity token reference. Resolved B129 get_secret None ->401 OIDC token
+      could not be retrieved from secret manager.; empty token is forwarded. STS kwargs from B591; call AssumeRoleWithWebIdentity
+      with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600, compact JSON B590 Policy, optional ExternalId
+      whenever non-None including empty. No session tags forwarded in this flow.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_web_identity_assume_role$/)'
   - id: case-secure-transport-session-policy
-    why: The secure-transport-session-policy behavior is missing or differs from its pinned fixture.
+    why: Replay B590 web_identity_policy exact four Sid/action lists, Version2012-10-17, Resource*, Allow and aws:SecureTransport="true"
+      at the STS call seam; serialize compact separators. This source policy is a permission ceiling, not a suggested
+      list.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_secure_transport_session_policy$/)'
   - id: case-same-account-irsa
-    why: The same-account-irsa behavior is missing or differs from its pinned fixture.
+    why: 'No explicit local file read or credential injection: use default STS client with B591 kwargs, optional
+      debug GetCallerIdentity failure ignored, then AssumeRole with B590 RoleArn/RoleSessionName/ExternalId/Tags.
+      Session name is supplied, not generated in this helper.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_same_account_irsa$/)'
   - id: case-cross-account-irsa
-    why: The cross-account-irsa behavior is missing or differs from its pinned fixture.
+    why: 'Read only operator-selected local AWS_WEB_IDENTITY_TOKEN_FILE, strip whitespace, create first STS client
+      with B591 endpoint/TLS/region, assume IRSA RoleArn and caller session name with WebIdentityToken only (no
+      DurationSeconds,Policy,ExternalId,Tags). Create second client with returned AccessKeyId/SecretAccessKey/SessionToken
+      plus same kwargs. GetCallerIdentity is debug-only; failure logs Failed to get caller identity: <error> and
+      continues. Then AssumeRole target with B590 external-id/tags presence policy and return raw response.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_cross_account_irsa$/)'
   - id: case-malformed-token
-    why: The malformed-token behavior is missing or differs from its pinned fixture.
+    why: Wrong segment count, base64/JSON errors or invalid aud/iss types return None; do not turn diagnostic parsing
+      failure into a second authentication failure. Fuzz decode_web_identity_claims using the full untrusted token
+      bytes through split, base64url and JSON parsing, rather than a test-only intermediate payload parser.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_malformed_token$/)'
   - id: case-sts-credentials-missing
-    why: The sts-credentials-missing behavior is missing or differs from its pinned fixture.
+    why: Missing Credentials/required fields/PackedPolicySize, local read errors and SDK Session construction failures
+      propagate; no ambient fallback in any owned helper. B594 alone decides whether a rejected AssumeRole may fall
+      back.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_sts_credentials_missing$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_web_identity.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_web_identity.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_web_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_web_identity*")"
       && grep -lq 'bedrock_web_identity' tools/oracle/fuzz/corpus/helper_case/bedrock_web_identity* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_web_identity$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_web_identity)"
       && grep -q 'decode_web_identity_claims' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_web_identity.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_web_identity_corpus$/)'
   - id: credential-identity-isolation
@@ -191,6 +296,21 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_web_identity_secret_safe_failure$/)'
+  - id: case-invalid-identity-token-error
+    why: 'Only SDK InvalidIdentityTokenException maps to AwsAuthError401 AWS STS rejected the web identity token:
+      <exception>.<optional detail>, where detail is a leading space followed by Token aud=<repr>, iss=<repr> only
+      when the input is string with reportable claims. Preserve original exception cause. Other STS exceptions propagate
+      unchanged; no fabricated param/code.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_invalid_identity_token_error$/)'
+  - id: case-packed-policy-warning-and-ttl
+    why: 'Read mandatory Credentials fields and mandatory PackedPolicySize. Warn The policy size is greater than
+      75% of the allowed size, PackedPolicySize: <value> only when value > integer BEDROCK_MAX_POLICY_SIZE env default75;
+      equality does not warn and literal75% stays unchanged if threshold configured. SDK Session uses access/secret/token
+      and region_name; get_credentials result returns with B5903540-second TTL regardless of response Expiration.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_packed_policy_warning_and_ttl$/)'
+  - id: config-bedrock-max-policy-size
+    why: BEDROCK_MAX_POLICY_SIZE lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_web_identity_config_cases::case_[0-9]+_loads_bedrock_max_policy_size$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-web-identity/jwt-audience-hint.yaml
 - tools/oracle/cases/helpers/providers/bedrock-web-identity/web-identity-assume-role.yaml
@@ -199,46 +319,49 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-web-identity/cross-account-irsa.yaml
 - tools/oracle/cases/helpers/providers/bedrock-web-identity/malformed-token.yaml
 - tools/oracle/cases/helpers/providers/bedrock-web-identity/sts-credentials-missing.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-web-identity/invalid-identity-token-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-web-identity/packed-policy-warning-and-ttl.yaml
+deviations:
+- what: Debug logs redact the web-identity token; callers do not see its raw value in logs.
+  why: The pinned _auth_with_web_identity_token debug statement prints the token; repository secret-handling rules
+    prohibit that disclosure. Public aud/iss diagnostics remain as above.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1006-L1011
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
-  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
-  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn L538-L560; BaseAWSLLM._get_provider_from_model_path
-  L563-L580; BaseAWSLLM.get_bedrock_invoke_provider L583-L616; BaseAWSLLM.get_bedrock_model_id L619-L667; BaseAWSLLM._get_model_id_from_model_with_spec
-  L670-L678; BaseAWSLLM.encode_model_id L681-L689; BaseAWSLLM.get_bedrock_embedding_provider L692-L730; BaseAWSLLM._get_aws_region_name
-  L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
-  BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
-  L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong
-  to B591; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role
-  L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214 belong to B592; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
-  L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
-  L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
-  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779 belong to B595; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params L81-L97; build_web_identity_session_policy
-  L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194; AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__
-  L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key L273-L279; BaseAWSLLM._get_or_set_cached_credentials
-  L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L314-L319; BaseAWSLLM._is_auth_with_aws_role L322-L323;
-  BaseAWSLLM._is_auth_with_aws_profile L326-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple L330-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key
-  L338-L343; BaseAWSLLM._auth_with_aws_profile L1393-L1402; BaseAWSLLM._auth_with_aws_session_token L1405-L1423;
-  BaseAWSLLM._auth_with_access_key_and_secret_key L1426-L1448; BaseAWSLLM._auth_with_env_vars L1451-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials
-  L1463-L1469 belong to B590; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params
+  L81-L97; build_web_identity_session_policy L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194;
+  AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__ L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key
+  L273-L279; BaseAWSLLM._get_or_set_cached_credentials L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L313-L319;
+  BaseAWSLLM._is_auth_with_aws_role L321-L323; BaseAWSLLM._is_auth_with_aws_profile L325-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple
+  L329-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key L337-L343; BaseAWSLLM._auth_with_aws_profile L1392-L1402;
+  BaseAWSLLM._auth_with_aws_session_token L1404-L1423; BaseAWSLLM._auth_with_access_key_and_secret_key L1425-L1448;
+  BaseAWSLLM._auth_with_env_vars L1450-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials L1462-L1469 belong
+  to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn
+  L538-L560; BaseAWSLLM._get_provider_from_model_path L562-L580; BaseAWSLLM.get_bedrock_invoke_provider L582-L616;
+  BaseAWSLLM.get_bedrock_model_id L618-L667; BaseAWSLLM._get_model_id_from_model_with_spec L669-L678; BaseAWSLLM.encode_model_id
+  L680-L689; BaseAWSLLM.get_bedrock_embedding_provider L691-L730; BaseAWSLLM._get_aws_region_name L732-L790; BaseAWSLLM._validate_aws_region_name
+  L792-L804; BaseAWSLLM._parse_sts_region_from_endpoint L806-L815; BaseAWSLLM._resolve_sts_region L817-L828; BaseAWSLLM._build_sts_client_kwargs
+  L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499;
+  BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong to B591.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name
+  L874-L910; BaseAWSLLM._is_already_running_as_role L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214
+  belong to B592.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L345-L510; BaseAWSLLM.resolve_credentials
+  L512-L525; BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1257-L1390 belong to B594.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1519-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params L1527-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1536-L1568; BaseAWSLLM.get_request_headers L1570-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655;
+  BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
+  L1770-L1779 belong to B595.'
 pitfalls:
-- Treat the unverified JWT audience only as the pinned routing hint, never as authentication verification.
+- The warning still says 75% when BEDROCK_MAX_POLICY_SIZE changes; the threshold and displayed literal are separate.
+- Direct web identity uses a3540-second TTL; only role-assumption helpers use returned Expiration.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

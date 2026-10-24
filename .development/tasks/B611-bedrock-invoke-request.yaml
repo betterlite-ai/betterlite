@@ -1,52 +1,57 @@
 id: B611
 title: Bedrock Invoke base request preparation
 description: >-
-  Port Invoke request selection and classic body shapes using an injected ClassicDefaults record from B613. Delegate
-  Claude to B618, Nova to B614, Pegasus to B617 and OpenAI to B619 through typed preparer inputs; the selector does
-  not rebuild those model transforms. Use /invoke-with-response-stream when stream=true except for AI21; there is
-  no stream Accept-header branch.
+  Compose Invoke requests from B2205 primitives and the actual family implementations in B613/B614/B617/B618/B619.
+  This task is above those implementations; do not replace direct calls with injected callbacks to hide a dependency
+  cycle. Preserve mutation order and the legacy Cohere command-r default record.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
-  _bedrock_invoke_guardrail_headers L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params
-  L82-L90; AmazonInvokeConfig.map_openai_params L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request
-  L146-L167; AmazonInvokeConfig._apply_config_to_params L169-L173; AmazonInvokeConfig.transform_request L175-L279;
-  AmazonInvokeConfig.validate_environment L421-L438; AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider
-  L537-L570; AmazonInvokeConfig._get_provider_from_model_path L573-L590; AmazonInvokeConfig.convert_messages_to_prompt
-  L592-L630. litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
-  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
-  L146-L166.
+  AmazonInvokeConfig.transform_request L175-L279. litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__
+  L90-L110; AmazonCohereChatConfig.get_config L113-L128.
 
 
-  The llama3/llama4 instruct branch calls the Hugging Face chat-template path in factory.py:5305-5309. Supply a
-  local template via custom_prompt_dict[model].roles/initial_prompt_value/final_prompt_value (B177) to bypass acquisition;
-  without it retain B177 default_pt fallback and its warning under the open decision, rather than inventing a download
-  failure.
+  Named case contracts: request_setup_order: Pop stream from optional_params, then pop custom_prompt_dict from litellm_params
+  and replace falsey values with {}. Read hf_model_name without removing it. Select provider from the original model,
+  but prompt conversion uses hf_model_name or model. Call B2205 prompt conversion before every family dispatch,
+  including Claude/Nova/OpenAI where its output is unused; its failure prevents dispatch. Copy remaining options
+  deeply and remove all twelve B590 aws_authentication_params from that copy only. classic_body_defaults: Apply
+  each B613 config only for absent inference keys; explicit None wins. AI21 and Mistral use {prompt,**inference_params};
+  meta,llama,deepseek_r1 use AmazonLlamaConfig with that shape. Caller prompt overrides generated prompt. Amazon
+  Titan uses {inputText:prompt,textGenerationConfig:inference_params}, so an inference inputText cannot override
+  the outer text. cohere_body_shapes: Only original model.startswith(cohere.command-r) selects AmazonCohereChatConfig.
+  Prefixes such as invoke/ or a region therefore change the branch even when the provider is cohere. Command-r emits
+  message plus inference parameters, then assigns chat_history whenever it is not None, including []; caller message
+  may override generated message, but generated history overrides caller history. Other Cohere models use B613 defaults
+  with prompt plus parameters and reinsert stream=True only when the popped stream is literally True. family_delegation:
+  Claude B618, Nova B614, Pegasus B617 and OpenAI B619 receive original model/messages/headers and the mutated original
+  options/litellm_params. They do not receive the filtered inference copy; authentication fields are still in original
+  options. The stream and custom_prompt_dict keys have already been removed. Capture each actual call and returned
+  body. unknown_provider: Unrecognized providers raise B682 BedrockError 404 with exact message Bedrock Invoke HTTPX:
+  Unknown provider={provider}, model={model}. Try calling via converse route - `bedrock/converse/<model>`. Python
+  None renders None. Recognized but unhandled qwen2,qwen3,stability,moonshot also take this error when the base
+  selector itself is used; their own configs are selected elsewhere. cohere_class_defaults: AmazonCohereChatConfig
+  settings documents,search_queries_only,preamble,max_tokens,temperature,p,k,prompt_truncation,frequency_penalty,presence_penalty,seed,return_prompt,stop_sequences,raw_prompting
+  start as None. A constructor writes only values other than None into persistent class defaults; explicit False,0,empty
+  string/list remain. get_config excludes dunder names, functions,builtins,classmethod,staticmethod and None, but
+  retains single-underscore values and property descriptors. Use a typed settings record with equivalent reuse across
+  later requests and reset fixture state between cases.
 
 
-  Define the injected defaults/preparer record at this lower boundary; B028 composes B613, B618, B614, B617 and
-  B619 into it after those parts finish, so this selector does not depend back on its subclasses.
+  Load custom_prompt_dict, hf_model_name, AmazonCohereChatConfig.documents, AmazonCohereChatConfig.search_queries_only,
+  AmazonCohereChatConfig.preamble, AmazonCohereChatConfig.max_tokens, AmazonCohereChatConfig.temperature, AmazonCohereChatConfig.p,
+  AmazonCohereChatConfig.k, AmazonCohereChatConfig.prompt_truncation, AmazonCohereChatConfig.frequency_penalty,
+  AmazonCohereChatConfig.presence_penalty, AmazonCohereChatConfig.seed, AmazonCohereChatConfig.return_prompt, AmazonCohereChatConfig.stop_sequences,
+  AmazonCohereChatConfig.raw_prompting through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest bedrock_invoke_request_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
 
 
-  llama-instruct-local-template compares the supplied custom_prompt_dict output; llama-instruct-missing-template
-  expects the current B177 default_pt output with no download, not a newly invented exception. The adapter supplies
-  the same unavailable-template result at the pinned template loader seam.
-
-
-  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
-  prerequisite.
-
-
-  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
-  that prerequisite.
-
-
-  Reuse bedrock_request_metadata_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation
-  remains with that prerequisite.
-
-
-  Reuse merge_bedrock_invoke_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation remains
-  with that prerequisite.
+  custom_prompt_dict defaults to no registered template and hf_model_name to None; both are deployment inputs. The
+  class-qualified keys above denote the existing LiteLLM configuration object fields, not a new upstream JSON envelope.
+  Request URL handling is delegated unchanged to the selected family; local prompt acquisition follows the B2205
+  deviation.
 
 
   Implement crates/betterlite-bedrock/src/invoke_request.rs with adjacent tests under invoke_request/. Keep each
@@ -63,11 +68,9 @@ description: >-
 
 
   Write rstest function invoke_request_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): invoke_model_url, guardrail_id_version_headers, stream_invoke_url_ai21_exclusion, provider_family_selection,
-  prompt_template_selection, model_spec_defaults, unknown_provider, llama_instruct_local_template, llama_instruct_missing_template.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): request_setup_order, classic_body_defaults, cohere_body_shapes, family_delegation, unknown_provider, cohere_class_defaults.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request* using HelperCase: kind:
@@ -82,10 +85,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 371 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 385 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 627 planned, 650 maximum changed lines.
+  Budget from 130 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 190 production lines, 240 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 95 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -101,187 +104,293 @@ scope:
   - tools/oracle/helpers/bedrock_invoke_request.py
   - tools/oracle/cases/helpers/providers/bedrock-invoke-request/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_invoke_request.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_invoke_request/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_invoke_request_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_invoke_request*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L279
-  why: >-
-    Own _bedrock_invoke_guardrail_headers, AmazonInvokeConfig.__init__, AmazonInvokeConfig.get_supported_openai_params,
-    AmazonInvokeConfig.map_openai_params, AmazonInvokeConfig.get_complete_url, AmazonInvokeConfig.sign_request,
-    AmazonInvokeConfig._apply_config_to_params, AmazonInvokeConfig.transform_request. Other functions in this file
-    remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L421-L441
-  why: Own AmazonInvokeConfig.validate_environment, AmazonInvokeConfig.get_error_class. Other functions in this
-    file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L537-L630
-  why: >-
-    Own AmazonInvokeConfig.get_bedrock_invoke_provider, AmazonInvokeConfig._get_provider_from_model_path, AmazonInvokeConfig.convert_messages_to_prompt.
-    Other functions in this file remain with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L90-L166
-  why: >-
-    Own AmazonCohereChatConfig.__init__, AmazonCohereChatConfig.get_config, AmazonCohereChatConfig.get_supported_openai_params,
-    AmazonCohereChatConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L175-L279
+  why: Own the complete request-family composition, including setup before dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L70-L128
+  why: Own the live Cohere class defaults and get_config, with declaration defaults.
 dod:
-- text: 'invoke model url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/invoke-model-url.yaml.'
-  proof:
-  - case-invoke-model-url
-  - oracle
-  - helper-python
-- text: >-
-    guardrail id version headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/guardrail-id-version-headers.yaml.
-  proof:
-  - case-guardrail-id-version-headers
-  - oracle
-  - helper-python
-- text: >-
-    stream invoke url ai21 exclusion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/stream-invoke-url-ai21-exclusion.yaml.
-  proof:
-  - case-stream-invoke-url-ai21-exclusion
-  - oracle
-  - helper-python
-- text: >-
-    provider family selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/provider-family-selection.yaml.
-  proof:
-  - case-provider-family-selection
-  - oracle
-  - helper-python
-- text: >-
-    prompt template selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/prompt-template-selection.yaml.
-  proof:
-  - case-prompt-template-selection
-  - oracle
-  - helper-python
-- text: 'model spec defaults: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/model-spec-defaults.yaml.'
-  proof:
-  - case-model-spec-defaults
-  - oracle
-  - helper-python
-- text: 'unknown provider: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/unknown-provider.yaml.'
-  proof:
-  - case-unknown-provider
-  - oracle
-  - helper-python
-- text: >-
-    llama instruct local template: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-local-template.yaml.
-  proof:
-  - case-llama-instruct-local-template
-  - oracle
-  - helper-python
-- text: >-
-    llama instruct missing template: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-missing-template.yaml.
-  proof:
-  - case-llama-instruct-missing-template
-  - oracle
-  - helper-python
 - text: New bedrock_invoke_request seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
   - helper-case-corpus
+- text: 'request_setup_order: Pop stream from optional_params, then pop custom_prompt_dict from litellm_params and
+    replace falsey values with {}. Read hf_model_name without removing it. Select provider from the original model,
+    but prompt conversion uses hf_model_name or model. Call B2205 prompt conversion before every family dispatch,
+    including Claude/Nova/OpenAI where its output is unused; its failure prevents dispatch. Copy remaining options
+    deeply and remove all twelve B590 aws_authentication_params from that copy only.'
+  proof:
+  - case-request-setup-order
+  - oracle
+  - helper-python
+- text: 'classic_body_defaults: Apply each B613 config only for absent inference keys; explicit None wins. AI21
+    and Mistral use {prompt,**inference_params}; meta,llama,deepseek_r1 use AmazonLlamaConfig with that shape. Caller
+    prompt overrides generated prompt. Amazon Titan uses {inputText:prompt,textGenerationConfig:inference_params},
+    so an inference inputText cannot override the outer text.'
+  proof:
+  - case-classic-body-defaults
+  - oracle
+  - helper-python
+- text: 'cohere_body_shapes: Only original model.startswith(cohere.command-r) selects AmazonCohereChatConfig. Prefixes
+    such as invoke/ or a region therefore change the branch even when the provider is cohere. Command-r emits message
+    plus inference parameters, then assigns chat_history whenever it is not None, including []; caller message may
+    override generated message, but generated history overrides caller history. Other Cohere models use B613 defaults
+    with prompt plus parameters and reinsert stream=True only when the popped stream is literally True.'
+  proof:
+  - case-cohere-body-shapes
+  - oracle
+  - helper-python
+- text: 'family_delegation: Claude B618, Nova B614, Pegasus B617 and OpenAI B619 receive original model/messages/headers
+    and the mutated original options/litellm_params. They do not receive the filtered inference copy; authentication
+    fields are still in original options. The stream and custom_prompt_dict keys have already been removed. Capture
+    each actual call and returned body.'
+  proof:
+  - case-family-delegation
+  - oracle
+  - helper-python
+- text: 'unknown_provider: Unrecognized providers raise B682 BedrockError 404 with exact message Bedrock Invoke
+    HTTPX: Unknown provider={provider}, model={model}. Try calling via converse route - `bedrock/converse/<model>`.
+    Python None renders None. Recognized but unhandled qwen2,qwen3,stability,moonshot also take this error when
+    the base selector itself is used; their own configs are selected elsewhere.'
+  proof:
+  - case-unknown-provider
+  - oracle
+  - helper-python
+- text: 'cohere_class_defaults: AmazonCohereChatConfig settings documents,search_queries_only,preamble,max_tokens,temperature,p,k,prompt_truncation,frequency_penalty,presence_penalty,seed,return_prompt,stop_sequences,raw_prompting
+    start as None. A constructor writes only values other than None into persistent class defaults; explicit False,0,empty
+    string/list remain. get_config excludes dunder names, functions,builtins,classmethod,staticmethod and None,
+    but retains single-underscore values and property descriptors. Use a typed settings record with equivalent reuse
+    across later requests and reset fixture state between cases.'
+  proof:
+  - case-cohere-class-defaults
+  - oracle
+  - helper-python
+- text: The real config loader resolves custom_prompt_dict, including its default and precedence.
+  proof:
+  - config-custom-prompt-dict
+- text: The real config loader resolves hf_model_name, including its default and precedence.
+  proof:
+  - config-hf-model-name
+- text: The real config loader resolves AmazonCohereChatConfig.documents, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-documents
+- text: The real config loader resolves AmazonCohereChatConfig.search_queries_only, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-search-queries-only
+- text: The real config loader resolves AmazonCohereChatConfig.preamble, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-preamble
+- text: The real config loader resolves AmazonCohereChatConfig.max_tokens, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-max-tokens
+- text: The real config loader resolves AmazonCohereChatConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-temperature
+- text: The real config loader resolves AmazonCohereChatConfig.p, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-p
+- text: The real config loader resolves AmazonCohereChatConfig.k, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-k
+- text: The real config loader resolves AmazonCohereChatConfig.prompt_truncation, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-prompt-truncation
+- text: The real config loader resolves AmazonCohereChatConfig.frequency_penalty, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-frequency-penalty
+- text: The real config loader resolves AmazonCohereChatConfig.presence_penalty, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-presence-penalty
+- text: The real config loader resolves AmazonCohereChatConfig.seed, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-seed
+- text: The real config loader resolves AmazonCohereChatConfig.return_prompt, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-return-prompt
+- text: The real config loader resolves AmazonCohereChatConfig.stop_sequences, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-stop-sequences
+- text: The real config loader resolves AmazonCohereChatConfig.raw_prompting, including its default and precedence.
+  proof:
+  - config-amazoncoherechatconfig-raw-prompting
 checks:
   optional:
   - mutants
   commands:
-  - id: case-invoke-model-url
-    why: The invoke-model-url behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_invoke_model_url$/)'
-  - id: case-guardrail-id-version-headers
-    why: The guardrail-id-version-headers behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_guardrail_id_version_headers$/)'
-  - id: case-stream-invoke-url-ai21-exclusion
-    why: The stream-invoke-url-ai21-exclusion behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_stream_invoke_url_ai21_exclusion$/)'
-  - id: case-provider-family-selection
-    why: The provider-family-selection behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_provider_family_selection$/)'
-  - id: case-prompt-template-selection
-    why: The prompt-template-selection behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_prompt_template_selection$/)'
-  - id: case-model-spec-defaults
-    why: The model-spec-defaults behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_model_spec_defaults$/)'
-  - id: case-unknown-provider
-    why: The unknown-provider behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_unknown_provider$/)'
-  - id: case-llama-instruct-local-template
-    why: The llama-instruct-local-template behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_llama_instruct_local_template$/)'
-  - id: case-llama-instruct-missing-template
-    why: The llama-instruct-missing-template behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_llama_instruct_missing_template$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_request.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_request.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*")"
       && grep -lq 'bedrock_invoke_request' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_request$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-request-setup-order
+    why: Pop stream from optional_params, then pop custom_prompt_dict from litellm_params and replace falsey values
+      with {}. Read hf_model_name without removing it. Select provider from the original model, but prompt conversion
+      uses hf_model_name or model. Call B2205 prompt conversion before every family dispatch, including Claude/Nova/OpenAI
+      where its output is unused; its failure prevents dispatch. Copy remaining options deeply and remove all twelve
+      B590 aws_authentication_params from that copy only.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_request_setup_order$/)'
+  - id: case-classic-body-defaults
+    why: Apply each B613 config only for absent inference keys; explicit None wins. AI21 and Mistral use {prompt,**inference_params};
+      meta,llama,deepseek_r1 use AmazonLlamaConfig with that shape. Caller prompt overrides generated prompt. Amazon
+      Titan uses {inputText:prompt,textGenerationConfig:inference_params}, so an inference inputText cannot override
+      the outer text.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_classic_body_defaults$/)'
+  - id: case-cohere-body-shapes
+    why: Only original model.startswith(cohere.command-r) selects AmazonCohereChatConfig. Prefixes such as invoke/
+      or a region therefore change the branch even when the provider is cohere. Command-r emits message plus inference
+      parameters, then assigns chat_history whenever it is not None, including []; caller message may override generated
+      message, but generated history overrides caller history. Other Cohere models use B613 defaults with prompt
+      plus parameters and reinsert stream=True only when the popped stream is literally True.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_cohere_body_shapes$/)'
+  - id: case-family-delegation
+    why: Claude B618, Nova B614, Pegasus B617 and OpenAI B619 receive original model/messages/headers and the mutated
+      original options/litellm_params. They do not receive the filtered inference copy; authentication fields are
+      still in original options. The stream and custom_prompt_dict keys have already been removed. Capture each
+      actual call and returned body.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_family_delegation$/)'
+  - id: case-unknown-provider
+    why: 'Unrecognized providers raise B682 BedrockError 404 with exact message Bedrock Invoke HTTPX: Unknown provider={provider},
+      model={model}. Try calling via converse route - `bedrock/converse/<model>`. Python None renders None. Recognized
+      but unhandled qwen2,qwen3,stability,moonshot also take this error when the base selector itself is used; their
+      own configs are selected elsewhere.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_unknown_provider$/)'
+  - id: case-cohere-class-defaults
+    why: AmazonCohereChatConfig settings documents,search_queries_only,preamble,max_tokens,temperature,p,k,prompt_truncation,frequency_penalty,presence_penalty,seed,return_prompt,stop_sequences,raw_prompting
+      start as None. A constructor writes only values other than None into persistent class defaults; explicit False,0,empty
+      string/list remain. get_config excludes dunder names, functions,builtins,classmethod,staticmethod and None,
+      but retains single-underscore values and property descriptors. Use a typed settings record with equivalent
+      reuse across later requests and reset fixture state between cases.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_cohere_class_defaults$/)'
+  - id: config-custom-prompt-dict
+    why: custom_prompt_dict lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_custom_prompt_dict$/)'
+  - id: config-hf-model-name
+    why: hf_model_name lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_hf_model_name$/)'
+  - id: config-amazoncoherechatconfig-documents
+    why: AmazonCohereChatConfig.documents lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_documents$/)'
+  - id: config-amazoncoherechatconfig-search-queries-only
+    why: AmazonCohereChatConfig.search_queries_only lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_search_queries_only$/)'
+  - id: config-amazoncoherechatconfig-preamble
+    why: AmazonCohereChatConfig.preamble lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_preamble$/)'
+  - id: config-amazoncoherechatconfig-max-tokens
+    why: AmazonCohereChatConfig.max_tokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_max_tokens$/)'
+  - id: config-amazoncoherechatconfig-temperature
+    why: AmazonCohereChatConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_temperature$/)'
+  - id: config-amazoncoherechatconfig-p
+    why: AmazonCohereChatConfig.p lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_p$/)'
+  - id: config-amazoncoherechatconfig-k
+    why: AmazonCohereChatConfig.k lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_k$/)'
+  - id: config-amazoncoherechatconfig-prompt-truncation
+    why: AmazonCohereChatConfig.prompt_truncation lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_prompt_truncation$/)'
+  - id: config-amazoncoherechatconfig-frequency-penalty
+    why: AmazonCohereChatConfig.frequency_penalty lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_frequency_penalty$/)'
+  - id: config-amazoncoherechatconfig-presence-penalty
+    why: AmazonCohereChatConfig.presence_penalty lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_presence_penalty$/)'
+  - id: config-amazoncoherechatconfig-seed
+    why: AmazonCohereChatConfig.seed lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_seed$/)'
+  - id: config-amazoncoherechatconfig-return-prompt
+    why: AmazonCohereChatConfig.return_prompt lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_return_prompt$/)'
+  - id: config-amazoncoherechatconfig-stop-sequences
+    why: AmazonCohereChatConfig.stop_sequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_stop_sequences$/)'
+  - id: config-amazoncoherechatconfig-raw-prompting
+    why: AmazonCohereChatConfig.raw_prompting lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_invoke_request_config_cases::case_[0-9]+_loads_amazoncoherechatconfig_raw_prompting$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/invoke-model-url.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/guardrail-id-version-headers.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/stream-invoke-url-ai21-exclusion.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/provider-family-selection.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/prompt-template-selection.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/model-spec-defaults.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/request-setup-order.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/classic-body-defaults.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/cohere-body-shapes.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/family-delegation.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-request/unknown-provider.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-local-template.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-missing-template.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/cohere-class-defaults.yaml
 deviations:
-- what: >-
-    Open, waiting for Max: require local Hugging Face template/tokenizer files (current behavior), or permit remote
-    template/tokenizer downloads. This task takes custom_prompt_dict local templates and uses B177 default_pt when
-    no local template is configured.
-  why: The download product decision is open. Build no hub downloader, runtime cache population or feature depending
-    on remote assets.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L279
+- what: Bedrock Hugging Face templates use local files or custom_prompt_dict only. Missing instruct assets fail
+    with No chat template found before family dispatch; there is no remote acquisition.
+  why: Max still needs to decide whether Hugging Face downloads are supported. B2205 owns this behavior and its
+    no-download proof.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5266-L5309
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: concrete classic defaults belong
+- 'litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: concrete classic defaults belong
   to B613, Claude preparation to B618, Nova to B614, Pegasus to B617 and OpenAI to B619; this task owns only their
-  selector and accepts their injected outputs.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
-  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
-  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
-  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
-  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
-  belong to B608; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
-  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
-  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
-  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
-  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
-  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+  selector and accepts their injected outputs.'
+- 'litellm/llms/bedrock/chat/__init__.py: get_bedrock_event_stream_decoder L9-L25 belong to B609.'
+- 'litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.get_supported_openai_params L130-L144 and
+  map_openai_params L146-L166 have no caller at the pin. The only live instance call is get_config in base_invoke_transformation.py
+  L202; common_utils.py L1620 selects AmazonCohereConfig instead. Do not build the unused mapper or its unconditional
+  seed assignment.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _response_header L363-L364; _EventStreamTally.__init__
   L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
-  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
-  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: AmazonInvokeConfig.transform_response
-  L281-L419; AmazonInvokeConfig.get_async_custom_stream_wrapper L444-L480; AmazonInvokeConfig.get_sync_custom_stream_wrapper
-  L483-L523; AmazonInvokeConfig.has_custom_stream_wrapper L526-L527; AmazonInvokeConfig.supports_stream_param_in_request_body
-  L530-L534 belong to B612; reuse that implementation or its injected typed boundary.
+  L383-L403; AWSEventStreamDecoder._parse_message_from_event L788-L813 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418;
+  AWSEventStreamDecoder.check_empty_tool_call_args L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str
+  L442-L447; AWSEventStreamDecoder.translate_thinking_blocks L449-L472; AWSEventStreamDecoder._initialize_converse_response_id
+  L474-L483; AWSEventStreamDecoder._handle_converse_start_event L485-L528; AWSEventStreamDecoder._handle_converse_delta_event
+  L530-L585; AWSEventStreamDecoder._handle_converse_stop_event L587-L609; AWSEventStreamDecoder.converse_chunk_parser
+  L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743 belong to B608.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; AWSEventStreamDecoder.iter_bytes
+  L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833;
+  AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853;
+  AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871;
+  AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__
+  L884-L885; MockResponseIterator._handle_json_mode_chunk L887-L913; MockResponseIterator._chunk_parser L915-L953;
+  MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__ L962-L963; MockResponseIterator.__anext__
+  L965-L969 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
+  L274-L360 belong to B691.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  _bedrock_invoke_guardrail_headers L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params
+  L82-L90; AmazonInvokeConfig.map_openai_params L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request
+  L146-L167; AmazonInvokeConfig._apply_config_to_params L169-L173; AmazonInvokeConfig.validate_environment L421-L438;
+  AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider L536-L570; AmazonInvokeConfig._get_provider_from_model_path
+  L572-L590; AmazonInvokeConfig.convert_messages_to_prompt L592-L630 belong to B2205.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.get_async_custom_stream_wrapper L443-L480; AmazonInvokeConfig.get_sync_custom_stream_wrapper
+  L482-L523; AmazonInvokeConfig.has_custom_stream_wrapper L525-L527; AmazonInvokeConfig.supports_stream_param_in_request_body
+  L529-L534 belong to B2206.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
-- AI21 keeps the non-stream Invoke URL even when stream is requested; no special Accept header is emitted.
+- A region prefix changes the command-r body shape because its test uses the original model string.
+- The unused AmazonCohereChatConfig mapper contains an unconditional seed assignment; the active Cohere mapper is
+  the separate B037 implementation.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

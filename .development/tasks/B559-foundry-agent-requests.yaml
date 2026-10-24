@@ -20,6 +20,39 @@ description: >-
   L151-L153; AzureAIAgentsHandler._prepare_completion_params L258-L289; AzureAIAgentsHandler._check_response L291-L297.
 
 
+  Named case contracts: agent_model_id: Choose truthy optional agent_id, then assistant_id, else suffix after the
+  first case-sensitive agents/ anywhere in model (or entire model when absent). Advertise only stream; map_openai_params
+  returns optional_params unchanged without copying non-default parameters. default_api_version: Default api_version=2025-05-01
+  only when missing from optional_params; explicit None/empty survives. Provider-info lookup uses explicit or AZURE_AI_API_BASE/AZURE_AI_API_KEY
+  only; get_complete_url rejects None with api_base is required for Azure AI Agents. Set it via AZURE_AI_API_BASE
+  env var or api_base parameter., otherwise trim slashes. message_content_conversion: Each message becomes only
+  role (default user when absent) and content (default empty when absent); content lists use B218 convert_content_list_to_str
+  and other non-strings use Python str, including None. Pass thread_id/instructions whenever their keys exist, retaining
+  null/empty values. thread_and_run_paths: Builders append /threads, /threads/<B206 encoded thread_id>/messages,
+  /threads/<thread_id>/runs, /threads/<thread_id>/runs/<encoded run_id>, or /threads/runs, each followed by ?api-version=<version>
+  literally. They do not insert /openai despite the transformation docstrings. agent_auth_and_response_checks: Both
+  validation/preparation overwrite Content-Type=application/json; only truthy api_key overwrites Authorization=Bearer
+  <key>, otherwise existing Authorization survives. Preparation returns headers,version,agent_id,optional thread_id,trimmed
+  base. _check_response rejects any status outside its supplied expected list with AzureAIAgentsError preserving
+  status and <error_msg>: <response.text>; get_error_class drops the supplied headers. agent_stream_flags: should_fake_stream
+  always returns True regardless of requested stream/model; has_custom_stream_wrapper=False and supports_stream_param_in_request_body=False.
+  The custom handler owns response conversion; the base transform_response is a no-op returning its input response
+  record.
+
+
+  Write standalone Rust test foundry_agents_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test foundry_agents_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2202. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-foundry/src/agent_requests.rs with adjacent tests under agent_requests/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -35,9 +68,9 @@ description: >-
 
   Write rstest function agent_requests_cases in betterlite-foundry with these exact named cases (one per oracle
   file): agent_model_id, assistant_id_override, default_api_version, existing_thread, message_content_conversion,
-  thread_and_run_paths, missing_api_base. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  thread_and_run_paths, missing_api_base, agent_auth_and_response_checks, agent_stream_flags. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests* using HelperCase: kind:
@@ -53,9 +86,9 @@ description: >-
 
 
   Budget from 225 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 466 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 220 production lines, 225 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 580 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -74,16 +107,14 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L77-L307
-  why: >-
-    Own AzureAIAgentsConfig.__init__, AzureAIAgentsConfig.get_agent_id_from_model, AzureAIAgentsConfig._get_openai_compatible_provider_info,
+  why: Own AzureAIAgentsConfig.__init__, AzureAIAgentsConfig.get_agent_id_from_model, AzureAIAgentsConfig._get_openai_compatible_provider_info,
     AzureAIAgentsConfig.get_supported_openai_params, AzureAIAgentsConfig.map_openai_params, AzureAIAgentsConfig._get_api_version,
     AzureAIAgentsConfig.get_complete_url, AzureAIAgentsConfig._get_agent_id, AzureAIAgentsConfig.transform_request,
     AzureAIAgentsConfig.validate_environment, AzureAIAgentsConfig.get_error_class, AzureAIAgentsConfig.should_fake_stream,
     AzureAIAgentsConfig.has_custom_stream_wrapper, AzureAIAgentsConfig.supports_stream_param_in_request_body, AzureAIAgentsConfig.transform_response.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L106-L153
-  why: >-
-    Own _SyncAgentRequest.__call__, _AsyncAgentRequest.__call__, AzureAIAgentsHandler.__init__, AzureAIAgentsHandler._build_thread_url,
+  why: Own _SyncAgentRequest.__call__, _AsyncAgentRequest.__call__, AzureAIAgentsHandler.__init__, AzureAIAgentsHandler._build_thread_url,
     AzureAIAgentsHandler._build_messages_url, AzureAIAgentsHandler._build_runs_url, AzureAIAgentsHandler._build_run_status_url,
     AzureAIAgentsHandler._build_list_messages_url, AzureAIAgentsHandler._build_create_thread_and_run_url. Other
     functions in this file remain with the owners listed below.
@@ -91,18 +122,22 @@ references:
   why: Own AzureAIAgentsHandler._prepare_completion_params, AzureAIAgentsHandler._check_response. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: 'agent model id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-model-id.yaml.'
+- text: 'agent_model_id: Choose truthy optional agent_id, then assistant_id, else suffix after the first case-sensitive
+    agents/ anywhere in model (or entire model when absent). Advertise only stream; map_openai_params returns optional_params
+    unchanged without copying non-default parameters.'
   proof:
   - case-agent-model-id
   - oracle
   - helper-python
-- text: >-
-    assistant id override: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml.
+- text: 'assistant id override: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml.'
   proof:
   - case-assistant-id-override
   - oracle
   - helper-python
-- text: 'default api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/default-api-version.yaml.'
+- text: 'default_api_version: Default api_version=2025-05-01 only when missing from optional_params; explicit None/empty
+    survives. Provider-info lookup uses explicit or AZURE_AI_API_BASE/AZURE_AI_API_KEY only; get_complete_url rejects
+    None with api_base is required for Azure AI Agents. Set it via AZURE_AI_API_BASE env var or api_base parameter.,
+    otherwise trim slashes.'
   proof:
   - case-default-api-version
   - oracle
@@ -112,13 +147,16 @@ dod:
   - case-existing-thread
   - oracle
   - helper-python
-- text: >-
-    message content conversion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/message-content-conversion.yaml.
+- text: 'message_content_conversion: Each message becomes only role (default user when absent) and content (default
+    empty when absent); content lists use B218 convert_content_list_to_str and other non-strings use Python str,
+    including None. Pass thread_id/instructions whenever their keys exist, retaining null/empty values.'
   proof:
   - case-message-content-conversion
   - oracle
   - helper-python
-- text: 'thread and run paths: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/thread-and-run-paths.yaml.'
+- text: 'thread_and_run_paths: Builders append /threads, /threads/<B206 encoded thread_id>/messages, /threads/<thread_id>/runs,
+    /threads/<thread_id>/runs/<encoded run_id>, or /threads/runs, each followed by ?api-version=<version> literally.
+    They do not insert /openai despite the transformation docstrings.'
   proof:
   - case-thread-and-run-paths
   - oracle
@@ -132,44 +170,90 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'agent_auth_and_response_checks: Both validation/preparation overwrite Content-Type=application/json; only
+    truthy api_key overwrites Authorization=Bearer <key>, otherwise existing Authorization survives. Preparation
+    returns headers,version,agent_id,optional thread_id,trimmed base. _check_response rejects any status outside
+    its supplied expected list with AzureAIAgentsError preserving status and <error_msg>: <response.text>; get_error_class
+    drops the supplied headers.'
+  proof:
+  - case-agent-auth-and-response-checks
+  - oracle
+  - helper-python
+- text: 'agent_stream_flags: should_fake_stream always returns True regardless of requested stream/model; has_custom_stream_wrapper=False
+    and supports_stream_param_in_request_body=False. The custom handler owns response conversion; the base transform_response
+    is a no-op returning its input response record.'
+  proof:
+  - case-agent-stream-flags
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-agent-model-id
-    why: The agent-model-id behavior is missing or differs from its pinned fixture.
+    why: Choose truthy optional agent_id, then assistant_id, else suffix after the first case-sensitive agents/
+      anywhere in model (or entire model when absent). Advertise only stream; map_openai_params returns optional_params
+      unchanged without copying non-default parameters.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_agent_model_id$/)'
   - id: case-assistant-id-override
-    why: The assistant-id-override behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_assistant_id_override$/)'
   - id: case-default-api-version
-    why: The default-api-version behavior is missing or differs from its pinned fixture.
+    why: Default api_version=2025-05-01 only when missing from optional_params; explicit None/empty survives. Provider-info
+      lookup uses explicit or AZURE_AI_API_BASE/AZURE_AI_API_KEY only; get_complete_url rejects None with api_base
+      is required for Azure AI Agents. Set it via AZURE_AI_API_BASE env var or api_base parameter., otherwise trim
+      slashes.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_default_api_version$/)'
   - id: case-existing-thread
-    why: The existing-thread behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/existing-thread.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_existing_thread$/)'
   - id: case-message-content-conversion
-    why: The message-content-conversion behavior is missing or differs from its pinned fixture.
+    why: Each message becomes only role (default user when absent) and content (default empty when absent); content
+      lists use B218 convert_content_list_to_str and other non-strings use Python str, including None. Pass thread_id/instructions
+      whenever their keys exist, retaining null/empty values.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_message_content_conversion$/)'
   - id: case-thread-and-run-paths
-    why: The thread-and-run-paths behavior is missing or differs from its pinned fixture.
+    why: Builders append /threads, /threads/<B206 encoded thread_id>/messages, /threads/<thread_id>/runs, /threads/<thread_id>/runs/<encoded
+      run_id>, or /threads/runs, each followed by ?api-version=<version> literally. They do not insert /openai despite
+      the transformation docstrings.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_thread_and_run_paths$/)'
   - id: case-missing-api-base
-    why: The missing-api-base behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/missing-api-base.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_missing_api_base$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_requests.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_requests.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests*")"
       && grep -lq 'foundry_agent_requests' tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_requests$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-agent-auth-and-response-checks
+    why: 'Both validation/preparation overwrite Content-Type=application/json; only truthy api_key overwrites Authorization=Bearer
+      <key>, otherwise existing Authorization survives. Preparation returns headers,version,agent_id,optional thread_id,trimmed
+      base. _check_response rejects any status outside its supplied expected list with AzureAIAgentsError preserving
+      status and <error_msg>: <response.text>; get_error_class drops the supplied headers.'
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_agent_auth_and_response_checks$/)'
+  - id: case-agent-stream-flags
+    why: should_fake_stream always returns True regardless of requested stream/model; has_custom_stream_wrapper=False
+      and supports_stream_param_in_request_body=False. The custom handler owns response conversion; the base transform_response
+      is a no-op returning its input response record.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_agent_stream_flags$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_agents_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_agents_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-model-id.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml
@@ -178,29 +262,30 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-agent-requests/message-content-conversion.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-requests/thread-and-run-paths.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-requests/missing-api-base.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-auth-and-response-checks.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-stream-flags.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.completion L310-L397 belong to B560; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler._extract_content_from_messages L158-L175; AzureAIAgentsHandler._transform_annotations
-  L177-L210; AzureAIAgentsHandler._build_model_response L212-L256; AzureAIAgentsHandler.acompletion_stream L554-L620;
-  AzureAIAgentsHandler._process_sse_stream L622-L710 belong to B561; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350; AzureAIAgentsHandler._execute_agent_flow_sync
-  L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async L480-L549
-  belong to B560; reuse that implementation or its injected typed boundary.
 - 'litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.is_azure_ai_agents_route L81-L87 have no
   caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350;
+  AzureAIAgentsHandler._execute_agent_flow_sync L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async
+  L480-L549 belong to B560.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler._extract_content_from_messages
+  L158-L175; AzureAIAgentsHandler._transform_annotations L177-L210; AzureAIAgentsHandler._build_model_response L212-L256;
+  AzureAIAgentsHandler.acompletion_stream L554-L620; AzureAIAgentsHandler._process_sse_stream L622-L710 belong to
+  B561.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.completion L309-L397
+  belong to B560.'
 pitfalls:
-- Resolve agent_id then assistant_id then agents/ model suffix; api_version defaults to 2025-05-01.
+- The URL docstrings mention /openai/threads, but the builders append /threads directly to the already resolved
+  base.
+- Presence checks on thread_id/instructions preserve explicit None, while agent_id selection uses truthiness.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

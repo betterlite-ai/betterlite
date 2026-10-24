@@ -14,6 +14,34 @@ description: >-
   OpenAIFineTuningAPI.aretrieve_fine_tuning_job L243-L249; OpenAIFineTuningAPI.retrieve_fine_tuning_job L251-L289.
 
 
+  Named case contracts: list_pagination: List forwards after=None and limit=None explicitly and returns the SDK
+  page unchanged; individual create/retrieve/cancel responses use the shared normalizer and LiteLLMFineTuningJob
+  projection. azure_null_organization_files: With is_azure=True copy the input and replace missing/null organization_id
+  with empty string and result_files with []; preserve non-null values. With False return the unmodified record;
+  merely supplying an Azure SDK client to this OpenAI wrapper does not enable normalization. azure_status_map: Map
+  pending and notRunning to queued, canceled and canceling to cancelled; running/succeeded/failed keep their spelling
+  and unknown values are preserved. sdk_client_argument_projection: Construct the SDK client only when client is
+  None: api_base becomes base_url; omit None-valued api_key, timeout, max_retries and organization, but retain empty
+  strings/zero. A supplied client wins without rebuilding it. Async selection requires the boolean True. sdk_client_missing:
+  A fixture returning no client raises ValueError: OpenAI client is not initialized. Make sure api_key is passed
+  or OPENAI_API_KEY is set in the environment. sdk_client_wrong_async: Selecting async with a non-AsyncOpenAI client
+  raises ValueError: OpenAI client is not an instance of AsyncOpenAI. Make sure you passed an AsyncOpenAI client.
+  sdk_error_passthrough: SDK exceptions retain their status, type, param, code and message; these lifecycle wrappers
+  do not catch or normalize them. fine_tune_extra_client_args: Non-None api_version and litellm_params are included
+  by get_openai_client when constructing the SDK client, with no special OpenAI filtering; preserve constructor
+  failures. Async create/list/cancel accept AsyncAzureOpenAI as well as AsyncOpenAI; retrieve uses the AsyncOpenAI
+  superclass check.
+
+
+  Write standalone Rust test openai_fine_tuning_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_fine_tuning_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-openai/src/fine_tuning.rs with adjacent tests under fine_tuning/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -29,9 +57,10 @@ description: >-
 
   Write rstest function fine_tuning_cases in betterlite-openai with these exact named cases (one per oracle file):
   create_method_hyperparameters, list_pagination, retrieve_checkpoint_fields, cancel_job, azure_null_organization_files,
-  azure_status_map. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  azure_status_map, sdk_client_argument_projection, sdk_client_missing, sdk_client_wrong_async, sdk_error_passthrough,
+  fine_tune_extra_client_args. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_fine_tuning* using HelperCase: kind: helper
@@ -48,9 +77,9 @@ description: >-
 
 
   Budget from 236 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 260 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 518 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 230 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 685 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -72,26 +101,26 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L24-L289
-  why: >-
-    Own _normalize_fine_tuning_job_dict, _litellm_fine_tuning_job_from_response, OpenAIFineTuningAPI.__init__, OpenAIFineTuningAPI.get_openai_client,
-    OpenAIFineTuningAPI.acreate_fine_tuning_job, OpenAIFineTuningAPI.create_fine_tuning_job, OpenAIFineTuningAPI.acancel_fine_tuning_job,
-    OpenAIFineTuningAPI.cancel_fine_tuning_job, OpenAIFineTuningAPI.alist_fine_tuning_jobs, OpenAIFineTuningAPI.list_fine_tuning_jobs,
-    OpenAIFineTuningAPI.aretrieve_fine_tuning_job, OpenAIFineTuningAPI.retrieve_fine_tuning_job. Other functions
-    in this file remain with the owners listed below.
+  why: Own _normalize_fine_tuning_job_dict, _litellm_fine_tuning_job_from_response, OpenAIFineTuningAPI.__init__,
+    OpenAIFineTuningAPI.get_openai_client, OpenAIFineTuningAPI.acreate_fine_tuning_job, OpenAIFineTuningAPI.create_fine_tuning_job,
+    OpenAIFineTuningAPI.acancel_fine_tuning_job, OpenAIFineTuningAPI.cancel_fine_tuning_job, OpenAIFineTuningAPI.alist_fine_tuning_jobs,
+    OpenAIFineTuningAPI.list_fine_tuning_jobs, OpenAIFineTuningAPI.aretrieve_fine_tuning_job, OpenAIFineTuningAPI.retrieve_fine_tuning_job.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L11-L22
+  why: Azure status-map literals used by the shared normalization helper.
 dod:
-- text: >-
-    create method hyperparameters: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/create-method-hyperparameters.yaml.
+- text: 'create method hyperparameters: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/create-method-hyperparameters.yaml.'
   proof:
   - case-create-method-hyperparameters
   - oracle
   - helper-python
-- text: 'list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/list-pagination.yaml.'
+- text: 'list_pagination: List forwards after=None and limit=None explicitly and returns the SDK page unchanged;
+    individual create/retrieve/cancel responses use the shared normalizer and LiteLLMFineTuningJob projection.'
   proof:
   - case-list-pagination
   - oracle
   - helper-python
-- text: >-
-    retrieve checkpoint fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/retrieve-checkpoint-fields.yaml.
+- text: 'retrieve checkpoint fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/retrieve-checkpoint-fields.yaml.'
   proof:
   - case-retrieve-checkpoint-fields
   - oracle
@@ -101,13 +130,15 @@ dod:
   - case-cancel-job
   - oracle
   - helper-python
-- text: >-
-    azure null organization files: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/azure-null-organization-files.yaml.
+- text: 'azure_null_organization_files: With is_azure=True copy the input and replace missing/null organization_id
+    with empty string and result_files with []; preserve non-null values. With False return the unmodified record;
+    merely supplying an Azure SDK client to this OpenAI wrapper does not enable normalization.'
   proof:
   - case-azure-null-organization-files
   - oracle
   - helper-python
-- text: 'azure status map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/azure-status-map.yaml.'
+- text: 'azure_status_map: Map pending and notRunning to queued, canceled and canceling to cancelled; running/succeeded/failed
+    keep their spelling and unknown values are preserved.'
   proof:
   - case-azure-status-map
   - oracle
@@ -119,47 +150,114 @@ dod:
 - text: decode_fine_tune_job has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'sdk_client_argument_projection: Construct the SDK client only when client is None: api_base becomes base_url;
+    omit None-valued api_key, timeout, max_retries and organization, but retain empty strings/zero. A supplied client
+    wins without rebuilding it. Async selection requires the boolean True.'
+  proof:
+  - case-sdk-client-argument-projection
+  - oracle
+  - helper-python
+- text: 'sdk_client_missing: A fixture returning no client raises ValueError: OpenAI client is not initialized.
+    Make sure api_key is passed or OPENAI_API_KEY is set in the environment.'
+  proof:
+  - case-sdk-client-missing
+  - oracle
+  - helper-python
+- text: 'sdk_client_wrong_async: Selecting async with a non-AsyncOpenAI client raises ValueError: OpenAI client
+    is not an instance of AsyncOpenAI. Make sure you passed an AsyncOpenAI client.'
+  proof:
+  - case-sdk-client-wrong-async
+  - oracle
+  - helper-python
+- text: 'sdk_error_passthrough: SDK exceptions retain their status, type, param, code and message; these lifecycle
+    wrappers do not catch or normalize them.'
+  proof:
+  - case-sdk-error-passthrough
+  - oracle
+  - helper-python
+- text: 'fine_tune_extra_client_args: Non-None api_version and litellm_params are included by get_openai_client
+    when constructing the SDK client, with no special OpenAI filtering; preserve constructor failures. Async create/list/cancel
+    accept AsyncAzureOpenAI as well as AsyncOpenAI; retrieve uses the AsyncOpenAI superclass check.'
+  proof:
+  - case-fine-tune-extra-client-args
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-create-method-hyperparameters
-    why: The create-method-hyperparameters behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/create-method-hyperparameters.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_create_method_hyperparameters$/)'
   - id: case-list-pagination
-    why: The list-pagination behavior is missing or differs from its pinned fixture.
+    why: List forwards after=None and limit=None explicitly and returns the SDK page unchanged; individual create/retrieve/cancel
+      responses use the shared normalizer and LiteLLMFineTuningJob projection.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_list_pagination$/)'
   - id: case-retrieve-checkpoint-fields
-    why: The retrieve-checkpoint-fields behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/retrieve-checkpoint-fields.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_retrieve_checkpoint_fields$/)'
   - id: case-cancel-job
-    why: The cancel-job behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-fine-tuning/cancel-job.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_cancel_job$/)'
   - id: case-azure-null-organization-files
-    why: The azure-null-organization-files behavior is missing or differs from its pinned fixture.
+    why: With is_azure=True copy the input and replace missing/null organization_id with empty string and result_files
+      with []; preserve non-null values. With False return the unmodified record; merely supplying an Azure SDK
+      client to this OpenAI wrapper does not enable normalization.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_azure_null_organization_files$/)'
   - id: case-azure-status-map
-    why: The azure-status-map behavior is missing or differs from its pinned fixture.
+    why: Map pending and notRunning to queued, canceled and canceling to cancelled; running/succeeded/failed keep
+      their spelling and unknown values are preserved.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_azure_status_map$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_fine_tuning.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_fine_tuning.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_fine_tuning*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_fine_tuning*")"
       && grep -lq 'openai_fine_tuning' tools/oracle/fuzz/corpus/helper_case/openai_fine_tuning* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_fine_tuning$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_fine_tuning)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_fine_tuning)"
       && grep -q 'decode_fine_tune_job' crates/betterlite-openai/fuzz/fuzz_targets/openai_fine_tuning.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_fine_tuning_corpus$/)'
+  - id: case-sdk-client-argument-projection
+    why: 'Construct the SDK client only when client is None: api_base becomes base_url; omit None-valued api_key,
+      timeout, max_retries and organization, but retain empty strings/zero. A supplied client wins without rebuilding
+      it. Async selection requires the boolean True.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_sdk_client_argument_projection$/)'
+  - id: case-sdk-client-missing
+    why: 'A fixture returning no client raises ValueError: OpenAI client is not initialized. Make sure api_key is
+      passed or OPENAI_API_KEY is set in the environment.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_sdk_client_missing$/)'
+  - id: case-sdk-client-wrong-async
+    why: 'Selecting async with a non-AsyncOpenAI client raises ValueError: OpenAI client is not an instance of AsyncOpenAI.
+      Make sure you passed an AsyncOpenAI client.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_sdk_client_wrong_async$/)'
+  - id: case-sdk-error-passthrough
+    why: SDK exceptions retain their status, type, param, code and message; these lifecycle wrappers do not catch
+      or normalize them.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_sdk_error_passthrough$/)'
+  - id: case-fine-tune-extra-client-args
+    why: Non-None api_version and litellm_params are included by get_openai_client when constructing the SDK client,
+      with no special OpenAI filtering; preserve constructor failures. Async create/list/cancel accept AsyncAzureOpenAI
+      as well as AsyncOpenAI; retrieve uses the AsyncOpenAI superclass check.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_fine_tune_extra_client_args$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_fine_tuning_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_fine_tuning_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-fine-tuning/create-method-hyperparameters.yaml
 - tools/oracle/cases/helpers/providers/openai-fine-tuning/list-pagination.yaml
@@ -167,6 +265,11 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-fine-tuning/cancel-job.yaml
 - tools/oracle/cases/helpers/providers/openai-fine-tuning/azure-null-organization-files.yaml
 - tools/oracle/cases/helpers/providers/openai-fine-tuning/azure-status-map.yaml
+- tools/oracle/cases/helpers/providers/openai-fine-tuning/sdk-client-argument-projection.yaml
+- tools/oracle/cases/helpers/providers/openai-fine-tuning/sdk-client-missing.yaml
+- tools/oracle/cases/helpers/providers/openai-fine-tuning/sdk-client-wrong-async.yaml
+- tools/oracle/cases/helpers/providers/openai-fine-tuning/sdk-error-passthrough.yaml
+- tools/oracle/cases/helpers/providers/openai-fine-tuning/fine-tune-extra-client-args.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -174,8 +277,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve nested method/hyperparameters and typed provider extension fields.
+- Azure canceling is mapped to terminal cancelled, even though the upstream job may still be cancelling.
+- List returns the SDK page without per-job Azure normalization; do not apply the single-job normalizer to its entries.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 700
   max_new_expects: 0
-review_level: standard
+review_level: security

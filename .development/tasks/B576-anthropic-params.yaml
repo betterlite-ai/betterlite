@@ -8,11 +8,46 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/transformation.py:
-  AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider L323-L324; AnthropicConfig._resolved_provider
-  L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model L341-L354; AnthropicConfig._map_stop_sequences
-  L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
-  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
-  _valid_user_id L2795-L2808.
+  AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128.
+
+
+  Named case contracts: max_token_option_precedence: Iterate non_default_params in insertion order: max_tokens/max_completion_tokens
+  both overwrite max_tokens, so last encountered wins. Actual ints including bool/negative/zero pass unchanged;
+  other numbers use Python round then int and clamp >=1. Unknown options silently remain unmapped. Run shared update_optional_params_with_thinking_tokens
+  after mapping. reasoning_none_clears_thinking: reasoning_effort dict extracts effort; nonstrings are ignored.
+  String none removes thinking and the entire output_config, including format. Other values map through B569; adaptive
+  effort mapping is minimal/low->low,medium/high/xhigh/max unchanged, replacing existing output_config with effort-only,
+  and invalid strings raise B569 BadRequestError. Do not claim existing output effort always wins. output_format_with_effort_drop_warning:
+  _apply_output_config ignores absent/falsey/non-dict options. When global drop_params is True, any key other than
+  format plus unsupported effort capability warns Dropping unsupported `output_config` for model=<model> (drop_params=True).
+  Effort is only supported on Opus 4.5+, Sonnet 4.6+, and Mythos Preview. Preserve non-None format alone in both
+  data/options; otherwise remove output_config from both. Per-call drop does not trigger this branch. invalid_output_effort:
+  Otherwise allow non-None effort only high,medium,low,xhigh,max; invalid raises BadRequestError with model/resolved
+  provider and Invalid effort value: <repr>. Must be one of: 'high', 'medium', 'low', 'xhigh', 'max'. Then apply
+  B569 max/xhigh capability error and assign output_config unchanged, preserving extra keys. A format-only mapping
+  needs no effort capability. speed_drop_policy: Replay the same unsupported-speed rejection/warning cases as B569
+  through map_openai_params, with global/per-call OR drop. Nonstring speed is ignored at this mapping layer. adaptive_to_legacy_cap:
+  Explicit thinking.type=adaptive on nonadaptive models maps medium legacy budget and caps against truthy max_completion_tokens-or-max_tokens.
+  If cap fails, warn Dropping adaptive `thinking` for model=<model>: max_tokens is too small to fit the minimum
+  thinking budget. and remove thinking. Other thinking values assign then invoke B688 legacy-to-adaptive translation.
+  parameter_body_rewrites: Tools append through shared base helper after B575 mapping; nonempty MCP list replaces
+  mcp_servers. Tool choice/parallel branches jointly use B575 and B688 forced-tool gate. stream only literal True;
+  stop uses B2201; temperature/top_p use B688 sampling gate. Valid string user replaces metadata with user_id only;
+  invalid/email/phone silently ignored. extra_headers copied even None; speed only string uses B569; cache_control
+  only dict copied; context and search use B2201. structured_format_selection: Capability supports_native_structured_output
+  via B688 selects B574 output_format; otherwise B574 tool fallback appends json_tool_call, forcing it only when
+  initial non_default_params is not thinking-enabled and forced use is supported. Native path sets json_mode=True
+  even when no output_format results; fallback with no tool continues without json_mode. Preserve input option ordering,
+  which can replace previously selected tool_choice.
+
+
+  B2201 owns config defaults, stop/user validation and small web/context projections. BaseConfig is_thinking_enabled,
+  update_optional_params_with_thinking_tokens and _add_tools_to_optional_params must come from the shared lower
+  base-policy owner, not a provider dispatcher. No names are sanitized here; B573/B577 do that at assembly.
+
+
+  Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
+  ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
 
 
   Implement crates/betterlite-anthropic/src/params.rs with adjacent tests under params/. Keep each Rust module at
@@ -29,10 +64,9 @@ description: >-
 
 
   Write rstest function params_cases in betterlite-anthropic with these exact named cases (one per oracle file):
-  default_max_tokens, stop_sequence_filter, max_token_option_precedence, reasoning_none_clears_thinking, web_search_context_size,
-  context_compaction_edit, output_format_with_effort_drop_warning, invalid_output_effort, speed_drop_policy. Each
-  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
-  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  max_token_option_precedence, reasoning_none_clears_thinking, output_format_with_effort_drop_warning, invalid_output_effort,
+  speed_drop_policy, adaptive_to_legacy_cap, parameter_body_rewrites, structured_format_selection. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
   route registration; this task must not register a duplicate axum route.
 
 
@@ -47,10 +81,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 332 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 350 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 592 planned, 600 maximum changed lines.
+  Budget from 197 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 235 production lines, 265 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -71,64 +105,53 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L403-L439
   why: Reuse or declare the typed records and aliases consumed by this slice.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L307-L354
-  why: >-
-    Own AnthropicConfig.__init__, AnthropicConfig.custom_llm_provider, AnthropicConfig._resolved_provider, AnthropicConfig.get_config,
+  why: Own AnthropicConfig.__init__, AnthropicConfig.custom_llm_provider, AnthropicConfig._resolved_provider, AnthropicConfig.get_config,
     AnthropicConfig.get_max_tokens_for_model. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1230-L1248
   why: Own AnthropicConfig._map_stop_sequences. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1389-L1654
-  why: >-
-    Own AnthropicConfig.map_web_search_tool, AnthropicConfig.map_openai_context_management_to_anthropic, AnthropicConfig.map_openai_params.
+  why: Own AnthropicConfig.map_web_search_tool, AnthropicConfig.map_openai_context_management_to_anthropic, AnthropicConfig.map_openai_params.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2082-L2128
   why: Own AnthropicConfig._apply_output_config. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2795-L2808
   why: Own _valid_user_id. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'default max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/default-max-tokens.yaml.'
-  proof:
-  - case-default-max-tokens
-  - oracle
-  - helper-python
-- text: 'stop sequence filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/stop-sequence-filter.yaml.'
-  proof:
-  - case-stop-sequence-filter
-  - oracle
-  - helper-python
-- text: >-
-    max token option precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/max-token-option-precedence.yaml.
+- text: 'max_token_option_precedence: Iterate non_default_params in insertion order: max_tokens/max_completion_tokens
+    both overwrite max_tokens, so last encountered wins. Actual ints including bool/negative/zero pass unchanged;
+    other numbers use Python round then int and clamp >=1. Unknown options silently remain unmapped. Run shared
+    update_optional_params_with_thinking_tokens after mapping.'
   proof:
   - case-max-token-option-precedence
   - oracle
   - helper-python
-- text: >-
-    reasoning none clears thinking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/reasoning-none-clears-thinking.yaml.
+- text: 'reasoning_none_clears_thinking: reasoning_effort dict extracts effort; nonstrings are ignored. String none
+    removes thinking and the entire output_config, including format. Other values map through B569; adaptive effort
+    mapping is minimal/low->low,medium/high/xhigh/max unchanged, replacing existing output_config with effort-only,
+    and invalid strings raise B569 BadRequestError. Do not claim existing output effort always wins.'
   proof:
   - case-reasoning-none-clears-thinking
   - oracle
   - helper-python
-- text: 'web search context size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/web-search-context-size.yaml.'
-  proof:
-  - case-web-search-context-size
-  - oracle
-  - helper-python
-- text: 'context compaction edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/context-compaction-edit.yaml.'
-  proof:
-  - case-context-compaction-edit
-  - oracle
-  - helper-python
-- text: >-
-    output format with effort drop warning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/output-format-with-effort-drop-warning.yaml.
+- text: 'output_format_with_effort_drop_warning: _apply_output_config ignores absent/falsey/non-dict options. When
+    global drop_params is True, any key other than format plus unsupported effort capability warns Dropping unsupported
+    `output_config` for model=<model> (drop_params=True). Effort is only supported on Opus 4.5+, Sonnet 4.6+, and
+    Mythos Preview. Preserve non-None format alone in both data/options; otherwise remove output_config from both.
+    Per-call drop does not trigger this branch.'
   proof:
   - case-output-format-with-effort-drop-warning
   - oracle
   - helper-python
-- text: 'invalid output effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/invalid-output-effort.yaml.'
+- text: 'invalid_output_effort: Otherwise allow non-None effort only high,medium,low,xhigh,max; invalid raises BadRequestError
+    with model/resolved provider and Invalid effort value: <repr>. Must be one of: ''high'', ''medium'', ''low'',
+    ''xhigh'', ''max''. Then apply B569 max/xhigh capability error and assign output_config unchanged, preserving
+    extra keys. A format-only mapping needs no effort capability.'
   proof:
   - case-invalid-output-effort
   - oracle
   - helper-python
-- text: 'speed drop policy: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-params/speed-drop-policy.yaml.'
+- text: 'speed_drop_policy: Replay the same unsupported-speed rejection/warning cases as B569 through map_openai_params,
+    with global/per-call OR drop. Nonstring speed is ignored at this mapping layer.'
   proof:
   - case-speed-drop-policy
   - oracle
@@ -136,118 +159,164 @@ dod:
 - text: New anthropic_params seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'adaptive_to_legacy_cap: Explicit thinking.type=adaptive on nonadaptive models maps medium legacy budget
+    and caps against truthy max_completion_tokens-or-max_tokens. If cap fails, warn Dropping adaptive `thinking`
+    for model=<model>: max_tokens is too small to fit the minimum thinking budget. and remove thinking. Other thinking
+    values assign then invoke B688 legacy-to-adaptive translation.'
+  proof:
+  - case-adaptive-to-legacy-cap
+  - oracle
+  - helper-python
+- text: 'parameter_body_rewrites: Tools append through shared base helper after B575 mapping; nonempty MCP list
+    replaces mcp_servers. Tool choice/parallel branches jointly use B575 and B688 forced-tool gate. stream only
+    literal True; stop uses B2201; temperature/top_p use B688 sampling gate. Valid string user replaces metadata
+    with user_id only; invalid/email/phone silently ignored. extra_headers copied even None; speed only string uses
+    B569; cache_control only dict copied; context and search use B2201.'
+  proof:
+  - case-parameter-body-rewrites
+  - oracle
+  - helper-python
+- text: 'structured_format_selection: Capability supports_native_structured_output via B688 selects B574 output_format;
+    otherwise B574 tool fallback appends json_tool_call, forcing it only when initial non_default_params is not
+    thinking-enabled and forced use is supported. Native path sets json_mode=True even when no output_format results;
+    fallback with no tool continues without json_mode. Preserve input option ordering, which can replace previously
+    selected tool_choice.'
+  proof:
+  - case-structured-format-selection
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
-  - id: case-default-max-tokens
-    why: The default-max-tokens behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_default_max_tokens$/)'
-  - id: case-stop-sequence-filter
-    why: The stop-sequence-filter behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_stop_sequence_filter$/)'
   - id: case-max-token-option-precedence
-    why: The max-token-option-precedence behavior is missing or differs from its pinned fixture.
+    why: 'Iterate non_default_params in insertion order: max_tokens/max_completion_tokens both overwrite max_tokens,
+      so last encountered wins. Actual ints including bool/negative/zero pass unchanged; other numbers use Python
+      round then int and clamp >=1. Unknown options silently remain unmapped. Run shared update_optional_params_with_thinking_tokens
+      after mapping.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_max_token_option_precedence$/)'
   - id: case-reasoning-none-clears-thinking
-    why: The reasoning-none-clears-thinking behavior is missing or differs from its pinned fixture.
+    why: reasoning_effort dict extracts effort; nonstrings are ignored. String none removes thinking and the entire
+      output_config, including format. Other values map through B569; adaptive effort mapping is minimal/low->low,medium/high/xhigh/max
+      unchanged, replacing existing output_config with effort-only, and invalid strings raise B569 BadRequestError.
+      Do not claim existing output effort always wins.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_reasoning_none_clears_thinking$/)'
-  - id: case-web-search-context-size
-    why: The web-search-context-size behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_web_search_context_size$/)'
-  - id: case-context-compaction-edit
-    why: The context-compaction-edit behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_context_compaction_edit$/)'
   - id: case-output-format-with-effort-drop-warning
-    why: The output-format-with-effort-drop-warning behavior is missing or differs from its pinned fixture.
+    why: _apply_output_config ignores absent/falsey/non-dict options. When global drop_params is True, any key other
+      than format plus unsupported effort capability warns Dropping unsupported `output_config` for model=<model>
+      (drop_params=True). Effort is only supported on Opus 4.5+, Sonnet 4.6+, and Mythos Preview. Preserve non-None
+      format alone in both data/options; otherwise remove output_config from both. Per-call drop does not trigger
+      this branch.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_output_format_with_effort_drop_warning$/)'
   - id: case-invalid-output-effort
-    why: The invalid-output-effort behavior is missing or differs from its pinned fixture.
+    why: 'Otherwise allow non-None effort only high,medium,low,xhigh,max; invalid raises BadRequestError with model/resolved
+      provider and Invalid effort value: <repr>. Must be one of: ''high'', ''medium'', ''low'', ''xhigh'', ''max''.
+      Then apply B569 max/xhigh capability error and assign output_config unchanged, preserving extra keys. A format-only
+      mapping needs no effort capability.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_invalid_output_effort$/)'
   - id: case-speed-drop-policy
-    why: The speed-drop-policy behavior is missing or differs from its pinned fixture.
+    why: Replay the same unsupported-speed rejection/warning cases as B569 through map_openai_params, with global/per-call
+      OR drop. Nonstring speed is ignored at this mapping layer.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_speed_drop_policy$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_params.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_params.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_params*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_params*")"
       && grep -lq 'anthropic_params' tools/oracle/fuzz/corpus/helper_case/anthropic_params* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_params$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-adaptive-to-legacy-cap
+    why: 'Explicit thinking.type=adaptive on nonadaptive models maps medium legacy budget and caps against truthy
+      max_completion_tokens-or-max_tokens. If cap fails, warn Dropping adaptive `thinking` for model=<model>: max_tokens
+      is too small to fit the minimum thinking budget. and remove thinking. Other thinking values assign then invoke
+      B688 legacy-to-adaptive translation.'
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_adaptive_to_legacy_cap$/)'
+  - id: case-parameter-body-rewrites
+    why: Tools append through shared base helper after B575 mapping; nonempty MCP list replaces mcp_servers. Tool
+      choice/parallel branches jointly use B575 and B688 forced-tool gate. stream only literal True; stop uses B2201;
+      temperature/top_p use B688 sampling gate. Valid string user replaces metadata with user_id only; invalid/email/phone
+      silently ignored. extra_headers copied even None; speed only string uses B569; cache_control only dict copied;
+      context and search use B2201.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_parameter_body_rewrites$/)'
+  - id: case-structured-format-selection
+    why: Capability supports_native_structured_output via B688 selects B574 output_format; otherwise B574 tool fallback
+      appends json_tool_call, forcing it only when initial non_default_params is not thinking-enabled and forced
+      use is supported. Native path sets json_mode=True even when no output_format results; fallback with no tool
+      continues without json_mode. Preserve input option ordering, which can replace previously selected tool_choice.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::params_cases::case_[0-9]+_structured_format_selection$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/anthropic-params/default-max-tokens.yaml
-- tools/oracle/cases/helpers/providers/anthropic-params/stop-sequence-filter.yaml
 - tools/oracle/cases/helpers/providers/anthropic-params/max-token-option-precedence.yaml
 - tools/oracle/cases/helpers/providers/anthropic-params/reasoning-none-clears-thinking.yaml
-- tools/oracle/cases/helpers/providers/anthropic-params/web-search-context-size.yaml
-- tools/oracle/cases/helpers/providers/anthropic-params/context-compaction-edit.yaml
 - tools/oracle/cases/helpers/providers/anthropic-params/output-format-with-effort-drop-warning.yaml
 - tools/oracle/cases/helpers/providers/anthropic-params/invalid-output-effort.yaml
 - tools/oracle/cases/helpers/providers/anthropic-params/speed-drop-policy.yaml
+- tools/oracle/cases/helpers/providers/anthropic-params/adaptive-to-legacy-cap.yaml
+- tools/oracle/cases/helpers/providers/anthropic-params/parameter-body-rewrites.yaml
+- tools/oracle/cases/helpers/providers/anthropic-params/structured-format-selection.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type L172-L181; AnthropicConfig.filter_anthropic_output_schema
-  L530-L665; AnthropicConfig.get_json_schema_from_pydantic_object L667-L670; AnthropicConfig._extract_json_schema_from_response_format
-  L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool
-  L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format L1656-L1682 belong to B574; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
-  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
-  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+- 'litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
   L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
   L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
-  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
-  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
-  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
-  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
-  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper
-  L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951; AnthropicConfig._map_tools L953-L997 belong
-  to B575; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
-  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
-  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
-  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
-  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage L2256-L2263; AnthropicConfig._response_has_thinking_block
-  L2266-L2274; AnthropicConfig._build_completion_token_details L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens
-  L2309-L2315; AnthropicConfig.is_anthropic_usage_object L2318-L2330; AnthropicConfig._aggregate_cache_creation_token_details
-  L2333-L2346; AnthropicConfig._resolve_cache_creation_token_details L2349-L2361; AnthropicConfig.calculate_usage
-  L2363-L2467 belong to B579; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
-  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
-  to B580; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
-  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
-  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
-  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
-  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
-  injected typed boundary.
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320;
+  AnthropicConfig.custom_llm_provider L322-L324; AnthropicConfig._resolved_provider L326-L328; AnthropicConfig.get_config
+  L330-L338; AnthropicConfig.get_max_tokens_for_model L340-L354; AnthropicConfig._map_stop_sequences L1230-L1248;
+  AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic L1416-L1471;
+  _valid_user_id L2795-L2808 belong to B2201.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level
+  L398-L403; AnthropicConfig._validate_effort_for_model L405-L415; AnthropicConfig._model_supports_effort_param
+  L417-L431; AnthropicConfig._model_supports_speed_param L433-L444; AnthropicConfig._maybe_drop_speed_param L446-L471;
+  AnthropicConfig._raise_invalid_reasoning_effort L473-L494; AnthropicConfig.get_supported_openai_params L496-L527;
+  AnthropicConfig._map_reasoning_effort L1250-L1309; AnthropicConfig.cap_thinking_budget_to_max_tokens L1311-L1326
+  belong to B569.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name
+  L193-L202; _build_anthropic_tool_name_maps L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L999-L1048;
+  AnthropicConfig._sanitize_tool_names_in_request L1078-L1151 belong to B573.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type
+  L172-L181; AnthropicConfig.filter_anthropic_output_schema L529-L665; AnthropicConfig.get_json_schema_from_pydantic_object
+  L667-L670; AnthropicConfig._extract_json_schema_from_response_format L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format
+  L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format
+  L1656-L1682 belong to B574.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice
+  L680-L721; AnthropicConfig._map_tool_helper L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951;
+  AnthropicConfig._map_tools L953-L997 belong to B575.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata
+  L1684-L1691; AnthropicConfig.translate_system_message L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780;
+  AnthropicConfig._ensure_beta_header L1782-L1801; AnthropicConfig._ensure_context_management_beta_header L1803-L1837;
+  AnthropicConfig.update_headers_with_optional_anthropic_beta L1839-L1875; AnthropicConfig.inlines_remote_media
+  L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894; AnthropicConfig.transform_request L1896-L2080
+  belong to B577.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format
+  L356-L384; AnthropicConfig._resolve_json_mode_non_streaming L2130-L2160; AnthropicConfig.extract_response_content
+  L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482; AnthropicConfig._build_code_interpreter_results
+  L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536; AnthropicConfig._build_provider_specific_fields
+  L2538-L2582; AnthropicConfig._convert_tool_response_to_message L2761-L2785 belong to B578.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage
+  L2255-L2263; AnthropicConfig._response_has_thinking_block L2265-L2274; AnthropicConfig._build_completion_token_details
+  L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens L2309-L2315; AnthropicConfig.is_anthropic_usage_object
+  L2317-L2330; AnthropicConfig._aggregate_cache_creation_token_details L2332-L2346; AnthropicConfig._resolve_cache_creation_token_details
+  L2348-L2361; AnthropicConfig.calculate_usage L2363-L2467 belong to B579.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response
+  L2584-L2688; AnthropicConfig.get_prefix_prompt L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class
+  L2787-L2792 belong to B580.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model
+  L386-L390; AnthropicConfig._is_opus_4_7_model L392-L396; AnthropicConfig.get_cache_control_headers L672-L678;
+  AnthropicConfig._build_request_tool_name_maps L1050-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165;
+  AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- Compaction and context-management options are wire values here; executing compaction belongs to B100.
+- The two max-token spellings overwrite in input order, rather than assigning a fixed preferred spelling.
+- reasoning_effort=none removes the whole output_config, including a structured-output format.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

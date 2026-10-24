@@ -43,26 +43,26 @@ description: >-
   (L67-L72); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.transform_image_generation_request
   (L74-L84); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.transform_image_generation_response
   (L86-L101); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.use_multipart_form_data
-  (L103-L109); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.__init__ (L30-L31); litellm/llms/base_llm/image_edit/transformation.py:
-  BaseImageEditConfig.get_config (L34-L50); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_supported_openai_params
-  (L53-L54); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.map_openai_params (L57-L63);
-  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.validate_environment (L66-L74); litellm/llms/base_llm/image_edit/transformation.py:
-  BaseImageEditConfig.get_complete_url (L77-L92); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_request
-  (L95-L104); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.async_transform_image_edit_request
-  (L106-L122); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.finalize_image_edit_request_data
-  (L124-L132); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_response
-  (L135-L141); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.use_multipart_form_data (L143-L150);
-  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_error_class (L152-L161); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.get_supported_openai_params (L30-L31); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.get_complete_url (L33-L49); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.transform_request_image_variation (L52-L59); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.validate_environment (L61-L71); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.async_transform_response_image_variation (L74-L87); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.transform_response_image_variation (L90-L103); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.transform_request (L105-L115); litellm/llms/base_llm/image_variations/transformation.py:
-  BaseImageVariationConfig.transform_response (L117-L133). Abstract/protocol declarations map to native types and
-  synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
+  (L103-L109); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_config (L34-L50); litellm/llms/base_llm/image_edit/transformation.py:
+  BaseImageEditConfig.get_supported_openai_params (L53-L54); litellm/llms/base_llm/image_edit/transformation.py:
+  BaseImageEditConfig.map_openai_params (L57-L63); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.validate_environment
+  (L66-L74); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_complete_url (L77-L92);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_request (L95-L104);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.async_transform_image_edit_request (L106-L122);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.finalize_image_edit_request_data (L124-L132);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_response (L135-L141);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.use_multipart_form_data (L143-L150); litellm/llms/base_llm/image_edit/transformation.py:
+  BaseImageEditConfig.get_error_class (L152-L161); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.get_supported_openai_params
+  (L30-L31); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.get_complete_url
+  (L33-L49); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.transform_request_image_variation
+  (L52-L59); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.validate_environment
+  (L61-L71); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.async_transform_response_image_variation
+  (L74-L87); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.transform_response_image_variation
+  (L90-L103); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.transform_request
+  (L105-L115); litellm/llms/base_llm/image_variations/transformation.py: BaseImageVariationConfig.transform_response
+  (L117-L133). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
 
 
   Sizing: 319 owned nonblank/non-comment/non-docstring Python lines (349 nonblank/non-comment physical lines, including
@@ -173,6 +173,7 @@ out_of_scope:
   operations. Python package export/event-loop facades remain B158-B161.
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
+- 'litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.__init__ L30-L31 belongs to B2202.'
 pitfalls:
 - Within BaseImageEditConfig.get_complete_url\'s api_base is None branch, preserve raise ValueError('api_base is
   required') and its nested guards.

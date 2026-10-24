@@ -14,6 +14,43 @@ description: >-
   L1656-L1682.
 
 
+  Named case contracts: constraint_description: Remove exactly these keys and append notes in this declaration order,
+  regardless of input key order: minItems -> minimum number of items: {}; maxItems -> maximum number of items: {};
+  uniqueItems -> all array items must be unique; contains -> array must contain an item matching: {}; minContains
+  -> minimum number of matching items: {}; maxContains -> maximum number of matching items: {}; prefixItems -> leading
+  items must match, in order: {}; minimum -> minimum value: {}; maximum -> maximum value: {}; exclusiveMinimum ->
+  exclusive minimum value: {}; exclusiveMaximum -> exclusive maximum value: {}; multipleOf -> must be a multiple
+  of {}; minLength -> minimum length: {}; maxLength -> maximum length: {}; minProperties -> minimum number of properties:
+  {}; maxProperties -> maximum number of properties: {}; patternProperties -> properties whose names match each
+  pattern must satisfy: {}; propertyNames -> property names must satisfy: {}; dependentRequired -> dependent required
+  properties: {}; dependentSchemas -> dependent schemas: {}; unevaluatedProperties -> unevaluated properties must
+  satisfy: {}; if -> conditional (if): {}; then -> conditional (then): {}; else -> conditional (else): {}; not ->
+  must not match: {}. Notes are Note: <comma-space joined labels>. with one preceding space after a truthy existing
+  description. Dict/list constraint values use Python JSON serialization; other values use Python formatting. Unknown
+  keys remain. false_constraint_ignored: Boolean false constraints are removed without adding notes; numeric zero,
+  empty strings/arrays/objects and None still add notes. Non-dict schema nodes pass through unchanged. enum_type_conflict:
+  With list enum and present type, drop type when it is a list (even matching/empty enum), or any value mismatches
+  a known scalar type. null/boolean/integer/number/string/array/object checks distinguish bool from int/number;
+  integer rejects floats. Unknown type or nonlist enum does not trigger dropping. Preserve enum. oneof_to_anyof:
+  Recurse only through dict properties, dict items, dict $defs and list anyOf/allOf/oneOf; merge oneOf into anyOf
+  in source key encounter order, preserving duplicates. Wrong-shaped recognized keys and other nested objects remain
+  untouched. object_additional_properties: After type conflict filtering, exact type=object forces additionalProperties=false
+  regardless of supplied value; a removed/conflicting type does not trigger insertion. bounded_def_expansion: Extract
+  response_schema by key presence before json_schema.schema (even response_schema=None), then deepcopy. Pop both
+  $defs and definitions, prefer $defs if present; truthy definitions expand through B217 with max_inlined_bytes=10000000
+  before filtering. Empty schema is valid, None returns no format; do not mutate input. json_tool_fallback: Output
+  format returns {type:json_schema,schema:<filtered>}. Tool fallback returns name=json_tool_call, input_schema starts
+  type=object then supplied schema overrides it without output-schema filtering/defs expansion. Direct helper None
+  produces additionalProperties=true,properties={}. optional_params and is_thinking_enabled arguments have no effect
+  here. text_format_no_tool: None or value.type=text produces no tool; other types require an extracted schema,
+  and missing type raises KeyError at this layer. Pydantic extraction delegates B160 type_to_response_format_param
+  with literal ref_template=/$defs/{model}; Rust receives serialized schema, no Python-model emulation.
+
+
+  Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
+  ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
+
+
   Implement crates/betterlite-anthropic/src/output_schema.rs with adjacent tests under output_schema/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,9 +67,8 @@ description: >-
   Write rstest function output_schema_cases in betterlite-anthropic with these exact named cases (one per oracle
   file): constraint_description, false_constraint_ignored, enum_type_conflict, oneof_to_anyof, object_additional_properties,
   bounded_def_expansion, json_tool_fallback, text_format_no_tool. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_output_schema* using HelperCase: kind:
@@ -48,9 +84,9 @@ description: >-
 
 
   Budget from 187 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 215 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 444 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 250 production lines, 240 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 635 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -71,58 +107,80 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L172-L181
   why: Own _enum_conflicts_with_declared_type. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L530-L670
-  why: >-
-    Own AnthropicConfig.filter_anthropic_output_schema, AnthropicConfig.get_json_schema_from_pydantic_object. Other
-    functions in this file remain with the owners listed below.
+  why: Own AnthropicConfig.filter_anthropic_output_schema, AnthropicConfig.get_json_schema_from_pydantic_object.
+    Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1328-L1387
-  why: >-
-    Own AnthropicConfig._extract_json_schema_from_response_format, AnthropicConfig.map_response_format_to_anthropic_output_format,
+  why: Own AnthropicConfig._extract_json_schema_from_response_format, AnthropicConfig.map_response_format_to_anthropic_output_format,
     AnthropicConfig.map_response_format_to_anthropic_tool. Other functions in this file remain with the owners listed
     below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1656-L1682
   why: Own AnthropicConfig._create_json_tool_call_for_response_format. Other functions in this file remain with
     the owners listed below.
 dod:
-- text: >-
-    constraint description: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/constraint-description.yaml.
+- text: 'constraint_description: Remove exactly these keys and append notes in this declaration order, regardless
+    of input key order: minItems -> minimum number of items: {}; maxItems -> maximum number of items: {}; uniqueItems
+    -> all array items must be unique; contains -> array must contain an item matching: {}; minContains -> minimum
+    number of matching items: {}; maxContains -> maximum number of matching items: {}; prefixItems -> leading items
+    must match, in order: {}; minimum -> minimum value: {}; maximum -> maximum value: {}; exclusiveMinimum -> exclusive
+    minimum value: {}; exclusiveMaximum -> exclusive maximum value: {}; multipleOf -> must be a multiple of {};
+    minLength -> minimum length: {}; maxLength -> maximum length: {}; minProperties -> minimum number of properties:
+    {}; maxProperties -> maximum number of properties: {}; patternProperties -> properties whose names match each
+    pattern must satisfy: {}; propertyNames -> property names must satisfy: {}; dependentRequired -> dependent required
+    properties: {}; dependentSchemas -> dependent schemas: {}; unevaluatedProperties -> unevaluated properties must
+    satisfy: {}; if -> conditional (if): {}; then -> conditional (then): {}; else -> conditional (else): {}; not
+    -> must not match: {}. Notes are Note: <comma-space joined labels>. with one preceding space after a truthy
+    existing description. Dict/list constraint values use Python JSON serialization; other values use Python formatting.
+    Unknown keys remain.'
   proof:
   - case-constraint-description
   - oracle
   - helper-python
-- text: >-
-    false constraint ignored: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/false-constraint-ignored.yaml.
+- text: 'false_constraint_ignored: Boolean false constraints are removed without adding notes; numeric zero, empty
+    strings/arrays/objects and None still add notes. Non-dict schema nodes pass through unchanged.'
   proof:
   - case-false-constraint-ignored
   - oracle
   - helper-python
-- text: 'enum type conflict: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/enum-type-conflict.yaml.'
+- text: 'enum_type_conflict: With list enum and present type, drop type when it is a list (even matching/empty enum),
+    or any value mismatches a known scalar type. null/boolean/integer/number/string/array/object checks distinguish
+    bool from int/number; integer rejects floats. Unknown type or nonlist enum does not trigger dropping. Preserve
+    enum.'
   proof:
   - case-enum-type-conflict
   - oracle
   - helper-python
-- text: 'oneof to anyof: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/oneof-to-anyof.yaml.'
+- text: 'oneof_to_anyof: Recurse only through dict properties, dict items, dict $defs and list anyOf/allOf/oneOf;
+    merge oneOf into anyOf in source key encounter order, preserving duplicates. Wrong-shaped recognized keys and
+    other nested objects remain untouched.'
   proof:
   - case-oneof-to-anyof
   - oracle
   - helper-python
-- text: >-
-    object additional properties: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/object-additional-properties.yaml.
+- text: 'object_additional_properties: After type conflict filtering, exact type=object forces additionalProperties=false
+    regardless of supplied value; a removed/conflicting type does not trigger insertion.'
   proof:
   - case-object-additional-properties
   - oracle
   - helper-python
-- text: >-
-    bounded def expansion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/bounded-def-expansion.yaml.
+- text: 'bounded_def_expansion: Extract response_schema by key presence before json_schema.schema (even response_schema=None),
+    then deepcopy. Pop both $defs and definitions, prefer $defs if present; truthy definitions expand through B217
+    with max_inlined_bytes=10000000 before filtering. Empty schema is valid, None returns no format; do not mutate
+    input.'
   proof:
   - case-bounded-def-expansion
   - oracle
   - helper-python
-- text: 'json tool fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/json-tool-fallback.yaml.'
+- text: 'json_tool_fallback: Output format returns {type:json_schema,schema:<filtered>}. Tool fallback returns name=json_tool_call,
+    input_schema starts type=object then supplied schema overrides it without output-schema filtering/defs expansion.
+    Direct helper None produces additionalProperties=true,properties={}. optional_params and is_thinking_enabled
+    arguments have no effect here.'
   proof:
   - case-json-tool-fallback
   - oracle
   - helper-python
-- text: 'text format no tool: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-output-schema/text-format-no-tool.yaml.'
+- text: 'text_format_no_tool: None or value.type=text produces no tool; other types require an extracted schema,
+    and missing type raises KeyError at this layer. Pydantic extraction delegates B160 type_to_response_format_param
+    with literal ref_template=/$defs/{model}; Rust receives serialized schema, no Python-model emulation.'
   proof:
   - case-text-format-no-tool
   - oracle
@@ -136,39 +194,63 @@ checks:
   - mutants
   commands:
   - id: case-constraint-description
-    why: The constraint-description behavior is missing or differs from its pinned fixture.
+    why: 'Remove exactly these keys and append notes in this declaration order, regardless of input key order: minItems
+      -> minimum number of items: {}; maxItems -> maximum number of items: {}; uniqueItems -> all array items must
+      be unique; contains -> array must contain an item matching: {}; minContains -> minimum number of matching
+      items: {}; maxContains -> maximum number of matching items: {}; prefixItems -> leading items must match, in
+      order: {}; minimum -> minimum value: {}; maximum -> maximum value: {}; exclusiveMinimum -> exclusive minimum
+      value: {}; exclusiveMaximum -> exclusive maximum value: {}; multipleOf -> must be a multiple of {}; minLength
+      -> minimum length: {}; maxLength -> maximum length: {}; minProperties -> minimum number of properties: {};
+      maxProperties -> maximum number of properties: {}; patternProperties -> properties whose names match each
+      pattern must satisfy: {}; propertyNames -> property names must satisfy: {}; dependentRequired -> dependent
+      required properties: {}; dependentSchemas -> dependent schemas: {}; unevaluatedProperties -> unevaluated properties
+      must satisfy: {}; if -> conditional (if): {}; then -> conditional (then): {}; else -> conditional (else):
+      {}; not -> must not match: {}. Notes are Note: <comma-space joined labels>. with one preceding space after
+      a truthy existing description. Dict/list constraint values use Python JSON serialization; other values use
+      Python formatting. Unknown keys remain.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_constraint_description$/)'
   - id: case-false-constraint-ignored
-    why: The false-constraint-ignored behavior is missing or differs from its pinned fixture.
+    why: Boolean false constraints are removed without adding notes; numeric zero, empty strings/arrays/objects
+      and None still add notes. Non-dict schema nodes pass through unchanged.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_false_constraint_ignored$/)'
   - id: case-enum-type-conflict
-    why: The enum-type-conflict behavior is missing or differs from its pinned fixture.
+    why: With list enum and present type, drop type when it is a list (even matching/empty enum), or any value mismatches
+      a known scalar type. null/boolean/integer/number/string/array/object checks distinguish bool from int/number;
+      integer rejects floats. Unknown type or nonlist enum does not trigger dropping. Preserve enum.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_enum_type_conflict$/)'
   - id: case-oneof-to-anyof
-    why: The oneof-to-anyof behavior is missing or differs from its pinned fixture.
+    why: Recurse only through dict properties, dict items, dict $defs and list anyOf/allOf/oneOf; merge oneOf into
+      anyOf in source key encounter order, preserving duplicates. Wrong-shaped recognized keys and other nested
+      objects remain untouched.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_oneof_to_anyof$/)'
   - id: case-object-additional-properties
-    why: The object-additional-properties behavior is missing or differs from its pinned fixture.
+    why: After type conflict filtering, exact type=object forces additionalProperties=false regardless of supplied
+      value; a removed/conflicting type does not trigger insertion.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_object_additional_properties$/)'
   - id: case-bounded-def-expansion
-    why: The bounded-def-expansion behavior is missing or differs from its pinned fixture.
+    why: Extract response_schema by key presence before json_schema.schema (even response_schema=None), then deepcopy.
+      Pop both $defs and definitions, prefer $defs if present; truthy definitions expand through B217 with max_inlined_bytes=10000000
+      before filtering. Empty schema is valid, None returns no format; do not mutate input.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_bounded_def_expansion$/)'
   - id: case-json-tool-fallback
-    why: The json-tool-fallback behavior is missing or differs from its pinned fixture.
+    why: Output format returns {type:json_schema,schema:<filtered>}. Tool fallback returns name=json_tool_call,
+      input_schema starts type=object then supplied schema overrides it without output-schema filtering/defs expansion.
+      Direct helper None produces additionalProperties=true,properties={}. optional_params and is_thinking_enabled
+      arguments have no effect here.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_json_tool_fallback$/)'
   - id: case-text-format-no-tool
-    why: The text-format-no-tool behavior is missing or differs from its pinned fixture.
+    why: None or value.type=text produces no tool; other types require an extracted schema, and missing type raises
+      KeyError at this layer. Pydantic extraction delegates B160 type_to_response_format_param with literal ref_template=/$defs/{model};
+      Rust receives serialized schema, no Python-model emulation.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::output_schema_cases::case_[0-9]+_text_format_no_tool$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_output_schema.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_output_schema.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_output_schema*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_output_schema*")"
       && grep -lq 'anthropic_output_schema' tools/oracle/fuzz/corpus/helper_case/anthropic_output_schema* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_output_schema$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -187,60 +269,57 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
-  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
-  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+- 'litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
   L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
   L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
-  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider
-  L323-L324; AnthropicConfig._resolved_provider L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model
-  L341-L354; AnthropicConfig._map_stop_sequences L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
-  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
-  _valid_user_id L2795-L2808 belong to B576; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
-  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
-  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
-  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
-  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper
-  L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951; AnthropicConfig._map_tools L953-L997 belong
-  to B575; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
-  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
-  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
-  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
-  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage L2256-L2263; AnthropicConfig._response_has_thinking_block
-  L2266-L2274; AnthropicConfig._build_completion_token_details L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens
-  L2309-L2315; AnthropicConfig.is_anthropic_usage_object L2318-L2330; AnthropicConfig._aggregate_cache_creation_token_details
-  L2333-L2346; AnthropicConfig._resolve_cache_creation_token_details L2349-L2361; AnthropicConfig.calculate_usage
-  L2363-L2467 belong to B579; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
-  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
-  to B580; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
-  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
-  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
-  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
-  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
-  injected typed boundary.
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320;
+  AnthropicConfig.custom_llm_provider L322-L324; AnthropicConfig._resolved_provider L326-L328; AnthropicConfig.get_config
+  L330-L338; AnthropicConfig.get_max_tokens_for_model L340-L354; AnthropicConfig._map_stop_sequences L1230-L1248;
+  AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic L1416-L1471;
+  _valid_user_id L2795-L2808 belong to B2201.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level
+  L398-L403; AnthropicConfig._validate_effort_for_model L405-L415; AnthropicConfig._model_supports_effort_param
+  L417-L431; AnthropicConfig._model_supports_speed_param L433-L444; AnthropicConfig._maybe_drop_speed_param L446-L471;
+  AnthropicConfig._raise_invalid_reasoning_effort L473-L494; AnthropicConfig.get_supported_openai_params L496-L527;
+  AnthropicConfig._map_reasoning_effort L1250-L1309; AnthropicConfig.cap_thinking_budget_to_max_tokens L1311-L1326
+  belong to B569.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name
+  L193-L202; _build_anthropic_tool_name_maps L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L999-L1048;
+  AnthropicConfig._sanitize_tool_names_in_request L1078-L1151 belong to B573.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice
+  L680-L721; AnthropicConfig._map_tool_helper L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951;
+  AnthropicConfig._map_tools L953-L997 belong to B575.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.map_openai_params
+  L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128 belong to B576.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata
+  L1684-L1691; AnthropicConfig.translate_system_message L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780;
+  AnthropicConfig._ensure_beta_header L1782-L1801; AnthropicConfig._ensure_context_management_beta_header L1803-L1837;
+  AnthropicConfig.update_headers_with_optional_anthropic_beta L1839-L1875; AnthropicConfig.inlines_remote_media
+  L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894; AnthropicConfig.transform_request L1896-L2080
+  belong to B577.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format
+  L356-L384; AnthropicConfig._resolve_json_mode_non_streaming L2130-L2160; AnthropicConfig.extract_response_content
+  L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482; AnthropicConfig._build_code_interpreter_results
+  L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536; AnthropicConfig._build_provider_specific_fields
+  L2538-L2582; AnthropicConfig._convert_tool_response_to_message L2761-L2785 belong to B578.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage
+  L2255-L2263; AnthropicConfig._response_has_thinking_block L2265-L2274; AnthropicConfig._build_completion_token_details
+  L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens L2309-L2315; AnthropicConfig.is_anthropic_usage_object
+  L2317-L2330; AnthropicConfig._aggregate_cache_creation_token_details L2332-L2346; AnthropicConfig._resolve_cache_creation_token_details
+  L2348-L2361; AnthropicConfig.calculate_usage L2363-L2467 belong to B579.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response
+  L2584-L2688; AnthropicConfig.get_prefix_prompt L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class
+  L2787-L2792 belong to B580.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model
+  L386-L390; AnthropicConfig._is_opus_4_7_model L392-L396; AnthropicConfig.get_cache_control_headers L672-L678;
+  AnthropicConfig._build_request_tool_name_maps L1050-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165;
+  AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- >-
-  Preserve constraint-to-description projection, enum/type conflict handling, anyOf/oneOf treatment, object additionalProperties
-  and bounded definition expansion through existing schema utilities.
+- Popping definitions happens even when $defs is present because the default argument is evaluated eagerly.
+- After conflicting enum removes type=object, additionalProperties=false is no longer inserted.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

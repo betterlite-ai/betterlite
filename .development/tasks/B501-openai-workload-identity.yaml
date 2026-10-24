@@ -18,8 +18,23 @@ description: >-
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/workload_identity.py:
   OpenAIWorkloadIdentityConfig.to_sdk_workload_identity L32-L40; resolve_openai_workload_identity_config L43-L66;
-  get_workload_identity_bearer_token L69-L70; _targets_openai_api L73-L77; _workload_identity_auth L81-L83; _load_sdk_workload_identity_auth
+  get_workload_identity_bearer_token L69-L70; _targets_openai_api L73-L77; _workload_identity_auth L80-L83; _load_sdk_workload_identity_auth
   L86-L91; _load_sdk_k8s_token_provider L94-L99.
+
+
+  Named case contracts: static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str;
+  either nonblank key disables workload identity, including an env key after an explicit whitespace-only key. https_openai_host_only:
+  Effective base is api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE; an absent base allows WIF, otherwise
+  require HTTPS plus B500 api.openai.com/subdomain classification. Foreign/HTTP hosts disable it; URL parse failures
+  propagate. identity_cache_boundary: Cache WorkloadIdentityAuth by the frozen identity_provider_id/service_account_id/token_file
+  triple with maxsize=16; equal configs reuse the auth object, changed identities do not, and the seventeenth distinct
+  entry evicts the least recently used. sdk_auth_unavailable_500: Import failure for either WorkloadIdentityAuth
+  or k8s_service_account_token_provider raises B668 OpenAIError 500 with the original cause and a diagnostic requiring
+  openai>=2.32.0 and naming all three identity environment variables.
+
+
+  B129 owns get_secret_str and normalize_nonempty_secret_str; configuration injects the resulting snapshots. Treat
+  SDK availability as an injectable capability for oracle comparison, without requiring a Python runtime in production.
 
 
   Implement crates/betterlite-openai/src/workload_identity.rs with adjacent tests under workload_identity/. Keep
@@ -37,10 +52,10 @@ description: >-
 
   Write rstest function workload_identity_cases in betterlite-openai with these exact named cases (one per oracle
   file): static_key_disables_wif, three_fields_required, https_openai_host_only, kubernetes_token_exchange, token_refresh_and_error,
-  exchange_json_fields, refresh_half_life_boundary, empty_subject_token, oauth_status_errors, concurrent_refresh_single_flight.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  exchange_json_fields, refresh_half_life_boundary, empty_subject_token, oauth_status_errors, concurrent_refresh_single_flight,
+  identity_cache_boundary, sdk_auth_unavailable_500. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_workload_identity* using HelperCase: kind:
@@ -82,10 +97,10 @@ description: >-
   it is not a Python oracle case.
 
 
-  Budget from 55 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 160 production lines, 186 behavior/config-test lines, 115 combined
-  Rust/Python adapter lines, 55 parser target/replay lines, 34 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 575 planned, 575 maximum changed lines. The production allowance includes 70 lines for the referenced
+  Budget from 56 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 210 production lines, 220 behavior/config-test lines, 110 combined
+  Rust/Python adapter lines, 55 parser target/replay lines, 40 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 660 planned, 675 maximum changed lines. The production allowance includes 70 lines for the referenced
   SDK protocol that LiteLLM delegates.
 scope:
   paths:
@@ -127,49 +142,44 @@ references:
 - url: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/auth/_workload.py#L174-L313
   why: Installed oracle SDK token exchange and refresh; client_id is not serialized in this SDK version.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/workload_identity.py#L32-L99
-  why: >-
-    Own OpenAIWorkloadIdentityConfig.to_sdk_workload_identity, resolve_openai_workload_identity_config, get_workload_identity_bearer_token,
+  why: Own OpenAIWorkloadIdentityConfig.to_sdk_workload_identity, resolve_openai_workload_identity_config, get_workload_identity_bearer_token,
     _targets_openai_api, _workload_identity_auth, _load_sdk_workload_identity_auth, _load_sdk_k8s_token_provider.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    static key disables wif: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/static-key-disables-wif.yaml.
+- text: 'static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str;
+    either nonblank key disables workload identity, including an env key after an explicit whitespace-only key.'
   proof:
   - case-static-key-disables-wif
   - oracle
   - helper-python
-- text: >-
-    three fields required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/three-fields-required.yaml.
+- text: 'three fields required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/three-fields-required.yaml.'
   proof:
   - case-three-fields-required
   - oracle
   - helper-python
-- text: >-
-    https openai host only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/https-openai-host-only.yaml.
+- text: 'https_openai_host_only: Effective base is api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE;
+    an absent base allows WIF, otherwise require HTTPS plus B500 api.openai.com/subdomain classification. Foreign/HTTP
+    hosts disable it; URL parse failures propagate.'
   proof:
   - case-https-openai-host-only
   - oracle
   - helper-python
-- text: >-
-    kubernetes token exchange: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/kubernetes-token-exchange.yaml.
+- text: 'kubernetes token exchange: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/kubernetes-token-exchange.yaml.'
   proof:
   - case-kubernetes-token-exchange
   - oracle
   - helper-python
-- text: >-
-    token refresh and error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/token-refresh-and-error.yaml.
+- text: 'token refresh and error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/token-refresh-and-error.yaml.'
   proof:
   - case-token-refresh-and-error
   - oracle
   - helper-python
-- text: >-
-    exchange json fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/exchange-json-fields.yaml.
+- text: 'exchange json fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/exchange-json-fields.yaml.'
   proof:
   - case-exchange-json-fields
   - oracle
   - helper-python
-- text: >-
-    refresh half life boundary: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/refresh-half-life-boundary.yaml.
+- text: 'refresh half life boundary: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/refresh-half-life-boundary.yaml.'
   proof:
   - case-refresh-half-life-boundary
   - oracle
@@ -184,8 +194,7 @@ dod:
   - case-oauth-status-errors
   - oracle
   - helper-python
-- text: >-
-    concurrent refresh single flight: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/concurrent-refresh-single-flight.yaml.
+- text: 'concurrent refresh single flight: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/concurrent-refresh-single-flight.yaml.'
   proof:
   - case-concurrent-refresh-single-flight
   - oracle
@@ -218,81 +227,91 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'identity_cache_boundary: Cache WorkloadIdentityAuth by the frozen identity_provider_id/service_account_id/token_file
+    triple with maxsize=16; equal configs reuse the auth object, changed identities do not, and the seventeenth
+    distinct entry evicts the least recently used.'
+  proof:
+  - case-identity-cache-boundary
+  - oracle
+  - helper-python
+- text: 'sdk_auth_unavailable_500: Import failure for either WorkloadIdentityAuth or k8s_service_account_token_provider
+    raises B668 OpenAIError 500 with the original cause and a diagnostic requiring openai>=2.32.0 and naming all
+    three identity environment variables.'
+  proof:
+  - case-sdk-auth-unavailable-500
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-static-key-disables-wif
-    why: The static-key-disables-wif behavior is missing or differs from its pinned fixture.
+    why: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str; either nonblank key
+      disables workload identity, including an env key after an explicit whitespace-only key.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_static_key_disables_wif$/)'
   - id: case-three-fields-required
-    why: The three-fields-required behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/three-fields-required.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_three_fields_required$/)'
   - id: case-https-openai-host-only
-    why: The https-openai-host-only behavior is missing or differs from its pinned fixture.
+    why: Effective base is api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE; an absent base allows WIF,
+      otherwise require HTTPS plus B500 api.openai.com/subdomain classification. Foreign/HTTP hosts disable it;
+      URL parse failures propagate.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_https_openai_host_only$/)'
   - id: case-kubernetes-token-exchange
-    why: The kubernetes-token-exchange behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/kubernetes-token-exchange.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_kubernetes_token_exchange$/)'
   - id: case-token-refresh-and-error
-    why: The token-refresh-and-error behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/token-refresh-and-error.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_token_refresh_and_error$/)'
   - id: case-exchange-json-fields
-    why: The exchange-json-fields behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/exchange-json-fields.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_exchange_json_fields$/)'
   - id: case-refresh-half-life-boundary
-    why: The refresh-half-life-boundary behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/refresh-half-life-boundary.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_refresh_half_life_boundary$/)'
   - id: case-empty-subject-token
-    why: The empty-subject-token behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/empty-subject-token.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_empty_subject_token$/)'
   - id: case-oauth-status-errors
-    why: The oauth-status-errors behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/oauth-status-errors.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_oauth_status_errors$/)'
   - id: case-concurrent-refresh-single-flight
-    why: The concurrent-refresh-single-flight behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-workload-identity/concurrent-refresh-single-flight.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_concurrent_refresh_single_flight$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_workload_identity.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_workload_identity.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_workload_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_workload_identity*")"
       && grep -lq 'openai_workload_identity' tools/oracle/fuzz/corpus/helper_case/openai_workload_identity* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_workload_identity$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_workload_identity)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_workload_identity)"
       && grep -q 'decode_token_exchange' crates/betterlite-openai/fuzz/fuzz_targets/openai_workload_identity.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_workload_identity_corpus$/)'
   - id: config-openai-identity-provider-id
     why: The OPENAI_IDENTITY_PROVIDER_ID setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_identity_provider_id$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_identity_provider_id$/)'
       && grep -lq 'OPENAI_IDENTITY_PROVIDER_ID' crates/betterlite-config/fuzz/corpus/config_yaml/openai_workload_identity*
   - id: config-openai-service-account-id
     why: The OPENAI_SERVICE_ACCOUNT_ID setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_service_account_id$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_service_account_id$/)'
       && grep -lq 'OPENAI_SERVICE_ACCOUNT_ID' crates/betterlite-config/fuzz/corpus/config_yaml/openai_workload_identity*
   - id: config-openai-identity-token-file
     why: The OPENAI_IDENTITY_TOKEN_FILE setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_identity_token_file$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_identity_token_file$/)'
       && grep -lq 'OPENAI_IDENTITY_TOKEN_FILE' crates/betterlite-config/fuzz/corpus/config_yaml/openai_workload_identity*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/openai_workload_identity*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/openai_workload_identity*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
@@ -300,6 +319,16 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_workload_identity_secret_safe_failure$/)'
+  - id: case-identity-cache-boundary
+    why: Cache WorkloadIdentityAuth by the frozen identity_provider_id/service_account_id/token_file triple with
+      maxsize=16; equal configs reuse the auth object, changed identities do not, and the seventeenth distinct entry
+      evicts the least recently used.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_identity_cache_boundary$/)'
+  - id: case-sdk-auth-unavailable-500
+    why: Import failure for either WorkloadIdentityAuth or k8s_service_account_token_provider raises B668 OpenAIError
+      500 with the original cause and a diagnostic requiring openai>=2.32.0 and naming all three identity environment
+      variables.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_sdk_auth_unavailable_500$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-workload-identity/static-key-disables-wif.yaml
 - tools/oracle/cases/helpers/providers/openai-workload-identity/three-fields-required.yaml
@@ -311,6 +340,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-workload-identity/empty-subject-token.yaml
 - tools/oracle/cases/helpers/providers/openai-workload-identity/oauth-status-errors.yaml
 - tools/oracle/cases/helpers/providers/openai-workload-identity/concurrent-refresh-single-flight.yaml
+- tools/oracle/cases/helpers/providers/openai-workload-identity/identity-cache-boundary.yaml
+- tools/oracle/cases/helpers/providers/openai-workload-identity/sdk-auth-unavailable-500.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -318,11 +349,13 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- >-
-  Resolve OPENAI_IDENTITY_PROVIDER_ID, OPENAI_SERVICE_ACCOUNT_ID and OPENAI_IDENTITY_TOKEN_FILE only from configuration;
-  all three are required and a nonempty static key disables identity exchange.
-- SDK 2.54.0 omits client_id from token-exchange JSON even though LiteLLM sets it on the workload identity configuration.
+- An absent api_base allows identity exchange without parsing, but an explicitly non-HTTPS base disables it even
+  if its hostname is OpenAI.
+- The identity cache is keyed by file path, not token-file contents; refreshed subject tokens must come from the
+  same provider object.
+- SDK 2.54.0 omits client_id from token-exchange JSON even though LiteLLM sets client_id=litellm in its workload
+  identity record.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: security

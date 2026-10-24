@@ -2,8 +2,8 @@ id: B026
 title: Foundry provider operation composition
 description: >-
   Compose Foundry chat, image/text embedding, Anthropic and agents adapters using typed route results. Own main.py
-  _complete_azure_ai and the Azure AI embedding branch. The azure-openai-redirect case must call Provider::Azure,
-  which is the direct reason for depending on B025. B698 installs all resource operations.
+  _complete_azure_ai; embeddings and redirect resolution remain with B552/B174 and are composed through their existing
+  contracts. B698 installs all resource operations.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: _complete_azure_ai
@@ -22,9 +22,58 @@ description: >-
   route owner; pure helper cases exercise the other typed provider operations without calling FastAPI globals.
 
 
+  Named case contracts: foundry_chat_dispatch: Resolve B549 get_azure_ai_route first. Agents wins even if the model
+  also contains claude. Otherwise case-insensitive claude selects B563; remaining models use B010 HTTP completion
+  with B550/B551 config behavior. Each branch resolves base/key through B549; do not apply OpenAI or Azure chat
+  defaults here. foundry_embedding_dispatch: Compose B552 text/image embedding adapters with their own B549 credential
+  resolution. The embedding base chain explicit/global/AZURE_AI_API_BASE and key chain explicit/global/AZURE_AI_API_KEY/Entra
+  are owned by those leaves, not by an invented branch in _complete_azure_ai. foundry_anthropic_dispatch: Drive
+  both sync/async Claude returns through B563 and compare Anthropic provider model/header conversion and failures
+  with the same selected base/key. foundry_agent_dispatch: Drive B562 agent calls with agent identifiers, stream
+  and nonstream modes and verify its create-message/run/poll behavior remains owned by that leaf. agents_missing_base:
+  The agents branch rejects only resolved api_base is None, ValueError: Azure AI Agents requests require an api_base.
+  Set `api_base` or the AZURE_AI_API_BASE env var. Then call B562 with headers or global litellm.headers, stream/acompletion
+  and the original optional map; this branch does not insert extra_headers or perform the later chat post_call.
+  claude_missing_base: Claude rejects only resolved api_base is None, ValueError: Azure Anthropic requests require
+  an api_base. Set `api_base` or the AZURE_AI_API_BASE env var. It passes the supplied headers directly (no global
+  fallback), global custom_prompt_dict rather than the caller value, and the supplied client to B563. claude_url_rewrite:
+  For a truthy Claude base strip trailing slashes. Preserve any exact /v1/messages suffix. Otherwise split at the
+  first /anthropic substring if present, discard everything after it, append /anthropic, then /v1/messages; without
+  that substring append both. This is literal string handling, not URL path parsing; an empty base bypasses rewriting.
+  command_r_tool_content: Only the case-sensitive command-r substring in a non-Claude/non-agent model triggers B182
+  stringify_json_tool_call_content. Preserve its JSON stringification and message order; Command-R does not trigger
+  it. Normal headers use supplied truthy map or global headers; non-None extra_headers, including {}, overwrites
+  the optional map. foundry_post_call: Claude post_call runs for truthy stream or acompletion is True and carries
+  no additional_args.headers. Normal execution exceptions post_call the original error string plus headers then
+  rethrow; only truthy stream triggers normal success post_call. Normal preparation errors occur outside the catch,
+  and agent/Claude errors are not caught here.
+
+
+  Write standalone Rust test foundry_provider_credential_identity_isolation in betterlite-provider: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test foundry_provider_secret_safe_failure in betterlite-provider: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  The B182 command-r helper changes only role=tool with string content that fails JSON decoding: replace it with
+  JSON text {"result": original_content}. Already valid JSON text is unchanged, including scalar JSON; nonstring
+  content is unchanged. The helper mutates the messages in place.
+
+
+  Use B2230 for the shared Azure o-series predicate/Foundry route selector called by this dispatch branch; concrete
+  provider transforms remain with their named leaves.
+
+
+  Direct constructor/helper prerequisites used by this slice: B560. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-provider/src/foundry_dispatch.rs with adjacent tests under foundry_dispatch/. Keep
-  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
-  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; leaf
+  crates remain below this dispatcher and never import it. The production function is the only Rust implementation
   used by tests and oracle adapters.
 
 
@@ -37,10 +86,10 @@ description: >-
 
   Write rstest function foundry_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
   file): foundry_chat_dispatch, foundry_embedding_dispatch, foundry_anthropic_dispatch, foundry_agent_dispatch,
-  azure_openai_redirect, agents_missing_base, claude_missing_base, claude_url_rewrite, embedding_entra_key, command_r_tool_content,
-  foundry_provider_dispatch_http. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  agents_missing_base, claude_missing_base, claude_url_rewrite, command_r_tool_content, foundry_provider_dispatch_http,
+  foundry_post_call. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_provider* using HelperCase: kind: helper
@@ -55,9 +104,9 @@ description: >-
 
 
   Budget from 127 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 155 production lines, 144 behavior/config-test lines,
-  99 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 423 planned, 425 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 180 production lines, 255 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 590 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
@@ -96,54 +145,59 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617-L1768
   why: Own _complete_azure_ai. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'foundry chat dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/foundry-chat-dispatch.yaml.'
+- text: 'foundry_chat_dispatch: Resolve B549 get_azure_ai_route first. Agents wins even if the model also contains
+    claude. Otherwise case-insensitive claude selects B563; remaining models use B010 HTTP completion with B550/B551
+    config behavior. Each branch resolves base/key through B549; do not apply OpenAI or Azure chat defaults here.'
   proof:
   - case-foundry-chat-dispatch
   - oracle
   - helper-python
-- text: >-
-    foundry embedding dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/foundry-embedding-dispatch.yaml.
+- text: 'foundry_embedding_dispatch: Compose B552 text/image embedding adapters with their own B549 credential resolution.
+    The embedding base chain explicit/global/AZURE_AI_API_BASE and key chain explicit/global/AZURE_AI_API_KEY/Entra
+    are owned by those leaves, not by an invented branch in _complete_azure_ai.'
   proof:
   - case-foundry-embedding-dispatch
   - oracle
   - helper-python
-- text: >-
-    foundry anthropic dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/foundry-anthropic-dispatch.yaml.
+- text: 'foundry_anthropic_dispatch: Drive both sync/async Claude returns through B563 and compare Anthropic provider
+    model/header conversion and failures with the same selected base/key.'
   proof:
   - case-foundry-anthropic-dispatch
   - oracle
   - helper-python
-- text: 'foundry agent dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/foundry-agent-dispatch.yaml.'
+- text: 'foundry_agent_dispatch: Drive B562 agent calls with agent identifiers, stream and nonstream modes and verify
+    its create-message/run/poll behavior remains owned by that leaf.'
   proof:
   - case-foundry-agent-dispatch
   - oracle
   - helper-python
-- text: 'azure openai redirect: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/azure-openai-redirect.yaml.'
-  proof:
-  - case-azure-openai-redirect
-  - oracle
-  - helper-python
-- text: 'agents missing base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/agents-missing-base.yaml.'
+- text: 'agents_missing_base: The agents branch rejects only resolved api_base is None, ValueError: Azure AI Agents
+    requests require an api_base. Set `api_base` or the AZURE_AI_API_BASE env var. Then call B562 with headers or
+    global litellm.headers, stream/acompletion and the original optional map; this branch does not insert extra_headers
+    or perform the later chat post_call.'
   proof:
   - case-agents-missing-base
   - oracle
   - helper-python
-- text: 'claude missing base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/claude-missing-base.yaml.'
+- text: 'claude_missing_base: Claude rejects only resolved api_base is None, ValueError: Azure Anthropic requests
+    require an api_base. Set `api_base` or the AZURE_AI_API_BASE env var. It passes the supplied headers directly
+    (no global fallback), global custom_prompt_dict rather than the caller value, and the supplied client to B563.'
   proof:
   - case-claude-missing-base
   - oracle
   - helper-python
-- text: 'claude url rewrite: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/claude-url-rewrite.yaml.'
+- text: 'claude_url_rewrite: For a truthy Claude base strip trailing slashes. Preserve any exact /v1/messages suffix.
+    Otherwise split at the first /anthropic substring if present, discard everything after it, append /anthropic,
+    then /v1/messages; without that substring append both. This is literal string handling, not URL path parsing;
+    an empty base bypasses rewriting.'
   proof:
   - case-claude-url-rewrite
   - oracle
   - helper-python
-- text: 'embedding entra key: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/embedding-entra-key.yaml.'
-  proof:
-  - case-embedding-entra-key
-  - oracle
-  - helper-python
-- text: 'command r tool content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-provider/command-r-tool-content.yaml.'
+- text: 'command_r_tool_content: Only the case-sensitive command-r substring in a non-Claude/non-agent model triggers
+    B182 stringify_json_tool_call_content. Preserve its JSON stringification and message order; Command-R does not
+    trigger it. Normal headers use supplied truthy map or global headers; non-None extra_headers, including {},
+    overwrites the optional map.'
   proof:
   - case-command-r-tool-content
   - oracle
@@ -155,154 +209,181 @@ dod:
 - text: New foundry_provider seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'foundry_post_call: Claude post_call runs for truthy stream or acompletion is True and carries no additional_args.headers.
+    Normal execution exceptions post_call the original error string plus headers then rethrow; only truthy stream
+    triggers normal success post_call. Normal preparation errors occur outside the catch, and agent/Claude errors
+    are not caught here.'
+  proof:
+  - case-foundry-post-call
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-foundry-chat-dispatch
-    why: The foundry-chat-dispatch behavior is missing or differs from its pinned fixture.
+    why: Resolve B549 get_azure_ai_route first. Agents wins even if the model also contains claude. Otherwise case-insensitive
+      claude selects B563; remaining models use B010 HTTP completion with B550/B551 config behavior. Each branch
+      resolves base/key through B549; do not apply OpenAI or Azure chat defaults here.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_chat_dispatch$/)'
   - id: case-foundry-embedding-dispatch
-    why: The foundry-embedding-dispatch behavior is missing or differs from its pinned fixture.
+    why: Compose B552 text/image embedding adapters with their own B549 credential resolution. The embedding base
+      chain explicit/global/AZURE_AI_API_BASE and key chain explicit/global/AZURE_AI_API_KEY/Entra are owned by
+      those leaves, not by an invented branch in _complete_azure_ai.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_embedding_dispatch$/)'
   - id: case-foundry-anthropic-dispatch
-    why: The foundry-anthropic-dispatch behavior is missing or differs from its pinned fixture.
+    why: Drive both sync/async Claude returns through B563 and compare Anthropic provider model/header conversion
+      and failures with the same selected base/key.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_anthropic_dispatch$/)'
   - id: case-foundry-agent-dispatch
-    why: The foundry-agent-dispatch behavior is missing or differs from its pinned fixture.
+    why: Drive B562 agent calls with agent identifiers, stream and nonstream modes and verify its create-message/run/poll
+      behavior remains owned by that leaf.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_agent_dispatch$/)'
-  - id: case-azure-openai-redirect
-    why: The azure-openai-redirect behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_azure_openai_redirect$/)'
   - id: case-agents-missing-base
-    why: The agents-missing-base behavior is missing or differs from its pinned fixture.
+    why: 'The agents branch rejects only resolved api_base is None, ValueError: Azure AI Agents requests require
+      an api_base. Set `api_base` or the AZURE_AI_API_BASE env var. Then call B562 with headers or global litellm.headers,
+      stream/acompletion and the original optional map; this branch does not insert extra_headers or perform the
+      later chat post_call.'
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_agents_missing_base$/)'
   - id: case-claude-missing-base
-    why: The claude-missing-base behavior is missing or differs from its pinned fixture.
+    why: 'Claude rejects only resolved api_base is None, ValueError: Azure Anthropic requests require an api_base.
+      Set `api_base` or the AZURE_AI_API_BASE env var. It passes the supplied headers directly (no global fallback),
+      global custom_prompt_dict rather than the caller value, and the supplied client to B563.'
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_claude_missing_base$/)'
   - id: case-claude-url-rewrite
-    why: The claude-url-rewrite behavior is missing or differs from its pinned fixture.
+    why: For a truthy Claude base strip trailing slashes. Preserve any exact /v1/messages suffix. Otherwise split
+      at the first /anthropic substring if present, discard everything after it, append /anthropic, then /v1/messages;
+      without that substring append both. This is literal string handling, not URL path parsing; an empty base bypasses
+      rewriting.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_claude_url_rewrite$/)'
-  - id: case-embedding-entra-key
-    why: The embedding-entra-key behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_embedding_entra_key$/)'
   - id: case-command-r-tool-content
-    why: The command-r-tool-content behavior is missing or differs from its pinned fixture.
+    why: Only the case-sensitive command-r substring in a non-Claude/non-agent model triggers B182 stringify_json_tool_call_content.
+      Preserve its JSON stringification and message order; Command-R does not trigger it. Normal headers use supplied
+      truthy map or global headers; non-None extra_headers, including {}, overwrites the optional map.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_command_r_tool_content$/)'
   - id: case-foundry-provider-dispatch-http
-    why: The foundry_provider-dispatch-http behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/chat/foundry_provider-dispatch-http.yaml.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_provider.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_provider.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_provider*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_provider*")"
       && grep -lq 'foundry_provider' tools/oracle/fuzz/corpus/helper_case/foundry_provider* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_provider$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-foundry-post-call
+    why: Claude post_call runs for truthy stream or acompletion is True and carries no additional_args.headers.
+      Normal execution exceptions post_call the original error string plus headers then rethrow; only truthy stream
+      triggers normal success post_call. Normal preparation errors occur outside the catch, and agent/Claude errors
+      are not caught here.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_dispatch_cases::case_[0-9]+_foundry_post_call$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_provider_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_provider_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-provider/foundry-chat-dispatch.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/foundry-embedding-dispatch.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/foundry-anthropic-dispatch.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/foundry-agent-dispatch.yaml
-- tools/oracle/cases/helpers/providers/foundry-provider/azure-openai-redirect.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/agents-missing-base.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/claude-missing-base.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/claude-url-rewrite.yaml
-- tools/oracle/cases/helpers/providers/foundry-provider/embedding-entra-key.yaml
 - tools/oracle/cases/helpers/providers/foundry-provider/command-r-tool-content.yaml
 - tools/oracle/cases/chat/foundry_provider-dispatch-http.yaml
+- tools/oracle/cases/helpers/providers/foundry-provider/foundry-post-call.yaml
 deviations: []
 out_of_scope:
-- >-
-  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+- B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai L2590-L2728 belong to B024;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong to B025; reuse that implementation
-  or its injected typed boundary.'
-- 'litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945 belong to B027; reuse
-  that implementation or its injected typed boundary.'
-- >-
-  litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304
-  belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375; Chat.__init__ L379-L385; Completions.__init__
-  L389-L391; Completions.create L393-L401; AsyncCompletions.__init__ L405-L407; AsyncCompletions.create L409-L417;
-  acompletion L422-L740; _resolve_dispatched_chat_response L743-L746; _model_response_from_cached_dict L749-L750;
-  _transcription_response_from_cached_dict L753-L754; _async_streaming L757-L771; _handle_mock_potential_exceptions
-  L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async L831-L842; _sleep_for_timeout L845-L851;
-  _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883; admitted_prompt_token_counter L886-L889;
-  mock_completion L892-L1057; _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base L1069-L1080; responses_api_bridge_check
-  L1083-L1194; _is_claude_tool_target L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys
-  L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229; _proxy_auth_headers L1232-L1233; _provider_config_items
-  L1236-L1237; _locals_snapshot L1240-L1241; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
-  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _dispatch_metadata L1320-L1321; _dispatch_client_http
-  L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai L1334-L1335; _custom_api_first_output
-  L4909-L4910; completion L5145-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136;
-  responses_with_retries L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6196-L6250; embedding L6257-L6278;
-  embedding L6283-L6304; embedding L6310-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
-  L7385-L7386; atext_completion L7390-L7456; text_completion L7460-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
-  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7793-L7864; atranscription L7871-L7929;
-  transcription L7933-L8195; aspeech L8199-L8234; speech L8238-L8719; ahealth_check L8725-L8831; print_verbose L8836-L8842;
-  config_completion L8845-L8853; stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+- Azure OpenAI redirect selection is B174/B211 provider resolution, before this owned function; no redirect case
+  or B025 dependency is added to this task. The embedding dispatch body in main.py is not owned here; its API owner
+  composes B552.
+- 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
+  L2590-L2728 belong to B024.'
+- 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
+  to B025.'
+- 'Function ownership inventory litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945
+  belong to B027.'
+- 'Function ownership inventory litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178;
+  _complete_bedrock L4178-L4304 belong to B028.'
+- 'Function ownership inventory litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933
+  belong to B031.'
+- 'Function ownership inventory litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036.'
+- 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
+- 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
+  L4045-L4106 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
+  _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+- 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
+  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
+  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
+  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
+- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
+  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
+  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
+  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
+  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
+  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+- 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
+  _complete_custom_providers L4982-L5042 belong to B044.'
+- 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
+- 'Function ownership inventory litellm/main.py: _complete_ragflow L2010-L2057 belong to B049.'
+- 'Function ownership inventory litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow
+  L5094-L5140 belong to B050.'
+- 'Function ownership inventory litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375;
+  Chat.__init__ L379-L385; Completions.__init__ L389-L391; Completions.create L393-L401; AsyncCompletions.__init__
+  L405-L407; AsyncCompletions.create L409-L417; acompletion L420-L740; _resolve_dispatched_chat_response L743-L746;
+  _model_response_from_cached_dict L749-L750; _transcription_response_from_cached_dict L753-L754; _async_streaming
+  L757-L771; _handle_mock_potential_exceptions L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async
+  L831-L842; _sleep_for_timeout L845-L851; _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883;
+  admitted_prompt_token_counter L886-L889; mock_completion L892-L1057; responses_api_bridge_check L1083-L1194; _is_claude_tool_target
+  L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers
+  L1229-L1229; _proxy_auth_headers L1232-L1233; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _custom_api_first_output L4909-L4910; completion
+  L5143-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136; responses_with_retries
+  L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6195-L6250; embedding L6256-L6278; embedding L6282-L6304;
+  embedding L6309-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
+  transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+- 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
+- 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
+  to B196.'
+- 'Function ownership inventory litellm/main.py: _provider_config_items L1236-L1237; _locals_snapshot L1240-L1241;
+  _dispatch_metadata L1320-L1321; _dispatch_client_http L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai
+  L1334-L1335 belong to B198.'
+- 'Function ownership inventory litellm/main.py: stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
   L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
   L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
-  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271;
-  acount_tokens L9277-L9372; _load_module_encoding L9379-L9382; _get_encoding L9385-L9391; _load_default_encoding
-  L9394-L9397; __getattr__ L9400-L9411 belong to B158; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception L4045-L4106 belong to B038;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957; _complete_groq L2111-L2170;
-  _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface L3181-L3221; _complete_openrouter
-  L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649; _complete_predibase L3936-L3992;
-  _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci L3224-L3256; _complete_databricks
-  L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker L4146-L4171;
-  _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake L4655-L4705; _complete_gdc
-  L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_ragflow L2010-L2057 belong to B049; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
-  L3995-L4042 belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow L5094-L5140 belong
-  to B050; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995; _complete_aleph_alpha L2998-L3044;
-  _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir L3521-L3545; _complete_gradient_ai
-  L4708-L4740 belong to B043; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979; _complete_custom_providers
-  L4982-L5042 belong to B044; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_minimax L2500-L2543 belong to B039; reuse that implementation or its injected typed
-  boundary.'
-- >-
-  litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332; _complete_vllm L4421-L4455;
-  _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton L4540-L4573; _complete_petals
-  L4615-L4652; _complete_lemonade L4822-L4859 belong to B040; reuse that implementation or its injected typed boundary.
-- 'litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037; reuse that implementation or its injected
-  typed boundary.'
-- 'litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046; reuse that implementation or its injected typed
-  boundary.'
-- 'litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933 belong to B031; reuse
-  that implementation or its injected typed boundary.'
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271
+  belong to B2227.'
+- 'Function ownership inventory litellm/main.py: print_verbose L8836-L8842 belong to B2239.'
+- 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
+  L1069-L1080 belong to B500.'
 pitfalls:
-- Keep provider resolution a typed result rather than a recursive HTTP retry.
+- A model containing both an agents route and claude takes the agents branch.
+- Claude header forwarding differs from both agents and normal Foundry chat.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

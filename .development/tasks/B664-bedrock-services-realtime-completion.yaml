@@ -1,9 +1,9 @@
 id: B664
 title: Bedrock realtime end events usage and tools
 description: >-
-  Add realtime terminal event sequencing, usage deltas, tool-use calls and tool-result input projection. Preserve
-  contentEnd/promptEnd/response.done ordering, leftover usage and tool call id/name/arguments exactly, using bounded
-  per-call accumulators.
+  Add realtime terminal event sequencing, usage deltas, tool-use calls and function-arguments completion projection.
+  Preserve contentEnd/promptEnd/response.done ordering, leftover usage and tool call id/name/arguments exactly,
+  using bounded per-call accumulators.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/transformation.py:
@@ -11,6 +11,34 @@ description: >-
   BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
   L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
   L1159-L1210.
+
+
+  Named case contracts: content_end_text_audio: Require truthy output_item_id AND response_id; otherwise emit[]
+  and preserve delta accumulator. For text emit response.text.done with concatenated prior delta values defaultempty,
+  then response.content_part.done part{type:text,text:joined}. For audio emit response.audio.done then content_part.done
+  part{type:audio,transcript:empty}. Each uses content_index0/output_index0,event_UUID,item/response ids. Unknown/None
+  delta_type skips these two events. prompt_end_response_done: transform_prompt_end_event ignores event contents
+  and calls _response_done_events. Without truthy response_id AND conversation_id return([],None,None,None) without
+  consuming usage. Otherwise emit response.done event_UUID,response{object:realtime.response,id,status:completed,output:[],conversation_id,usage:delta},
+  then reset output_item/response/delta_type toNone. Conversation id and text accumulator are not reset by this
+  helper. incremental_usage_delta: Take cumulative minus previously reported counts for input_tokens,output_tokens,total_tokens
+  independently and for details input/output speechTokens->audio_tokens,textTokens->text_tokens. input_token_details.cached_tokens
+  is always0; output has no cached_tokens. Set reported snapshot to latest before constructing result. Negative
+  deltas remain negative, no clamp or total recomputation; repeated take without update yields0. leftover_usage_done:
+  If complete cumulative/reported records equal return(); any difference, including only detailed counts, consumes
+  delta and returns one response.done with fresh event_/resp_/conv_ UUIDs,statuscompleted,objectrealtime.response,usage;
+  no explicit output field is supplied. This is logged-only; B666/B667 must not send it to client. Compare actual
+  typed defaults rather than inserting output[]. tool_use_event: Require truthy item/responseids or return([],empty,empty).
+  Read toolUse.input default{}; ifstring JSON-decode, syntax failure silently{}; parsed primitives/arrays/None remain
+  valid values. Nonstrings pass through. Emit one response.function_call_arguments.done,event_UUID,response_id,item_id,output_index0,call_id=toolUseId
+  defaultempty,name=toolName defaultempty,arguments=json.dumps(value). Return call_id/name too; no tool-call item/add
+  event or registry check. Wrong types outside JSON syntax failure propagate. multiple_content_blocks: ContentEnd
+  emits per-block completion and clears text chunks while retaining response identity; final response.done is a
+  separate transition selected by B665. Exercise text followed audio in one response and repeated terminal helpers
+  with already-reset ids. output_item_completion: With valid ids ALWAYS then emit response.output_item.done with
+  event_UUID,output_index0,response_id,item{id,object:realtime.item,type:message,status:completed,role:assistant,content:[]};
+  return delta_chunks=None. ContentEnd stopReason does not affect this helper or trigger response.done here; that
+  decision belongs B665.
 
 
   Implement crates/betterlite-bedrock/src/realtime_completion.rs with adjacent tests under realtime_completion/.
@@ -28,10 +56,9 @@ description: >-
 
   Write rstest function realtime_completion_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): content_end_text_audio, prompt_end_response_done, incremental_usage_delta, leftover_usage_done, tool_use_event,
-  tool_result_conversation_item, multiple_content_blocks. Each case exercises its named outcome independently; use
-  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
-  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  multiple_content_blocks, output_item_completion. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion* using HelperCase:
@@ -49,9 +76,9 @@ description: >-
 
 
   Budget from 214 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 511 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 285 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 720 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -76,48 +103,56 @@ references:
   why: Own BedrockRealtimeConfig._take_usage_delta, BedrockRealtimeConfig.leftover_usage_done_events. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1001-L1210
-  why: >-
-    Own BedrockRealtimeConfig.transform_content_end_event, BedrockRealtimeConfig.transform_prompt_end_event, BedrockRealtimeConfig._response_done_events,
-    BedrockRealtimeConfig.transform_tool_use_event. Other functions in this file remain with the owners listed below.
+  why: Own BedrockRealtimeConfig.transform_content_end_event, BedrockRealtimeConfig.transform_prompt_end_event,
+    BedrockRealtimeConfig._response_done_events, BedrockRealtimeConfig.transform_tool_use_event. Other functions
+    in this file remain with the owners listed below.
 dod:
-- text: >-
-    content end text audio: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/content-end-text-audio.yaml.
+- text: 'content_end_text_audio: Require truthy output_item_id AND response_id; otherwise emit[] and preserve delta
+    accumulator. For text emit response.text.done with concatenated prior delta values defaultempty, then response.content_part.done
+    part{type:text,text:joined}. For audio emit response.audio.done then content_part.done part{type:audio,transcript:empty}.
+    Each uses content_index0/output_index0,event_UUID,item/response ids. Unknown/None delta_type skips these two
+    events.'
   proof:
   - case-content-end-text-audio
   - oracle
   - helper-python
-- text: >-
-    prompt end response done: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/prompt-end-response-done.yaml.
+- text: 'prompt_end_response_done: transform_prompt_end_event ignores event contents and calls _response_done_events.
+    Without truthy response_id AND conversation_id return([],None,None,None) without consuming usage. Otherwise
+    emit response.done event_UUID,response{object:realtime.response,id,status:completed,output:[],conversation_id,usage:delta},
+    then reset output_item/response/delta_type toNone. Conversation id and text accumulator are not reset by this
+    helper.'
   proof:
   - case-prompt-end-response-done
   - oracle
   - helper-python
-- text: >-
-    incremental usage delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/incremental-usage-delta.yaml.
+- text: 'incremental_usage_delta: Take cumulative minus previously reported counts for input_tokens,output_tokens,total_tokens
+    independently and for details input/output speechTokens->audio_tokens,textTokens->text_tokens. input_token_details.cached_tokens
+    is always0; output has no cached_tokens. Set reported snapshot to latest before constructing result. Negative
+    deltas remain negative, no clamp or total recomputation; repeated take without update yields0.'
   proof:
   - case-incremental-usage-delta
   - oracle
   - helper-python
-- text: >-
-    leftover usage done: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/leftover-usage-done.yaml.
+- text: 'leftover_usage_done: If complete cumulative/reported records equal return(); any difference, including
+    only detailed counts, consumes delta and returns one response.done with fresh event_/resp_/conv_ UUIDs,statuscompleted,objectrealtime.response,usage;
+    no explicit output field is supplied. This is logged-only; B666/B667 must not send it to client. Compare actual
+    typed defaults rather than inserting output[].'
   proof:
   - case-leftover-usage-done
   - oracle
   - helper-python
-- text: >-
-    tool use event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-use-event.yaml.
+- text: 'tool_use_event: Require truthy item/responseids or return([],empty,empty). Read toolUse.input default{};
+    ifstring JSON-decode, syntax failure silently{}; parsed primitives/arrays/None remain valid values. Nonstrings
+    pass through. Emit one response.function_call_arguments.done,event_UUID,response_id,item_id,output_index0,call_id=toolUseId
+    defaultempty,name=toolName defaultempty,arguments=json.dumps(value). Return call_id/name too; no tool-call item/add
+    event or registry check. Wrong types outside JSON syntax failure propagate.'
   proof:
   - case-tool-use-event
   - oracle
   - helper-python
-- text: >-
-    tool result conversation item: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-result-conversation-item.yaml.
-  proof:
-  - case-tool-result-conversation-item
-  - oracle
-  - helper-python
-- text: >-
-    multiple content blocks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/multiple-content-blocks.yaml.
+- text: 'multiple_content_blocks: ContentEnd emits per-block completion and clears text chunks while retaining response
+    identity; final response.done is a separate transition selected by B665. Exercise text followed audio in one
+    response and repeated terminal helpers with already-reset ids.'
   proof:
   - case-multiple-content-blocks
   - oracle
@@ -130,93 +165,116 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'output_item_completion: With valid ids ALWAYS then emit response.output_item.done with event_UUID,output_index0,response_id,item{id,object:realtime.item,type:message,status:completed,role:assistant,content:[]};
+    return delta_chunks=None. ContentEnd stopReason does not affect this helper or trigger response.done here; that
+    decision belongs B665.'
+  proof:
+  - case-output-item-completion
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-content-end-text-audio
-    why: The content-end-text-audio behavior is missing or differs from its pinned fixture.
+    why: Require truthy output_item_id AND response_id; otherwise emit[] and preserve delta accumulator. For text
+      emit response.text.done with concatenated prior delta values defaultempty, then response.content_part.done
+      part{type:text,text:joined}. For audio emit response.audio.done then content_part.done part{type:audio,transcript:empty}.
+      Each uses content_index0/output_index0,event_UUID,item/response ids. Unknown/None delta_type skips these two
+      events.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_content_end_text_audio$/)'
   - id: case-prompt-end-response-done
-    why: The prompt-end-response-done behavior is missing or differs from its pinned fixture.
+    why: transform_prompt_end_event ignores event contents and calls _response_done_events. Without truthy response_id
+      AND conversation_id return([],None,None,None) without consuming usage. Otherwise emit response.done event_UUID,response{object:realtime.response,id,status:completed,output:[],conversation_id,usage:delta},
+      then reset output_item/response/delta_type toNone. Conversation id and text accumulator are not reset by this
+      helper.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_prompt_end_response_done$/)'
   - id: case-incremental-usage-delta
-    why: The incremental-usage-delta behavior is missing or differs from its pinned fixture.
+    why: Take cumulative minus previously reported counts for input_tokens,output_tokens,total_tokens independently
+      and for details input/output speechTokens->audio_tokens,textTokens->text_tokens. input_token_details.cached_tokens
+      is always0; output has no cached_tokens. Set reported snapshot to latest before constructing result. Negative
+      deltas remain negative, no clamp or total recomputation; repeated take without update yields0.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_incremental_usage_delta$/)'
   - id: case-leftover-usage-done
-    why: The leftover-usage-done behavior is missing or differs from its pinned fixture.
+    why: If complete cumulative/reported records equal return(); any difference, including only detailed counts,
+      consumes delta and returns one response.done with fresh event_/resp_/conv_ UUIDs,statuscompleted,objectrealtime.response,usage;
+      no explicit output field is supplied. This is logged-only; B666/B667 must not send it to client. Compare actual
+      typed defaults rather than inserting output[].
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_leftover_usage_done$/)'
   - id: case-tool-use-event
-    why: The tool-use-event behavior is missing or differs from its pinned fixture.
+    why: Require truthy item/responseids or return([],empty,empty). Read toolUse.input default{}; ifstring JSON-decode,
+      syntax failure silently{}; parsed primitives/arrays/None remain valid values. Nonstrings pass through. Emit
+      one response.function_call_arguments.done,event_UUID,response_id,item_id,output_index0,call_id=toolUseId defaultempty,name=toolName
+      defaultempty,arguments=json.dumps(value). Return call_id/name too; no tool-call item/add event or registry
+      check. Wrong types outside JSON syntax failure propagate.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_tool_use_event$/)'
-  - id: case-tool-result-conversation-item
-    why: The tool-result-conversation-item behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_tool_result_conversation_item$/)'
   - id: case-multiple-content-blocks
-    why: The multiple-content-blocks behavior is missing or differs from its pinned fixture.
+    why: ContentEnd emits per-block completion and clears text chunks while retaining response identity; final response.done
+      is a separate transition selected by B665. Exercise text followed audio in one response and repeated terminal
+      helpers with already-reset ids.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_multiple_content_blocks$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_completion.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_completion.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*")"
       && grep -lq 'bedrock_services_realtime_completion' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_completion$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion)"
       && grep -q 'decode_realtime_tool_input' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_completion.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_completion_corpus$/)'
+  - id: case-output-item-completion
+    why: With valid ids ALWAYS then emit response.output_item.done with event_UUID,output_index0,response_id,item{id,object:realtime.item,type:message,status:completed,role:assistant,content:[]};
+      return delta_chunks=None. ContentEnd stopReason does not affect this helper or trigger response.done here;
+      that decision belongs B665.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_output_item_completion$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/content-end-text-audio.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/prompt-end-response-done.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/incremental-usage-delta.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/leftover-usage-done.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-use-event.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-result-conversation-item.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/multiple-content-blocks.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/output-item-completion.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
+- Tool-result conversation.item.create input frames are B662 L1212-L1273, not this output task. No calls to B662/B663
+  occur in these owned methods; B661 supplies shared session/usage records.
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__
+  L83-L124; BedrockRealtimeConfig.get_error_class L126-L132; BedrockRealtimeConfig.validate_environment L134-L136;
+  BedrockRealtimeConfig.get_complete_url L138-L140; BedrockRealtimeConfig.requires_session_configuration L142-L144;
+  BedrockRealtimeConfig.session_configuration_request L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format
+  L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate L216-L233; BedrockRealtimeConfig.transform_session_update_event
+  L235-L356; BedrockRealtimeConfig._session_object L670-L682; BedrockRealtimeConfig.session_created_event L684-L694;
+  BedrockRealtimeConfig.session_updated_event L696-L707 belong to B661.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
   L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event
   L452-L518; BedrockRealtimeConfig.transform_response_create_event L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages
   L568-L583; BedrockRealtimeConfig.transform_response_cancel_event L585-L597; BedrockRealtimeConfig.session_close_messages
   L599-L626; BedrockRealtimeConfig.transform_realtime_request L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event
-  L1212-L1273 belong to B662; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event L709-L820;
-  BedrockRealtimeConfig._parse_generation_stage L823-L831; BedrockRealtimeConfig._current_user_item_id L833-L837;
-  BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event L849-L852;
-  BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
+  L1212-L1273 belong to B662.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event
+  L709-L820; BedrockRealtimeConfig._parse_generation_stage L822-L831; BedrockRealtimeConfig._current_user_item_id
+  L833-L837; BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event
+  L849-L852; BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
   L909-L922; BedrockRealtimeConfig.transform_text_output_event L924-L964; BedrockRealtimeConfig.transform_audio_output_event
-  L966-L999 belong to B663; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response L1275-L1415
-  belong to B665; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
-  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
-  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
-  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
-  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
-  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
-  L696-L707 belong to B661; reuse that implementation or its injected typed boundary.
+  L966-L999 belong to B663.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
+  L1275-L1415 belong to B665.'
 pitfalls:
-- Preserve contentEnd/promptEnd/response.done ordering, leftover usage and tool call id/name/arguments exactly,
-  using bounded per-call accumulators.
+- Usage subtraction is not clamped, so decreasing cumulative provider counts produce negative deltas.
+- The leftover-usage event has new response/conversation IDs and belongs only in logs, not the client event stream.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

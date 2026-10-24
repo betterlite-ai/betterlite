@@ -2,9 +2,9 @@ id: B571
 title: Anthropic history cleanup and cache portability
 description: >-
   Add ReplayMessages transformations for advisor blocks, invalid encrypted/thinking blocks, empty content, tool-use
-  id sanitation and portable cache controls. Preserve signed content and source order, report repairs by field/index
-  only, and never mutate the original request. B081 will reuse this native-message preparation; it does not require
-  that public API here.
+  id sanitation and portable cache controls. Preserve the source-specific signed-content rules and source order;
+  expose mutation explicitly for advisor and request-dict repair, and copy for the other transforms. B081 will reuse
+  this native-message preparation; it does not require that public API here.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/common_utils.py:
@@ -18,6 +18,33 @@ description: >-
   L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
   L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
   _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780.
+
+
+  Named case contracts: advisor_block_removal: Only assistant dict messages with list content are changed in place.
+  First collect truthy ids from server_tool_use name=advisor; without such ids even orphan advisor_tool_result stays
+  untouched. Drop only matching uses/results, preserve other blocks and allow empty content. With replace_with_text=True
+  collect string advice or first text block, last matching result wins; emit <advisor_feedback>\n<advice>\n</advisor_feedback>
+  at the use position only for truthy advice, dropping results regardless. invalid_thinking_error_match: Case-fold
+  text; require thinking plus signature and either invalid or valid string, OR thinking plus must contain thinking.
+  Empty text/unrelated errors fail. Request repair removes every thinking/redacted_thinking block from dict list
+  content regardless of signature, deep-copies dict messages, drops messages whose filtered list is empty (including
+  initially empty), and removes top-level thinking even if messages is not a list. encrypted_reasoning_removal:
+  Delegate B220 encrypted-reasoning predicate; only removed encrypted blocks trigger copying/dropping messages.
+  Native signed reasoning, unchanged messages, non-list content and initially empty lists remain unchanged. empty_thinking_signed_versus_unsigned:
+  Inbound empty-thinking predicate matches missing/nonstring/whitespace thinking regardless of signature; redacted_thinking
+  never matches. Emit-side empty-unsigned predicate additionally requires falsey signature, so a truthy signature-only
+  block survives output. Empty text uses the analogous type=text predicate. empty_text_content: Remove only empty
+  text/thinking blocks from list content, preserve block order and originals, drop messages emptied by removal but
+  retain an initially empty list (length unchanged). Non-dict messages/non-list content pass through. tool_use_id_rewrite:
+  Strip at first __thought__, replace every character outside ASCII a-zA-Z0-9_- with _, use tool_use_id when empty.
+  Rewrite only string id on tool_use/server_tool_use and string tool_use_id on tool_result, in immediate list content;
+  no max length, deduplication or recursive application. Preserve original messages and untouched values. strip_provider_specific_fields:
+  Strip provider_specific_fields only from immediate dict blocks in list message.content; retain message-level fields,
+  nested values, non-dict blocks and other content forms. portable_cache_control: Copy payload; mapping cache_control
+  becomes only {type:<existing string or ephemeral>} (empty string retained), nonmapping cache_control disappears.
+  Apply at request level, system/tools blocks, message content blocks and one level of tool_result.content; do not
+  change message-level cache_control, tool_use.input, input_schema, nested application data or unrelated keys. Drop
+  ttl/scope and unknown cache keys, preserve sequence order and strings.
 
 
   Implement crates/betterlite-anthropic/src/message_replay.rs with adjacent tests under message_replay/. Keep each
@@ -36,9 +63,8 @@ description: >-
   Write rstest function message_replay_cases in betterlite-anthropic with these exact named cases (one per oracle
   file): advisor_block_removal, invalid_thinking_error_match, encrypted_reasoning_removal, empty_thinking_signed_versus_unsigned,
   empty_text_content, tool_use_id_rewrite, strip_provider_specific_fields, portable_cache_control. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_message_replay* using HelperCase: kind:
@@ -54,9 +80,9 @@ description: >-
 
 
   Budget from 349 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 365 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 594 planned, 600 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 355 production lines, 260 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 770 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -75,61 +101,76 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1216-L1526
-  why: >-
-    Own strip_advisor_blocks_from_messages, is_anthropic_invalid_thinking_block_error, strip_thinking_blocks_from_anthropic_messages,
+  why: Own strip_advisor_blocks_from_messages, is_anthropic_invalid_thinking_block_error, strip_thinking_blocks_from_anthropic_messages,
     _without_encrypted_reasoning_blocks, strip_encrypted_reasoning_blocks_from_anthropic_messages, strip_thinking_blocks_from_anthropic_messages_request_dict,
     strip_empty_content_blocks_from_anthropic_messages, _is_empty_text_block, is_empty_thinking_block, is_empty_unsigned_thinking_block,
     normalize_anthropic_tool_use_id, _sanitize_tool_use_id_content_block, sanitize_tool_use_ids_in_anthropic_messages.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1681-L1780
-  why: >-
-    Own _without_provider_specific_fields, _strip_provider_specific_fields_in_message, strip_provider_specific_fields_from_anthropic_messages,
+  why: Own _without_provider_specific_fields, _strip_provider_specific_fields_in_message, strip_provider_specific_fields_from_anthropic_messages,
     _normalized_cache_control, _with_portable_cache_control, _with_portable_cache_control_in_blocks, _with_portable_cache_control_in_content_block,
     _with_portable_cache_control_in_message, _with_portable_cache_control_in_messages, _with_portable_cache_control_in_scoped_value,
     normalize_cache_control_in_anthropic_payload. Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    advisor block removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/advisor-block-removal.yaml.
+- text: 'advisor_block_removal: Only assistant dict messages with list content are changed in place. First collect
+    truthy ids from server_tool_use name=advisor; without such ids even orphan advisor_tool_result stays untouched.
+    Drop only matching uses/results, preserve other blocks and allow empty content. With replace_with_text=True
+    collect string advice or first text block, last matching result wins; emit <advisor_feedback>\n<advice>\n</advisor_feedback>
+    at the use position only for truthy advice, dropping results regardless.'
   proof:
   - case-advisor-block-removal
   - oracle
   - helper-python
-- text: >-
-    invalid thinking error match: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/invalid-thinking-error-match.yaml.
+- text: 'invalid_thinking_error_match: Case-fold text; require thinking plus signature and either invalid or valid
+    string, OR thinking plus must contain thinking. Empty text/unrelated errors fail. Request repair removes every
+    thinking/redacted_thinking block from dict list content regardless of signature, deep-copies dict messages,
+    drops messages whose filtered list is empty (including initially empty), and removes top-level thinking even
+    if messages is not a list.'
   proof:
   - case-invalid-thinking-error-match
   - oracle
   - helper-python
-- text: >-
-    encrypted reasoning removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/encrypted-reasoning-removal.yaml.
+- text: 'encrypted_reasoning_removal: Delegate B220 encrypted-reasoning predicate; only removed encrypted blocks
+    trigger copying/dropping messages. Native signed reasoning, unchanged messages, non-list content and initially
+    empty lists remain unchanged.'
   proof:
   - case-encrypted-reasoning-removal
   - oracle
   - helper-python
-- text: >-
-    empty thinking signed versus unsigned: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/empty-thinking-signed-versus-unsigned.yaml.
+- text: 'empty_thinking_signed_versus_unsigned: Inbound empty-thinking predicate matches missing/nonstring/whitespace
+    thinking regardless of signature; redacted_thinking never matches. Emit-side empty-unsigned predicate additionally
+    requires falsey signature, so a truthy signature-only block survives output. Empty text uses the analogous type=text
+    predicate.'
   proof:
   - case-empty-thinking-signed-versus-unsigned
   - oracle
   - helper-python
-- text: 'empty text content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/empty-text-content.yaml.'
+- text: 'empty_text_content: Remove only empty text/thinking blocks from list content, preserve block order and
+    originals, drop messages emptied by removal but retain an initially empty list (length unchanged). Non-dict
+    messages/non-list content pass through.'
   proof:
   - case-empty-text-content
   - oracle
   - helper-python
-- text: 'tool use id rewrite: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/tool-use-id-rewrite.yaml.'
+- text: 'tool_use_id_rewrite: Strip at first __thought__, replace every character outside ASCII a-zA-Z0-9_- with
+    _, use tool_use_id when empty. Rewrite only string id on tool_use/server_tool_use and string tool_use_id on
+    tool_result, in immediate list content; no max length, deduplication or recursive application. Preserve original
+    messages and untouched values.'
   proof:
   - case-tool-use-id-rewrite
   - oracle
   - helper-python
-- text: >-
-    strip provider specific fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/strip-provider-specific-fields.yaml.
+- text: 'strip_provider_specific_fields: Strip provider_specific_fields only from immediate dict blocks in list
+    message.content; retain message-level fields, nested values, non-dict blocks and other content forms.'
   proof:
   - case-strip-provider-specific-fields
   - oracle
   - helper-python
-- text: >-
-    portable cache control: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-message-replay/portable-cache-control.yaml.
+- text: 'portable_cache_control: Copy payload; mapping cache_control becomes only {type:<existing string or ephemeral>}
+    (empty string retained), nonmapping cache_control disappears. Apply at request level, system/tools blocks, message
+    content blocks and one level of tool_result.content; do not change message-level cache_control, tool_use.input,
+    input_schema, nested application data or unrelated keys. Drop ttl/scope and unknown cache keys, preserve sequence
+    order and strings.'
   proof:
   - case-portable-cache-control
   - oracle
@@ -143,39 +184,57 @@ checks:
   - mutants
   commands:
   - id: case-advisor-block-removal
-    why: The advisor-block-removal behavior is missing or differs from its pinned fixture.
+    why: Only assistant dict messages with list content are changed in place. First collect truthy ids from server_tool_use
+      name=advisor; without such ids even orphan advisor_tool_result stays untouched. Drop only matching uses/results,
+      preserve other blocks and allow empty content. With replace_with_text=True collect string advice or first
+      text block, last matching result wins; emit <advisor_feedback>\n<advice>\n</advisor_feedback> at the use position
+      only for truthy advice, dropping results regardless.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_advisor_block_removal$/)'
   - id: case-invalid-thinking-error-match
-    why: The invalid-thinking-error-match behavior is missing or differs from its pinned fixture.
+    why: Case-fold text; require thinking plus signature and either invalid or valid string, OR thinking plus must
+      contain thinking. Empty text/unrelated errors fail. Request repair removes every thinking/redacted_thinking
+      block from dict list content regardless of signature, deep-copies dict messages, drops messages whose filtered
+      list is empty (including initially empty), and removes top-level thinking even if messages is not a list.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_invalid_thinking_error_match$/)'
   - id: case-encrypted-reasoning-removal
-    why: The encrypted-reasoning-removal behavior is missing or differs from its pinned fixture.
+    why: Delegate B220 encrypted-reasoning predicate; only removed encrypted blocks trigger copying/dropping messages.
+      Native signed reasoning, unchanged messages, non-list content and initially empty lists remain unchanged.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_encrypted_reasoning_removal$/)'
   - id: case-empty-thinking-signed-versus-unsigned
-    why: The empty-thinking-signed-versus-unsigned behavior is missing or differs from its pinned fixture.
+    why: Inbound empty-thinking predicate matches missing/nonstring/whitespace thinking regardless of signature;
+      redacted_thinking never matches. Emit-side empty-unsigned predicate additionally requires falsey signature,
+      so a truthy signature-only block survives output. Empty text uses the analogous type=text predicate.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_empty_thinking_signed_versus_unsigned$/)'
   - id: case-empty-text-content
-    why: The empty-text-content behavior is missing or differs from its pinned fixture.
+    why: Remove only empty text/thinking blocks from list content, preserve block order and originals, drop messages
+      emptied by removal but retain an initially empty list (length unchanged). Non-dict messages/non-list content
+      pass through.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_empty_text_content$/)'
   - id: case-tool-use-id-rewrite
-    why: The tool-use-id-rewrite behavior is missing or differs from its pinned fixture.
+    why: Strip at first __thought__, replace every character outside ASCII a-zA-Z0-9_- with _, use tool_use_id when
+      empty. Rewrite only string id on tool_use/server_tool_use and string tool_use_id on tool_result, in immediate
+      list content; no max length, deduplication or recursive application. Preserve original messages and untouched
+      values.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_tool_use_id_rewrite$/)'
   - id: case-strip-provider-specific-fields
-    why: The strip-provider-specific-fields behavior is missing or differs from its pinned fixture.
+    why: Strip provider_specific_fields only from immediate dict blocks in list message.content; retain message-level
+      fields, nested values, non-dict blocks and other content forms.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_strip_provider_specific_fields$/)'
   - id: case-portable-cache-control
-    why: The portable-cache-control behavior is missing or differs from its pinned fixture.
+    why: Copy payload; mapping cache_control becomes only {type:<existing string or ephemeral>} (empty string retained),
+      nonmapping cache_control disappears. Apply at request level, system/tools blocks, message content blocks and
+      one level of tool_result.content; do not change message-level cache_control, tool_use.input, input_schema,
+      nested application data or unrelated keys. Drop ttl/scope and unknown cache keys, preserve sequence order
+      and strings.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::message_replay_cases::case_[0-9]+_portable_cache_control$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_message_replay.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_message_replay.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_message_replay*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_message_replay*")"
       && grep -lq 'anthropic_message_replay' tools/oracle/fuzz/corpus/helper_case/anthropic_message_replay* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_message_replay$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -194,52 +253,50 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106; supports_anthropic_cache_control
-  L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping L130-L134; _validated_claude_code_list
-  L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts L163-L178; _is_claude_code_subagent_billing_system
-  L181-L193; is_claude_code_one_shot_subagent_request L196-L210; eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set
-  L320-L335; AnthropicModelInfo.is_file_id_used L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347;
-  AnthropicModelInfo.is_mid_conversation_tool_change_used L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used
-  L361-L365; AnthropicModelInfo.is_mcp_server_used L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381;
-  AnthropicModelInfo.is_web_search_tool_used L383-L390; AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used
-  L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used L420-L444; AnthropicModelInfo.is_input_examples_used
-  L446-L472; AnthropicModelInfo.is_eager_input_streaming_used L474-L475; AnthropicModelInfo.is_code_execution_tool_used
-  L831-L844; AnthropicModelInfo.is_container_with_skills_used L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers
-  L862-L865; AnthropicModelInfo.get_computer_tool_beta_header L867-L884; AnthropicModelInfo.get_anthropic_beta_list
-  L886-L940 belong to B568; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params L478-L503; AnthropicModelInfo._apply_sampling_param
-  L506-L528; AnthropicModelInfo.forced_tool_use_unsupported L531-L532; AnthropicModelInfo.forced_tool_use_downgraded
-  L535-L552; AnthropicModelInfo._apply_forced_tool_choice L555-L567; AnthropicModelInfo._strip_version_suffix L570-L574;
-  AnthropicModelInfo._model_map_lookup_candidates L577-L614; AnthropicModelInfo._get_model_capability L617-L631;
-  AnthropicModelInfo._get_exact_model_capability L634-L641; AnthropicModelInfo.supports_fast_mode L644-L648; AnthropicModelInfo._get_provider_resolved_capability
-  L651-L668; AnthropicModelInfo._supports_model_capability L671-L693; AnthropicModelInfo._is_adaptive_thinking_model
-  L696-L705; AnthropicModelInfo._is_always_on_thinking_model L708-L714; AnthropicModelInfo._supports_legacy_thinking
-  L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model
-  L747-L781; AnthropicModelInfo._legacy_budget_to_effort L784-L793; AnthropicModelInfo.is_effort_used L795-L829
-  belong to B688; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers L951-L1046; AnthropicModelInfo.validate_environment
-  L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry L1800-L1815; create_anthropic_model_list_response
-  L1818-L1844 belong to B570; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _ReplayedSearchQuery L1529-L1532; _ReplayedWebSearchResult L1535-L1542;
-  _ReplayedWebSearchToolResultError L1545-L1549; _ReplayedWebSearchToolResult L1552-L1557; _ReplayedServerToolUse
-  L1560-L1565; _TextBlock L1568-L1570; _flattenable_web_search_tool_result L1577-L1588; _replayed_server_tool_use
-  L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block L1621-L1634; _flatten_web_search_results_in_message
-  L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages L1663-L1678 belong to B572; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; is_anthropic_oauth_key L225-L231;
-  resolve_used_client_oauth_token L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285;
-  AnthropicError.__init__ L310-L316; AnthropicModelInfo._make_api_key_auth_header L943-L949; AnthropicModelInfo.get_api_base
-  L1123-L1131; AnthropicModelInfo.get_api_key L1134-L1137; AnthropicModelInfo.get_auth_token L1140-L1148; AnthropicModelInfo.get_auth_header
-  L1151-L1170; AnthropicModelInfo.get_base_model L1173-L1174; AnthropicModelInfo.get_models L1176-L1200; AnthropicModelInfo.get_token_counter
-  L1202-L1213 belong to B567; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
+  L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
+  L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
+  belong to B2216.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106;
+  supports_anthropic_cache_control L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping
+  L130-L134; _validated_claude_code_list L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts
+  L163-L178; _is_claude_code_subagent_billing_system L181-L193; is_claude_code_one_shot_subagent_request L196-L210;
+  eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set L320-L335; AnthropicModelInfo.is_file_id_used
+  L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347; AnthropicModelInfo.is_mid_conversation_tool_change_used
+  L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used L361-L365; AnthropicModelInfo.is_mcp_server_used
+  L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381; AnthropicModelInfo.is_web_search_tool_used L383-L390;
+  AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used
+  L420-L444; AnthropicModelInfo.is_input_examples_used L446-L472; AnthropicModelInfo.is_eager_input_streaming_used
+  L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
+  L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
+  L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940 belong to B568.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers
+  L951-L1046; AnthropicModelInfo.validate_environment L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry
+  L1800-L1815; create_anthropic_model_list_response L1818-L1844 belong to B570.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
+  belong to B585.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params
+  L477-L503; AnthropicModelInfo._apply_sampling_param L505-L528; AnthropicModelInfo.forced_tool_use_unsupported
+  L530-L532; AnthropicModelInfo.forced_tool_use_downgraded L534-L552; AnthropicModelInfo._apply_forced_tool_choice
+  L554-L567; AnthropicModelInfo._get_provider_resolved_capability L650-L668; AnthropicModelInfo._supports_model_capability
+  L670-L693; AnthropicModelInfo._is_adaptive_thinking_model L695-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L707-L714; AnthropicModelInfo._supports_legacy_thinking L716-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
-- Preserve signed content and source order, report repairs by field/index only, and never mutate the original request.
+- The empty-block cleaner retains an initially empty list, but the strip-all-thinking helper drops it.
+- Advisor cleanup mutates assistant content and does nothing until it finds a truthy advisor use id.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

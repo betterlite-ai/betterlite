@@ -1,20 +1,60 @@
 id: B533
-title: Azure chat transport and content-filter errors
+title: Azure chat execution and SDK error propagation
 description: >-
-  Implement Azure chat execution and response extraction by composing typed request preparation, shared OpenAI choice/stream
-  decoding and Azure content-filter exception projection. Retain o-series fake streaming, content_filter_results
-  metadata and safe response headers. SDK send wrappers share one async transport path; B017 owns retries and B018
-  fallback.
+  Implement Azure chat execution by composing B531 client construction, B532 model policy, B684 base request transforms,
+  B004 response projection and B685 streams. The o-series handler only constructs the client and delegates to OpenAIChatCompletion.completion;
+  B532 owns fake-stream selection and B685 owns content-filter exception mapping.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/azure.py: AzureChatCompletion.__init__
-  L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request
-  L165-L194; AzureChatCompletion.completion L196-L389; AzureChatCompletion.acompletion L391-L498. litellm/llms/azure/chat/o_series_handler.py:
+  L137-L138; AzureChatCompletion.completion L196-L389; AzureChatCompletion.acompletion L391-L498. litellm/llms/azure/chat/o_series_handler.py:
   AzureOpenAIO1ChatCompletion.completion L23-L79.
 
 
   B685 owns streaming and content-filter error conversion; this slice delegates those branches instead of duplicating
   them.
+
+
+  Named case contracts: missing_model_messages_422: A None model or messages raises AzureOpenAIError 422 (Missing
+  model or messages); empty values do not trigger this guard. max_retries_default_two: Pop max_retries; missing
+  or None uses DEFAULT_MAX_RETRIES from env DEFAULT_MAX_RETRIES, default 2; consume the count before constructing
+  the request body. invalid_retries_422: Only the synchronous nonstream path validates max_retries as int and raises
+  AzureOpenAIError 422 (max retries must be an int); preserve the source boolean-is-int edge. cloudflare_model_null:
+  gateway.ai.cloudflare.com in api_base selects B531 Cloudflare client construction and sends model=None with messages
+  and optional parameters. gpt5_base_model_selection: Use litellm_params.base_model or model to choose B532 GPT-5
+  transformation, otherwise B684 Azure base transformation; Cloudflare takes precedence. json_mode_projection: Pop
+  json_mode (default false), pass it as convert_tool_call_to_json_mode to B004 response projection, and inject nonempty
+  caller headers into extra_headers. output_limit_recovery: Both raw-response send wrappers pass output-token-limit
+  BadRequestError to B505 build_output_token_limit_response with the correct is_async flag; other BadRequestError
+  values propagate. async_timeout_diagnostic: The async send wrapper appends timeout value and elapsed seconds rounded
+  to two decimals to APITimeoutError; keep the exception class/status/type/param/code while ignoring message wording
+  in the oracle. string_reply_500: A string SDK reply raises AzureOpenAIError 500 in sync and async buffered paths,
+  with only its first 500 characters included in the diagnostic. client_type_validation: Sync requires AzureOpenAI
+  or OpenAI and raises AzureOpenAIError 500 for a wrong client; async requires AsyncAzureOpenAI or AsyncOpenAI and
+  its ValueError becomes AzureOpenAIError 500. error_status_passthrough: Sync wraps unknown failures as AzureOpenAIError
+  with status_code default 500, body and headers (falling back to response.headers); async rethrows an error already
+  carrying status_code and otherwise wraps status 500 with message/body. async_cancellation_passthrough: CancelledError
+  is logged and re-raised, without being wrapped as AzureOpenAIError. o_series_client_delegate: Build the async/sync
+  Azure client then forward every supplied option, organization, drop_params and shared_session to B004 completion;
+  do not reimplement fake streaming in this handler. raw_headers_projection: Both sends use with_raw_response.create
+  regardless of the stale docstring; preserve raw headers, and async also stores response_headers for logging and
+  hidden_params.headers for conversion.
+
+
+  Call B505 for both raw-send wrappers, including timeout diagnostics and output-limit recovery; no raw-send implementation
+  remains in this task.
+
+
+  Reuse B531 for the DEFAULT_MAX_RETRIES loader and its configured value; this consumer adds no second config field
+  or loader test. The named behavior cases still test the configured value at this call boundary.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  Direct constructor/helper prerequisites used by this slice: B673. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-azure/src/chat_call.rs with adjacent tests under chat_call/. Keep each Rust module
@@ -31,10 +71,12 @@ description: >-
 
 
   Write rstest function chat_call_cases in betterlite-azure with these exact named cases (one per oracle file):
-  chat_deployment_request, azure_v1_body_model, o_series_fake_stream, cross_deployment_auth. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  chat_deployment_request, azure_v1_body_model, cross_deployment_auth, missing_model_messages_422, max_retries_default_two,
+  invalid_retries_422, cloudflare_model_null, gpt5_base_model_selection, json_mode_projection, output_limit_recovery,
+  async_timeout_diagnostic, string_reply_500, client_type_validation, error_status_passthrough, async_cancellation_passthrough,
+  o_series_client_delegate, raw_headers_projection. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_chat_call* using HelperCase: kind: helper
@@ -43,17 +85,14 @@ description: >-
   HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
 
 
-  Outside-byte boundary: decode_azure_chat_error consumes buffered Azure chat error-body bytes in crates/betterlite-azure/src/chat_call.rs
-  (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_chat_call.rs
-  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_chat_call.
-  The adjacent test replays_the_azure_chat_call_corpus uses the same function and asserts expected success/failure
-  categories; never introduce a parser solely for fuzzing.
+  SDK responses are parsed by B004 response projection and streams by B005/B685; pass their typed records and add
+  no duplicate Azure byte decoder. B171 owns HelperCase parsing.
 
 
-  Budget from 394 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 410 production lines, 81 behavior/config-test lines,
-  71 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 642 planned, 650 maximum changed lines.
+  Budget from 343 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 315 production lines, 220 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 715 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -69,16 +108,11 @@ scope:
   - tools/oracle/helpers/azure_chat_call.py
   - tools/oracle/cases/helpers/providers/azure-chat-call/**
   - tools/oracle/fuzz/corpus/helper_case/azure_chat_call*
-  - crates/betterlite-azure/fuzz/Cargo.toml
-  - crates/betterlite-azure/fuzz/fuzz_targets/azure_chat_call.rs
-  - crates/betterlite-azure/fuzz/corpus/azure_chat_call/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L137-L498
-  why: >-
-    Own AzureChatCompletion.__init__, AzureChatCompletion.make_sync_azure_openai_chat_completion_request, AzureChatCompletion.make_azure_openai_chat_completion_request,
-    AzureChatCompletion.completion, AzureChatCompletion.acompletion. Other functions in this file remain with the
-    owners listed below.
+  why: Own AzureChatCompletion.__init__, AzureChatCompletion.completion, AzureChatCompletion.acompletion. Other
+    functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/o_series_handler.py#L23-L79
   why: Own AzureOpenAIO1ChatCompletion.completion. Other functions in this file remain with the owners listed below.
 dod:
@@ -92,11 +126,6 @@ dod:
   - case-azure-v1-body-model
   - oracle
   - helper-python
-- text: 'o series fake stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-call/o-series-fake-stream.yaml.'
-  proof:
-  - case-o-series-fake-stream
-  - oracle
-  - helper-python
 - text: 'cross deployment auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-call/cross-deployment-auth.yaml.'
   proof:
   - case-cross-deployment-auth
@@ -105,85 +134,221 @@ dod:
 - text: New azure_chat_call seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
-- text: decode_azure_chat_error has newly committed malformed and boundary inputs replayed through production parsing.
+- text: 'missing_model_messages_422: A None model or messages raises AzureOpenAIError 422 (Missing model or messages);
+    empty values do not trigger this guard.'
   proof:
-  - parser-corpus
+  - case-missing-model-messages-422
+  - oracle
+  - helper-python
+- text: 'max_retries_default_two: Pop max_retries; missing or None uses DEFAULT_MAX_RETRIES from env DEFAULT_MAX_RETRIES,
+    default 2; consume the count before constructing the request body.'
+  proof:
+  - case-max-retries-default-two
+  - oracle
+  - helper-python
+- text: 'invalid_retries_422: Only the synchronous nonstream path validates max_retries as int and raises AzureOpenAIError
+    422 (max retries must be an int); preserve the source boolean-is-int edge.'
+  proof:
+  - case-invalid-retries-422
+  - oracle
+  - helper-python
+- text: 'cloudflare_model_null: gateway.ai.cloudflare.com in api_base selects B531 Cloudflare client construction
+    and sends model=None with messages and optional parameters.'
+  proof:
+  - case-cloudflare-model-null
+  - oracle
+  - helper-python
+- text: 'gpt5_base_model_selection: Use litellm_params.base_model or model to choose B532 GPT-5 transformation,
+    otherwise B684 Azure base transformation; Cloudflare takes precedence.'
+  proof:
+  - case-gpt5-base-model-selection
+  - oracle
+  - helper-python
+- text: 'json_mode_projection: Pop json_mode (default false), pass it as convert_tool_call_to_json_mode to B004
+    response projection, and inject nonempty caller headers into extra_headers.'
+  proof:
+  - case-json-mode-projection
+  - oracle
+  - helper-python
+- text: 'output_limit_recovery: Both raw-response send wrappers pass output-token-limit BadRequestError to B505
+    build_output_token_limit_response with the correct is_async flag; other BadRequestError values propagate.'
+  proof:
+  - case-output-limit-recovery
+  - oracle
+  - helper-python
+- text: 'async_timeout_diagnostic: The async send wrapper appends timeout value and elapsed seconds rounded to two
+    decimals to APITimeoutError; keep the exception class/status/type/param/code while ignoring message wording
+    in the oracle.'
+  proof:
+  - case-async-timeout-diagnostic
+  - oracle
+  - helper-python
+- text: 'string_reply_500: A string SDK reply raises AzureOpenAIError 500 in sync and async buffered paths, with
+    only its first 500 characters included in the diagnostic.'
+  proof:
+  - case-string-reply-500
+  - oracle
+  - helper-python
+- text: 'client_type_validation: Sync requires AzureOpenAI or OpenAI and raises AzureOpenAIError 500 for a wrong
+    client; async requires AsyncAzureOpenAI or AsyncOpenAI and its ValueError becomes AzureOpenAIError 500.'
+  proof:
+  - case-client-type-validation
+  - oracle
+  - helper-python
+- text: 'error_status_passthrough: Sync wraps unknown failures as AzureOpenAIError with status_code default 500,
+    body and headers (falling back to response.headers); async rethrows an error already carrying status_code and
+    otherwise wraps status 500 with message/body.'
+  proof:
+  - case-error-status-passthrough
+  - oracle
+  - helper-python
+- text: 'async_cancellation_passthrough: CancelledError is logged and re-raised, without being wrapped as AzureOpenAIError.'
+  proof:
+  - case-async-cancellation-passthrough
+  - oracle
+  - helper-python
+- text: 'o_series_client_delegate: Build the async/sync Azure client then forward every supplied option, organization,
+    drop_params and shared_session to B004 completion; do not reimplement fake streaming in this handler.'
+  proof:
+  - case-o-series-client-delegate
+  - oracle
+  - helper-python
+- text: 'raw_headers_projection: Both sends use with_raw_response.create regardless of the stale docstring; preserve
+    raw headers, and async also stores response_headers for logging and hidden_params.headers for conversion.'
+  proof:
+  - case-raw-headers-projection
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-chat-deployment-request
-    why: The chat-deployment-request behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-call/chat-deployment-request.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_chat_deployment_request$/)'
   - id: case-azure-v1-body-model
-    why: The azure-v1-body-model behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-call/azure-v1-body-model.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_azure_v1_body_model$/)'
-  - id: case-o-series-fake-stream
-    why: The o-series-fake-stream behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_o_series_fake_stream$/)'
   - id: case-cross-deployment-auth
-    why: The cross-deployment-auth behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-chat-call/cross-deployment-auth.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_cross_deployment_auth$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_chat_call.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_chat_call.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_call*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_call*")"
       && grep -lq 'azure_chat_call' tools/oracle/fuzz/corpus/helper_case/azure_chat_call* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_call$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: parser-corpus
-    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_chat_call)"
-      && grep -q 'decode_azure_chat_error' crates/betterlite-azure/fuzz/fuzz_targets/azure_chat_call.rs && cargo
-      nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_chat_call_corpus$/)'
+  - id: case-missing-model-messages-422
+    why: A None model or messages raises AzureOpenAIError 422 (Missing model or messages); empty values do not trigger
+      this guard.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_missing_model_messages_422$/)'
+  - id: case-max-retries-default-two
+    why: Pop max_retries; missing or None uses DEFAULT_MAX_RETRIES from env DEFAULT_MAX_RETRIES, default 2; consume
+      the count before constructing the request body.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_max_retries_default_two$/)'
+  - id: case-invalid-retries-422
+    why: Only the synchronous nonstream path validates max_retries as int and raises AzureOpenAIError 422 (max retries
+      must be an int); preserve the source boolean-is-int edge.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_invalid_retries_422$/)'
+  - id: case-cloudflare-model-null
+    why: gateway.ai.cloudflare.com in api_base selects B531 Cloudflare client construction and sends model=None
+      with messages and optional parameters.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_cloudflare_model_null$/)'
+  - id: case-gpt5-base-model-selection
+    why: Use litellm_params.base_model or model to choose B532 GPT-5 transformation, otherwise B684 Azure base transformation;
+      Cloudflare takes precedence.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_gpt5_base_model_selection$/)'
+  - id: case-json-mode-projection
+    why: Pop json_mode (default false), pass it as convert_tool_call_to_json_mode to B004 response projection, and
+      inject nonempty caller headers into extra_headers.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_json_mode_projection$/)'
+  - id: case-output-limit-recovery
+    why: Both raw-response send wrappers pass output-token-limit BadRequestError to B505 build_output_token_limit_response
+      with the correct is_async flag; other BadRequestError values propagate.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_output_limit_recovery$/)'
+  - id: case-async-timeout-diagnostic
+    why: The async send wrapper appends timeout value and elapsed seconds rounded to two decimals to APITimeoutError;
+      keep the exception class/status/type/param/code while ignoring message wording in the oracle.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_async_timeout_diagnostic$/)'
+  - id: case-string-reply-500
+    why: A string SDK reply raises AzureOpenAIError 500 in sync and async buffered paths, with only its first 500
+      characters included in the diagnostic.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_string_reply_500$/)'
+  - id: case-client-type-validation
+    why: Sync requires AzureOpenAI or OpenAI and raises AzureOpenAIError 500 for a wrong client; async requires
+      AsyncAzureOpenAI or AsyncOpenAI and its ValueError becomes AzureOpenAIError 500.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_client_type_validation$/)'
+  - id: case-error-status-passthrough
+    why: Sync wraps unknown failures as AzureOpenAIError with status_code default 500, body and headers (falling
+      back to response.headers); async rethrows an error already carrying status_code and otherwise wraps status
+      500 with message/body.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_error_status_passthrough$/)'
+  - id: case-async-cancellation-passthrough
+    why: CancelledError is logged and re-raised, without being wrapped as AzureOpenAIError.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_async_cancellation_passthrough$/)'
+  - id: case-o-series-client-delegate
+    why: Build the async/sync Azure client then forward every supplied option, organization, drop_params and shared_session
+      to B004 completion; do not reimplement fake streaming in this handler.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_o_series_client_delegate$/)'
+  - id: case-raw-headers-projection
+    why: Both sends use with_raw_response.create regardless of the stale docstring; preserve raw headers, and async
+      also stores response_headers for logging and hidden_params.headers for conversion.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_raw_headers_projection$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-chat-call/chat-deployment-request.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-call/azure-v1-body-model.yaml
-- tools/oracle/cases/helpers/providers/azure-chat-call/o-series-fake-stream.yaml
 - tools/oracle/cases/helpers/providers/azure-chat-call/cross-deployment-auth.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/missing-model-messages-422.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/max-retries-default-two.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/invalid-retries-422.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/cloudflare-model-null.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/gpt5-base-model-selection.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/json-mode-projection.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/output-limit-recovery.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/async-timeout-diagnostic.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/string-reply-500.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/client-type-validation.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/error-status-passthrough.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/async-cancellation-passthrough.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/o-series-client-delegate.yaml
+- tools/oracle/cases/helpers/providers/azure-chat-call/raw-headers-projection.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
-  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
-  belong to B534; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
-  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
-  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
-  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
-  belong to B685; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/exception_mapping.py: AzureOpenAIExceptionMapping.create_content_policy_violation_error L12-L52;
+- 'litellm/llms/azure/exception_mapping.py: AzureOpenAIExceptionMapping.create_content_policy_violation_error L12-L52;
   AzureOpenAIExceptionMapping._extract_azure_error L55-L83 belong to B685; reuse that implementation or its injected
-  typed boundary.
+  typed boundary.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194 belong to B505.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
+  L577-L652 belong to B685.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
 pitfalls:
-- The Cloudflare and Azure v1 paths differ in whether the body retains model.
+- The send-wrapper docstrings mention return_response_headers, but both bodies unconditionally call with_raw_response.create.
+- The sync exception wrapper and async status-bearing rethrow preserve different exception identities; collapsing
+  them loses observable error metadata.
+- None max_retries uses the environment-backed fallback here, whereas Azure text completion uses pop(max_retries,
+  2) and rejects an explicit None.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard
