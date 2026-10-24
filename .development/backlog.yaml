@@ -210,6 +210,7 @@ tasks:
     - B017
     - B307
     - B308
+    - B309
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1946,3 +1947,14 @@ tasks:
     file: tasks/B308-cooldown-policy.yaml
     covers:
     - litellm/router_utils/{cooldown_callbacks,cooldown_handlers}.py
+
+  - id: B309
+    milestone: M2 routing
+    title: Resolve fallback chains and attempt identities
+    status: todo
+    depends_on:
+    - B017
+    - B013
+    file: tasks/B309-fallback-plans.yaml
+    covers:
+    - litellm/router_utils/fallback_event_handlers.py
