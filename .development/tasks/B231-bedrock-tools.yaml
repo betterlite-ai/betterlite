@@ -1,0 +1,93 @@
+id: B231
+title: Bedrock tool names and cache blocks
+description: >-
+  Implement make_valid_bedrock_tool_name, add_cache_point_tool_block, _is_bedrock_tool_block and _bedrock_tools_pt,
+  with a per-call reverse-name map and explicit cache-TTL model capability. Budget 280 transforms/types, 100 adapters,
+  300 tests/fuzz and 70 wiring (750 total). Add the bedrock_native_tool cargo-fuzz target, call the production parser,
+  and commit/replay malformed and boundary seeds. Write the behavior rstest functions b231_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations bedrock_tools in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/bedrock_tools.rs
+  - crates/betterlite-prompts/src/bedrock_tools/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/bedrock-tools/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-prompts/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4966-L5160
+  why: Exact function/class ownership.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - bedrock_native_tool-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b231_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'bedrock_tools' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: bedrock_native_tool-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/bedrock_native_tool)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/bedrock_native_tool.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/bedrock_native_tool)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_bedrock_native_tool_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/bedrock-tools/tool-name-roundtrip.yaml
+- tools/oracle/cases/helpers/bedrock-tools/native-tool.yaml
+- tools/oracle/cases/helpers/bedrock-tools/cache-ttl.yaml
+- tools/oracle/cases/helpers/bedrock-tools/duplicate-name.yaml
+- tools/oracle/cases/helpers/bedrock-tools/invalid-native-tool.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B181 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
