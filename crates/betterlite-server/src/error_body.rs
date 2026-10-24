@@ -24,32 +24,17 @@ pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response 
         AuthenticationFailure::Missing | AuthenticationFailure::Malformed => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
         }
-        AuthenticationFailure::Invalid => error_response(
+        AuthenticationFailure::Invalid => (
             StatusCode::BAD_REQUEST,
-            "the API key is not valid".to_owned(),
-            "no_db_connection",
-            "400",
-        ),
+            Json(ErrorResponse {
+                error: ErrorObject {
+                    message: "the API key is not valid".to_owned(),
+                    error_type: "no_db_connection".to_owned(),
+                    param: None,
+                    code: "400".to_owned(),
+                },
+            }),
+        )
+            .into_response(),
     }
-}
-pub(crate) async fn not_found_error() -> Response {
-    let body = NotFoundBody {
-        detail: "Not Found",
-    };
-    (StatusCode::NOT_FOUND, Json(body)).into_response()
-}
-#[derive(Serialize)]
-struct NotFoundBody {
-    detail: &'static str,
-}
-fn error_response(status: StatusCode, message: String, error_type: &str, code: &str) -> Response {
-    let body = ErrorResponse {
-        error: ErrorObject {
-            message,
-            error_type: error_type.to_owned(),
-            param: None,
-            code: code.to_owned(),
-        },
-    };
-    (status, Json(body)).into_response()
 }

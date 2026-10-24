@@ -1,10 +1,9 @@
 use crate::server::ServerError;
-use futures_util::future::{Either, select};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
 use tokio::signal::unix::{Signal, SignalKind, signal};
-use tokio::sync::watch;
+use tokio::task::JoinSet;
 pub(crate) struct ShutdownSignal {
     #[cfg(unix)]
     terminate: Signal,
@@ -35,26 +34,25 @@ pub(crate) fn build_shutdown_signal() -> Result<ShutdownSignal, ServerError> {
     }
 }
 impl ShutdownSignal {
-    pub(crate) async fn wait(
-        mut self,
-        shutting_down: Arc<AtomicBool>,
-        sender: watch::Sender<bool>,
-    ) {
+    pub(crate) async fn wait(self, shutting_down: Arc<AtomicBool>) {
         #[cfg(unix)]
         {
-            let terminate = self.terminate.recv();
-            let interrupt = self.interrupt.recv();
-            tokio::pin!(terminate);
-            tokio::pin!(interrupt);
-            match select(terminate, interrupt).await {
-                Either::Left((_result, _)) | Either::Right((_result, _)) => {}
+            let mut signals = JoinSet::new();
+            let mut terminate = self.terminate;
+            signals.spawn(async move {
+                terminate.recv().await;
+            });
+            let mut interrupt = self.interrupt;
+            signals.spawn(async move {
+                interrupt.recv().await;
+            });
+            if let Some(Err(error)) = signals.join_next().await {
+                tracing::debug!(error = %error, "shutdown signal task stopped");
             }
-        }
+            signals.shutdown().await;
+        };
         #[cfg(not(unix))]
-        {
-            let _ = tokio::signal::ctrl_c().await;
-        }
+        let _ = tokio::signal::ctrl_c().await;
         shutting_down.store(true, Ordering::Release);
-        let _send_result = sender.send(true);
     }
 }

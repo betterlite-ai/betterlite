@@ -8,7 +8,6 @@ publish.workspace = true
 [dependencies]
 axum.workspace = true
 betterlite-config = { path = "../betterlite-config" }
-futures-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 serde.workspace = true

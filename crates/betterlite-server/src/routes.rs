@@ -1,5 +1,4 @@
 use crate::auth::{AuthState, authenticate};
-use crate::error_body::not_found_error;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
@@ -16,7 +15,14 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
     Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
-        .fallback(not_found_error)
+        .fallback(|| async {
+            (
+                StatusCode::NOT_FOUND,
+                Json(NotFoundBody {
+                    detail: "Not Found",
+                }),
+            )
+        })
         .with_state(shutting_down)
         .layer(middleware::from_fn_with_state(state, authenticate))
 }
@@ -35,4 +41,8 @@ async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Resp
 #[derive(Serialize)]
 struct ShutdownBody {
     status: &'static str,
+}
+#[derive(Serialize)]
+struct NotFoundBody {
+    detail: &'static str,
 }
