@@ -1,0 +1,111 @@
+id: B176
+title: Trusted controls, provider headers and affinity
+description: >-
+  Add provider control extraction, safe extra-body/multipart normalization, provider response-header selection and
+  session-affinity helpers. Put them in betterlite-provider/controls and /headers, with the dot-path parser in /paths.
+  Use typed trusted controls whose constructors are only called by config/server code, separate from request metadata;
+  no request field may impersonate deployment credentials or internal metadata. Support the config keys these implemented
+  helpers consume and reject the rest through B002. Preserve arbitrary provider payload only inside the existing
+  named passthrough field, bounded by size/depth limits. Add helper operations for control extraction, affinity,
+  multipart flattening and dot-path get/delete; include escaped dots, array selectors and duplicate/nonexistent
+  paths. Add the control_paths fuzz target for the external path/control input, extending the config/chat corpus
+  for new fields. Budget 350 helpers, 100 config/wire and 300 test/fuzz lines.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/controls.rs
+  - crates/betterlite-provider/src/controls/**
+  - crates/betterlite-provider/src/headers.rs
+  - crates/betterlite-provider/src/headers/**
+  - crates/betterlite-provider/src/paths.rs
+  - crates/betterlite-provider/src/paths/**
+  - crates/betterlite-provider/fuzz/**
+  - crates/betterlite-config/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-controls/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L96-L120
+  why: Validated control options and storage.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L134-L270
+  why: Control extraction and trusted credentials.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L16-L133
+  why: Multipart field flattening and unsafe extra_body rejection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/provider_affinity.py#L33-L98
+  why: Forbidden headers, stable session identity and injection prevention.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_provider_specific_headers.py#L7-L39
+  why: Provider-specific header extraction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L32-L242
+  why: Read/delete path behavior, escaping, indices and wildcards.
+dod:
+- text: The listed controls, affinity, multipart and path cases match pinned helper outputs.
+  proof:
+  - oracle
+- text: Client metadata cannot override credentials or a configured destination, and CR/LF/NUL values cannot become
+    HTTP headers.
+  proof:
+  - provider-controls-tests
+- text: Parser byte/depth/index limits fail explicitly and the path/control corpus is replayed.
+  proof:
+  - control-paths-corpus
+  - provider-controls-tests
+- text: Added config and chat fields remain covered by existing parser corpora.
+  proof:
+  - config-yaml-corpus
+  - chat-request-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-controls-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-config --no-tests=fail -E 'test(/provider_controls|provider_affinity|control_paths/)'
+  - id: control-paths-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-provider/fuzz/fuzz_targets/control_paths.rs && test -n "$(ls -A crates/betterlite-provider/fuzz/corpus/control_paths)"
+      && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_control_paths_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/provider-controls/credential-provenance.yaml
+- tools/oracle/cases/helpers/provider-controls/extra-body.yaml
+- tools/oracle/cases/helpers/provider-controls/multipart-lists.yaml
+- tools/oracle/cases/helpers/provider-controls/affinity-existing-header.yaml
+- tools/oracle/cases/helpers/provider-controls/affinity-generated-session.yaml
+- tools/oracle/cases/helpers/provider-controls/affinity-forbidden-header.yaml
+- tools/oracle/cases/helpers/provider-controls/affinity-control-character.yaml
+- tools/oracle/cases/helpers/provider-controls/escaped-dot.yaml
+- tools/oracle/cases/helpers/provider-controls/array-delete.yaml
+- tools/oracle/cases/helpers/provider-controls/wildcard-delete.yaml
+deviations: []
+out_of_scope:
+- Provider-specific signing and secret-manager lookups belong to provider tasks and B129.
+- A request cannot supply arbitrary environment-variable references or outbound headers that bypass the typed policy.
+pitfalls:
+- A generated session identifier is not a stable affinity key.
+- Header names are case insensitive, including duplicate detection.
+- Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
