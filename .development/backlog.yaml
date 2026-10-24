@@ -211,6 +211,7 @@ tasks:
     - B307
     - B308
     - B309
+    - B310
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1958,3 +1959,18 @@ tasks:
     file: tasks/B309-fallback-plans.yaml
     covers:
     - litellm/router_utils/fallback_event_handlers.py
+
+  - id: B310
+    milestone: M2 routing
+    title: Execute authorized fallback attempts
+    status: todo
+    depends_on:
+    - B309
+    - B308
+    - B052
+    - B071
+    - B014
+    file: tasks/B310-fallback-attempts.yaml
+    covers:
+    - litellm/router_utils/fallback_event_handlers.py
+    - litellm/litellm_core_utils/fallback_utils.py
