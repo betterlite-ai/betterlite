@@ -52,8 +52,21 @@ fn provider_message_primitives_cases_match_litellm(#[case] name: &str) {
 #[case::missing_schema("{json_schema: {name: answer}}")]
 #[case::not_object("{json_schema: 5}")]
 fn response_formats_match_litellm(#[case] value: &str) {
+    matches_litellm(&format!(
+        "function: response_format, optional_params: {{}}, value: {value}, supported: false, enforce_tool_choice: null"
+    ));
+}
+
+#[test]
+fn function_tool_calls_match_litellm() {
+    matches_litellm(
+        "function: tool_call, record: {id: c, type: function, function: {name: f}, custom: null}",
+    );
+}
+
+fn matches_litellm(call: &str) {
     let source = format!(
-        "kind: helper\nname: format\ncall: {{provider_message_primitives: {{function: response_format, optional_params: {{}}, value: {value}, supported: false, enforce_tool_choice: null}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: /error/message, why: betterlite writes its own message}}]}}\n"
+        "kind: helper\nname: inline\ncall: {{provider_message_primitives: {{{call}}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: /error/message, why: betterlite writes its own message}}]}}\n"
     );
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
     let run = super::super::run_case(&case, false).unwrap();
