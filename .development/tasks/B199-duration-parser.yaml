@@ -1,0 +1,89 @@
+id: B199
+title: Duration parsing and calendar resets
+description: >-
+  Add bounded duration parsing and calendar reset helpers in betterlite-core/duration, taking explicit current time,
+  local timezone and reset policy. Reproduce the pinned duration/word-alias and standardized reset helpers through
+  differential cases, keeping calendar months distinct from fixed-day aliases. Use the existing time dependency
+  or compare jiff/chrono-tz before selecting a maintained timezone implementation; never implement a timezone database
+  or call ambient local-time APIs in business logic. Preserve the pinned prefix parser behavior only with an explicit
+  trailing-input diagnostic rather than silent truncation, and expose typed errors/warnings for invalid zones, overflow
+  and unsupported forms. The Python helper controls its clock and timezone per case, and Rust uses the same injected
+  values. Add duration_spec cargo-fuzz target and replay, including DST folds/gaps, leap dates and very large quantities.
+  Budget 300 parsing/calendar lines, 80 adapters and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/duration.rs
+  - crates/betterlite-core/src/duration/**
+  - crates/betterlite-core/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/duration/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L17-L106
+  why: Word aliases, prefix grammar and calendar-month duration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L109-L230
+  why: Standardized resets, timezone and time-of-day handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L233-L381
+  why: Second/minute/hour/day/month reset calculations.
+- url: https://docs.rs/jiff/latest/jiff/
+  why: Checked calendar arithmetic and explicit timezone ambiguity handling.
+dod:
+- text: Fixed and calendar durations, all reset units and injected timezone cases match Python on exact instants.
+  proof:
+  - oracle
+- text: Overflow, invalid forms/zones and trailing input have typed outcomes; no helper reads the wall clock or
+    environment implicitly.
+  proof:
+  - duration-tests
+- text: The duration parser corpus replays malformed inputs and calendar boundaries without panic or hang.
+  proof:
+  - duration-spec-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: duration-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/duration/)'
+  - id: duration-spec-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-core/fuzz/fuzz_targets/duration_spec.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/duration_spec)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_duration_spec_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/duration/fixed-units.yaml
+- tools/oracle/cases/helpers/duration/word-aliases.yaml
+- tools/oracle/cases/helpers/duration/month-end.yaml
+- tools/oracle/cases/helpers/duration/leap-year.yaml
+- tools/oracle/cases/helpers/duration/year-rollover.yaml
+- tools/oracle/cases/helpers/duration/reset-second-minute.yaml
+- tools/oracle/cases/helpers/duration/reset-hour-day.yaml
+- tools/oracle/cases/helpers/duration/reset-month.yaml
+- tools/oracle/cases/helpers/duration/time-of-day.yaml
+- tools/oracle/cases/helpers/duration/dst-gap.yaml
+- tools/oracle/cases/helpers/duration/dst-fold.yaml
+- tools/oracle/cases/helpers/duration/prefix-suffix.yaml
+- tools/oracle/cases/helpers/duration/invalid.yaml
+deviations: []
+out_of_scope:
+- Budget persistence, admission and scheduled reset jobs belong to M4; this part supplies pure calculations.
+- Do not add new accepted config keys until their owning feature consumes them.
+pitfalls:
+- The monthly word alias is a fixed duration while mo is calendar-dependent.
+- The source regex accepts a valid prefix, so a library that enforces whole-string matching changes compatibility.
+- Pin timezone inputs in oracle cases so the host timezone cannot decide the expected result.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
