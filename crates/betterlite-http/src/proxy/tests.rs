@@ -22,6 +22,9 @@ use crate::proxy::ProxiedClient;
 // nothing listens on port 1, so a request that skips its proxy fails at once
 const CLOSED: &str = "http://127.0.0.1:1/v1/models";
 
+// past basic_auth the password lives only as base64 in Proxy-Authorization, so a leak can skip the plaintext
+const LEAKS: [&str; 3] = ["secret", "dXNlcjpzZWNyZXQ=", "dXNAZXI6cEBzczpzZWNyZXQ="];
+
 async fn answer(listener: &TcpListener) -> String {
     let (mut stream, _) = listener.accept().await.unwrap();
     let mut head = Vec::new();
@@ -84,8 +87,13 @@ async fn http_proxies_proxy_policy_tests_behavior(
         observed.push_str(" warned");
     }
     assert_eq!(observed, expected);
-    assert!(!written.contains("secret"));
-    assert!(!format!("{client:?}").contains("secret"));
+    let debug = format!("{client:?}");
+    for leak in LEAKS {
+        assert!(
+            !written.contains(leak) && !debug.contains(leak),
+            "{leak} leaked"
+        );
+    }
 }
 
 #[rstest]

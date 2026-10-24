@@ -95,24 +95,21 @@ impl ProxyPolicy {
 }
 
 fn environment_proxies(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    let proxy_name = |name: &str| {
-        let split = name.len().checked_sub(6)?;
-        let suffix = name.get(split..)?;
-        let prefix = name.get(..split)?;
-        suffix
-            .eq_ignore_ascii_case("_proxy")
-            .then(|| (prefix.to_lowercase(), suffix == "_proxy"))
-    };
     let mut proxies = BTreeMap::new();
     let mut lowercase = Vec::new();
     for (name, value) in environment {
-        let Some((key, is_lowercase)) = proxy_name(name) else {
+        let split = name.len().checked_sub(6);
+        let Some((prefix, suffix)) = split.and_then(|index| name.split_at_checked(index)) else {
             continue;
         };
+        if !suffix.eq_ignore_ascii_case("_proxy") {
+            continue;
+        }
+        let key = prefix.to_lowercase();
         if !value.is_empty() {
             proxies.insert(key.clone(), value.clone());
         }
-        if is_lowercase {
+        if suffix == "_proxy" {
             lowercase.push((key, value));
         }
     }
