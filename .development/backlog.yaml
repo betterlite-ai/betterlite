@@ -1978,7 +1978,7 @@ tasks:
     title: Bounded callback worker and batch delivery
     status: todo
     depends_on: [B189, B190]
-    file: null
+    file: tasks/B191-logging-worker.yaml
     covers:
       - "litellm/litellm_core_utils/logging_worker.py"
       - "litellm/integrations/{custom_batch_logger,additional_logging_utils,batch_utils,mock_client_factory,test_httpx}.py"

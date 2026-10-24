@@ -1,0 +1,90 @@
+id: B191
+title: Bounded callback worker and batch delivery
+description: >-
+  Add the owned async callback worker and batch-delivery primitive in betterlite-logging. The server will own a
+  TaskTracker or JoinSet, bounded queue and explicit flush/stop handle; no detached retries, atexit cleanup or unbounded
+  task list. Use constructor limits (queue 1024, concurrency 8, callback timeout 10 seconds and shutdown drain 30
+  seconds) and report rejected admissions, timeouts and failures with sanitized typed outcomes. Preserve request
+  context on queued events, avoid locks across await, and isolate a failed observability callback from the model
+  response. Implement ordered batching with finite retries, a 413 split that preserves unsent remainder, and cancellation
+  that retains or explicitly reports undelivered events. Add worker_trace and batch_delivery helper probes with
+  deterministic synthetic callbacks and a mock transport; use paused-clock Rust tests for saturation, cancellation
+  and shutdown. Budget 340 worker/batching lines, 100 support lines and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/worker.rs
+  - crates/betterlite-logging/src/worker/**
+  - crates/betterlite-logging/src/batch.rs
+  - crates/betterlite-logging/src/batch/**
+  - crates/betterlite-logging/tests/fixtures/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-worker/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L41-L75
+  why: Worker inputs and bounded queue design.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L168-L265
+  why: Task context, concurrency, execution and admission.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L455-L531
+  why: Stop, flush and queue clearing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L26-L93
+  why: Periodic flush and batch callback contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/batch_utils.py#L15-L160
+  why: Retry classification, 413 split and cancellation-safe remainder.
+dod:
+- text: Successful worker traces, callback failures, batch retry classes and 413 remainder handling match the helper
+    probes.
+  proof:
+  - oracle
+- text: Saturation never grows memory beyond capacity; rejection is observable and does not lose a task silently.
+  proof:
+  - logging-worker-tests
+- text: Cancellation and timed-out callbacks release permits; flush/stop account for every accepted event and join
+    all tasks by the deadline.
+  proof:
+  - logging-worker-tests
+- text: A failed observability callback never replaces a successful model result.
+  proof:
+  - logging-worker-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: logging-worker-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/logging_worker|batch_delivery/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/logging-worker/success-trace.yaml
+- tools/oracle/cases/helpers/logging-worker/failure-trace.yaml
+- tools/oracle/cases/helpers/logging-worker/flush-order.yaml
+- tools/oracle/cases/helpers/logging-worker/retryable-status.yaml
+- tools/oracle/cases/helpers/logging-worker/batch-413.yaml
+- tools/oracle/cases/helpers/logging-worker/single-item-413.yaml
+- tools/oracle/cases/helpers/logging-worker/cancellation-remainder.yaml
+deviations:
+- what: Queue overflow returns a typed rejected-admission result with counters; no unbounded delayed-enqueue or
+    aggressive-clear tasks are spawned.
+  why: The async-hygiene and no-silent-drops rules require bounded ownership and explicit loss accounting.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L249-L418
+out_of_scope:
+- Durable spend/audit writes must use B069's persistence path, not this best-effort observability queue.
+- Concrete HTTP exporters are M5 and reuse this batch primitive.
+pitfalls:
+- A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
+- Do not retry a 413 batch without reducing it, and do not retry an oversized single item forever.
+- Callback context must be captured before enqueue, not read from whichever task later runs it.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
