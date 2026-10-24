@@ -267,6 +267,7 @@ tasks:
     - B330
     - B331
     - B332
+    - B333
     file: null
     covers:
     - router_plugins.json
@@ -2268,3 +2269,17 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/capability_classifier.py
     - litellm/router_strategy/complexity_router/config.py
+
+  - id: B333
+    milestone: M2 routing
+    title: JEV classifier calls and offline tier prediction
+    status: todo
+    depends_on:
+    - B331
+    - B099
+    - B009
+    - B013
+    file: tasks/B333-jev-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{jev_classifier,tier_predictor}.py
+    - litellm/router_strategy/complexity_router/artifacts/**
