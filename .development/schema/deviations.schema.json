@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "betterlite deviation log",
+  "description": "Where one task's code deliberately differs from the pinned LiteLLM, kept in docs/deviations/<task id>.yaml. The worker writes the same entries as its report's deviations.",
+  "type": "object",
+  "properties": {
+    "deviations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReportDeviation"
+      }
+    },
+    "task": {
+      "type": "string",
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "deviations"
+  ],
+  "$defs": {
+    "ReportDeviation": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "description": "https link to LiteLLM's behavior, or an empty string.",
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "what",
+        "why",
+        "link"
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 
 use crate::coverage;
+use crate::deviations;
 use crate::error::GateError;
 use crate::schema;
 use crate::spec::agents::Agents;
@@ -109,6 +110,7 @@ pub(crate) fn validate(root: &Path) -> Result<Vec<String>, GateError> {
             );
         }
     }
+    problems.extend(deviations::log_problems(root, &backlog)?);
     problems.extend(schema::stale(root)?);
     Ok(problems)
 }
