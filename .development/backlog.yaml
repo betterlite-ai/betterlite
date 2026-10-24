@@ -266,6 +266,7 @@ tasks:
     - B329
     - B330
     - B331
+    - B332
     file: null
     covers:
     - router_plugins.json
@@ -2256,3 +2257,14 @@ tasks:
     file: tasks/B331-llm-classifier.yaml
     covers:
     - litellm/router_strategy/complexity_router/{complexity_router,classification_rubrics}.py
+
+  - id: B332
+    milestone: M2 routing
+    title: Capability forecasts and calibrated routing thresholds
+    status: todo
+    depends_on:
+    - B331
+    file: tasks/B332-capability-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/capability_classifier.py
+    - litellm/router_strategy/complexity_router/config.py
