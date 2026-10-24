@@ -36,7 +36,7 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2324-L2561
   why: JSON repair and concatenated tool arguments.
 dod:
-- text: Tool argument and schema helper cases match the Python helpers without ignoring structural fields.
+- text: Schema combinator and regex-filter helper cases match the Python helpers without ignoring structural fields.
   proof:
   - oracle
   - helper-python
