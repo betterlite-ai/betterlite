@@ -1,0 +1,95 @@
+id: B015
+title: OpenAI moderations and text-completion regression
+description: >-
+  Finish the entry with OpenAI moderation routes and a regression of its completed text-completion parts. Add typed
+  moderation request/response records, including string/list/multimodal inputs, category booleans, exact-decimal
+  scores and applied-input-type metadata. Expose POST /moderations and /v1/moderations behind existing auth and
+  use the B010 provider boundary, B009 transport and B011 error mapper. Support general_settings.moderation_model
+  and the source's model-selection precedence through config, without hard-coding a provider model when omission
+  is meaningful. All outbound destinations/credentials remain operator supplied; model-less requests can use only
+  a configured OpenAI default, never request-supplied api_base. Add HTTP cases for omitted/explicit model, input
+  shapes, category fields, aliases and upstream errors, and moderation request/response fuzz targets with replay.
+  Budget 270 wire/provider lines, 140 route/config integration and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-openai/**
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - crates/betterlite-config/**
+  - tools/oracle/cases/moderations/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12398-L12490
+  why: Moderation routes, model resolution and shared headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L58
+  why: Endpoint-specific model default precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7767-L7875
+  why: Moderation provider dispatch and optional model forwarding.
+dod:
+- text: Moderation input/model defaults, response categories/scores, aliases and upstream errors match listed HTTP
+    cases.
+  proof:
+  - oracle
+- text: Auth, request/body limits, configured destination policy and deadlines are exercised against the real server.
+  proof:
+  - moderation-tests
+- text: Both moderation parsers and the extended config loader replay committed corpora.
+  proof:
+  - moderation-request-corpus
+  - moderation-response-corpus
+  - config-yaml-corpus
+- text: Previously completed text completion and streaming paths still pass their oracle cases.
+  proof:
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: moderation-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server -p betterlite-config --no-tests=fail
+      -E 'test(/moderation/)'
+  - id: moderation-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_moderation_request_corpus)'
+  - id: moderation-response-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_response.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_response)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_moderation_response_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/moderations/string-input.yaml
+- tools/oracle/cases/moderations/array-input.yaml
+- tools/oracle/cases/moderations/multimodal-input.yaml
+- tools/oracle/cases/moderations/model-omitted.yaml
+- tools/oracle/cases/moderations/configured-default.yaml
+- tools/oracle/cases/moderations/explicit-model.yaml
+- tools/oracle/cases/moderations/categories-scores.yaml
+- tools/oracle/cases/moderations/unversioned-path.yaml
+- tools/oracle/cases/moderations/upstream-400.yaml
+- tools/oracle/cases/moderations/upstream-401.yaml
+- tools/oracle/cases/moderations/upstream-429.yaml
+- tools/oracle/cases/completions/string-prompt.yaml
+- tools/oracle/cases/completions/stream-basic.yaml
+deviations: []
+out_of_scope:
+- Moderation policy/guardrails and alternative moderation providers belong to their later tasks.
+- This part adds no Python SDK API and no cost accounting.
+pitfalls:
+- >-
+  The backlog's original covers globs name completion files, but moderation behavior lives in main.py and proxy_server.py
+  and is still part of this entry.
+- A model-less request must not accidentally select an arbitrary configured deployment.
+- Keep moderation scores as JSON numbers backed by Decimal, not serialized strings.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

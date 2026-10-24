@@ -145,7 +145,7 @@ tasks:
     title: Text completions and moderations
     status: todo
     depends_on: [B010, B202, B203]
-    file: null
+    file: tasks/B015-moderations.yaml
     covers: []
   - id: B016
     milestone: M2 routing
