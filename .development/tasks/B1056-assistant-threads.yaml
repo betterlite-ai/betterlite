@@ -1,222 +1,93 @@
 id: B1056
-title: Assistant threads
+title: Assistant thread SDK creation and retrieval
 description: >-
-  Implement create/retrieve thread operations with typed messages, metadata and tool_resources. Reuse managed-file
-  mappings for attachments and keep configured assistant provider credentials distinct from caller metadata.
+  Implement all four complete thread functions at assistants/main.py:526-835 in core::api::assistant_threads.
+  B520 supplies OpenAI thread calls, B687 Azure calls, B176 control extraction, B010 GenericLiteLLMParams, B174 async provider
+  resolution, B011 async error mapping and B2487 resource settings. Thread creation accepts required
+  provider and nullable messages,metadata,tool_resources,client; retrieval requires provider/thread_id and
+  nullable client. Preserve that tool_resources is accepted but never forwarded by either branch.
+  B2401 AssistantThreads executes the real sync/async wrappers through mock HTTP, not helper projections.
 
-
-  Implement crates/betterlite-core/src/api/assistant_threads.rs. Use AssistantThreadsInput and AssistantThreadsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions thread_create_messages, thread_tool_resources, thread_retrieve, thread_not_found
-  under api::assistant_threads::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None; env.OPENAI_BASE_URL defaults to unset (None); env.OPENAI_API_BASE defaults to unset (None);
-  litellm_settings.organization defaults to None; env.OPENAI_ORGANIZATION defaults to None; litellm_settings.api_key
-  defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY defaults to unset (None); env.AZURE_API_BASE
-  defaults to unset (None); litellm_settings.azure_key defaults to None; env.AZURE_OPENAI_API_KEY defaults to unset
-  (None); env.AZURE_API_KEY defaults to unset (None); litellm_settings.api_version defaults to None; env.AZURE_API_VERSION
-  defaults to unset (None); env.AZURE_AD_TOKEN defaults to unset (None). No environment reads occur outside betterlite-config.
-  Test api::assistant_threads::tests::loads_settings uses the production Config loader and an injected environment
-  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
-  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
-  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
-  parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::AssistantThreads in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {assistant_threads: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/assistants/main.py: acreate_thread (L526-L554); litellm/assistants/main.py: create_thread
-  (L557-L690); litellm/assistants/main.py: aget_thread (L693-L726); litellm/assistants/main.py: get_thread (L729-L835).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 245 owned nonblank/non-comment/non-docstring Python lines (265 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 265 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 75 config tests/seeds and
-  30 wiring; 572 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1019 (File routing ids), B1020 (File credentials), B1087 (Api boundaries), B520
-  (OpenAI thread and message operations), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Use B2487's OpenAI/Azure credentials and timeout (600-second fallback), already loaded by Config.
+  Create reads acreate_thread from kwargs without removing it; get pops aget_thread. Neither validates
+  nonboolean flags, and provider methods select async only for true. A null provider return passes
+  through unchanged. The 265 nonblank/non-comment source lines include thread examples; allow 195 code,
+  150 tests, 85 adapters, 130 fixtures and 40 corpus/wiring, 600 total. B520 owns external response decoding.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/assistant_threads.rs
   - crates/betterlite-core/src/api/assistant_threads/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/assistant_threads.rs
-  - crates/betterlite-config/src/api/assistant_threads/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-threads-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/assistant_threads.rs
-  - tools/oracle/src/helpers/assistant_threads/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/assistant_threads.py
-  - tools/oracle/helpers/assistant_threads/**
-  - tools/oracle/fuzz/corpus/helper_case/assistant_threads-*
-  - tools/oracle/cases/helpers/assistant-threads/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/assistant_threads.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/assistant_threads.py
+  - tools/oracle/cases/sdk-http/assistant-threads/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/assistant-threads-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L761-L761
-  why: Setting env.OPENAI_BASE_URL and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L762-L762
-  why: Setting env.OPENAI_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L595-L595
-  why: Setting litellm_settings.organization and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L768-L768
-  why: Setting env.OPENAI_ORGANIZATION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
-  why: Setting litellm_settings.openai_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L776-L776
-  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L790-L790
-  why: Setting env.AZURE_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L283-L283
-  why: Setting litellm_settings.azure_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L798-L798
-  why: Setting env.AZURE_OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L799-L799
-  why: Setting env.AZURE_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L594-L594
-  why: Setting litellm_settings.api_version and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L792-L792
-  why: Setting env.AZURE_API_VERSION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L807-L807
-  why: Setting env.AZURE_AD_TOKEN and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L526-L835
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Whole create/get wrappers reveal dropped tool_resources, asymmetric flag removal and Azure client/token branches.
 dod:
-- text: 'thread create messages: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-create-messages
-  - oracle
-- text: 'thread tool resources: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-tool-resources
-  - oracle
-- text: 'thread retrieve: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-retrieve
-  - oracle
-- text: 'thread not found: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-not-found
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    thread_create_drops_tool_resources sends provider=openai,messages=[{role:user,content:hello}],
+    metadata={tag:x},tool_resources={file_search:{vector_store_ids:[vs_a]}}. Both SDK modes POST /v1/threads
+    with messages and metadata only, OpenAI-Beta=assistants=v2. Null messages/metadata are omitted by B520;
+    []/{} remain. The same tool_resources omission holds on Azure. Mock {id:thread_a,object:thread,
+    created_at:1,metadata:{tag:x},tool_resources:{}} returns through B520's Thread conversion.
+  proof: [thread-tests, oracle, python-adapter]
+- text: >-
+    thread_retrieve_uses_id calls both modes with thread_a, expects GET /v1/threads/thread_a and the
+    mock Thread record. Other kwargs do not become query/body fields; there is no managed file/store
+    lookup. Native test gives provider result null and expects null rather than create_assistants' internal
+    error. Async copy_context reaches execution and coroutine results are awaited exactly once.
+  proof: [thread-tests, oracle, python-adapter]
+- text: >-
+    thread_settings_and_azure_client exercises OpenAI and Azure base/key/version chains from B2487,
+    including request overrides and environment fallback. Default timeout=600, timeout=0/request_timeout=4->4,
+    "7.5"->7.5, structured openai/azure timeout retained and max_retries forwarded. OpenAI organization is
+    request/global/OPENAI_ORGANIZATION; Azure gets B176 litellm_params. In both create and retrieve Azure
+    discards isinstance(OpenAI) clients including AzureOpenAI, but not an AsyncOpenAI instance via that check.
+    AZURE_AD_TOKEN=env-token is used only with extra_body=null; omission/{} yields null; body-token is popped
+    from {azure_ad_token:body-token} and wins. Compare outbound auth and api-version with static key absent
+    in bearer cases; the extra-body map itself is not a thread request body.
+  proof: [thread-tests, oracle, python-adapter]
+- text: >-
+    thread_flags_and_provider_errors sends acreate_thread/aget_thread=1 or "true" to synchronous
+    wrappers and expects the synchronous provider method, without flag-validation errors. null/false also
+    select sync; true selects async. Native capture confirms create retains its flag in kwargs/control
+    preparation and get removes its flag. Unsupported anthropic raises BadRequestError,400,
+    type/param/code=null,message="LiteLLM doesn't support anthropic for 'create_thread'. Only 'openai' is supported."
+    or the get_thread variant. Mock HTTP 404 with type=invalid_request_error,param=thread_id,code=missing
+    remains NotFoundError,404 with those fields synchronously; async uses B011 with model="",completion_kwargs={}
+    and mapped type/param/code=null. Commit a seed for each operation/mode in B2401's corpus.
+  proof: [thread-tests, oracle, python-adapter, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_threads::/)
-      - test(/::replays_corpus$/)'
-  - id: case-thread-create-messages
-    why: the thread-create-messages behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::thread_create_messages($|::)/)'
-  - id: case-thread-tool-resources
-    why: the thread-tool-resources behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::thread_tool_resources($|::)/)'
-  - id: case-thread-retrieve
-    why: the thread-retrieve behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::thread_retrieve($|::)/)'
-  - id: case-thread-not-found
-    why: the thread-not-found behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::thread_not_found($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_threads::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/assistant-threads-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/assistant_threads.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/assistant_threads-*)"
-      && grep -qE "^[[:space:]]+assistant_threads:" tools/oracle/fuzz/corpus/helper_case/assistant_threads-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/assistant-threads)"
+  - id: thread-tests
+    why: thread SDK calls accidentally forward tool resources or change flags and Azure credentials
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: thread creation/retrieval is not checked via the pinned SDK and mock HTTP
+    run: test -f tools/oracle/sdk_http/assistant_threads.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: thread operation inputs have no newly committed decoder cases
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-threads-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/assistant-threads/thread-create-messages.yaml
-- tools/oracle/cases/helpers/assistant-threads/thread-tool-resources.yaml
-- tools/oracle/cases/helpers/assistant-threads/thread-retrieve.yaml
-- tools/oracle/cases/helpers/assistant-threads/thread-not-found.yaml
+- tools/oracle/cases/sdk-http/assistant-threads/thread-create-drops-tool-resources.yaml
+- tools/oracle/cases/sdk-http/assistant-threads/thread-retrieve-uses-id.yaml
+- tools/oracle/cases/sdk-http/assistant-threads/thread-settings-and-azure-client.yaml
+- tools/oracle/cases/sdk-http/assistant-threads/thread-flags-and-provider-errors.yaml
 deviations: []
 out_of_scope:
-- 'litellm/assistants/main.py: B1130 owns aget_assistants L38-L70, get_assistants L73-L190, adelete_assistant L374-L407,
-  delete_assistant L410-L520.'
-- 'litellm/assistants/main.py: B1055 owns acreate_assistants L193-L227, create_assistants L230-L371.'
-- 'litellm/assistants/main.py: B1057 owns a_add_message L841-L889, add_message L892-L1011, aget_messages L1014-L1054,
-  get_messages L1057-L1161.'
-- 'litellm/assistants/main.py: B089 owns arun_thread_stream L1165-L1171, arun_thread L1174-L1228, run_thread_stream
-  L1231-L1236, run_thread L1239-L1365.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1055/B1130 own assistant definition SDKs, B1057 messages and the run SDK split belongs below B089. B1086 registers thread HTTP handlers.
+- B2487 owns settings loading and non-finite timeout policy. B520/B687 own thread records, provider serialization and beta headers.
 pitfalls:
-- create_thread uses kwargs.get('acreate_thread', None); retain its missing-value behavior and field spelling in
-  the typed projection.
-- create_thread uses kwargs.get('request_timeout', 600); retain its missing-value behavior and field spelling in
-  the typed projection.
+- tool_resources never reaches either thread-create provider method.
+- Thread async flags accept nonboolean values without the validation performed by assistant-definition wrappers.
+- A provider null result is returned as null by these wrappers.
 review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

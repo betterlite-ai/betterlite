@@ -1,163 +1,160 @@
 id: B936
-title: Responses poll stream
+title: Responses background stream consumption
 description: >-
-  Reduce live Responses stream events into polling snapshots and run the background call as a server-owned task
-  that outlives the initiating HTTP disconnect. Preserve flush scheduling, terminal incomplete/error fields and
-  cancellation polling; drain the task on server shutdown and use the source's flush thresholds. Flush dirty polling
-  output every 150 milliseconds or on terminal state, matching UPDATE_INTERVAL=0.150.
+  Implement the whole background_streaming.py module in betterlite-core api/responses_poll_stream,
+  including its nested flush function and detached-request adapter. B004 supplies the real
+  request-processing port; B935 owns Redis transitions, B1087 limits and B1138 response records.
+  Change state to in_progress, force data.stream=true, remove background, and call route_type=aresponses
+  with skip_pre_call_logic=true and model=null. Preserve the preprocessed request scope/auth/body
+  while its receive operation never reports client disconnect. The task continues after the
+  initiating HTTP connection closes. B003 owns bounded server task tracking and shutdown.
 
+  Buffer output by insertion-ordered item ID and text by (item_id,content_index). Flush dirty
+  output after an event when at least 0.150 seconds elapsed, or force at end; there is no timer
+  flushing while idle. Terminal events collect fields but do not break iteration. Their output
+  items merge into the existing map by ID; an empty terminal output does not clear prior items.
+  EOF or [DONE] without a terminal event ends as completed. The source never polls cancellation
+  state: a cached cancelled status can be overwritten by the eventual terminal result.
 
-  Implement crates/betterlite-core/src/api/responses_poll_stream.rs. Use ResponsesPollStreamInput and ResponsesPollStreamResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Use SdkHttpCall::ResponsesPollStream in B2401 for the provider-reaching background worker.
+  Python calls background_streaming_task (not a route handler) with real ProxyBaseLLMRequestProcessing,
+  prepared request/auth context and a capture Redis fixture; its provider base is the mock.
+  Native calls the production worker. Only clock, admission outcome and cache are controlled;
+  do not replace the processor or return expected provider results. HTTP create/read/cancel route
+  composition remains B080/B938. Add a separate pure HelperCall::ResponsesPollFrame for the
+  source frame selector/JSON parser, with B171 adapters and tagged seed.
 
-
-  Write adjacent tests.rs behavior functions disconnect_keeps_polling, partial_text_flush, terminal_output_replaces__c218,
-  cancel_stops_upstream, error_marks_failed under api::responses_poll_stream::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesPollStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_poll_stream: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/response_polling/background_streaming.py: _sse_frame_data (L78-L79); litellm/proxy/response_polling/background_streaming.py:
-  _never_receive (L82-L84); litellm/proxy/response_polling/background_streaming.py: detach_request_from_client (L87-L93);
-  litellm/proxy/response_polling/background_streaming.py: background_streaming_task (L96-L427). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 307 owned nonblank/non-comment/non-docstring Python lines (326 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 327 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 577 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
-  URL path encoding), B932 (Responses create call), B935 (Responses poll state), B1087 (Api boundaries). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
+  decode_poll_stream_frame(bytes,ApiLimits) consumes one body-iterator chunk, checks UTF-8, selects
+  the first line beginning exactly "data: ", strips its payload and decodes JSON. It does not
+  buffer split frames or combine data lines. Bound its bytes via B1087 and add its fuzz target
+  and replay corpus. Malformed JSON warns and skips; other decoder/event-shape errors reach the
+  worker failure path. Native invalid-shape errors use bounded shared diagnostics. The 326 owned
+  source lines need 280 implementation, 150 tests, 110 HTTP/helper fixtures, 120 adapters,
+  70 fuzz/replay and 35 wiring lines, 765 total under 800.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_poll_stream.rs
   - crates/betterlite-core/src/api/responses_poll_stream/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_stream.rs
+  - crates/betterlite-core/fuzz/corpus/responses_poll_stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_poll_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_poll_stream.py
+  - tools/oracle/cases/sdk-http/responses-poll-stream/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-poll-stream-*
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_poll_stream.rs
-  - tools/oracle/src/helpers/responses_poll_stream/**
+  - tools/oracle/src/helpers/responses_poll_frame.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/responses_poll_stream.py
-  - tools/oracle/helpers/responses_poll_stream/**
-  - tools/oracle/fuzz/corpus/helper_case/responses_poll_stream-*
-  - tools/oracle/cases/helpers/responses-poll-stream/**
+  - tools/oracle/helpers/responses_poll_frame.py
+  - tools/oracle/cases/helpers/responses-poll-frame/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_poll_frame-*
+  - Cargo.lock
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/background_streaming.py#L1-L427
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Detached request, complete worker, 150ms event-driven flushing and all terminal/error transitions.
 dod:
-- text: 'disconnect keeps polling: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-disconnect-keeps-polling
-  - oracle
-- text: 'partial text flush: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-partial-text-flush
-  - oracle
-- text: 'terminal output replaces deltas: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-terminal-output-replaces-deltas
-  - oracle
-- text: 'cancel stops upstream: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-stops-upstream
-  - oracle
-- text: 'error marks failed: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-error-marks-failed
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    polling_provider_call_survives_disconnect starts with stream=false,background=true and an admitted
+    request. Expect one mock POST /v1/responses with stream=true and no background field, initial
+    cache status=in_progress and exactly one admission overall. Closing the client receive channel
+    does not cancel provider reading. EOF completes the cache record; server shutdown still joins
+    or cancels its tracked task through B003. Capture route_type=aresponses,model=null and
+    skip_pre_call_logic=true at the real processor seam.
+  proof: [worker-http, oracle, python-sdk]
+- text: >-
+    polling_text_flush_order receives item m with content=[], adds an output_text part, then
+    deltas "he" and "llo" at index=0; expect content[0].text="hello". At elapsed 0.149 no batch
+    write occurs; the next event at 0.150 flushes output once, and EOF force-flushes remaining
+    dirty data. No idle timer write occurs. Missing item IDs and unknown item references are
+    ignored. Duplicate item IDs replace values without changing insertion order. content_part.done
+    replaces the selected part and output_item.done replaces the item. Negative index=-1 updates
+    the last existing part for a delta, but done compares enumerated nonnegative indices and does
+    not replace it. Out-of-range positive indices leave content unchanged while marking dirty.
+  proof: [output-reducer, oracle, python-sdk]
+- text: >-
+    polling_terminal_merge keeps accumulated m1 when terminal output contains only m2; both remain
+    in that order. Terminal output=[] also keeps m1. response.completed/failed/incomplete/cancelled
+    map to completed/failed/incomplete/cancelled unless response.status supplies another value.
+    Terminal usage,reasoning,tool_choice,tools,model,instructions,temperature,top_p,max_output_tokens,
+    previous_response_id,text,truncation,parallel_tool_calls,user,store,incomplete_details reach
+    B935 unchanged, including 0,false,[] and {} under its per-field rules. Error is captured only
+    from failed/incomplete events; a nonempty error makes B935 status=failed. Later terminal events
+    can replace earlier fields. response.in_progress writes status immediately. No terminal defaults
+    to completed even when body_iterator is absent, which also emits the source misconfiguration warning.
+  proof: [terminal-state, oracle, python-sdk]
+- text: >-
+    polling_cancel_does_not_stop_upstream writes cancelled into the cache while a mock stream is
+    held, releases its completed terminal event, and observes completed afterwards. There is no
+    cache read or provider cancellation from this worker. A provider/processor failure with typed
+    message=boom instead writes status=failed,error={type:internal_error,message:boom,
+    code:background_streaming_error}; param is absent. Log the worker error; a failure of this
+    final cache write propagates rather than recursively retrying it.
+  proof: [cancel-failure, oracle, python-sdk]
+- text: >-
+    poll_frame_literal_selection compares the actual pure selector: "data:{...}" and comment-only
+    chunks produce no event; "data:  {\"type\":\"x\"}  " yields type=x. Two data lines/frames
+    in one chunk select only the first; split JSON is not reassembled and warns "Failed to parse
+    streaming chunk: %s" before being skipped. Exact trimmed [DONE] ends the worker immediately.
+    Invalid UTF-8 and JSON scalars that lack event fields fail the worker, not the JSON-warning
+    branch. Unknown object event types are no-ops but still permit a due dirty-state flush.
+  proof: [frame-decoder, oracle, python-helper, parser-corpus]
+- text: SDK and helper tags each have a new case-parser seed; byte fuzz/replay calls the production chunk decoder.
+  proof: [case-corpora, parser-corpus, python-sdk, python-helper]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::/)
-      - test(/::replays_corpus$/)'
-  - id: case-disconnect-keeps-polling
-    why: the disconnect-keeps-polling behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::disconnect_keeps_polling($|::)/)'
-  - id: case-partial-text-flush
-    why: the partial-text-flush behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::partial_text_flush($|::)/)'
-  - id: case-terminal-output-replaces-deltas
-    why: the terminal-output-replaces-deltas behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::terminal_output_replaces__c218($|::)/)'
-  - id: case-cancel-stops-upstream
-    why: the cancel-stops-upstream behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::cancel_stops_upstream($|::)/)'
-  - id: case-error-marks-failed
-    why: the error-marks-failed behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::error_marks_failed($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_poll_stream.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_poll_stream-*)"
-      && grep -qE "^[[:space:]]+responses_poll_stream:" tools/oracle/fuzz/corpus/helper_case/responses_poll_stream-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-poll-stream)"
+  - id: worker-http
+    why: the background worker reruns admission or terminates on the original disconnect
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::polling_provider_call_survives_disconnect($|::)/)'
+  - id: output-reducer
+    why: delta indexing, replacement order or event-driven batching changes cached output
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::polling_text_flush_order($|::)/)'
+  - id: terminal-state
+    why: a terminal response clears earlier items or drops completion metadata
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::polling_terminal_merge($|::)/)'
+  - id: cancel-failure
+    why: cancellation is invented or background errors lose their stored code
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::polling_cancel_does_not_stop_upstream($|::)/)'
+  - id: frame-decoder
+    why: polling accepts data without the source's required space or reassembles chunks
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::poll_frame_literal_selection($|::)/)'
+  - id: python-sdk
+    why: the background HTTP adapter replaces the real processor with a scripted response
+    run: test -f tools/oracle/sdk_http/responses_poll_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: python-helper
+    why: pure frame parity lacks its independent Python selector/parser
+    run: test -f tools/oracle/helpers/responses_poll_frame.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: parser-corpus
+    why: the production polling byte boundary has no newly added fuzz/replay coverage
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/responses_poll_stream.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_poll_stream)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::replays_corpus$/)'
+  - id: case-corpora
+    why: one of the SDK/pure-frame operations lacks an external-tag seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-poll-stream-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_poll_frame-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-poll-stream/disconnect-keeps-polling.yaml
-- tools/oracle/cases/helpers/responses-poll-stream/partial-text-flush.yaml
-- tools/oracle/cases/helpers/responses-poll-stream/terminal-output-replaces-deltas.yaml
-- tools/oracle/cases/helpers/responses-poll-stream/cancel-stops-upstream.yaml
-- tools/oracle/cases/helpers/responses-poll-stream/error-marks-failed.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/responses-poll-stream/polling-provider-call-survives-disconnect.yaml
+- tools/oracle/cases/sdk-http/responses-poll-stream/polling-text-flush-order.yaml
+- tools/oracle/cases/sdk-http/responses-poll-stream/polling-terminal-merge.yaml
+- tools/oracle/cases/sdk-http/responses-poll-stream/polling-cancel-does-not-stop-upstream.yaml
+- tools/oracle/cases/helpers/responses-poll-frame/poll-frame-literal-selection.yaml
+deviations:
+- what: Invalid decoded event shapes and external failures use bounded redacted messages in error.message; status=failed,type=internal_error,code=background_streaming_error remain unchanged.
+  why: B184/B187 prevent exception dumps from entering cached public responses.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/background_streaming.py#L414-L427
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B080 owns initial polling admission and the create route; B938 owns cancellation HTTP and polling owner authorization.
+- B935 owns serialization, TTL, private owners and patch truthiness; B004 owns provider dispatch and pre-call processing.
 pitfalls:
-- 'background_streaming.py:220 emits the diagnostic ''background_streaming_task: response for %s has no body_iterator;
-  this may indicate a misconfiguration or provider error''; retain its level and fallback instead of turning it
-  into a hard error.'
-- 'background_streaming.py:374 emits the diagnostic ''Failed to parse streaming chunk: %s''; retain its level and
-  fallback instead of turning it into a hard error.'
-review_level: standard
+- Terminal output is merged by ID, so stale accumulated items survive an empty final output list.
+- There is no cancellation-state read anywhere in the worker; cached cancellation can be overwritten.
+- The 150ms interval is checked after events, not by a background timer.
+- Only JSONDecodeError is warn-and-skip; invalid UTF-8 and event-shape failures mark the polling record failed.
+review_level: security
 budget:
-  max_changed_lines: 580
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,192 +1,119 @@
 id: B1128
 title: File type and MIME records
 description: >-
-  Define file DTOs and the pinned MIME/extension mappings, including category membership and Gemini 1.5 accepted
-  file types.
+  Put FileType, the ordered extension/MIME mappings, Gemini acceptance and native upload-plan records
+  in betterlite-openai::api::file_type_records. Own the five live conversion/acceptance functions in
+  types/files.py and the FileContentProvider/FileContentStreamingResult declarations in files/types.py.
+  These transform typed strings or describe internal transport plans; they do not decode JSON bytes.
+  Remove the invented file-type JSON decoder and fuzz task. No config, environment or I/O is needed.
 
+  FileContentProvider accepts openai, azure, vertex_ai, bedrock, hosted_vllm, litellm_proxy, anthropic,
+  manus and mistral. FileContentStreamingResult holds an iterator of bytes and headers without
+  collecting it. TwoStepFileUploadRequest requires method/url/headers/data; data is text, bytes or
+  a typed provider payload. TwoStepFileUploadConfig requires initial_request, upload_request and
+  upload_url_location=headers|body; upload_url_key is optional, with no default installed by this
+  declaration despite its docstring. StreamingMediaUploadConfig requires body_stream and optionally
+  content_type. Use typed records and stream ports, not arbitrary JSON or an HTTP client here.
 
-  get_file_extension_for_file_type (litellm/types/files.py:L172-L173) has no MIT runtime caller at the pin (only
-  its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry
-  point.
-
-
-  is_image_file_type (litellm/types/files.py:L200-L201) has no MIT runtime caller at the pin (only its declaration;
-  tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry point.
-
-
-  is_video_file_type (litellm/types/files.py:L219-L220) has no MIT runtime caller at the pin (only its declaration;
-  tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry point.
-
-
-  is_audio_file_type (litellm/types/files.py:L236-L237) has no MIT runtime caller at the pin (only its declaration;
-  tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry point.
-
-
-  is_text_file_type (litellm/types/files.py:L244-L245) has no MIT runtime caller at the pin (only its declaration;
-  tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry point.
-
-
-  mime-extension-roundtrip uses get_file_extension_from_mime_type/get_file_type_from_extension/get_file_mime_type_from_extension;
-  category predicates with no runtime caller are excluded.
-
-
-  Implement crates/betterlite-openai/src/api/file_type_records.rs. Use FileTypeRecordsInput and FileTypeRecordsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions mime_extension_roundtrip under api::file_type_records::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-openai::api::file_type_records::decode_file_type_records(bytes:
-  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-openai/src/api/file_type_records.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-openai/fuzz/fuzz_targets/file_type_records.rs passes arbitrary bounded bytes to that
-  exact decoder; api::file_type_records::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::FileTypeRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_type_records: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/types/files.py: get_file_extension_from_mime_type (L157-L161); litellm/types/files.py:
-  get_file_type_from_extension (L164-L169); litellm/types/files.py: get_file_mime_type_for_file_type (L176-L177);
-  litellm/types/files.py: get_file_mime_type_from_extension (L180-L182); litellm/types/files.py: is_gemini_1_5_accepted_file_type
-  (L287-L288). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 252 owned nonblank/non-comment/non-docstring Python lines (275 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 272 implementation,
-  46 behavior tests, 12 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 510 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
-  encoding), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  Add the tests named below in api::file_type_records::tests and a B171 file_type_records helper
+  variant for pure conversions. One parameterized MIME fixture carries all rows explicitly; do not
+  derive expected MIME values from the production table. The owned declarations and live functions
+  occupy 227 nonblank, non-comment physical lines after excluding unused category tables/accessors.
+  Allow 260 implementation/declarations, 120 tests,
+  100 fixtures, 70 adapters and 30 wiring lines: 580 total.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api.rs
   - crates/betterlite-openai/src/api/file_type_records.rs
   - crates/betterlite-openai/src/api/file_type_records/**
-  - crates/betterlite-openai/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-openai/fuzz/Cargo.toml
-  - crates/betterlite-openai/fuzz/fuzz_targets/file_type_records.rs
-  - crates/betterlite-openai/fuzz/corpus/file_type_records/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_type_records.rs
-  - tools/oracle/src/helpers/file_type_records/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_type_records.py
-  - tools/oracle/helpers/file_type_records/**
   - tools/oracle/fuzz/corpus/helper_case/file_type_records-*
   - tools/oracle/cases/helpers/file-type-records/**
+  - Cargo.toml
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L1-L171
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L174-L199
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L202-L218
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L221-L235
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L238-L243
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L246-L343
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L13-L288
+  why: FileType spelling, ordered conversion tables and Gemini acceptance; the five unused accessors are excluded below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L296-L343
+  why: Required versus optional fields of the two-step and streaming upload plans, not an external JSON schema.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/types.py#L1-L11
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Allowed content providers and the byte-iterator/header pair consumed by file streaming.
 dod:
-- text: 'mime extension roundtrip: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mime-extension-roundtrip
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    mime_extension_table checks each extension against its uppercase FileType (3gpp uses THREE_GPP
+    with wire value 3GPP) and literal MIME: aac=audio/aac, csv=text/csv, doc=application/msword,
+    docx=application/vnd.openxmlformats-officedocument.wordprocessingml.document, flac=audio/flac,
+    flv=video/x-flv, gif=image/gif, gdoc=application/vnd.google-apps.document,
+    gdraw=application/vnd.google-apps.drawing, gsheet=application/vnd.google-apps.spreadsheet,
+    gslides=application/vnd.google-apps.presentation, heic=image/heic, heif=image/heif,
+    html|htm=text/html, jpeg|jpg=image/jpeg, json=application/json, m4a=audio/x-m4a,
+    m4v=video/x-m4v, mov=video/quicktime, mp3=audio/mpeg, mp4=video/mp4, mpeg=video/mpeg,
+    mpegps=video/mpegps, mpg=video/mpg, mpa=audio/m4a, mpga=audio/mpga, ogg=audio/ogg,
+    opus=audio/opus, pdf=application/pdf, pcm=audio/pcm, png=image/png, ppt=application/vnd.ms-powerpoint,
+    pptx=application/vnd.openxmlformats-officedocument.presentationml.presentation, rtf=application/rtf,
+    3gpp=video/3gpp, txt=text/plain, wav=audio/wav, webm=video/webm, webp=image/webp,
+    wmv=video/wmv, xls=application/vnd.ms-excel,
+    xlsx=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.
+    Google types are GOOGLE_DOC, GOOGLE_DRAWINGS, GOOGLE_SHEETS and GOOGLE_SLIDES. Reverse MIME
+    conversion chooses html and jpeg, never htm/jpg; all other rows return their sole extension.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    mime_lookup_edges sends JPG and IMAGE/JPEG and expects JPEG and jpeg. Leading dots, spaces
+    and MIME parameters are not normalized: .jpg and " jpg" raise ValueError with source
+    "Unknown file type for extension: .jpg" and "Unknown file type for extension:  jpg";
+    image/jpeg;charset=utf-8 and application/unknown raise ValueError "Unknown extension for mime type: <input>".
+    These pure exceptions have no status/type/param/code fields; empty strings fail the same way.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    gemini_file_acceptance expects true for PNG,JPEG,WEBP,AAC,FLAC,MP3,MPA,MPEG,MPGA,OPUS,PCM,WAV,
+    WEBM,FLV,MOV,MPEGPS,MPG,MP4,WMV,THREE_GPP,PDF,TXT and false for every other FileType above,
+    including GIF,HEIC,M4A,M4V,OGG,CSV and JSON. Include each enum as a named rstest case.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    upload_plan_fields constructs both upload_url_location variants, with absent and explicit
+    upload_url_key=file_uri, and checks omission stays absent. stream_record_identity passes two
+    chunks [0,255] and [10] plus content-type=application/octet-stream and retains bytes/order/headers
+    without reading until polled. Native compile-time records enforce required fields.
+  proof: [behavior-tests]
+- text: MIME fixtures reach independent conversion implementations through a new file_type_records helper seed.
+  proof: [new-cases, helper-corpus, helper-python, oracle]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::file_type_records::/) -
-      test(/::replays_corpus$/)'
-  - id: case-mime-extension-roundtrip
-    why: the mime-extension-roundtrip behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::file_type_records::tests::mime_extension_roundtrip($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/file_type_records)"
-      && test -f crates/betterlite-openai/fuzz/fuzz_targets/file_type_records.rs && grep -qF "decode_file_type_records"
-      crates/betterlite-openai/fuzz/fuzz_targets/file_type_records.rs && cargo nextest run --locked -p betterlite-openai
-      --no-tests=fail -E 'test(/^api::file_type_records::tests::replays_corpus$/)'
+    why: MIME lookup, accepted types or upload records lack assertions
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::file_type_records::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_type_records.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the MIME comparison adapter is missing or fails strict checks
+    run: test -f tools/oracle/helpers/file_type_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_type_records-*)"
-      && grep -qE "^[[:space:]]+file_type_records:" tools/oracle/fuzz/corpus/helper_case/file_type_records-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the new MIME operation is absent from the parser corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_type_records-*)" && grep -qE '^[[:space:]]+file_type_records:' tools/oracle/fuzz/corpus/helper_case/file_type_records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no MIME conversion scenarios were added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-type-records)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-type-records/mime-extension-roundtrip.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-extension-table.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-lookup-edges.yaml
+- tools/oracle/cases/helpers/file-type-records/gemini-file-acceptance.yaml
 deviations: []
 out_of_scope:
-- 'litellm/types/files.py: get_file_extension_for_file_type L172-L173, is_image_file_type L200-L201, is_video_file_type
-  L219-L220, is_audio_file_type L236-L237, is_text_file_type L244-L245 are out of scope: no MIT runtime caller at
-  the pin; unused entry point is not rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- get_file_extension_for_file_type, is_image_file_type, is_video_file_type, is_audio_file_type and is_text_file_type have no caller at the pin; their unused category tables need no independent implementation.
+- B1015 owns files/utils.py and base files/transformation.py; provider-specific upload execution remains in each provider's file task.
 pitfalls:
-- Within get_file_extension_from_mime_type\'s mime.lower() == mime_type.lower() branch, preserve return FILE_EXTENSIONS[file_type][0]
-  and its nested guards.
-- Within get_file_type_from_extension\'s extension.lower() in extensions branch, preserve return file_type and its
-  nested guards.
+- MIME-to-extension is case-insensitive but never strips parameters, dots or whitespace.
+- MPA uses audio/m4a while M4A uses audio/x-m4a, and only MPA is accepted by the Gemini predicate.
+- Upload plans carry a stream capability; serializing the iterator as JSON would destroy lazy upload behavior.
 review_level: standard
 budget:
-  max_changed_lines: 510
-  max_new_expects: 1
+  max_changed_lines: 580
+  max_new_expects: 0

@@ -1,299 +1,205 @@
 id: B080
-title: Responses routes
+title: Responses create routes and family composition
 description: >-
-  Finish POST /responses and /v1/responses creation through B014, auth, ID ownership, native/chat/MCP/file-search
-  dispatch and optional background polling. Extend the exhaustive operation/result enums and register source route
-  aliases. Export the typed native events and decoded ID services required by routing B324/B370; those downstream
-  tasks install their own hooks. This final entry integrates completed parts and the Python public dispatcher semantics
-  without embedding Python.
+  Register POST /v1/responses, /responses and /openai/v1/responses, owning the complete responses_api
+  function from its decorators. Build betterlite-server api/responses_routes and the small core
+  composition module. Mount B938 lifecycle, B939 compact/input_tokens, B940 Cursor and B941
+  websocket factories once, without repeating their registrations. B1100 reads the request body;
+  B004 owns common_processing_pre_call_logic, required-input validation, base_process_llm_request,
+  create_response and exception translation. Use B732/B756/B855 admitted principals and B929's
+  installed ID security. B124 supplies failure-hook dispatch and B104 blocked-response translation
+  through explicit typed ports; do not copy their implementations into this route.
 
+  Select polling with B935 using raw background default=false and model default="". If selected,
+  perform admission and required input checks before generating an ID or writing Redis. Then
+  derive PollOwner only from the trusted principal/auth mode, write queued state with configured
+  TTL and start B936 with a copy of preprocessed data. Ordinary requests call B004 with
+  route_type=aresponses and model=null. Both paths pass select_data_generator configured with
+  responses_stream_errors=true, using B937's emitted-event failure state. Preserve the normal
+  branch's special ModifyResponseException response and the separate polling admission error path.
 
-  Register create only: POST /responses, /v1/responses and /openai/v1/responses. Compose B938-B941 route factories
-  once; never register their routes again. Polling admission runs pre-call auth/rate/budget checks before minting
-  litellm_poll_ ids: denied admission returns synchronous 429 and creates no Redis entry. Consume B935 background
-  settings. With enterprise absent, a native queued/in_progress background response reaches the import at endpoints.py:391
-  and fails through the normal 500 exception mapper; it does not create a managed-object row. Cache polling remains
-  usable independently. ModifyResponseException returns 200 with the blocked Responses body, or block SSE chunks
-  followed by data: [DONE]; the failure hook still runs.
+  Assemble B1078's CreateInterception port with B955 and B2415's ContinuationExecutor with the
+  public B932 Responses executor. Register B014 operation dispatch; recursive execution returns
+  through these typed ports, never a dependency from lower services to this composer. Re-export
+  B921 responses_api_bridge and B935/B936 polling exports from the small package init files.
+  The empty file_search initializer has no runtime behavior. Own dispatch.py's six whole public
+  wrappers/projection functions as native signature compatibility, using B158's binding seam.
+  LiteLLM's rust_bridge accelerator is excluded by litellm.yaml and is not reimplemented.
 
-
-  Implement crates/betterlite-server/src/api/responses_routes.rs, crates/betterlite-core/src/api/responses_routes.rs.
-  Use ResponsesRoutesInput and ResponsesRoutesResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v1/responses; POST /responses; POST /openai/v1/responses. Each
-  alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its
-  child factories without re-registering their methods/paths.
-
-
-  Route input projections: data.background (absent False); data.model (absent ''); data.model (absent None); data.background
-  (absent None); data.stream (absent None).
-
-
-  Write adjacent tests.rs behavior functions native_create_route, chat_create_route, stream_create_route, background_poll_route,
-  managed_previous_response, mcp_create_route, openai_create_alias, poll_admission_429, native_background_no_ente_cd2e,
-  blocked_response_200, blocked_stream_done, response_id_security_create, route_aliases, auth_missing, auth_invalid
-  under api::responses_routes::tests. Each named function drives production code and asserts its case result; use
-  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: responses_api (L212-L458); litellm/responses/dispatch.py:
-  _python_responses (L25-L29); litellm/responses/dispatch.py: _python_aresponses (L32-L36); litellm/responses/dispatch.py:
-  _public_request (L45-L65); litellm/responses/dispatch.py: _context (L68-L73); litellm/responses/dispatch.py: responses
-  (L90-L101); litellm/responses/dispatch.py: aresponses (L104-L112). Abstract/protocol declarations map to native
-  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 310 owned nonblank/non-comment/non-docstring Python lines (336 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 338 implementation,
-  140 behavior tests, 180 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 696 total within the 700-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B014 (Call dispatch across providers
-  and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding), B921 (Response
-  chat dispatch), B924 (Chat response stream), B929 (Responses id security), B930 (Responses affinity), B932 (Responses
-  create call), B936 (Responses poll stream), B937 (Responses stream errors), B938 (Responses read routes), B939
-  (Responses input tokens), B940 (Cursor responses compat), B941 (Responses ws auth), B955 (Responses mcp dispatch),
-  B957 (Chat mcp loop), B1087 (Api boundaries), B1113 (Responses streaming event records), B1100 (Shared request
-  body decoding), B935 (Responses poll state), B1139 (Stateful HTTP oracle scenarios), B732 (Typed authentication
-  principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756 (Authentication
-  header selection and mode dispatch), B856 (Management oracle namespaces and Postgres test fixture). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
-
-
-  For cache polling, derive B935 PollOwner exclusively from admitted B732 principal/auth-mode facts and pass it
-  to create_initial_state before returning an ID. Request metadata can never supply or overwrite this owner. The
-  record is private and the success response projection stays source-compatible; B938 owns the authorization deviation.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  All route comparisons boot both proxies with fixed test master key sk-test-master, independent
+  B1139 Redis/Postgres fixtures and a mock provider. B2401 additionally exercises public sync/async
+  dispatch through SdkHttpCall::ResponsesPublicDispatch; do not invoke FastAPI handlers as helpers.
+  No parser is added above B1100/B902. Source count is 336 nonblank/non-comment lines including
+  route/dispatch declarations and package exports; estimate 260 composition, 185 tests, 170 HTTP
+  fixtures, 90 SDK adapters and 40 wiring, 745 total under 800.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/responses_routes.rs
   - crates/betterlite-server/src/api/responses_routes/**
-  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_routes.rs
   - crates/betterlite-core/src/api/responses_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/cases/api/responses-routes/**
-  - tools/oracle/fixtures/responses-routes/**
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/src/dispatch.rs
+  - tools/oracle/cases/api/responses-routes/**
+  - tools/oracle/fixtures/responses-routes/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_public_dispatch.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_public_dispatch.py
+  - tools/oracle/cases/sdk-http/responses-public-dispatch/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*
+  - Cargo.lock
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L458
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: All three create decorators, admission-before-polling order, unavailable managed hook and blocked-response handling.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/dispatch.py#L1-L118
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Public signature projection, api_base/base_url precedence and exact-true internal async bypass.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/README.md#L1-L4
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The package is the chat-to-Responses bridge; it does not own provider execution.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/__init__.py#L1-L3
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Public responses_api_bridge export from B921.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/__init__.py#L1-L3
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Nested bridge export points to the same implementation, not another handler.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/__init__.py#L1-L17
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: Poll handler, selector and background task export names.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L160-L190
+  why: B004's required-input check treats missing/null input as the literal /responses error.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L48-L80
+  why: Auth failures preserve param="None" and code="401", unlike request-processing error normalization.
 dod:
-- text: 'native create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-create-route
-  - oracle
-- text: 'chat create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-chat-create-route
-  - oracle
-- text: 'stream create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-create-route
-  - oracle
-- text: 'background poll route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-background-poll-route
-  - oracle
-- text: 'managed previous response: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-previous-response
-  - oracle
-- text: 'mcp create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mcp-create-route
-  - oracle
-- text: 'openai create alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-openai-create-alias
-  - oracle
-- text: 'poll admission 429: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-poll-admission-429
-  - oracle
-- text: 'native background no enterprise: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-native-background-no-enterprise
-  - oracle
-- text: 'blocked response 200: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-blocked-response-200
-  - oracle
-- text: 'blocked stream done: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-blocked-stream-done
-  - oracle
-- text: 'response id security create: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-response-id-security-create
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    create_route_aliases posts {model:openai/gpt-4o,input:hello} to each of the three paths with
+    valid auth. Expect HTTP 200,application/json and a completed Responses object after exactly
+    one upstream POST /v1/responses per request; never 404/405 or duplicate-router registration.
+    x-litellm-call-id=call-a is retained. A configured chat-only deployment instead makes one
+    /v1/chat/completions call and returns a Responses object through B916. Native file_search
+    tools remain on native HTTP; a gateway MCP request reaches B955's composed port and its
+    provider follow-up once. Capture actual provider sequence, not a manufactured route result.
+  proof: [route-http, oracle]
+- text: >-
+    create_auth_and_required_input keeps valid model/input while omitting auth: HTTP 401,
+    type=auth_error,param="None",code="401",message="Authentication Error, No api key passed in."
+    A malformed non-Bearer Authorization header returns the same fields with message
+    "Authentication Error, Malformed API Key passed in. Ensure Key has `Bearer ` prefix." Both
+    make zero provider calls. With valid auth, missing/null input returns 400,
+    type=invalid_request_error,param=input,code="400",message="/responses: Missing required
+    parameter: 'input'." Empty string input is not missing. Repeat the missing-input case with
+    background=true,polling_via_cache=all: no polling ID, Redis write or background task is created.
+  proof: [route-errors, oracle]
+- text: >-
+    polling_admission_and_owner configures polling_via_cache=all,ttl=17,background=true and
+    metadata={trace:a,owner:forged}. Expect HTTP 200 queued response with litellm_poll_ UUID,
+    output=[],usage=null,metadata preserved and Redis TTL=17. The private owner is the admitted
+    principal, never metadata.owner. One background POST uses stream=true and omits background;
+    client disconnect leaves it running. A pre-call HTTPException(429,"slow down") produces
+    synchronous 429,type=rate_limit_error,param=null,code="429",message=slow down with no ID/cache
+    or provider call. Missing Redis, disabled polling or native_background_mode containing the
+    model follows normal native background handling instead of silently fabricating polling.
+  proof: [polling-http, oracle]
+- text: >-
+    native_background_without_managed_hook returns mock status=queued or in_progress for a
+    normal background=true request. Without enterprise installed, preserve HTTP 500,
+    type=internal_server_error,param=null,code="500",message="No module named 'litellm_enterprise'"
+    after one provider request and no managed-object write. A completed native response or a
+    stream does not enter that import branch and succeeds. Cache polling remains usable. This
+    is the current managed-files/batches choice retained pending Max, not an implemented paid feature.
+  proof: [managed-background, oracle]
+- text: >-
+    blocked_create_body_and_stream injects B104 ModifyResponseException with model=gpt-4o,
+    message=blocked and original usage input=2,output=3,total=5. Normal create returns HTTP 200
+    completed response with one assistant output_text=blocked and that usage, after the failure
+    hook receives e.request_data once. With request stream=true, expect text/event-stream,
+    B104's created/output/delta/done/completed sequence and exactly one final "data: [DONE]\n\n".
+    A truthy non-boolean stream value does not satisfy this route's is True branch. Failure-hook
+    exceptions propagate; do not invent a second blocked-response recovery. Generated IDs/time
+    are compared by shape while the output text/status/usage/event order compare literally.
+  proof: [blocked-http, oracle]
+- text: >-
+    create_stream_failure_and_security sends stream=true, receives a committed response.created
+    id=resp_a then a provider failure. HTTP stays 200,text/event-stream and B937 emits one
+    response.failed with the committed identity and next sequence; emitted terminal events
+    prevent another failure frame. With an ordinary key and master key configured, an unmanaged
+    previous_response_id=resp_unissued is rejected before provider HTTP with 403,
+    type=permission_error,param=null,code="403". B929's disable/allow/admin exceptions remain
+    effective. Fresh managed response IDs use random nonce encryption: decode them with B929
+    to assert provider ID and trusted owner, and mask only randomized ciphertext in raw HTTP comparison.
+  proof: [stream-security, oracle]
+- text: >-
+    public_dispatch_projection binds positional/keyword input and model with the legacy defaults.
+    Invalid binding or non-string model declines the native projection and retains the SDK's
+    argument error. stream=1 projects null, stream=true projects true; non-string api_key is null.
+    api_base="" falls back to base_url, nonempty api_base wins. Mapping extra_headers survives;
+    parameters contains every bound field except kwargs, while kwargs retains the extras. Sync
+    aresponses=true bypasses accelerator selection; 1 does not. Actual valid sync and async
+    public calls each make one mock POST and preserve B1078/B932 results. __wrapped__/documentation
+    signature compatibility is exposed through B158, without implementing excluded rust_bridge code.
+  proof: [public-dispatch, oracle, python-sdk]
+- text: New public-dispatch SDK seeds and route fixtures exercise production composition rather than helper handlers.
+  proof: [sdk-corpus, oracle, python-sdk]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::responses_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-native-create-route
-    why: the native-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::native_create_route($|::)/)'
-  - id: case-chat-create-route
-    why: the chat-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::chat_create_route($|::)/)'
-  - id: case-stream-create-route
-    why: the stream-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::stream_create_route($|::)/)'
-  - id: case-background-poll-route
-    why: the background-poll-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::background_poll_route($|::)/)'
-  - id: case-managed-previous-response
-    why: the managed-previous-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::managed_previous_response($|::)/)'
-  - id: case-mcp-create-route
-    why: the mcp-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::mcp_create_route($|::)/)'
-  - id: case-openai-create-alias
-    why: the openai-create-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::openai_create_alias($|::)/)'
-  - id: case-poll-admission-429
-    why: the poll-admission-429 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::poll_admission_429($|::)/)'
-  - id: case-native-background-no-enterprise
-    why: the native-background-no-enterprise behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::native_background_no_ente_cd2e($|::)/)'
-  - id: case-blocked-response-200
-    why: the blocked-response-200 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::blocked_response_200($|::)/)'
-  - id: case-blocked-stream-done
-    why: the blocked-stream-done behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::blocked_stream_done($|::)/)'
-  - id: case-response-id-security-create
-    why: the response-id-security-create behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::response_id_security_create($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::auth_invalid($|::)/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/responses-routes)"
+  - id: route-http
+    why: an alias, chat branch or interception port fails in the booted proxy
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::create_route_aliases($|::)/)'
+  - id: route-errors
+    why: auth or required-input rejection creates a provider call or polling record
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::create_auth_and_required_input($|::)/)'
+  - id: polling-http
+    why: admission occurs after minting an ID or request metadata supplies polling ownership
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::polling_admission_and_owner($|::)/)'
+  - id: managed-background
+    why: the no-enterprise managed-background branch silently changes its client result
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::native_background_without_managed_hook($|::)/)'
+  - id: blocked-http
+    why: guardrail replacement becomes an HTTP error or lacks its terminal DONE marker
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::blocked_create_body_and_stream($|::)/)'
+  - id: stream-security
+    why: streaming failure identity or ordinary-key response ownership is bypassed
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::create_stream_failure_and_security($|::)/)'
+  - id: public-dispatch
+    why: public projection loses a bound option or routes a single call twice
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_routes::tests::public_dispatch_projection($|::)/)'
+  - id: python-sdk
+    why: public SDK parity does not reach its real provider transport
+    run: test -f tools/oracle/sdk_http/responses_public_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the public SDK operation lacks a newly added decoder seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/api/responses-routes/native-create-route.yaml
-- tools/oracle/cases/api/responses-routes/chat-create-route.yaml
-- tools/oracle/cases/api/responses-routes/stream-create-route.yaml
-- tools/oracle/cases/api/responses-routes/background-poll-route.yaml
-- tools/oracle/cases/api/responses-routes/managed-previous-response.yaml
-- tools/oracle/cases/api/responses-routes/mcp-create-route.yaml
-- tools/oracle/cases/api/responses-routes/openai-create-alias.yaml
-- tools/oracle/cases/api/responses-routes/poll-admission-429.yaml
-- tools/oracle/cases/api/responses-routes/native-background-no-enterprise.yaml
-- tools/oracle/cases/api/responses-routes/blocked-response-200.yaml
-- tools/oracle/cases/api/responses-routes/blocked-stream-done.yaml
-- tools/oracle/cases/api/responses-routes/response-id-security-create.yaml
-- tools/oracle/cases/api/responses-routes/route-aliases.yaml
-- tools/oracle/cases/api/responses-routes/auth-missing.yaml
-- tools/oracle/cases/api/responses-routes/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/responses-routes/create-route-aliases.yaml
+- tools/oracle/cases/api/responses-routes/create-auth-and-required-input.yaml
+- tools/oracle/cases/api/responses-routes/polling-admission-and-owner.yaml
+- tools/oracle/cases/api/responses-routes/native-background-without-managed-hook.yaml
+- tools/oracle/cases/api/responses-routes/blocked-create-body-and-stream.yaml
+- tools/oracle/cases/api/responses-routes/create-stream-failure-and-security.yaml
+- tools/oracle/cases/sdk-http/responses-public-dispatch/public-dispatch-projection.yaml
+deviations:
+- what: Native queued/in_progress background creation remains HTTP 500 internal_server_error,param=null,code="500" without managed storage; cache polling succeeds independently.
+  why: Max's managed-files/batches choice remains open. Keep the current no-enterprise behavior instead of implementing an unavailable hook.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L389-L393
+- what: Polling IDs carry private trusted ownership; another owner receives 403 permission_error,param=null,code="403" on lifecycle access.
+  why: The architect's existing polling-ownership decision requires B080 to supply identity before the initial cache write.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L327-L343
 out_of_scope:
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
-  L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant
-  L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth
-  L182-L191, cursor_model_list L471-L485, cursor_chat_completions L496-L674.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B938 owns get_response L695-L790, delete_response L811-L899,
-  get_response_input_items L920-L970, cancel_response L1216-L1313.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B939 owns compact_response L988-L1052, _TokenCounter.__call__
-  L1078-L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response
-  L1102-L1107, _responses_input_as_token_count_messages L1110-L1125, responses_input_tokens L1143-L1198.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B941 owns _read_ws_model_from_first_frame L1316-L1384, _extract_model_from_first_ws_event
-  L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth
-  L1431-L1471, responses_websocket_endpoint L1476-L1620.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B940 owns endpoint tool/Cursor helpers and Cursor routes; B938 owns retrieve/delete/input-items/cancel routes, B939 compact/input_tokens and B941 websocket routes/helpers.
+- B104 owns blocked-response/SSE construction; B004 owns common request processing, required parameters and error envelopes, B124 failure callback dispatch.
+- B955 owns MCP and emulated file-search internals; B930 affinity is installed by its router owner B324, not by this create route.
+- Enterprise managed-file storage after the import is unreachable in this checkout; its warning-and-skip/storage-error paths are excluded with the enterprise implementation.
+- Accelerator selection in litellm/rust_bridge is excluded; B158 owns Python module binding machinery around the retained public call signature.
 pitfalls:
-- A successful provider queued response can become a proxy 500 when the unavailable enterprise import executes.
-- endpoints.py:407 emits the diagnostic 'No model_id found in response hidden params for response %s, skipping managed
-  object storage'; retain its level and fallback instead of turning it into a hard error.
+- Polling's admission exceptions do not enter the normal branch's ModifyResponseException success handler.
+- A native queued response imports the missing enterprise module before checking whether a managed-files hook exists.
+- Raw ProxyException auth param="None" is a string, while request-processing failures normalize missing param to null.
+- Every create alias enables responses_stream_errors on the data generator; omitting it loses response.failed framing.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 800
   max_new_expects: 0

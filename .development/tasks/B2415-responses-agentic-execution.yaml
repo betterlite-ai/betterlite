@@ -1,0 +1,141 @@
+id: B2415
+title: Responses agentic continuation execution
+description: >-
+  Implement responses_agentic_execution with whole functions _call_agentic_completion_hooks,
+  _execute_responses_agentic_plan, _execute_anthropic_agentic_plan, _run_agentic_loop_cleanup,
+  _finalize_refused_agentic_response and _maybe_wrap_in_fake_stream. The shared dispatcher owns
+  both surface branches; do not split it at api_surface. B2419 supplies policy/follow-up kwargs,
+  B189 callback/plan records and internal-prefix helpers, B247 logging state and B978 synthetic
+  Anthropic events. Keep callbacks as injected typed invocations; B157 exposes the Python hook
+  bridge. Feature implementations installed by B119 are not copied into this task.
+
+  Define ContinuationExecutor here with typed Responses and Anthropic calls. Its asynchronous
+  result and failure are awaited by these complete functions. The family composition supplies
+  recursive SDK execution above the transport; this module never imports its callers B1078 or
+  B932. Provide a production leaf executor using B173 transport and B507/B508 OpenAI conversion
+  for isolated Responses HTTP tests. Python executes the actual method and public aresponses
+  against the mock. Neither adapter scripts a successful provider result. Anthropic-only request
+  construction can be captured at the typed executor boundary without making a second API family
+  a prerequisite. All callbacks, cleanup and safety ordering remain in this service.
+
+  Add SdkHttpCall::ResponsesAgenticContinuation to B2401, including zero-request refusal/override
+  rows and a real follow-up POST. Use adjacent api::responses_agentic_execution::tests; no new
+  byte decoder or helper oracle. The six whole functions total 395 nonblank/non-comment lines.
+  Allow 325 implementation, 165 tests, 110 fixtures, 95 adapters and 35 wiring, 730 under 780.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_agentic_execution.rs
+  - crates/betterlite-core/src/api/responses_agentic_execution/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_agentic_continuation.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_agentic_continuation.py
+  - tools/oracle/cases/sdk-http/responses-agentic-continuation/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-agentic-continuation-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5362-L5575
+  why: Refused-turn finalization and complete surface-specific continuation/cleanup functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5667-L5897
+  why: Surface-specific fake wrapping and whole callback dispatcher with safety outside its catch.
+dod:
+- text: >-
+    agentic_callback_order uses global [string,A] and dynamic [B]. String is skipped, A's throwing
+    should-run hook logs "LiteLLM.AgenticHookError: Exception in async_should_run_agentic_loop
+    [call_id=%s model=%s]: %s" and B still runs. kwargs includes _agentic_loop_api_surface=responses;
+    build/run kwargs additionally force custom_llm_provider=openai. False should-run skips a callback.
+    An inherited build-plan override takes the plan path; otherwise legacy async_run_agentic_loop
+    returns immediately, even if its result is null. No hook result yields null so the caller
+    retains its original response. Exceptions inside execution log the corresponding
+    "Exception in agentic completion hooks" diagnostic and continue to the next callback.
+  proof: [callback-order, oracle, python-adapter]
+- text: >-
+    responses_followup_http uses patch.model=gpt-4o-mini,patch.messages=[{role:user,content:continue}],
+    patch.tools=[],optional temperature=0.2 and original stream=true. Expect one POST /v1/responses
+    with that model/input/tools/temperature and no stream parameter. Remove stream and
+    _code_interpreter_interception_converted_stream from optional params; remove logging_obj and
+    _websearch_interception*,_compression_interception*,_headroom_interception* from request kwargs,
+    plus the exact code-interpreter converted-stream key. Other code-interpreter state survives.
+    B2419 filters collisions in patch kwargs, then increments depth and fingerprint history.
+    Mock response id=resp_next is passed through the post-response hook and returned; cleanup runs
+    after success or a failed send. Post-hook and cleanup exceptions each log their named
+    LiteLLM.AgenticHookError diagnostic and do not replace a successful response.
+  proof: [followup-http, oracle, python-adapter]
+- text: >-
+    agentic_override_termination_and_safety checks response_override=false is still an override
+    and makes no request. terminate=true logs "Agentic loop terminated by callback=%s reason=%s",
+    finalizes the original response and calls the post hook; run_agentic_loop=false continues.
+    Responses repeated fingerprint/depth refusals from B2419 propagate as AgenticLoopSafetyError;
+    they are outside the callback catch. Nonstream Anthropic instead warns
+    "LiteLLM.AgenticLoopRefused: ending turn [call_id=%s model=%s]: %s" and finalizes. Remove only
+    refused tool_use blocks, retain client calls with other IDs, and change stop_reason=tool_use
+    to end_turn only if none remain. A non-dict Responses object is returned unchanged by finalization.
+  proof: [termination, oracle, python-adapter]
+- text: >-
+    continuation_patch_failures uses no patch.messages: direct Responses execution raises
+    "Agentic loop plan missing patched responses input"; Anthropic raises "Agentic loop plan missing
+    patched messages". These occur before the Responses try/finally, so no cleanup is invoked;
+    through the dispatcher they log and permit the next callback. Responses failures after
+    dispatch begins invoke cleanup even when the provider raises. Cleanup errors are swallowed
+    with call_id=unknown when logging lacks that field, rather than masking the original failure.
+  proof: [patch-failures, oracle, python-adapter]
+- text: >-
+    anthropic_continuation_and_wrapping captures a whole Anthropic call: patch.model wins over
+    logging.agentic_loop_params.model, which wins over model. max_tokens uses patch value, then
+    optional value, then kwargs value, then 1024; remove it from optional params before merging.
+    kwargs exclude _websearch_interception*,_compression_interception*,logging_obj and existing
+    optional names; patch kwargs overlay afterwards and trusted depth/max/fingerprints overlay last.
+    Calls use patch.messages and stream argument, with the final merged mapping's precedence.
+    Post-hook errors log and retain the provider result; this executor has no cleanup finally.
+    Only api_surface=anthropic_messages, a dict result and logging flag
+    websearch_interception_converted_stream truthy produce B978 fake SSE with its debug message.
+    Responses and absent logging always return the original result here.
+  proof: [anthropic-seam]
+- text: Newly added continuation SDK seeds exercise one real follow-up and zero-request callback outcomes.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: callback-order
+    why: string callback detection is mistaken for execution or callback failure aborts later hooks
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_agentic_execution::tests::agentic_callback_order($|::)/)'
+  - id: followup-http
+    why: continuation credentials/options or cleanup order differ across actual provider calls
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_agentic_execution::tests::responses_followup_http($|::)/)'
+  - id: termination
+    why: safety refusals are swallowed or client tool calls disappear during finalization
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_agentic_execution::tests::agentic_override_termination_and_safety($|::)/)'
+  - id: patch-failures
+    why: cleanup runs before dispatch or masks the original provider failure
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_agentic_execution::tests::continuation_patch_failures($|::)/)'
+  - id: anthropic-seam
+    why: the whole shared function loses its other surface or uses Responses wrapping there
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_agentic_execution::tests::anthropic_continuation_and_wrapping($|::)/)'
+  - id: python-adapter
+    why: the agentic comparison substitutes a fixture for the real follow-up SDK request
+    run: test -f tools/oracle/sdk_http/responses_agentic_continuation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: continuation input does not reach the SDK HTTP decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-agentic-continuation-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/responses-agentic-continuation/agentic-callback-order.yaml
+- tools/oracle/cases/sdk-http/responses-agentic-continuation/responses-followup-http.yaml
+- tools/oracle/cases/sdk-http/responses-agentic-continuation/agentic-override-termination-and-safety.yaml
+- tools/oracle/cases/sdk-http/responses-agentic-continuation/continuation-patch-failures.yaml
+deviations: []
+out_of_scope:
+- B2419 owns safety, settings, fingerprints and follow-up collision filtering; B189 owns callback plan types and internal-key predicates.
+- B2414 owns native create transport and Responses fake wrapping; B978 owns Anthropic fake event generation.
+- B080 supplies recursive Responses execution at composition; no dependency from this leaf back to the public SDK wrappers is introduced.
+- Other HTTP-handler operations, including _execute_chat_completion_agentic_plan and _call_agentic_chat_completion_hooks, remain with the chat/interception owners B004/B119.
+pitfalls:
+- Responses cleanup is inside the executor's try/finally, after patch validation, and is absent from the Anthropic executor.
+- response_override=false is a result; only null means there is no override.
+- A Responses safety refusal raises, while a nonstream Anthropic refusal can return a finalized turn.
+review_level: security
+budget:
+  max_changed_lines: 780
+  max_new_expects: 0

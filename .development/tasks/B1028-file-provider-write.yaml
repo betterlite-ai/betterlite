@@ -1,157 +1,126 @@
 id: B1028
-title: File provider write
+title: File SDK upload and delete dispatch
 description: >-
-  Implement provider file create/delete using B010/B009 and B024 transforms with typed upload bytes and file IDs.
-  Preserve metadata, timeout and error behavior across source sync/async wrappers; reject request-selected filesystem
-  paths before the transport boundary.
+  Implement betterlite-core::api::file_provider_write for whole acreate_file/create_file and
+  afile_delete/file_delete functions. Consume typed file bytes and GenericLiteLLMParams;
+  Python file handles and event-loop facades stay B159-B161. B2461/B2462 own generic upload/delete
+  execution, B516 OpenAI-compatible methods, B694 Azure methods, B500/B2200 credentials,
+  B174 provider resolution, B176 trusted controls, B012 decorator logging, B010 native operation types
+  and B2464 file config/timeout selection.
+  Sync compatibility is a mode of the native async service, not another transport implementation.
 
-
-  Implement crates/betterlite-core/src/api/file_provider_write.rs. Use FileProviderWriteInput and FileProviderWriteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions file_upload_provider_parts, file_delete_provider, file_upload_error,
-  file_delete_missing under api::file_provider_write::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileProviderWrite in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_provider_write: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/files/main.py: acreate_file (L116-L157); litellm/files/main.py: create_file (L161-L295);
-  litellm/files/main.py: afile_delete (L468-L507); litellm/files/main.py: file_delete (L511-L639). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 303 owned nonblank/non-comment/non-docstring Python lines (320 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 323 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 555 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B171 (Direct helper oracle and URL path encoding),
-  B1015 (File contracts), B1087 (Api boundaries), B516 (OpenAI file lifecycle and streaming content). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
+  Register B2401 SDK HTTP operation file_provider_write. Its Python adapter invokes the SDK
+  against the mock; compare actual requests, objects and exception class/status/type/message/param/code.
+  Upload bytes come from B900 fixtures, never an arbitrary request-selected local path. No new
+  parser or helper adapter belongs here. Tests are in api::file_provider_write::tests. The four
+  complete functions with decorators have 322 nonblank, non-comment lines; budget 235 implementation,
+  170 tests, 145 fixtures, 95 adapters and 35 wiring lines, 680 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_provider_write.rs
   - crates/betterlite-core/src/api/file_provider_write/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_provider_write.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_provider_write.py
+  - tools/oracle/cases/sdk-http/file-provider-write/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*
   - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_provider_write.rs
-  - tools/oracle/src/helpers/file_provider_write/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/file_provider_write.py
-  - tools/oracle/helpers/file_provider_write/**
-  - tools/oracle/fuzz/corpus/helper_case/file_provider_write-*
-  - tools/oracle/cases/helpers/file-provider-write/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L116-L295
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L468-L639
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L295
+  why: Complete upload wrappers, passthrough guard, deadline coercion and config-first dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L467-L639
+  why: Complete delete wrappers and best-effort model hint before compatible/Azure/config dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9410-L9445
+  why: Registry evidence for reachable Gemini, Vertex, Bedrock, Manus, Anthropic, Mistral and xAI configs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2589-L2598
+  why: HTTP timeout objects survive only for openai, azure and bedrock.
 dod:
-- text: 'file upload provider parts: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-file-upload-provider-parts
-  - oracle
-- text: 'file delete provider: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-delete-provider
-  - oracle
-- text: 'file upload error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-upload-error
-  - oracle
-- text: 'file delete missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-delete-missing
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    upload_optional_fields calls acreate_file with b"abc",purpose=batch and no provider: openai
+    receives multipart. Async default is openai; undecorated sync default is None, with decorator
+    behavior owned by its facade. expires_after=None is omitted; {anchor:created_at,seconds:3600}
+    is included. extra_headers/extra_body pass in CreateFileRequest. assistants,batch,fine-tune,
+    messages are forwarded; provider validation owns acceptance. Native undecorated upload without
+    logging_obj raises ValueError "logging_obj is required" before any request.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    upload_passthrough_guard sends passthrough=true,provider=openai,purpose=batch: BadRequestError
+    400,type=null,param=null,code=null,message="litellm.BadRequestError: `passthrough=True` uploads
+    the file bytes unchanged for a native Vertex AI batch, so it needs custom_llm_provider='vertex_ai'
+    and purpose='batch', got 'openai' and 'batch'." Zero requests occur. vertex_ai/batch succeeds;
+    vertex_ai/assistants fails with those substituted literals. False and string "true" do not
+    activate the identity-True guard. Error response body="passthrough needs a vertex_ai batch",
+    request method=create_file, URL=https://github.com/BerriAI/litellm, model=n/a.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    write_timeout_coercion sends absent/null/zero timeout and request_timeout: fallback=600.0;
+    timeout=2 wins over request_timeout=3; "2.5" becomes 2.5. HTTP timeout objects survive for
+    openai/azure/bedrock, otherwise use read or 600. Invalid numeric text fails before HTTP.
+    Native mode flags require literal true; acreate_file writes acreate_file=true and afile_delete
+    writes is_async=true. Context is retained across the Python facade's executor handoff.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    write_provider_dispatch captures config-first upload and compatible-first delete. openai,
+    hosted_vllm,litellm_proxy receive B500 credentials/organization; Azure gets api_version and
+    max_retries; Anthropic exercises generic multipart/delete. Generic paths accept only matching
+    HTTPHandler/AsyncHTTPHandler clients; Azure delete forwards its client, OpenAI upload/delete
+    does not. Generic delete copies trusted credentials then assigns api_key/api_base even if null;
+    its extra_body is unused. Provider failures preserve provider status/message/type/param/code.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    delete_model_and_logger resolves a supplied model, swallowing resolution errors and retaining
+    the previous provider. Async removes model from kwargs. Missing generic logger creates model="",
+    messages=[],stream=false, call_type=file_delete/afile_delete, clock start_time,
+    litellm_call_id=provided value (even null) or UUID only when absent, function_id=str(id or "").
+    Existing logger is retained. FileDeleted id and deleted flag are returned without reinterpretation.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    unsupported_write uses enum-valid cohere: BadRequestError 400,type=null,param=null,code=null,
+    model=n/a and message prefixed "litellm.BadRequestError: ". Upload suffix is "LiteLLM doesn't
+    support cohere for 'create_file'. Only ['openai', 'azure', 'vertex_ai', 'manus', 'anthropic'] are
+    supported." Delete suffix is "LiteLLM doesn't support cohere for 'file_delete'. Only 'openai',
+    'azure', 'gemini', 'manus', and 'anthropic' are supported." Response body="Unsupported provider";
+    request method=create_file for upload, create_thread for delete. Unknown provider text fails
+    LlmProviders conversion earlier. Neither sends HTTP or invents a proxy error envelope.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Newly added SDK seeds and HTTP cases execute upload/delete production dispatch.
+  proof: [new-cases, sdk-seeds, oracle, sdk-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::/) -
-      test(/::replays_corpus$/)'
-  - id: case-file-upload-provider-parts
-    why: the file-upload-provider-parts behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::file_upload_provider_parts($|::)/)'
-  - id: case-file-delete-provider
-    why: the file-delete-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::file_delete_provider($|::)/)'
-  - id: case-file-upload-error
-    why: the file-upload-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::file_upload_error($|::)/)'
-  - id: case-file-delete-missing
-    why: the file-delete-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::file_delete_missing($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_provider_write.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_provider_write-*)"
-      && grep -qE "^[[:space:]]+file_provider_write:" tools/oracle/fuzz/corpus/helper_case/file_provider_write-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-provider-write)"
+    why: upload and delete dispatch are untested outside corpus replay
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: independent file-write adapter is absent or untyped
+    run: test -f tools/oracle/sdk_http/file_provider_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: upload/delete operation seeds were not added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: no newly captured SDK write cases exist
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-provider-write)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-provider-write/file-upload-provider-parts.yaml
-- tools/oracle/cases/helpers/file-provider-write/file-delete-provider.yaml
-- tools/oracle/cases/helpers/file-provider-write/file-upload-error.yaml
-- tools/oracle/cases/helpers/file-provider-write/file-delete-missing.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/upload-optional-fields.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/upload-passthrough-guard.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/write-timeout-coercion.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/write-provider-dispatch.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/delete-model-and-logger.yaml
+- tools/oracle/cases/sdk-http/file-provider-write/unsupported-write.yaml
 deviations: []
 out_of_scope:
-- 'litellm/files/main.py: B1030 owns _should_sdk_support_streaming L83-L89, _file_content_logging_obj L92-L104,
-  afile_content L806-L849, file_content L853-L1031, file_content_streaming L1034-L1138.'
-- 'litellm/files/main.py: B1029 owns afile_retrieve L299-L336, file_retrieve L340-L463, afile_list L644-L681, file_list
-  L685-L802.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1029 owns retrieve/list SDK functions; B1030 owns content functions and content logging/stream selection helpers in files/main.py.
+- B159-B161 own Python file and executor facades, B012 decorator callbacks, B2464 registry/timeout selection, and concrete providers their request/result transforms. B2461 and B2462 implement the generic HTTP callees.
 pitfalls:
-- Within create_file\'s logging_obj is None branch, preserve raise ValueError('logging_obj is required') and its
-  nested guards.
-- create_file uses kwargs.get('client'); retain its missing-value behavior and field spelling in the typed projection.
-review_level: standard
+- Only upload validates passthrough; deletion has no such guard.
+- Explicit-null litellm_call_id is retained by delete's fallback logger.
+- The unsupported-provider messages are stale lists; the reachable registry is broader.
+review_level: security
 budget:
-  max_changed_lines: 560
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

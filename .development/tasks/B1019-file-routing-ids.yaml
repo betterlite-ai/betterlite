@@ -1,90 +1,31 @@
 id: B1019
-title: File routing ids
+title: File and batch routing id codecs
 description: >-
-  Implement legacy file/batch ID codecs, list limit/purpose validation and managed-output model hints. Export typed
-  addressed FileId/BatchId views and encode_batch_response_ids for B086; keep encoded routing hints separate from
-  managed-resource-access authorization.
+  Implement common_utils.py L38-L59 and L83-L309 in betterlite-core::api::file_routing_ids.
+  Own validate_file_list_limit, ManagedResourceAccessChecker's typed protocol, the file-prefix
+  detector/converter, managed-output model selection, target-model and batch-id extraction,
+  executed-batch detection, encode_file_id_with_model, encode_batch_response_ids, model/original-id
+  decoding and is_model_embedded_id. B1035 supplies the batch response DTO and B732 the principal
+  contract. Do not grant access merely because an id decodes.
 
+  There are two distinct formats here. Legacy ids decode to a string starting litellm_proxy, with
+  no colon required. New routing ids encode litellm:<original>;model,<name> as URL-safe base64
+  without padding, with an outer file- or batch_ prefix. Use decode_file_routing_ids(bytes, limits)
+  at the external id boundary, preserving Python's permissive base64 behavior and nullable/pass-through
+  outcomes. Add a fuzz target and replays_corpus for that function. There are no settings or env vars.
 
-  SpecialEnums file format is litellm_proxy:{};unified_id,{};target_model_names,{};llm_output_file_id,{};llm_output_file_model_id,{}.
-  Batch format is litellm_proxy;model_id:{};llm_batch_id:{}. Fine-tuning format is litellm_proxy;model_id:{};generic_response_id:{}.
-  The common file detector accepts litellm_proxy; batches; B1016 colon detector does not.
-
-
-  validate_file_list_purpose (litellm/proxy/openai_files_endpoints/common_utils.py:L62-L80) has no MIT runtime caller
-  at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises
-  that unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/file_routing_ids.rs. Use FileRoutingIdsInput and FileRoutingIdsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): common_utils.py:53 type='invalid_request_error', param='limit', code=400, openai_code=openai_code.
-  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
-  tests.
-
-
-  Write adjacent tests.rs behavior functions list_limit_bounds, invalid_purpose, file_model_encoding, batch_id_model_extraction,
-  native_file_id, encoded_output_file_id, unified_batch_id, batch_prefix_detector_dif_49f6 under api::file_routing_ids::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-core::api::file_routing_ids::decode_file_routing_ids(bytes:
-  &[u8], limits: &ApiLimits), for base64.urlsafe_b64decode input padded at litellm/proxy/openai_files_endpoints/common_utils.py:106;
-  base64.urlsafe_b64decode input padded at litellm/proxy/openai_files_endpoints/common_utils.py:264; base64.urlsafe_b64decode
-  input padded at litellm/proxy/openai_files_endpoints/common_utils.py:293. Place its implementation in crates/betterlite-core/src/api/file_routing_ids.rs
-  and call it from the actual boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs
-  passes arbitrary bounded bytes to that exact decoder; api::file_routing_ids::tests::replays_corpus replays newly
-  committed seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::FileRoutingIds in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_routing_ids: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/common_utils.py: validate_file_list_limit (L44-L59);
-  litellm/proxy/openai_files_endpoints/common_utils.py: ManagedResourceAccessChecker.can_user_call_unified_file_id
-  (L85-L89); litellm/proxy/openai_files_endpoints/common_utils.py: ManagedResourceAccessChecker.can_user_call_unified_object_id
-  (L91-L95); litellm/proxy/openai_files_endpoints/common_utils.py: _is_base64_encoded_unified_file_id (L98-L112);
-  litellm/proxy/openai_files_endpoints/common_utils.py: convert_b64_uid_to_unified_uid (L115-L120); litellm/proxy/openai_files_endpoints/common_utils.py:
-  resolve_managed_output_file_model_name (L123-L131); litellm/proxy/openai_files_endpoints/common_utils.py: get_models_from_unified_file_id
-  (L134-L152); litellm/proxy/openai_files_endpoints/common_utils.py: get_model_id_from_unified_batch_id (L155-L168);
-  litellm/proxy/openai_files_endpoints/common_utils.py: get_batch_id_from_unified_batch_id (L171-L180); litellm/proxy/openai_files_endpoints/common_utils.py:
-  is_litellm_executed_batch (L183-L185); litellm/proxy/openai_files_endpoints/common_utils.py: encode_file_id_with_model
-  (L188-L229); litellm/proxy/openai_files_endpoints/common_utils.py: encode_batch_response_ids (L232-L243); litellm/proxy/openai_files_endpoints/common_utils.py:
-  decode_model_from_file_id (L246-L272); litellm/proxy/openai_files_endpoints/common_utils.py: get_original_file_id
-  (L275-L302); litellm/proxy/openai_files_endpoints/common_utils.py: is_model_embedded_id (L305-L309). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 144 owned nonblank/non-comment/non-docstring Python lines (187 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 164 implementation,
-  88 behavior tests, 96 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 528 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1015 (File contracts), B1016 (Managed
-  resource ids), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the
-  external B500-B859 ids retain ownership on the provider and keys/data branches.
+  The file_routing_ids helper invokes pure Python functions and native equivalents; comparisons of
+  encoding use deterministic literal decoded payloads, not invented UUIDs. Add adjacent domain tests
+  named below. The spans contain 190 nonblank, non-comment lines. Budget 175 implementation, 125 tests,
+  100 fixtures, 80 adapters, 55 fuzz/replay and 35 wiring lines: 570 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_routing_ids.rs
   - crates/betterlite-core/src/api/file_routing_ids/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs
   - crates/betterlite-core/fuzz/corpus/file_routing_ids/**
@@ -92,154 +33,92 @@ scope:
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_routing_ids.rs
-  - tools/oracle/src/helpers/file_routing_ids/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_routing_ids.py
-  - tools/oracle/helpers/file_routing_ids/**
   - tools/oracle/fuzz/corpus/helper_case/file_routing_ids-*
   - tools/oracle/cases/helpers/file-routing-ids/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L44-L61
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L81-L309
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L38-L59
+  why: Owns file-list limit validation and the continuation/executed-batch literals exported to callers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L83-L309
+  why: Owns complete legacy and model-embedded id helpers, including in-place batch response mutation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L73-L73
+  why: MAX_FILE_LIST_LIMIT is 10000, not the 500-record continuation fetch size.
 dod:
-- text: 'list limit bounds: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-list-limit-bounds
-  - oracle
-- text: 'invalid purpose: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-invalid-purpose
-  - oracle
-- text: 'file model encoding: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-file-model-encoding
-  - oracle
-- text: 'batch id model extraction: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-batch-id-model-extraction
-  - oracle
-- text: 'native file id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-file-id
-  - oracle
-- text: 'encoded output file id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-encoded-output-file-id
-  - oracle
-- text: 'unified batch id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unified-batch-id
-  - oracle
-- text: 'batch prefix detector difference: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-batch-prefix-detector-difference
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    list_limit_bounds accepts null, 1 and 10000. Zero gives ProxyException type=invalid_request_error,
+    param=limit, code="400", openai_code=integer_below_min_value and source message "Invalid 'limit':
+    integer below minimum value. Expected a value >= 1, but got 0 instead." 10001 uses
+    integer_above_max_value and "Invalid 'limit': integer above maximum value. Expected a value
+    <= 10000, but got 10001 instead." Export continuation size 500 and batch_create hidden key.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    legacy_prefix_and_targets encodes litellm_proxy;model_id:m;llm_batch_id:b and expects successful
+    file-prefix detection, while B1016's colon detector returns false. Encoded litellm_proxyjunk also
+    passes this startswith check. Malformed base64, invalid UTF-8 and non-string values return false;
+    converter returns the original input on failure. Target text target_model_names,a, b,,a yields
+    [a,b,"",a]; absent/empty/non-string yields []. Output model selection returns a,b,,a for those
+    targets, otherwise the supplied fallback (including null). It decodes first; the extractor alone does not.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    batch_identifier_fields reads model_id:m as m even without a proxy prefix; missing/non-string
+    yields null and model_id:; yields "". llm_batch_id:b;other and generic_response_id:g,other yield
+    b and g. Non-string batch input yields ""; a string with neither field raises IndexError.
+    is_litellm_executed_batch is true only when the suffix after llm_batch_id: starts litellm_batch_.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    model_embedded_roundtrip encodes file-a/model=public, batch_a/model=public and numeric 123 with
+    id_type=batch. Outer prefixes are file-, batch_ and batch_; decoded payloads are respectively
+    litellm:file-a;model,public, litellm:batch_a;model,public and litellm:123;model,public.
+    A recognized input prefix wins over a conflicting id_type. Bare encoded payloads also decode.
+    Model values are stripped but original ids are not; malformed ids return model=null, original
+    unchanged and is_model_embedded_id=false. An empty model can still recover an original id while
+    is_model_embedded_id=false; repeated model fields use the first nonempty match.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    batch_response_encoding mutates id=b, output_file_id=o, error_file_id=e, input_file_id=i into
+    batch_-prefixed b and file--prefixed o/e/i encodings for model=m; unrelated fields remain unchanged.
+    Null/empty id prevents every mutation, and absent/empty secondary ids remain untouched. A second
+    encoding call wraps the already encoded ids again; do not silently make it idempotent.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Id decoders share newly added malformed and legacy corpus inputs with production and helper adapters.
+  proof: [parser-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    why: routing id or list-limit tests are absent
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::/) - test(/::replays_corpus$/)'
-  - id: case-list-limit-bounds
-    why: the list-limit-bounds behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::list_limit_bounds($|::)/)'
-  - id: case-invalid-purpose
-    why: the invalid-purpose behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::invalid_purpose($|::)/)'
-  - id: case-file-model-encoding
-    why: the file-model-encoding behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::file_model_encoding($|::)/)'
-  - id: case-batch-id-model-extraction
-    why: the batch-id-model-extraction behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::batch_id_model_extraction($|::)/)'
-  - id: case-native-file-id
-    why: the native-file-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::native_file_id($|::)/)'
-  - id: case-encoded-output-file-id
-    why: the encoded-output-file-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::encoded_output_file_id($|::)/)'
-  - id: case-unified-batch-id
-    why: the unified-batch-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::unified_batch_id($|::)/)'
-  - id: case-batch-prefix-detector-difference
-    why: the batch-prefix-detector-difference behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::batch_prefix_detector_dif_49f6($|::)/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_routing_ids)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs && grep -qF "decode_file_routing_ids"
-      crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::file_routing_ids::tests::replays_corpus$/)'
+    why: id decoding lacks a connected fuzz target and fresh corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_routing_ids)" && grep -qF decode_file_routing_ids crates/betterlite-core/fuzz/fuzz_targets/file_routing_ids.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_routing_ids::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_routing_ids.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the id comparison adapter is missing or fails typing
+    run: test -f tools/oracle/helpers/file_routing_ids.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_routing_ids-*)"
-      && grep -qE "^[[:space:]]+file_routing_ids:" tools/oracle/fuzz/corpus/helper_case/file_routing_ids-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the helper decoder has no new file_routing_ids input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_routing_ids-*)" && grep -qE '^[[:space:]]+file_routing_ids:' tools/oracle/fuzz/corpus/helper_case/file_routing_ids-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no routing-id parity cases were added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-routing-ids)"
 oracle_cases:
 - tools/oracle/cases/helpers/file-routing-ids/list-limit-bounds.yaml
-- tools/oracle/cases/helpers/file-routing-ids/invalid-purpose.yaml
-- tools/oracle/cases/helpers/file-routing-ids/file-model-encoding.yaml
-- tools/oracle/cases/helpers/file-routing-ids/batch-id-model-extraction.yaml
-- tools/oracle/cases/helpers/file-routing-ids/native-file-id.yaml
-- tools/oracle/cases/helpers/file-routing-ids/encoded-output-file-id.yaml
-- tools/oracle/cases/helpers/file-routing-ids/unified-batch-id.yaml
-- tools/oracle/cases/helpers/file-routing-ids/batch-prefix-detector-difference.yaml
+- tools/oracle/cases/helpers/file-routing-ids/legacy-prefix-and-targets.yaml
+- tools/oracle/cases/helpers/file-routing-ids/batch-identifier-fields.yaml
+- tools/oracle/cases/helpers/file-routing-ids/model-embedded-roundtrip.yaml
+- tools/oracle/cases/helpers/file-routing-ids/batch-response-encoding.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: validate_file_list_purpose L62-L80, is_gemini_supported_mime_type
-  L824-L846, get_content_type_from_file_object L849-L882, map_raw_file_ids_to_unified L1244-L1259, apply_unified_file_ids
-  L1262-L1269 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1020 owns extract_model_from_sources L317-L348, get_credentials_for_model
-  L351-L391, authorize_model_for_key L394-L418, get_authorized_credentials_for_model L421-L433, get_team_provider_credentials
-  L436-L553, apply_team_provider_credentials L556-L575, add_internal_model_credentials L578-L600, add_deployment_model_info
-  L603-L619, prepare_data_with_credentials L622-L644, handle_model_based_routing L647-L709.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1021 owns detect_content_type_from_filename L772-L793,
-  normalize_mime_type_for_provider L796-L821, FileCreationParams.__post_init__ L905-L915, extract_file_creation_params
-  L918-L956, _extract_target_storage_simple L959-L971, _extract_target_model_names_simple L974-L989, _is_target_model_names_key
-  L992-L993, _extract_target_model_names_from_form L996-L1019, validate_managed_files_requirement L1022-L1059, validate_managed_id_requirement
-  L1062-L1118, _extract_model_param L1121-L1130.'
-- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1041 owns _batch_response_model_id_candidates L1138-L1158,
-  _model_id_for_batch_response L1161-L1176, _model_name_for_batch_response L1179-L1187, _batch_owner_auth_from_db_object
-  L1190-L1197, resolve_input_file_id_to_unified L1200-L1219, resolve_output_file_ids_to_unified L1222-L1241, ensure_batch_response_managed_file_ids
-  L1272-L1321, get_batch_from_database L1324-L1393, batch_cost_poller_is_active L1396-L1425, _completed_batch_safe_to_retire
-  L1428-L1441, update_batch_in_database L1444-L1549.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- validate_file_list_purpose, is_gemini_supported_mime_type, get_content_type_from_file_object, map_raw_file_ids_to_unified and apply_unified_file_ids have no MIT runtime caller at the pin; no cases activate them.
+- B1020 owns credential/model-routing functions L317-L709; B1021 owns creation/managed-requirement functions L889-L1130. The MIME inference/normalization functions L772-L830 serve only unused wrappers and have no live caller.
+- B1041 owns all batch-response/database functions from _batch_response_model_id_candidates through update_batch_in_database (L1138-L1549), except the two unused mapping functions above.
 pitfalls:
-- common_utils.py:53 uses type='invalid_request_error', param='limit', code=400, openai_code=openai_code; preserve
-  this envelope rather than a family-wide error default.
-- Within validate_file_list_limit\'s limit is None or 1 <= limit <= MAX_FILE_LIST_LIMIT branch, preserve return
-  and its nested guards.
+- openai_code records the bound-specific reason, but ProxyException.code remains the string "400".
+- A model-embedded id with an empty model can decode its original id without being considered model-embedded.
+- The legacy batch parser throws when neither batch nor generic-response marker exists; do not turn that branch into an empty successful id.
 review_level: security
 budget:
-  max_changed_lines: 530
-  max_new_expects: 1
+  max_changed_lines: 570
+  max_new_expects: 0

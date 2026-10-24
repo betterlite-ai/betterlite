@@ -1,212 +1,108 @@
 id: B972
-title: Messages compaction
+title: Dispatch context edits in request order
 description: >-
-  Execute compact_20260112 through B014 using summary-model-access, summary-model-limits and summary-history. Preserve
-  source iteration/abort behavior, applied_edits and usage accounting, including failed summary requests and source
-  warning/fallback outcomes; expose the editor seam consumed by messages-context-clear. Keep default trigger 150000
-  tokens, minimum trigger 50000, max summary tokens 4096 and summary timeout 60 seconds; summary failure follows
-  the source warning/fallback path, preserving the uncompacted request.
+  Own dispatcher.py as a whole, moved out of B968 to remove its reverse dependency on compaction execution.
+  The editor registry has exactly clear_tool_uses_20250919 (B968) and compact_20260112 (B2432). Normalize native
+  dict specs or OpenAI list specs through B2201, run edits serially, carry messages/system forward and concatenate
+  applied edits. Keep the last non-null compaction block and iterations_usage separately; iterations are replaced,
+  not accumulated. B2432 owns all former compact.py execution functions and remains a prerequisite of this id.
 
-
-  Implement crates/betterlite-core/src/api/messages_compaction.rs. Use MessagesCompactionInput and MessagesCompactionResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions compact_trigger_not_met, compact_summary_call, summary_error_fallback,
-  abort_after_compaction, summary_usage_attribution under api::messages_compaction::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
-  defaults to 4096. No environment reads occur outside betterlite-config. Test api::messages_compaction::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesCompaction in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_compaction: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _call_summary_model
-  (L1019-L1081); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _extract_response_text
-  (L1084-L1102); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _extract_usage (L1105-L1111);
-  litellm/llms/anthropic/pass_through/context_management/editors/compact.py: apply_compact_20260112 (L1160-L1380).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 217 owned nonblank/non-comment/non-docstring Python lines (228 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 237 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 520 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B968 (Messages context clear), B969 (Summary model access), B970
-  (Summary model limits), B971 (Summary history), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml into typed
-  config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
-  ownership on the provider and keys/data branches.
+  Implement api::messages_compaction with a closed typed editor dispatch. Clear token counting stays off the
+  async executor and summary execution is awaited. HelperCall::ContextEditDispatch covers normalization and
+  deterministic orchestration with typed injected editor results, including the legacy tuple wrapper. It cannot
+  supply arbitrary functions. SdkHttpCall::ContextEditDispatch runs the real registered editors with B2401 so
+  summary-provider traffic is captured. This dispatcher adds no settings, environment reads or byte parser.
+  Own 108 nonblank/non-comment dispatcher implementation lines; estimate 140 implementation, 110 tests, 110 fixtures,
+  120 adapters and 30 wiring, 510 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_compaction.rs
   - crates/betterlite-core/src/api/messages_compaction/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_compaction.rs
-  - crates/betterlite-config/src/api/messages_compaction/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/messages-compaction-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_compaction.rs
-  - tools/oracle/src/helpers/messages_compaction/**
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/context_edit_dispatch.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_compaction.py
-  - tools/oracle/helpers/messages_compaction/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_compaction-*
-  - tools/oracle/cases/helpers/messages-compaction/**
+  - tools/oracle/helpers/context_edit_dispatch.py
+  - tools/oracle/cases/helpers/context-edit-dispatch/**
+  - tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/context_edit_dispatch.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/context_edit_dispatch.py
+  - tools/oracle/cases/sdk-http/context-edit-dispatch/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/context-edit-dispatch-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
-  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1019-L1111
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1160-L1380
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L19-L151
+  why: Own normalization, tuple conversion and the entire serial editor dispatcher without splitting its argument list.
 dod:
-- text: 'compact trigger not met: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-compact-trigger-not-met
-  - oracle
-- text: 'compact summary call: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-compact-summary-call
-  - oracle
-- text: 'summary error fallback: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-summary-error-fallback
-  - oracle
-- text: 'abort after compaction: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-abort-after-compaction
-  - oracle
-- text: 'summary usage attribution: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-summary-usage-attribution
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    normalize_context_edit_shapes gives null,{},edits=null,edits=[],edits="bad" and gets no edits; edits=[7,{},
+    {type:clear_tool_uses_20250919}] retains only the two dicts. OpenAI [{type:compaction,compact_threshold:60000.9}]
+    becomes compact_20260112 with trigger={type:input_tokens,value:60000}; explicit trigger overrides the generated
+    one through B2201. Unknown OpenAI list types are discarded by B2201, whereas native unknown dict edits reach dispatch.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    unknown_edits_preserve_state sends native edits with type=future,type=7 and missing type. Skip each with debug
+    "context_management polyfill: unknown edit type 'future' — skipping", substituting '7' and 'None'. Return
+    original messages/system, applied_edits=[],compaction_block=null,iterations_usage=null without invoking an editor.
+    No-edits input returns the same result without unknown-type diagnostics.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    serial_editor_result_flow scripts clear returning tuple(messages=M1,applied=null), compact returning
+    messages=M2,system=S2,applied=[C],block=A,iterations=[I], then clear returning (M3,D). Each sees the previous
+    messages/system and the same model/tools. Sync clear receives no litellm_metadata,llm_router,user_api_key_auth;
+    async compact receives all three. Final result is M3,S2,[C,D],A,[I]. A legacy tuple with applied={} keeps [{}]
+    and uses the incoming system, while an existing PolyfillResult preserves its own null system.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    latest_nonnull_compaction_fields scripts three results with (block=A,iterations=[I]),(null,null),(block=B,
+    iterations=[]). Final fields are B,[]; applied edits concatenate all three in order. A later block may replace
+    the block without replacing earlier usage if its iterations_usage is null. Editor errors propagate and stop
+    later edits; the dispatcher does not translate status/message or perform best-effort recovery.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    registered_summary_editor_http sends native edits=[{type:compact_20260112,trigger:{type:input_tokens,value:50000}}]
+    with count=50001, summary model=gpt-4o-mini and a mock <summary>S</summary> completion. Expect one POST
+    /v1/chat/completions with B2432's 4096-token summary request and returned block={type:compaction,content:S},
+    one compaction applied edit and one usage iteration. A clear-then-compact case verifies the summary request
+    contains "[Cleared by context management]" for a cleared old tool result. No helper case sends that HTTP.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: New pure-dispatch and HTTP fixtures have operation-tag seeds for both existing decoders.
+  proof: [new-cases, corpus, oracle, python-adapters]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_compaction::/)
-      - test(/::replays_corpus$/)'
-  - id: case-compact-trigger-not-met
-    why: the compact-trigger-not-met behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::tests::compact_trigger_not_met($|::)/)'
-  - id: case-compact-summary-call
-    why: the compact-summary-call behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::tests::compact_summary_call($|::)/)'
-  - id: case-summary-error-fallback
-    why: the summary-error-fallback behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::tests::summary_error_fallback($|::)/)'
-  - id: case-abort-after-compaction
-    why: the abort-after-compaction behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::tests::abort_after_compaction($|::)/)'
-  - id: case-summary-usage-attribution
-    why: the summary-usage-attribution behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::tests::summary_usage_attribution($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_compaction::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-compaction-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_compaction.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_compaction-*)"
-      && grep -qE "^[[:space:]]+messages_compaction:" tools/oracle/fuzz/corpus/helper_case/messages_compaction-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-compaction)"
+    why: edit order or result replacement is not tested through the dispatcher
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::/)'
+  - id: python-adapters
+    why: dispatch or real-editor parity lacks a checked Python adapter
+    run: test -f tools/oracle/helpers/context_edit_dispatch.py && test -f tools/oracle/sdk_http/context_edit_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: a dispatch operation is absent from its shared decoder
+    run: grep -qE '^[[:space:]]+context_edit_dispatch:' tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-* && grep -qE '^[[:space:]]+context_edit_dispatch:' tools/oracle/fuzz/corpus/sdk_http_case/context-edit-dispatch-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: one of the two independent dispatch fixture families is missing
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/context-edit-dispatch)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/context-edit-dispatch)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-compaction/compact-trigger-not-met.yaml
-- tools/oracle/cases/helpers/messages-compaction/compact-summary-call.yaml
-- tools/oracle/cases/helpers/messages-compaction/summary-error-fallback.yaml
-- tools/oracle/cases/helpers/messages-compaction/abort-after-compaction.yaml
-- tools/oracle/cases/helpers/messages-compaction/summary-usage-attribution.yaml
+- tools/oracle/cases/helpers/context-edit-dispatch/normalize-context-edit-shapes.yaml
+- tools/oracle/cases/helpers/context-edit-dispatch/unknown-edits-preserve-state.yaml
+- tools/oracle/cases/helpers/context-edit-dispatch/serial-editor-result-flow.yaml
+- tools/oracle/cases/helpers/context-edit-dispatch/latest-nonnull-compaction-fields.yaml
+- tools/oracle/cases/sdk-http/context-edit-dispatch/registered-summary-editor-http.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B969 owns _as_object L97-L98, _is_tool_result_block
-  L101-L102, _SummaryAcompletion.__call__ L120-L125, _CreateRateLimitDescriptors.__call__ L129-L137, _AddModelRateLimitDescriptor.__call__
-  L141-L147, _CreateOrgRateLimitDescriptors.__call__ L151-L153, _GetProxyHook.__call__ L157-L157, _ShouldRateLimit.__call__
-  L161-L167, _read_summary_model_setting L170-L177, _read_summary_max_tokens_setting L180-L194, _check_summary_model_access
-  L197-L392.'
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B970 owns _check_summary_model_budget
-  L395-L500, _without_parallel_request_gauges L503-L506, _without_parallel_request_gauge L509-L518, _check_summary_model_rate_limit
-  L521-L627.'
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B971 owns _find_latest_compaction_index
-  L630-L646, _slice_around_compaction_block L649-L676, _strip_compaction_blocks L679-L698, _augment_system_with_summary
-  L701-L718, _resolve_trigger_tokens L721-L752, _build_summary_prompt L755-L762, _propagate_metadata L765-L782,
-  _count_effective_tokens L785-L855, _system_to_text L858-L874, _select_last_user_question L877-L912, _extract_summary_text
-  L915-L922, _system_to_openai_message L925-L943, _build_summary_messages L946-L996, _is_user_message L999-L1000,
-  _append_text_to_content L1003-L1016, apply_client_compaction_block_history L1114-L1157.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2432 owns _call_summary_model,_extract_response_text,_extract_usage,apply_compact_20260112 in compact.py L1019-L1111,L1160-L1380.
+- B969 owns compact.py L97-L392; B970 L395-L627; B971 L73-L92,L630-L1016,L1114-L1157. No compact.py function is duplicated here.
+- B968 owns clear_tool_uses.py,constants.py,errors.py,placeholders.py,result.py and B2201 owns OpenAI-to-Anthropic context spec mapping.
+- B973 owns the best-effort boundary around this dispatcher and B081 the client error envelope.
 pitfalls:
-- 'compact.py:1242 emits the diagnostic ''compact_20260112: current_tokens=%s trigger=%s''; retain its level and
-  fallback instead of turning it into a hard error.'
-- 'compact.py:1267 emits the diagnostic ''compact_20260112: caller not authorized for summary_model=%s; skipping
-  summary call''; retain its level and fallback instead of turning it into a hard error.'
-review_level: security
+- The most recent non-null usage list wins even when it is empty; adding usage across editors changes the response.
+- Native unknown edits log and skip, while OpenAI unknown list entries disappear during normalization.
+- The legacy clear tuple preserves system from the preceding editor, not from the original request.
+review_level: standard
 budget:
-  max_changed_lines: 520
-  max_new_expects: 1
+  max_changed_lines: 540
+  max_new_expects: 0

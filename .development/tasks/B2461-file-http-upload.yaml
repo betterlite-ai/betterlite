@@ -1,0 +1,122 @@
+id: B2461
+title: Provider file upload HTTP execution
+description: >-
+  Supply the generic upload callee missing from B1028's dependency graph. Implement
+  betterlite-core::api::file_http_upload with a closed UploadPlan from B1015, B173 transport,
+  B012 logging and B2402's shared error conversion. Own whole create_file, async_create_file,
+  _extract_upload_url_from_response, _iter_in_blocks, _check_media_upload_response,
+  _upload_media, _aupload_media and _mask_presigned_request_headers. Keep sync compatibility
+  as a mode of one native service, including the observable byte and result-context differences.
+
+  The only new byte decoder is decode_file_upload_location(response_bytes, location, key),
+  bounded by B1087 and fuzzed in betterlite-core. Header lookup uses the transport's header
+  type. Provider-generated upload URLs go through the existing configured HTTP boundary;
+  this does not introduce client-selected URL downloads. Register B2401 SDK HTTP operation
+  file_http_upload, whose Python adapter invokes the real generic handler and provider config
+  against the mock. Do not replace network effects with helper output. Native tests are in
+  api::file_http_upload::tests. Count the 354-372 and 3404-3847 spans without overlap;
+  387 nonblank, non-comment source lines become 285 implementation, 180 tests,
+  130 cases, 95 adapters, 70 fuzz/replay and 30 wiring lines, totaling 790.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/file_http_upload.rs
+  - crates/betterlite-core/src/api/file_http_upload/**
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/file_upload_location.rs
+  - crates/betterlite-core/fuzz/corpus/file_upload_location/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_http_upload.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_http_upload.py
+  - tools/oracle/cases/sdk-http/file-http-upload/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-http-upload-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3404-L3847
+  why: Complete upload methods, response URL extraction and four-MiB streaming media blocks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L354-L372
+  why: Masks presigned headers in the logged copy without changing transmitted credentials.
+dod:
+- text: >-
+    upload_plan_order validates credentials, resolves the complete URL then transforms the request;
+    missing URL raises ValueError "api_base is required for create_file" before HTTP. initial_request
+    wins over method, method over streaming_media_upload, then bytes/string, then file multipart;
+    unsupported dict raises ValueError "Unsupported transformed_request type: <class 'dict'>".
+    Use native typed-plan tests for impossible provider outputs; real Anthropic/Gemini/Bedrock/Vertex
+    plans produce captured multipart, two-step, presigned and streaming requests respectively.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    two_step_upload sends POST with JSON initial_request.data and initial headers overriding base
+    headers. Missing location defaults to headers and reads X-Goog-Upload-URL case-insensitively;
+    every other location parses the body with default key upload_url. Missing/null/empty URL,
+    invalid JSON and non-object JSON produce "Failed to get upload URL from initial request",
+    converted by B2402 to the provider's synthesized 500 error with no second request. A custom
+    key selects that field. Second method defaults POST, supplied PUT is lowercased, and only
+    upload_request.headers/data are sent. Truthy body response is saved as initial_file_response;
+    header-location responses are not. Failure in either step prevents response transformation.
+  proof: [behavior-tests, oracle, sdk-python, decoder-corpus]
+- text: >-
+    upload_body_modes sends presigned method/url/headers/data unchanged; text and byte uploads
+    use PUT only when file_upload_http_method.upper() is PUT, otherwise POST. Sync bytes must
+    decode UTF-8 (b"\xff" raises UnicodeDecodeError before HTTP); async sends b"\xff" unchanged.
+    A multipart plan sends all file tuples to POST. Sync result context fills absent upload_url
+    with api_base but preserves an existing null/string value; async adds no upload_url fallback.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    media_upload_blocks uploads one POST, sets Content-Type to the configured value or
+    application/octet-stream, emits 4194304-byte blocks and one nonempty remainder, and adds
+    timeout only when non-null. Empty input sends no content chunks. Status 200/201 succeeds;
+    202/204 raises ValueError "media upload: unexpected status <status>"; 400 retains HTTP status
+    and body through B2402. Async reads the reply before checking. Cancellation closes transport
+    resources. Transform work runs off the async executor; no entire-file log copy is made.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    upload_diagnostics captures async pre_call input="", api_key="", api_base and headers;
+    complete_input_dict is "<streaming media upload>" for media plans, otherwise the presigned
+    header-masked copy. Non-dict and dict-without-dict-headers are unchanged by masking. Actual
+    Authorization remains intact on the wire. Async two-step and both media error paths log
+    "Error creating file: <error>" at exception level; sync two-step does not add that log.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: New HTTP cases and decoder seeds exercise truncation, scalar JSON and missing upload locations.
+  proof: [new-cases, sdk-seeds, decoder-corpus, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: upload branches or sync compatibility lack native assertions
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_upload::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: independent network adapter is missing or untyped
+    run: test -f tools/oracle/sdk_http/file_http_upload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: upload operation has no new SDK protocol seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-http-upload-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: decoder-corpus
+    why: upload URL decoder is not replayed with new malformed inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_upload_location)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_upload::tests::replays_upload_location_corpus$/)'
+  - id: new-cases
+    why: provider upload has no new mock captures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-http-upload)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/file-http-upload/upload-plan-order.yaml
+- tools/oracle/cases/sdk-http/file-http-upload/two-step-upload.yaml
+- tools/oracle/cases/sdk-http/file-http-upload/upload-body-modes.yaml
+- tools/oracle/cases/sdk-http/file-http-upload/media-upload-blocks.yaml
+- tools/oracle/cases/sdk-http/file-http-upload/upload-diagnostics.yaml
+deviations: []
+out_of_scope:
+- B2402 owns _handle_error whole; B012 owns _get_masked_values and logger callbacks; B173 owns client selection and transport.
+- Metadata/delete/list handlers are B2462; binary/streaming content handlers are B2463. Other llm_http_handler endpoint methods remain their existing API-family owners, not file upload work.
+- Provider request and response transforms remain B1015's concrete provider implementations; this task executes their plans without recreating those schemas.
+pitfalls:
+- Async upload does not insert upload_url into the result context, unlike sync upload.
+- The upload_url_key setting is ignored when location is headers.
+- A successful 204 media response still fails the explicit 200/201 check.
+review_level: security
+budget:
+  max_changed_lines: 790
+  max_new_expects: 0

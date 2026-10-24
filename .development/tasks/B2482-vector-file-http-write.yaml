@@ -1,0 +1,91 @@
+id: B2482
+title: Attached-file HTTP update and deletion
+description: >-
+  Implement all four vector_store_file_update_handler/vector_store_file_delete_handler sync/async functions
+  in core::api::vector_file_http_write. Own llm_http_handler.py:11300-11572. B173 supplies clients, B1071
+  records/contracts, B527 concrete transformations, B012 pre_call and B2402 the shared _handle_error.
+  Match a supplied client to execution mode; a mismatch or omission selects the pool with ssl_verify=null
+  unless configured. Validate extra_headers or {}, then overlay that map after any validation mutation.
+
+  Resolve the file collection base with the store id. Update copies update_request, overlays extra_body
+  and calls the provider transformation before logging and POSTing JSON. Delete transforms the two ids
+  to URL/query, logs the query and DELETEs without a body. Both sends pass timeout even when null, in
+  both modes. Response transforms happen after the send catch; only send failures use _handle_error.
+  Add VectorFileWriteTransport SDK HTTP cases, never helper cases that fake provider writes. The four
+  functions contain 242 nonblank/non-comment lines; allocate 240 implementation, 145 tests, 90 adapters,
+  100 fixtures and 35 corpus/wiring lines, 610 within 650. Wire JSON decoding stays in B1071/B527.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_file_http_write.rs
+  - crates/betterlite-core/src/api/vector_file_http_write/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_file_write_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_file_write_transport.py
+  - tools/oracle/cases/sdk-http/vector-file-write-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11300-L11572
+  why: Complete update/delete handlers apply request overrides before transformation and forward timeout to both POST and DELETE.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L234-L297
+  why: OpenAI update retains explicit null attributes and cleans mapping attributes after extra_body; delete appends the encoded file id.
+dod:
+- text: >-
+    update_body_before_transform sends vs/a,file/b,update_request={attributes:{old:x}},
+    extra_body={attributes:{keep:y,count:2},tag:null}. Expect POST /v1/vector_stores/vs%2Fa/files/file%2Fb
+    with {attributes:{keep:y},tag:null}; attributes=null stays null, unlike create's null cleaning.
+    Empty/null extra_body leaves the initial attributes intact. Mock 200 {id:file_b,object:vector_store.file,
+    attributes:{keep:y}} returns that mapping in sync and async modes.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    delete_attachment_http sends vs/a,file/b and expects DELETE /v1/vector_stores/vs%2Fa/files/file%2Fb
+    without body or OpenAI query. Mock {id:file_b,object:vector_store.file.deleted,deleted:true} returns
+    unchanged. Native provider-transform input producing query={revision:2} is forwarded as query, not
+    JSON, and logged as complete_input_dict. Both methods supply timeout=7 or null directly to the client.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    file_write_header_order uses provider key sk-p and extra_headers={Authorization:caller,Content-Type:text/plain,
+    OpenAI-Beta:assistants=v1,X-Trace:t}. The outbound values are Authorization="Bearer sk-p",
+    Content-Type=application/json,OpenAI-Beta=assistants=v1,X-Trace=t; absent beta defaults assistants=v2.
+    Null/empty header maps work. pre_call sees input="",api_key="",api_base,validated headers and the
+    final transformed request body/query before one HTTP request.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    file_write_failure_scope receives HTTP 403 text="denied",X-Request-Id=r and returns BaseLLMException
+    status=403,message="denied",headers retaining r without retry. A malformed JSON reply with HTTP 200
+    is converted by the response transform at status=200, outside the send error catch. Native tests prove
+    prepare/log failures make zero requests, matching clients bypass pools and wrong-mode clients select
+    ssl_verify=null/false as configured. Async forwarding never reuses a sync client.
+  proof: [write-tests, oracle, python-adapter]
+- text: New vector_file_write_transport cases exercise B2401's decoder corpus.
+  proof: [sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: write-tests
+    why: an attachment write changes body-cleaning order, delete shape or exception boundaries
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_write::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: attachment writes do not execute an independent pinned HTTP handler
+    run: test -f tools/oracle/sdk_http/vector_file_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the attachment write tag cannot be decoded by the SDK oracle
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-file-write-transport/update-body-before-transform.yaml
+- tools/oracle/cases/sdk-http/vector-file-write-transport/delete-attachment-http.yaml
+- tools/oracle/cases/sdk-http/vector-file-write-transport/file-write-header-order.yaml
+- tools/oracle/cases/sdk-http/vector-file-write-transport/file-write-failure-scope.yaml
+deviations: []
+out_of_scope:
+- B1074 owns update/aupdate/delete/adelete public wrappers; B527 owns attribute cleaning and path encoding.
+- B2402 owns _handle_error, B173 reusable clients, B2480 attached-file create/list and B2481 retrieve/content. Other HTTP endpoint families remain with their existing owners.
+pitfalls:
+- File update overlays extra_body before attribute cleaning; vector-store update in B2402 does the reverse.
+- File DELETE forwards timeout in sync mode even though vector-store DELETE omits it.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

@@ -1,0 +1,102 @@
+id: B2488
+title: Assistant run and run-stream SDK execution
+description: >-
+  Move all four complete run SDK functions from B089 into core::api::assistant_run_sdk: arun_thread_stream,
+  arun_thread, run_thread_stream and run_thread at assistants/main.py:1165-1365. B521 executes OpenAI
+  polling/stream managers, B543 Azure, B176 extracts controls, B010 builds GenericLiteLLMParams, B174 resolves async provider names, B011
+  maps async failures and B2487 supplies resource settings. Required provider/thread_id/assistant_id have
+  no default; additional_instructions,instructions,metadata,model,stream,tools,client,event_handler default
+  null. Do not introduce a whole-run timeout on top of the source's per-request timeout.
+
+  Add B2401 AssistantRun with typed mode=run/run_stream/arun/arun_stream. Call actual SDKs against mock
+  HTTP. A streaming adapter enters the returned manager and projects ordered typed events and callback
+  effects; it does not simulate a stream with expected fixture values. Public stream wrappers return the
+  manager without consuming it; arun_thread_stream is itself synchronous and sets arun_thread=true.
+  These functions contain 176 nonblank/non-comment lines. Budget 185 implementation, 175 tests, 115
+  adapters, 160 HTTP/SSE fixtures and 50 wiring/corpus, 685 total. B521/B543 own event decoding and its fuzzing.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/assistant_run_sdk.rs
+  - crates/betterlite-core/src/api/assistant_run_sdk/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/assistant_run.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/assistant_run.py
+  - tools/oracle/cases/sdk-http/assistant-run/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/assistant-run-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1365
+  why: Complete run wrappers distinguish awaitables from stream managers and drop the event handler on Azure dispatch.
+dod:
+- text: >-
+    run_poll_parameters sends thread_a,asst_a,additional_instructions=extra,instructions=base,metadata={tag:x},
+    model=gpt-4o-mini,tools=[{type:code_interpreter}],stream=false. Both providers POST their thread run path
+    through create_and_poll; stream is a local switch and is not sent to polling. Source null optional values
+    are forwarded to the provider method, not filtered here. Mock terminal completed,requires_action and
+    failed jobs each return unchanged; requires_action retains tool_calls, failed retains last_error.
+    A queued->completed mock sequence proves B521 polling without adding a wrapper deadline or retry.
+  proof: [run-tests, oracle, python-adapter]
+- text: >-
+    run_stream_manager_is_lazy calls run_thread_stream and arun_thread_stream; before entering the
+    manager there is no provider request. On entry expect POST /v1/threads/thread_a/runs with stream=true
+    and assistants=v2; feed thread.run.created,thread.message.delta,thread.run.completed and [DONE], split
+    across HTTP reads, and compare ordered events. OpenAI receives supplied event_handler identity and
+    invokes its callbacks on consumption. Azure SDK wrapper does not forward event_handler at all even
+    though B543's lower-level stream method accepts it. Native cancellation closes the selected manager
+    and releases its transport resources. arun_thread(stream=true) returns a manager after its context copy.
+  proof: [run-tests, oracle, python-adapter]
+- text: >-
+    run_boolean_switches tests stream=null,false,1,"true": all select polling because only true
+    streams. arun_thread flag=null,false,1,"true" selects sync provider dispatch, without local type error.
+    Stream helper always supplies stream=true; a duplicate stream kwarg therefore fails before provider
+    with TypeError rather than silently overriding it. Async stream helper forces arun_thread=true.
+    A null provider result passes through null, and the normal async wrapper awaits only coroutine results.
+  proof: [run-tests, oracle, python-adapter]
+- text: >-
+    run_credentials_and_tokens exercises B2487 request/global/env chains with OpenAI-Organization,
+    Azure api-version and selected auth at mock HTTP. Timeout default=600,timeout=0/request_timeout=6->6,
+    "7.5"->7.5 and structured OpenAI/Azure timeout retained; max_retries/client pass to both providers.
+    Azure does not discard an OpenAI-instance client here. extra_body omitted/{} suppresses AZURE_AD_TOKEN,
+    null uses env-token, and {azure_ad_token:body-token} pops body-token. Azure converts non-null base/key/
+    version/token to strings before its call; null stays null. B176 litellm_params are forwarded only on Azure.
+  proof: [run-tests, oracle, python-adapter]
+- text: >-
+    run_sdk_failures sends anthropic and gets BadRequestError,400,type/param/code=null,
+    source message="LiteLLM doesn't support anthropic for 'run_thread'. Only 'openai' is supported.";
+    response body="Unsupported provider",method=create_thread. A mock HTTP 404 retains SDK body fields
+    in sync mode and maps to NotFoundError,404,type/param/code=null in arun_thread via B011 with model="",
+    completion_kwargs={}. Stream-manager errors occur when entered/consumed and are not caught by the
+    already-returned wrapper. Commit cases for polling and streams into the SDK case-parser corpus.
+  proof: [run-tests, oracle, python-adapter, sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: run-tests
+    why: run wrappers lose lazy managers, literal-true dispatch or provider-specific event handling
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_run_sdk::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: the run comparison bypasses real SDK polling or stream consumption
+    run: test -f tools/oracle/sdk_http/assistant_run.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the run/stream modes have no newly committed case-parser seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-run-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/assistant-run/run-poll-parameters.yaml
+- tools/oracle/cases/sdk-http/assistant-run/run-stream-manager-is-lazy.yaml
+- tools/oracle/cases/sdk-http/assistant-run/run-boolean-switches.yaml
+- tools/oracle/cases/sdk-http/assistant-run/run-credentials-and-tokens.yaml
+- tools/oracle/cases/sdk-http/assistant-run/run-sdk-failures.yaml
+deviations: []
+out_of_scope:
+- B089 owns the proxy run route and the entire async_assistants_data_generator, including its error branch. B1055/B1130 definitions, B1056 threads and B1057 messages remain separate.
+- B521/B543 own create_and_poll state and event decoding; B161 bridges arbitrary Python event handlers. B2487 owns settings loading and its non-finite-duration deviation.
+pitfalls:
+- arun_thread_stream is a synchronous factory for an asynchronous stream manager, not a coroutine to await.
+- Azure drops event_handler in the SDK wrapper even though its provider stream helper supports handlers.
+- stream=1 polls rather than streams because the branch checks identity with true.
+review_level: security
+budget:
+  max_changed_lines: 760
+  max_new_expects: 0

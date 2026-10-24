@@ -1,179 +1,251 @@
 id: B1139
 title: Stateful HTTP oracle scenarios
 description: >-
-  Extend HttpCase with isolated Postgres/Redis fixture setup and ordered request sequences, so route auth and stored-resource
-  behavior is compared through two booted gateways. Reuse B856 process/schema isolation; never call FastAPI endpoint
-  functions from a helper adapter.
+  Extend the B001 oracle with a second YAML root kind, `kind: http_scenario`, for an ordered sequence of HTTP
+  requests that may seed isolated state and inspect stateful effects. A document without `kind` remains a B001
+  `HttpCase` and must produce the same parsed value, client response, provider request list and exit result as before.
+  Decode scenario bytes through `betterlite_oracle::http_scenarios::decode_http_scenario(bytes, limits)` before either
+  gateway or provider process starts. The scenario root is closed and contains the required nonempty `name`, `config`,
+  and `steps` fields plus optional `kind`, `env` and `setup`; `kind` is exactly `http_scenario`, `env` defaults to `{}`,
+  and every setup list defaults to `[]`. Unknown root field `bogus` returns exactly `scenario field "bogus" is not
+  allowed`; duplicate root field `name` returns exactly `duplicate field "name"`.
 
+  `config` is the LiteLLM `config.yaml` text. Render only the three exact tokens `{{upstream}}`, `{{postgres}}` and
+  `{{redis}}`; leave `${capture.status}` and every other token unchanged. An empty `env: {}` is augmented for both
+  child processes with `LITELLM_LOCAL_MODEL_COST_MAP=True` and `LITELLM_MASTER_KEY=oracle-master`. Reject these two
+  caller entries before startup, preserving the caller value only in the diagnostic: `env: {LITELLM_LOCAL_MODEL_COST_MAP:
+  "false"}` returns exactly `scenario env entry "LITELLM_LOCAL_MODEL_COST_MAP" is reserved`, and
+  `env: {LITELLM_MASTER_KEY: "caller-key"}` returns exactly `scenario env entry "LITELLM_MASTER_KEY" is reserved`.
+  No other environment key is silently discarded. The fixture cases use `config.model_list: []`, `env: {}`, no provider
+  answers and an expected upstream request list of `[]`.
 
-  Keep legacy single request cases unchanged. HttpScenario has kind: http_scenario, name, config, env, setup (typed
-  key/team/managed-file/managed-object/vector-store rows and named Redis polling entries), steps (name, request,
-  upstream, capture, compare). A capture binds only declared response JSON pointers to later path/body placeholders;
-  secret captures never enter artifacts. Allocate distinct databases/Redis key namespaces for the two gateways and
-  seed identical logical identities. Maximum 32 steps, 256 seeded rows, 16 MiB total fixture bytes and 120-second
-  scenario deadline; no arbitrary SQL or Python in YAML. decode_http_scenario reads bounded YAML bytes and shares
-  B171 strict duplicate/unknown-field handling. Compare each step status, type/param/code, selected headers and
-  provider capture under /steps/<index>; deliberate changed status, row and ordering fail. Use tools/oracle/fixtures/http-scenarios/
-  as the only fixture root.
+  `steps` contains 1 through 32 entries. Each step has a nonempty `name`, a B001 `request`, and optional `upstream`,
+  `capture` and `compare`; absent `upstream` and all four compare lists are `[]`. The request keeps B001's required
+  `method` and `path`, passes query strings such as `/health/liveliness?probe=1` unchanged, defaults `headers` to `{}`
+  and `body` to `null`, and accepts B900's `body_kind: json` (default), `multipart` and `bytes` variants with B900's
+  optional part fields and fixture-root rules. An absent upstream answer means no provider answer is queued. A zero-step
+  or 33-step document returns exactly `scenario must contain between 1 and 32 steps`. The decoder reads at most
+  16,777,216 YAML bytes; a 16,777,217-byte document returns exactly `scenario input exceeds 16777216 bytes`.
 
+  Setup is typed B860 fixture data, never SQL or Python. Insert present rows in declaration order, and retain order
+  within each list: users, teams, memberships, budgets, JWT mappings, keys, managed files, managed objects, vector
+  stores, then named Redis polling entries. Count all rows across those nine Postgres lists; 257 rows returns exactly
+  `scenario seeds more than 256 rows`. Fixture bytes across all setup records are capped at 16,777,216; a total of
+  16,777,217 returns exactly `scenario fixtures exceed 16777216 bytes`. B860 owns row shapes, `POSTGRES_TEST_URL`
+  precedence, schema SQL and cleanup. For the Redis entry in `polling-setup.yaml`, write B935's value under key
+  `litellm:polling:response:litellm_poll_scenario` with TTL `3600`; B126 supplies only the injected Redis/Valkey
+  transport. Give the two gateways equal logical rows but different physical Postgres schema/database names and Redis
+  prefixes, and keep those physical names out of comparison output. The setup journal records the insertion order above.
 
-  Implement tools/oracle/src/http_scenarios.rs. Use HttpScenariosInput and HttpScenariosResult with typed nested
-  records; inject only the clock, repositories, transports and resolved settings this slice uses through constructors.
-  Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+  A capture has a nonempty `name`, a response JSON Pointer `pointer`, and optional `secret`; absent `secret` is
+  `false`. Resolve captures only after their producing step and substitute `${capture.<name>}` in a later request path
+  or JSON/body value. Step 0's `/status` capture therefore reaches step 1, while a `${capture.status}` placeholder in
+  step 0 is unresolved and step 0 is not sent. JSON Pointer escaping is literal: `/data~1id` selects property `data/id`
+  and `/data~0id` selects property `data~id`. A step-0 capture named `status` with pointer `/missing` returns exactly
+  `scenario step 0 capture status missing pointer /missing` before sending step 0. A secret capture may fill a later
+  path or JSON/body value, but a secret capture in a header is a decode-time error: with step 0 capture
+  `{name: status, pointer: /status, secret: true}` and step 1 header `{x-scenario-status: ${capture.status}}`, return
+  exactly `scenario step 1 header "x-scenario-status" cannot use secret capture "status"`; do not send step 1. The
+  named secret value `sk-scenario-secret` never appears in client, provider, diff or gateway-log artifacts; each place
+  contains `[REDACTED]`, because redaction happens before serialization and copying. Bad captures are errors, never
+  warnings followed by a dropped entry; the scenario decoder and runner have no warn-and-drop path.
 
+  Seed before step 0, run steps in index order from 0 through N-1 against each booted gateway, and tear down on
+  success, decoder failure, timeout and provider failure. One 120-second deadline covers fixture setup, process
+  readiness, every request and teardown; exceeding it returns exactly `scenario exceeded 120 seconds`. Compare each
+  step's exact response status, present `error.type`, `error.param` and `error.code`, selected response header values,
+  selected provider header values, provider method/path/body and cumulative provider request count. `compare.headers`
+  compares selected response-header values; `compare.headers_present` requires those headers on both gateways even if
+  values differ; `compare.upstream_headers` selects provider headers; `compare.ignore` retains B001's explicit pointer
+  exclusions. Report the first deliberate mismatch under `/steps/<index>`, including `/steps/0/status`,
+  `/steps/1/response/error/type` and `/steps/0/provider/0/body`. Write the ordered setup journal and each step result
+  below B001's artifact root, with secret values replaced by `[REDACTED]`.
 
-  Write adjacent tests.rs behavior functions isolated_state, capture_substitution, secret_capture_redaction, changed_state_detected,
-  rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input, preserves_legacy_cases
-  under http_scenarios::tests. Each named function drives production code and asserts its case result; use named
-  rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  Add the scenario module and typed fixture adapter under `tools/oracle/src/http_scenarios.rs` and
+  `tools/postgres-fixture`. Constructors receive the clock, gateway runner, repositories and transports; no adapter
+  calls a FastAPI handler or a betterlite route function. Add tests under `http_scenarios::tests` named
+  `isolated_state`, `capture_substitution`, `secret_capture_redaction`, `rejects_secret_capture_header`,
+  `changed_state_detected`, `rejects_unknown_field`, `rejects_duplicate_field`, `detects_changed_peer`,
+  `rejects_oversize_input`, `rejects_step_and_fixture_limits`, `rejects_reserved_env`, `missing_capture_is_error`,
+  `deadline_and_cleanup` and `preserves_legacy_cases`; related limit and field inputs belong in their named rstest
+  function. The separate corpus replay function is `replays_corpus`.
 
+  Add `tools/oracle/cases/harness/http-scenarios/capture-substitution.yaml`: step 0 sends GET
+  `/health/liveliness`, captures `/status` as non-secret `status`, and step 1 sends GET `/health/liveliness` with
+  `x-scenario-status: ${capture.status}`; both steps queue no provider answer and expect upstream `[]`. Add
+  `polling-setup.yaml` with `config.model_list: []`, `env: {}`, the B935-shaped Redis entry for
+  `litellm_poll_scenario`, GET `/health/liveliness`, no provider answer and upstream `[]`. Self-check these two files
+  together with the unchanged `tools/oracle/cases/chat` and `tools/oracle/cases/health` directories.
 
-  The production external-byte decoder is betterlite-oracle::http_scenarios::decode_http_scenario(bytes: &[u8],
-  limits: &OracleLimits), for bounded scenario YAML. Place its implementation in tools/oracle/src/http_scenarios.rs
-  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/http_scenarios.rs passes
-  arbitrary bounded bytes to that exact decoder; http_scenarios::tests::replays_corpus replays newly committed seeds
-  through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 250 implementation,
-  106 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 526 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B001 (Oracle harness against the pinned LiteLLM), B171 (Direct helper oracle and URL path
-  encoding), B856 (Management oracle namespaces and Postgres test fixture), B126 (Redis, Redis Cluster and Valkey),
-  B900 (Multipart oracle). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
-
-
-  A seeded polling fixture declares its logical owner separately from the public response. Seed the MIT raw response
-  record and the native B935 private owner envelope through their typed fixture adapters; this is schema setup only,
-  not an implementation of authorization. Public parity steps use the allowed logical owner; denied native ownership
-  is checked by B938 native HTTP tests.
+  B1139 owns only the declarative scenario boundary, bounded decoding, capture substitution, comparison orchestration,
+  artifact redaction and lifecycle coordination. It owns no LiteLLM source range, so there is no MIT or enterprise
+  source reference to port. B001 owns legacy HTTP case types and gateway/provider plumbing; B860 owns Postgres setup;
+  B126 owns Redis transport; B935 owns polling state/value semantics; B900 owns multipart and bytes decoding; route
+  behavior, provider dispatch, authentication, authorization, product database writes and response error mapping stay
+  with their owners.
 scope:
   paths:
+  - Cargo.toml
+  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/lib.rs
   - tools/oracle/src/error.rs
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/http.rs
+  - tools/oracle/src/http/**
   - tools/oracle/src/http_scenarios.rs
   - tools/oracle/src/http_scenarios/**
-  - Cargo.toml
-  - Cargo.lock
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/artifacts.rs
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/gateway.rs
+  - tools/oracle/src/process.rs
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/http_scenarios.rs
   - tools/oracle/fuzz/corpus/http_scenarios/**
-  - tools/oracle/src/case.rs
-  - tools/oracle/src/case/**
-  - tools/oracle/src/runner.rs
-  - tools/oracle/src/runner/**
-  - tools/oracle/src/mock.rs
-  - tools/oracle/src/mock/**
-  - tools/oracle/src/compare.rs
-  - tools/oracle/src/compare/**
-  - tools/oracle/src/main.rs
   - tools/oracle/cases/harness/http-scenarios/**
   - tools/oracle/fixtures/http-scenarios/**
   - tools/postgres-fixture/Cargo.toml
+  - tools/postgres-fixture/src/lib.rs
+  - tools/postgres-fixture/src/fixtures.rs
   - tools/postgres-fixture/src/fixtures/http_scenarios.rs
-  - tools/postgres-fixture/src/fixtures/http_scenarios/**
   lint_tables: false
 references: []
 dod:
-- text: 'isolated state: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-isolated-state
-- text: 'capture substitution: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-capture-substitution
-- text: 'secret capture redaction: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-secret-capture-redaction
-- text: 'changed state detected: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-changed-state-detected
-- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rejects-unknown-field
-- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rejects-duplicate-field
-- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-detects-changed-peer
-- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rejects-oversize-input
-- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
+- text: 'A no-kind B001 document and a one-step `kind: http_scenario` document with omitted `env`, setup lists and
+    capture secret retain B001 behavior, use `env: {}`, use empty setup lists, and decode the capture as `secret: false`.'
   proof:
   - case-preserves-legacy-cases
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
+  - parser-corpus
+- text: 'The decoder rejects root `bogus`, duplicate `name`, a 16,777,217-byte document, 0 or 33 steps, 257 setup
+    rows and 16,777,217 fixture bytes with the exact six messages stated above before process startup.'
+  proof:
+  - case-rejects-unknown-field
+  - case-rejects-duplicate-field
+  - case-rejects-oversize-input
+  - case-rejects-step-and-fixture-limits
+- text: 'The two reserved-env inputs return `scenario env entry "LITELLM_LOCAL_MODEL_COST_MAP" is reserved` and
+    `scenario env entry "LITELLM_MASTER_KEY" is reserved`, respectively, without starting a gateway or provider.'
+  proof:
+  - case-rejects-reserved-env
+- text: 'The two peers receive identical logical setup rows in the users, teams, memberships, budgets, JWT mappings,
+    keys, managed files, managed objects, vector stores and Redis order, while physical names differ and a changed row
+    is reported under its `/steps/<index>` pointer.'
+  proof:
+  - case-isolated-state
+  - case-detects-changed-peer
+  - harness-self-check
+- text: 'A non-secret step-0 `/status` capture reaches step 1 path/body substitution, a same-step placeholder is not
+    sent, and a missing `/missing` pointer returns `scenario step 0 capture status missing pointer /missing`.'
+  proof:
+  - case-capture-substitution
+  - case-missing-capture
+- text: 'A secret `status` capture can populate a later path or JSON/body value, but step 1 header
+    `x-scenario-status: ${capture.status}` returns `scenario step 1 header "x-scenario-status" cannot use secret
+    capture "status"` without sending the request.'
+  proof:
+  - case-rejects-secret-capture-header
+- text: 'The value `sk-scenario-secret` is absent from client, provider, diff and gateway-log artifacts, which contain
+    `[REDACTED]` instead, and the redaction test also proves the secret body/path case.'
+  proof:
+  - case-secret-capture-redaction
+- text: 'Per-step comparison checks exact status, response `error.type`, `error.param`, `error.code`, selected response
+    and provider headers, provider method/path/body and cumulative request count, reporting the first selected pointer.'
+  proof:
+  - case-changed-state-detected
+  - case-detects-changed-peer
+- text: 'The 120-second deadline covers setup, readiness, ordered requests and teardown; success, decoder failure,
+    timeout and provider failure all tear down children, and timeout returns `scenario exceeded 120 seconds`.'
+  proof:
+  - case-deadline-and-cleanup
+- text: '`decode_http_scenario` is the production decoder used by loading, the fuzz target and `replays_corpus`, with
+    committed seeds for substitution, duplicate fields, reserved env, secret-header rejection and each byte/row limit.'
   proof:
   - parser-corpus
-- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
+- text: 'Self-check passes both scenario fixtures plus the unchanged chat and health directories; the polling fixture
+    uses key `litellm:polling:response:litellm_poll_scenario`, TTL `3600`, and B935 value encoding.'
   proof:
-  - behavior-tests
   - harness-self-check
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    why: 'A scenario behavior module is absent, or the filter reaches only the corpus replay and misses lifecycle and comparison assertions.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::/) - test(/::replays_corpus$/)'
   - id: case-isolated-state
-    why: the isolated-state behavior or its assertions are absent
+    why: 'The ordered fixture journal, equal logical rows or distinct physical namespaces are not preserved between the two gateways.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::isolated_state($|::)/)'
   - id: case-capture-substitution
-    why: the capture-substitution behavior or its assertions are absent
+    why: 'The step-0 `/status` value does not reach step 1, or a same-step `${capture.status}` is sent instead of stopping before the request.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::capture_substitution($|::)/)'
   - id: case-secret-capture-redaction
-    why: the secret-capture-redaction behavior or its assertions are absent
+    why: '`sk-scenario-secret` leaks into one of the four artifacts, or the later secret path/body substitution is not redacted before serialization.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::secret_capture_redaction($|::)/)'
+  - id: case-rejects-secret-capture-header
+    why: 'A secret `${capture.status}` in `x-scenario-status` is accepted, produces no exact decode error, or starts step 1.'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_secret_capture_header($|::)/)'
   - id: case-changed-state-detected
-    why: the changed-state-detected behavior or its assertions are absent
+    why: 'A changed status, response error field, selected header, provider request or cumulative count lacks the first expected `/steps/<index>` pointer.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::changed_state_detected($|::)/)'
   - id: case-rejects-unknown-field
-    why: the rejects-unknown-field behavior or its assertions are absent
+    why: '`bogus` reaches YAML parsing or process startup instead of returning `scenario field "bogus" is not allowed`.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_unknown_field($|::)/)'
   - id: case-rejects-duplicate-field
-    why: the rejects-duplicate-field behavior or its assertions are absent
+    why: 'A second root `name` is accepted or does not return `duplicate field "name"` before startup.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_duplicate_field($|::)/)'
   - id: case-detects-changed-peer
-    why: the detects-changed-peer behavior or its assertions are absent
+    why: 'A changed logical row, response status/type or provider body from one gateway is not attributed to its step pointer.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::detects_changed_peer($|::)/)'
   - id: case-rejects-oversize-input
-    why: the rejects-oversize-input behavior or its assertions are absent
+    why: 'A 16,777,217-byte document is parsed or lacks the exact `scenario input exceeds 16777216 bytes` diagnostic.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_oversize_input($|::)/)'
+  - id: case-rejects-step-and-fixture-limits
+    why: 'The 0/33-step, 257-row or 16,777,217-byte fixture boundaries accept input or emit a wrong literal error.'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_step_and_fixture_limits($|::)/)'
+  - id: case-rejects-reserved-env
+    why: 'Either reserved env input overrides an injected child value, starts a process, or misses its exact key-specific error.'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_reserved_env($|::)/)'
+  - id: case-missing-capture
+    why: 'Pointer `/missing` or a same-step capture reference is silently dropped, substituted as empty text, or sent to a gateway.'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::missing_capture_is_error($|::)/)'
+  - id: case-deadline-and-cleanup
+    why: 'The 120-second budget excludes a lifecycle phase, or a success, parser, timeout or provider failure leaves a child process alive.'
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::deadline_and_cleanup($|::)/)'
   - id: case-preserves-legacy-cases
-    why: the preserves-legacy-cases behavior or its assertions are absent
+    why: 'A no-kind B001 case changes its parse or runner result after scenario support is loaded.'
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::preserves_legacy_cases($|::)/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_scenarios)"
-      && test -f tools/oracle/fuzz/fuzz_targets/http_scenarios.rs && grep -qF "decode_http_scenario" tools/oracle/fuzz/fuzz_targets/http_scenarios.rs
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::replays_corpus$/)'
+    why: 'The bounded decoder is not the fuzz/replay entry point, or no new corpus seed exercises a scenario boundary.'
+    run: test -f tools/oracle/fuzz/fuzz_targets/http_scenarios.rs && grep -qF decode_http_scenario tools/oracle/fuzz/fuzz_targets/http_scenarios.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_scenarios)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::replays_corpus$/)'
   - id: harness-self-check
-    why: new harness fixtures or backwards-compatible HTTP modes fail
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/http-scenarios)"
-      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/http-scenarios
-      tools/oracle/cases/chat tools/oracle/cases/health
-oracle_cases: []
+    why: 'Either scenario fixture, or the unchanged chat/health directories, produces a LiteLLM-versus-betterlite difference.'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/http-scenarios)" && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/http-scenarios tools/oracle/cases/chat tools/oracle/cases/health
+oracle_cases:
+- tools/oracle/cases/harness/http-scenarios/capture-substitution.yaml
+- tools/oracle/cases/harness/http-scenarios/polling-setup.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'B001 owns the existing `HttpCase` wire format, `decode_http_case`, gateway startup, mock provider protocol, artifact root and legacy comparator; B1139 invokes these contracts and adds only the scenario branch.'
+- 'B860 owns `POSTGRES_TEST_URL` selection, testcontainers fallback, schema SQL, Postgres TLS, cleanup and typed users, teams, memberships, budgets, JWT mappings, keys, managed files, managed objects and vector stores; B1139 submits rows in the stated order.'
+- 'B126 owns Redis, Redis Cluster and Valkey clients, connection errors and transport retries; B1139 passes an injected transport and does not implement a product cache.'
+- 'B935 owns polling state transitions, TTL `3600`, the `litellm:polling:response:` and `litellm_poll_` prefixes, serialized values, public projections and authorization; B1139 creates only the fixture entry.'
+- 'B900 owns multipart and bytes body decoding, fixture bytes and their limits; B1139 forwards B900 typed request bodies and does not parse their bytes again.'
+- 'Route handlers, provider dispatch, authentication, authorization, product database writes and response error mapping belong to the consuming route/data/provider tasks; no FastAPI handler or betterlite route function is called directly.'
+- 'B1139 owns no LiteLLM path at commit d665dc1a6315847fcad6cc2c1264ceb47c06abce, so there is no MIT callable or enterprise code to reimplement.'
 pitfalls:
-- Captured response IDs are substituted only at declared JSON-pointer/path placeholders; secret values cannot enter
-  artifacts.
-- Seed the two proxies into distinct Postgres databases and Redis prefixes so one proxy cannot satisfy the other
-  proxy's polling lookup.
+- 'The polling fixture id `litellm_poll_scenario` must be combined with the B935 prefix to form `litellm:polling:response:litellm_poll_scenario`; a B126 cache key makes the B938 read miss even when the value and TTL are correct.'
+- 'The journal order puts budgets before JWT mappings and JWT mappings before keys; iterating the input schema declaration order will expose a different write sequence.'
+- 'Config substitution is deliberately narrower than capture substitution: `${capture.status}` belongs in a later request, never in `config`, while `{{upstream}}`, `{{postgres}}` and `{{redis}}` must render exact child URLs.'
+- 'Reserved names are rejected before injected values are installed: both `LITELLM_LOCAL_MODEL_COST_MAP=false` and `LITELLM_MASTER_KEY=caller-key` must produce their key-specific literal error rather than override `True` or `oracle-master`.'
+- 'JSON Pointer decoding must apply `~1` before property lookup for `/data~1id` and `~0` for `/data~0id`; splitting on dots captures a different property.'
+- 'Capture availability advances after a step, so `${capture.status}` in the producing step is an error even when that response eventually contains `/status`.'
+- 'The secret-header guard runs at decode time, before a request can be sent; accepting the placeholder and relying on artifact redaction would leak a secret to the gateway.'
+- 'Redacting only the final diff leaves `sk-scenario-secret` in the client or provider record; sanitize the in-memory record before each artifact is serialized or copied.'
+- 'Provider request count is cumulative across steps; resetting the mock queue or counter at step 1 hides an extra request in step 0.'
+- 'The 120-second deadline includes teardown, so a gateway that answers `/health/liveliness` at 119 seconds but takes two seconds to reap still returns `scenario exceeded 120 seconds`.'
 review_level: security
 budget:
-  max_changed_lines: 530
+  max_changed_lines: 700
   max_new_expects: 0

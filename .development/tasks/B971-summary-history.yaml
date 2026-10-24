@@ -1,186 +1,146 @@
 id: B971
-title: Summary history
+title: Preserve history and build compaction summary prompts
 description: >-
-  Build compacted history, trigger token count, summary prompt and last-user-question preservation from typed Anthropic
-  messages. Use local B013 token counting with bounded CPU work, preserve compaction block boundaries and metadata
-  provenance, and never fetch tokenizer assets.
+  Implement summary_history for all compact.py helpers at L630-L1016 and apply_client_compaction_block_history
+  L1114-L1157, plus _PROPAGATED_METADATA_KEYS and _SUMMARY_TAG_RE. These operate on parsed messages and response
+  text; provider response byte decoding stays with the provider. Use B964 message conversion with
+  preserve_midturn_system=true, B2431 tool conversion, B013 token counting, B968 constants/results and B969's
+  identity/tool-result predicates. No summary is sent here. Do not depend on B972 or its execution part, which
+  call these helpers.
 
-
-  Implement crates/betterlite-core/src/api/summary_history.rs. Use SummaryHistoryInput and SummaryHistoryResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions latest_compaction_cut, summary_in_system, trigger_token_threshold,
-  last_user_question_preserved, client_compaction_history under api::summary_history::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::SummaryHistory in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {summary_history: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _find_latest_compaction_index
-  (L630-L646); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _slice_around_compaction_block
-  (L649-L676); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _strip_compaction_blocks
-  (L679-L698); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _augment_system_with_summary
-  (L701-L718); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _resolve_trigger_tokens
-  (L721-L752); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _build_summary_prompt
-  (L755-L762); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _propagate_metadata (L765-L782);
-  litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _count_effective_tokens (L785-L855);
-  litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _system_to_text (L858-L874); litellm/llms/anthropic/pass_through/context_management/editors/compact.py:
-  _select_last_user_question (L877-L912); litellm/llms/anthropic/pass_through/context_management/editors/compact.py:
-  _extract_summary_text (L915-L922); litellm/llms/anthropic/pass_through/context_management/editors/compact.py:
-  _system_to_openai_message (L925-L943); litellm/llms/anthropic/pass_through/context_management/editors/compact.py:
-  _build_summary_messages (L946-L996); litellm/llms/anthropic/pass_through/context_management/editors/compact.py:
-  _is_user_message (L999-L1000); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: _append_text_to_content
-  (L1003-L1016); litellm/llms/anthropic/pass_through/context_management/editors/compact.py: apply_client_compaction_block_history
-  (L1114-L1157). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 286 owned nonblank/non-comment/non-docstring Python lines (358 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 306 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 556 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B013 (Model cost map, provider capability data and token counting), B171 (Direct helper
-  oracle and URL path encoding), B958 (Messages errors), B1087 (Api boundaries), B969 (Summary model access). These
-  are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on
-  the provider and keys/data branches.
+  Register HelperCall::SummaryHistory actions for slicing, trigger, prompts, metadata, count, extraction and
+  client_history. Token-count fixtures record the exact calls and use scripted counts plus a real B013 case.
+  Independently invoke the Python helpers, including their diagnostic fallbacks. Keep message copying and
+  concatenation separate from transport. Tests under api::summary_history cover each named case below.
+  The owned spans have 358 nonblank/non-comment physical lines plus 19 metadata/regex lines; allow 310 production,
+  170 tests, 160 fixtures, 100 adapters and 35 wiring, 775 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/summary_history.rs
   - crates/betterlite-core/src/api/summary_history/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/summary_history.rs
-  - tools/oracle/src/helpers/summary_history/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/summary_history.py
-  - tools/oracle/helpers/summary_history/**
   - tools/oracle/fuzz/corpus/helper_case/summary_history-*
   - tools/oracle/cases/helpers/summary-history/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L630-L1016
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L73-L92
+  why: The complete metadata allowlist and case-insensitive multiline summary tag matcher.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L630-L855
+  why: Latest-block slicing, strict trigger validation, prompt selection, metadata and downstream-shaped token counting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L858-L1016
+  why: Text flattening differs between counting and summary prompts; user-turn merging avoids consecutive user messages.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1114-L1157
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Client-supplied compaction blocks take effect even without a context_management edit.
 dod:
-- text: 'latest compaction cut: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-latest-compaction-cut
-  - oracle
-- text: 'summary in system: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-summary-in-system
-  - oracle
-- text: 'trigger token threshold: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-trigger-token-threshold
-  - oracle
-- text: 'last user question preserved: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-last-user-question-preserved
-  - oracle
-- text: 'client compaction history: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-client-compaction-history
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    latest_compaction_boundary puts two compaction blocks in one turn and another in an earlier turn. Select the
+    final block by message then block index regardless of role; remove all earlier messages and same-turn blocks,
+    retain that block and the following tail. No block returns original messages and null. Stripping removes all
+    compaction blocks, drops turns whose list becomes empty (including already-empty lists), leaves scalar content
+    and other fields unchanged, and does not mutate inputs.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    summary_system_shapes prefixes summary S as "Previous conversation summary: S" for null system, and
+    "Previous conversation summary: S\n\nX" for string X. A list modifies only its first text block, preserving
+    cache_control and using empty text for null/missing text; no text block inserts a new text block first.
+    Null-system prefixes rstrip trailing whitespace. Counting flattens nonempty string text blocks with one newline;
+    summary system messages join them with two newlines, ignore non-text/nonstrings and return null for no text.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    compaction_trigger_validation defaults missing/null/false/empty trigger and missing value to 150000.
+    Truthy non-dict trigger warns trigger_not_a_dict_using_default; type=tool_uses warns
+    unsupported_trigger_type_tool_uses_using_input_tokens but still uses its integer value. Noninteger value "60000"
+    warns trigger_value_not_int_using_default and returns 150000. Value 50000 succeeds, while 49999 and booleans
+    raise status 400 with "context_management.compact_20260112.trigger.value must be at least 50000 tokens";
+    no type/param/code is added by this exception helper. Combined warnings retain source order.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    summary_instruction_selection preserves custom instructions "  summarize  " exactly and does not append a
+    tool prohibition. Missing/nonstring/whitespace-only instructions use B968's exact default instructions, adding
+    " Do not call any tools while writing this summary; respond with text only." only for nonempty tools.
+    extract_summary_text accepts case-insensitive multiline <SUMMARY> A\nB </SUMMARY>, returns "A\nB", picks the
+    first non-greedy match, and returns null for absent tags, empty text or a whitespace-only first match even if
+    a later summary is nonempty.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    summary_metadata_allowlist retains present values including null for exactly user_api_key,user_api_key_alias,
+    user_api_key_team_id,user_api_key_team_alias,user_api_key_user_id,user_api_key_user_email,user_api_key_org_id,
+    user_api_key_project_id,user_api_key_end_user_id,user_api_end_user_max_budget,user_api_key_model_max_budget,
+    user_api_key_team_model_max_budget,user_api_key_user_model_max_budget,user_api_key_end_user_model_max_budget,
+    litellm_call_id,litellm_parent_otel_span. Missing/empty parent returns {}; arbitrary client keys and
+    allowed_model_region are dropped. The latter travels separately in B2432.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    effective_token_components strips compaction blocks, converts messages with preserve_midturn_system=true
+    and tools to function schema, and counts model/messages/tools once. A nonempty compaction content adds a
+    separate text count; system text adds another. Counts 10,3,4 return 17; null compaction prevents that 3.
+    Translation failure logs debug "compact_20260112: anthropic→openai translation failed during token count, falling back to raw messages: broken"
+    and uses stripped raw messages; tool conversion failure logs the analogous "anthropic→openai tools translation failed during token count, falling back to raw tools: broken"
+    and passes raw tools. Empty tools become null. Counter errors propagate to the execution task.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    summary_messages_merge_user prepends usable system text, strips compaction blocks and preserves midturn system
+    through B964. Final user content Q becomes "Q\n\nP" for prompt P; null/empty becomes P; a list appends
+    {type:text,text:P}; an unexpected scalar 7 becomes [7,{type:text,text:P}]. An assistant final turn or no
+    history adds {role:user,content:P}. Translation failure warns
+    "compact_20260112: anthropic→openai translation failed when building summary call; falling back to raw shape: broken"
+    and still performs system prepend and user merge on raw stripped history.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    last_real_user_question skips tool_result-only and empty-list user turns, strips tool_result blocks from mixed
+    user content, retains images/text/unknown blocks and message fields, and accepts scalar null/empty user content
+    unchanged. No eligible turn returns [{role:user,content:"Please continue based on the conversation summary above."}].
+    Non-user turns do not qualify.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    client_compaction_without_edit returns null with no compaction block. With one, preserve all post-block turns,
+    prefix only a nonempty string summary, strip blocks and use the synthetic/last-question fallback only if no
+    downstream messages remain. Return applied_edits=[],compaction_block=null,iterations_usage=null; emit info
+    "compact_20260112: client compaction block in message history; applying slice-only forwarding (no context_management edit)"
+    and, for S, "compact_20260112: compaction summary added to main call system prefix (1 chars)".
+  proof: [behavior-tests, oracle, helper-python]
+- text: History fixtures and the summary_history tag are new and independently executable.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::/) - test(/::replays_corpus$/)'
-  - id: case-latest-compaction-cut
-    why: the latest-compaction-cut behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::tests::latest_compaction_cut($|::)/)'
-  - id: case-summary-in-system
-    why: the summary-in-system behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::tests::summary_in_system($|::)/)'
-  - id: case-trigger-token-threshold
-    why: the trigger-token-threshold behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::tests::trigger_token_threshold($|::)/)'
-  - id: case-last-user-question-preserved
-    why: the last-user-question-preserved behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::tests::last_user_question_preserved($|::)/)'
-  - id: case-client-compaction-history
-    why: the client-compaction-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::tests::client_compaction_history($|::)/)'
+    why: a history boundary, literal prompt or metadata field is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_history::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/summary_history.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the history comparison does not invoke the pinned helper
+    run: test -f tools/oracle/helpers/summary_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/summary_history-*)"
-      && grep -qE "^[[:space:]]+summary_history:" tools/oracle/fuzz/corpus/helper_case/summary_history-* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the shared helper parser does not recognize summary_history
+    run: grep -qE '^[[:space:]]+summary_history:' tools/oracle/fuzz/corpus/helper_case/summary_history-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: there are no newly authored history scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/summary-history)"
 oracle_cases:
-- tools/oracle/cases/helpers/summary-history/latest-compaction-cut.yaml
-- tools/oracle/cases/helpers/summary-history/summary-in-system.yaml
-- tools/oracle/cases/helpers/summary-history/trigger-token-threshold.yaml
-- tools/oracle/cases/helpers/summary-history/last-user-question-preserved.yaml
-- tools/oracle/cases/helpers/summary-history/client-compaction-history.yaml
+- tools/oracle/cases/helpers/summary-history/latest-compaction-boundary.yaml
+- tools/oracle/cases/helpers/summary-history/summary-system-shapes.yaml
+- tools/oracle/cases/helpers/summary-history/compaction-trigger-validation.yaml
+- tools/oracle/cases/helpers/summary-history/summary-instruction-selection.yaml
+- tools/oracle/cases/helpers/summary-history/summary-metadata-allowlist.yaml
+- tools/oracle/cases/helpers/summary-history/effective-token-components.yaml
+- tools/oracle/cases/helpers/summary-history/summary-messages-merge-user.yaml
+- tools/oracle/cases/helpers/summary-history/last-real-user-question.yaml
+- tools/oracle/cases/helpers/summary-history/client-compaction-without-edit.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B969 owns _as_object L97-L98, _is_tool_result_block
-  L101-L102, _SummaryAcompletion.__call__ L120-L125, _CreateRateLimitDescriptors.__call__ L129-L137, _AddModelRateLimitDescriptor.__call__
-  L141-L147, _CreateOrgRateLimitDescriptors.__call__ L151-L153, _GetProxyHook.__call__ L157-L157, _ShouldRateLimit.__call__
-  L161-L167, _read_summary_model_setting L170-L177, _read_summary_max_tokens_setting L180-L194, _check_summary_model_access
-  L197-L392.'
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B970 owns _check_summary_model_budget
-  L395-L500, _without_parallel_request_gauges L503-L506, _without_parallel_request_gauge L509-L518, _check_summary_model_rate_limit
-  L521-L627.'
-- 'litellm/llms/anthropic/pass_through/context_management/editors/compact.py: B972 owns _call_summary_model L1019-L1081,
-  _extract_response_text L1084-L1102, _extract_usage L1105-L1111, apply_compact_20260112 L1160-L1380.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B969 owns compact.py L97-L392 primitive predicates/settings/access; B970 owns L395-L627 budget and rate checks.
+- B2432 owns compact.py L1019-L1111 and L1160-L1380 provider calls/execution, and B972 owns dispatcher.py.
+- B013 owns tokenization and model metadata; B964/B2431 own adapter message/tool conversion and their internal warnings.
 pitfalls:
-- 'compact.py:816 emits the diagnostic ''compact_20260112: anthropic→openai translation failed during token count,
-  falling back to raw messages: %s''; retain its level and fallback instead of turning it into a hard error.'
-- 'compact.py:972 emits the diagnostic ''compact_20260112: anthropic→openai translation failed when building summary
-  call; falling back to raw shape: %s''; retain its level and fallback instead of turning it into a hard error.'
-review_level: standard
+- A compaction block can appear on any role and within a larger content array; slicing only whole turns loses the boundary.
+- Counted system blocks use one newline, whereas summary-request system blocks use two.
+- A successful summary needs one eligible user turn; slice-only forwarding must keep the entire recent tail.
+review_level: security
 budget:
-  max_changed_lines: 560
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

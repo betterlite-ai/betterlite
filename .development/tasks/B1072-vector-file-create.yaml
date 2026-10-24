@@ -1,204 +1,113 @@
 id: B1072
-title: Vector file create
+title: Attach vector files and list attachments through the SDK
 description: >-
-  Implement vector-store file create/list calls using configured provider transforms and registry credentials. Preserve
-  chunking strategy, attributes and list pagination without duplicating storage upload.
+  Implement create/acreate/list/alist from vector_store_files/main.py:54-303 in core::api::vector_file_create.
+  B1111 defaults a falsey provider to openai and overlays registry credentials before GenericLiteLLMParams
+  is constructed with vector_store_id. B174 converts the local provider string to its enum before B010's
+  provider-config selection, using the provider already resolved before
+  that overlay. Create/list filter merged locals plus kwargs through B1071; create then explicitly restores
+  its file_id argument. Call B2480's HTTP handlers with B527's provider config and preserve B011 exception
+  mapping. extra_query is dropped by create and forwarded by list. All optionals default null.
 
-
-  Managed ID decoding is in B1075 proxy resolution, not SDK file calls. Only OpenAI has a vector store files config
-  at utils.py:9564-9573; other providers raise the source ValueError. Timeout defaults to request_timeout from REQUEST_TIMEOUT.
-
-
-  Implement crates/betterlite-core/src/api/vector_file_create.rs. Use VectorFileCreateInput and VectorFileCreateResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions attach_vector_file, vector_file_create_chunking, vector_file_list,
-  vector_file_provider_error, vector_file_unsupported_p_dfc7 under api::vector_file_create::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_file_create::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorFileCreate in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_file_create: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/vector_store_files/main.py: acreate (L55-L103); litellm/vector_store_files/main.py:
-  create (L107-L178); litellm/vector_store_files/main.py: alist (L182-L231); litellm/vector_store_files/main.py:
-  list (L235-L303). Abstract/protocol declarations map to native types and synchronous/async wrappers share one
-  implementation; a partial function span is the explicit preparation/transition stage described above, with typed
-  values passed to the following stage.
-
-
-  Sizing: 225 owned nonblank/non-comment/non-docstring Python lines (225 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 245 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 528 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1062 (Vector store registry), B1071 (Vector file contracts), B1087 (Api boundaries),
-  B1111 (Vector file provider selection), B527 (OpenAI vector stores and attached files), B002 (Load LiteLLM config.yaml
-  into typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  Logging records model=null, optional_params containing vector_store_id plus filtered request fields,
+  and litellm_params containing vector_store_id,litellm_call_id then non-null GenericLiteLLMParams fields.
+  Async wrappers retain context and await either the returned coroutine or immediate result. Their flags
+  acreate/alist are popped and select async only for true. timeout=null or 0 falls back to REQUEST_TIMEOUT,
+  default 6000; load the existing setting through betterlite-config. Add VectorFileCreateList to B2401,
+  with actual public SDK calls and production Rust execution. Keep all tests under api::vector_file_create.
+  Count 225 nonblank/non-comment lines; budget 225 code, 160 tests, 95 adapters, 100 fixtures and 55 config/
+  corpus/wiring lines, 635 within 680. B1071 owns byte parsing; no helper adapter or new parser is needed.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_file_create.rs
   - crates/betterlite-core/src/api/vector_file_create/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/vector_file_create.rs
   - crates/betterlite-config/src/api/vector_file_create/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-create-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/vector_file_create.rs
-  - tools/oracle/src/helpers/vector_file_create/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/vector_file_create.py
-  - tools/oracle/helpers/vector_file_create/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_file_create-*
-  - tools/oracle/cases/helpers/vector-file-create/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_file_create_list.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_file_create_list.py
+  - tools/oracle/cases/sdk-http/vector-file-create-list/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L37-L38
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L52-L303
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L54-L303
+  why: Whole SDK create/list functions establish credential-before-parameter ordering and the different extra_query handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9563-L9573
+  why: The file provider selector supports only OpenAI at this pin.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
+  why: Public attachment calls use REQUEST_TIMEOUT's 6000-second default when their timeout is falsey.
 dod:
-- text: 'attach vector file: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-attach-vector-file
-  - oracle
-- text: 'vector file create chunking: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vector-file-create-chunking
-  - oracle
-- text: 'vector file list: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-list
-  - oracle
-- text: 'vector file provider error: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vector-file-provider-error
-  - oracle
-- text: 'vector file unsupported provider: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vector-file-unsupported-provider
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    attach_file_projection sends vs_a,file_a,attributes={tag:x,count:2},chunking_strategy={type:static,
+    static:{max_chunk_size_tokens:800,chunk_overlap_tokens:400}},unknown=1,extra_query={ignored:y}.
+    POST /v1/vector_stores/vs_a/files contains file_id=file_a,attributes={tag:x},the static chunking map,
+    no unknown and no query. Missing optionals produce only file_id; explicit attributes={} remains {}.
+    extra_body={file_id:file_b} overrides the body's id in the downstream handler. Mock 200
+    {id:file_b,object:vector_store.file,status:in_progress} is returned, in sync and async modes.
+  proof: [sdk-tests, oracle, python-adapter]
+- text: >-
+    list_attachment_query sends after=file_a,before=file_z,filter=failed,limit=0,order=asc,
+    extra_query={limit:2,trace:x}. GET query retains after,before,filter,order,trace and uses limit=2.
+    With no options it sends no pagination query; null fields disappear and an empty after survives.
+    Mock {object:list,data:[],first_id:null,last_id:null,has_more:false} returns unchanged.
+  proof: [sdk-tests, oracle, python-adapter]
+- text: >-
+    attachment_registry_precedence starts with provider omitted or "",caller api_key=sk-caller and
+    registry {api_key:sk-registry,custom_llm_provider:azure}. Provider selection remains openai and
+    Authorization is "Bearer sk-registry"; registry api_base points to the mock. Registry failure silently
+    uses the caller key. Explicit azure fails before HTTP with source message "Vector store file create is not supported for azure"
+    or "Vector store file list is not supported for azure"; unknown "bogus" fails enum conversion. Final
+    SDK failure is APIConnectionError,status=500,type=null,param=null,code=null. Compare message only with
+    the betterlite wording exclusion; no proxy code="500" is added.
+  proof: [sdk-tests, oracle, python-adapter]
+- text: >-
+    attachment_timeout_context observes handler timeouts 6000,6000,7 for null,0,7 and 12,12,7 with
+    REQUEST_TIMEOUT=12. Native logging includes model=null,vector_store_id=vs_a,call id null or call-a
+    and the untransformed create/list optional fields. Boolean true selects async; integer 1 does not.
+    loads_request_timeout uses the config loader to assert unset=6000,"12"=12 and "bad" is an error;
+    committed config seeds replay. B2480 separately tests that list omits this value at its HTTP send.
+  proof: [sdk-tests, config-tests, config-corpus]
+- text: >-
+    attachment_provider_failure supplies HTTP 401 {error:{message:bad,type:invalid_api_key,param:null,code:invalid_api_key}}.
+    Both operations make one request with retries disabled and return SDK AuthenticationError,status=401,
+    type=null,param=null,code=null through B011. New SDK seeds cover both operation tags and modes.
+  proof: [sdk-tests, oracle, python-adapter, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_create::/)
-      - test(/::replays_corpus$/)'
-  - id: case-attach-vector-file
-    why: the attach-vector-file behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::attach_vector_file($|::)/)'
-  - id: case-vector-file-create-chunking
-    why: the vector-file-create-chunking behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::vector_file_create_chunking($|::)/)'
-  - id: case-vector-file-list
-    why: the vector-file-list behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::vector_file_list($|::)/)'
-  - id: case-vector-file-provider-error
-    why: the vector-file-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::vector_file_provider_error($|::)/)'
-  - id: case-vector-file-unsupported-provider
-    why: the vector-file-unsupported-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::vector_file_unsupported_p_dfc7($|::)/)'
+  - id: sdk-tests
+    why: public attachment creation/listing loses filtering, registry precedence or async context
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_create::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_create::tests::loads_settings($|::)/)'
+    why: attachment timeout settings do not use the real configuration loader
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_create::tests::loads_request_timeout($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-create-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_file_create.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_file_create-*)"
-      && grep -qE "^[[:space:]]+vector_file_create:" tools/oracle/fuzz/corpus/helper_case/vector_file_create-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-file-create)"
+    why: REQUEST_TIMEOUT has no new attachment configuration corpus input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-create-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: python-adapter
+    why: public create/list SDK requests lack a checked independent adapter
+    run: test -f tools/oracle/sdk_http/vector_file_create_list.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: attachment create/list SDK calls lack new parser seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-create-list-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-file-create/attach-vector-file.yaml
-- tools/oracle/cases/helpers/vector-file-create/vector-file-create-chunking.yaml
-- tools/oracle/cases/helpers/vector-file-create/vector-file-list.yaml
-- tools/oracle/cases/helpers/vector-file-create/vector-file-provider-error.yaml
-- tools/oracle/cases/helpers/vector-file-create/vector-file-unsupported-provider.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list/attach-file-projection.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list/list-attachment-query.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list/attachment-registry-precedence.yaml
+- tools/oracle/cases/sdk-http/vector-file-create-list/attachment-provider-failure.yaml
 deviations: []
 out_of_scope:
-- 'litellm/vector_store_files/main.py: B1111 owns _ensure_provider L35-L36, _prepare_registry_credentials L39-L51.'
-- 'litellm/vector_store_files/main.py: B1073 owns aretrieve L307-L346, retrieve L350-L412, aretrieve_content L416-L454,
-  retrieve_content L458-L520.'
-- 'litellm/vector_store_files/main.py: B1074 owns aupdate L524-L566, update L570-L641, adelete L645-L683, delete
-  L687-L749.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1111 owns _ensure_provider/_prepare_registry_credentials; B1073 owns SDK retrieve/content and B1074 owns SDK update/delete in this file.
+- B2480 owns actual create/list handlers, B527 provider transforms, B1071 record/filter logic and B011 final SDK exception mapping.
 pitfalls:
-- Within create\'s provider_config is None branch, preserve raise ValueError(f'Vector store file create is not supported
-  for {custom_llm_provider}') and its nested guards.
-- create uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field spelling in the typed
-  projection.
+- Registry custom_llm_provider does not change the local provider selected before the registry overlay.
+- Create ignores extra_query while list forwards it, so one generic argument projection would change one of them.
+- OpenAI cleans numeric attributes after this wrapper logs the uncleaned request fields.
 review_level: security
 budget:
-  max_changed_lines: 530
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

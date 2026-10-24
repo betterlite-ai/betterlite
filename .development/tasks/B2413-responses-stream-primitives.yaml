@@ -1,0 +1,140 @@
+id: B2413
+title: Responses stream state, decoding and error classification
+description: >-
+  Split B925's lower-level stream primitives into api::responses_stream_primitives. Own
+  every helper/protocol/constant from _get_openai_response_types through the base constructor
+  and _check_max_streaming_duration, L73-L361. B925 keeps the complete _process_chunk
+  function and depends on this state; B926 and B928 also depend on this part rather than
+  on their caller. Replace Python protocol/import-cache scaffolding with typed seams.
+
+  B002 loads LITELLM_MAX_STREAMING_DURATION_SECONDS as an optional Python-compatible float,
+  default unset/null. Inject wall time through B198. Use B004 get_api_base, B206 header
+  processing, B247 logging state and B1114 provider config. B010 supplies BaseLLMException,
+  B184 public exception records and B185/B186 the exception_type dispatcher. Keep
+  background task references until completion and log failures through B012's safe sink.
+  The JSON helpers share decode_responses_stream_value(bytes,limits), returning a typed
+  JSON value even for the misleadingly named _load_json_object; callers narrow its shape.
+  Fuzz that exact decoder under B1087 limits and replay new corpus inputs. B171's
+  responses_stream_primitives operation compares decoded values, classified errors and
+  initialized public/hidden state; scheduling lifetime is a native deterministic test.
+  Source count is 220 nonblank/non-comment lines plus the duration constant. Budget 250
+  implementation, 170 tests, 100 cases, 80 adapters, 55 fuzz, 50 config and 25 wiring: 730.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_stream_primitives.rs
+  - crates/betterlite-core/src/api/responses_stream_primitives/**
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/responses_stream_value.rs
+  - crates/betterlite-core/fuzz/corpus/responses_stream_value/**
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/responses_stream_primitives.rs
+  - crates/betterlite-config/src/api/responses_stream_primitives/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-stream-duration-*
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_stream_primitives.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_stream_primitives.py
+  - tools/oracle/fuzz/corpus/helper_case/responses_stream_primitives-*
+  - tools/oracle/cases/helpers/responses-stream-primitives/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L73-L361
+  why: Primitive guards, error precedence, task lifetime and base state are below processing, hooks and synthetic events.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L105-L108
+  why: Duration is optional with no implicit timeout and uses float conversion without positivity/finite checks.
+dod:
+- text: >-
+    base_stream_state starts finished,failure_handled,yielded_first_chunk,output_started,
+    completed_response_cached,completed_response_logged false; completed_response and
+    cache_hit null; persist_before_logging true; generated text/arguments empty; pending
+    tasks empty. Null/falsy request_data becomes {}. Capture creation wall time and use
+    logging.start_time when present, otherwise now. Hidden fields are model_id from a
+    dict metadata.model_info.id only when string,api_base from B004,custom_llm_provider,
+    and B206 processed additional_headers; snapshot raw headers separately by value.
+    metadata model_info={id:""} keeps "",numeric id becomes null.
+  proof: [primitive-tests, oracle, primitive-adapter]
+- text: >-
+    json_shape_guards decodes {},[],null,"x",1 into their actual shapes; the object-named
+    loader does not reject []. Invalid JSON propagates a decode error. Object/array guards
+    accept only those respective shapes; optional string preserves "" and rejects 1;
+    array-or-empty returns [] for a mapping; string-map accepts {} but rejects {a:1}.
+    The typed-get adapter returns its supplied callable unchanged. Protocol declarations
+    do not create runtime discovery or a new extension registry.
+  proof: [primitive-tests, oracle, primitive-adapter, primitive-corpus]
+- text: >-
+    stream_error_fields accepts dict or attribute objects; absent message becomes
+    "Response API in-stream error",message=7 becomes "7",empty message stays "".
+    Keep type only when string; code string/int becomes string, bool/null/float becomes null.
+    Rate-limit-prefixed type or code and insufficient_quota take precedence and give 429.
+    Otherwise code precedes type: decimal 400..599 is used directly,399/600 are not.
+    server_error=500,rate_limit_exceeded=429,insufficient_quota=429,vector_store_timeout=504.
+    Each of invalid_prompt,invalid_image,invalid_image_format,invalid_base64_image,
+    invalid_image_url,image_too_large,image_too_small,image_parse_error,
+    image_content_policy_violation,invalid_image_mode,image_file_too_large,
+    unsupported_image_media_type,empty_image_file,failed_to_download_image,image_file_not_found,
+    invalid_request_error,context_length_exceeded,content_policy_violation,model_not_found
+    maps to 400; unknown values map to 500. Include numeric and symbolic conflict rows.
+  proof: [primitive-tests, oracle, primitive-adapter]
+- text: >-
+    mapped_stream_failure constructs BaseLLMException with status and body={message,type,code}
+    and message "Error code: 429 - {'error': {'message': 'slow', 'type': None, 'code': 'rate_limit_exceeded'}}"
+    for code=rate_limit_exceeded,message=slow. Pass it to B185/B186 exception_type with empty
+    completion_kwargs/extra_kwargs and return either its returned or raised exception.
+    Preserve mapped SDK class/status/type/param/code from that dispatcher, rather than copying proxy
+    HTTP envelope fields. Fallback eligibility is true for ContentPolicyViolationError,
+    noninteger/missing status,429 or status>=500; status=400/401/404 is false otherwise.
+  proof: [primitive-tests, oracle, primitive-adapter]
+- text: >-
+    duration_boundary and loads_stream_duration_settings use the production loader and
+    clock: unset disables checks; env=2.5 allows elapsed=2.5 and elapsed=2.6 raises Timeout,
+    status=408,message="litellm.Timeout: Stream exceeded max streaming duration of 2.5s (elapsed 2.6s)",
+    SDK type/param/code null,model/provider falling back to "". env=0 allows elapsed=0,
+    env=-1 fails at elapsed=0,env=" +2.5 " parses,env=nan or inf never exceeds the cap,
+    and env=bad fails startup rather than defaulting. Config seeds use the shared B002 decoder.
+  proof: [primitive-tests, primitive-settings, primitive-config-corpus, oracle, primitive-adapter]
+- text: >-
+    background_task_lifetime retains spawned work in a process-wide pending set, removes
+    it on completion and does not report cancellation as failure. A task named "probe"
+    failing with "broken" logs error "probe failed: broken"; successful work logs nothing.
+    Missing running loop returns null. Controlled barriers prove tasks survive loss of
+    the caller reference and are released once done without timing-dependent sleeps.
+  proof: [primitive-tests]
+checks:
+  optional: [mutants]
+  commands:
+  - id: primitive-tests
+    why: base state, error precedence or task lifetime differs
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_primitives::/) - test(/::replays_corpus$/)'
+  - id: primitive-settings
+    why: the duration environment setting is unrecognized or changes its default
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_stream_primitives::tests::loads_stream_duration_settings($|::)/)'
+  - id: primitive-config-corpus
+    why: new duration settings do not exercise the existing YAML loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-stream-duration-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: primitive-corpus
+    why: raw provider JSON has no bounded production decoder replay
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/responses_stream_value.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_stream_value)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_primitives::tests::replays_corpus$/)'
+  - id: primitive-adapter
+    why: stream primitives have no independent pinned helper execution
+    run: test -f tools/oracle/helpers/responses_stream_primitives.py && grep -qE '^[[:space:]]+responses_stream_primitives:' tools/oracle/fuzz/corpus/helper_case/responses_stream_primitives-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/responses-stream-primitives/base-stream-state.yaml
+- tools/oracle/cases/helpers/responses-stream-primitives/json-shape-guards.yaml
+- tools/oracle/cases/helpers/responses-stream-primitives/stream-error-fields.yaml
+- tools/oracle/cases/helpers/responses-stream-primitives/mapped-stream-failure.yaml
+- tools/oracle/cases/helpers/responses-stream-primitives/duration-boundary.yaml
+deviations: []
+out_of_scope:
+- B925 owns _process_chunk whole L363-L532; B926 hooks L534-L952; B927 driver/fallback L954-L1326; B928 synthetic/billing L1329-L1732.
+- B925 owns ProjectQuotaCallback L63-L70 and re-exports these primitives for B942-B945, which own websocket code after L1732.
+- The two call_post_streaming_hooks_for_testing facades have no production caller at the pin and are not implemented.
+pitfalls:
+- A rate_limit-prefixed field overrides even an explicit conflicting numeric code.
+- The object-named JSON helper returns scalar/array values too; shape validation happens in callers.
+- Duration uses a strict greater-than check and accepts negative and nonfinite floats at the pin.
+review_level: standard
+budget:
+  max_changed_lines: 730
+  max_new_expects: 1

@@ -1,79 +1,114 @@
 id: B943
 title: Responses ws native
 description: >-
-  Relay native Responses WebSockets using B009 configured transport, B010 provider endpoint selection and the frame
-  policy service. Keep response events, input capture and terminal logging per connection; apply deployment reasoning
-  defaults only through the prepared first frame and preserve cancellation in both directions.
+  Build the native Responses WebSocket relay and its pinned transcript adapter. The private SDK entry is
+  `_aresponses_websocket(model, websocket, api_base=None, api_key=None, timeout=None, **kwargs)`; it passes the
+  resolved provider call to the injected WebSocket handler and returns the first mapped `error` or `response.failed`
+  exception, or `None` after a clean close. This is not a route: B941 owns authentication and `/responses`,
+  `/v1/responses` and `/openai/v1/responses`, including gateway provider aliases, while B901 supplies the booted
+  transcript and scripted provider socket.
 
+  Preserve the SDK call boundary. `model`, explicit `api_base` and explicit `api_key` go to provider resolution;
+  B931 supplies `provider_model`, `_custom_llm_provider`, `dynamic_api_key` and `dynamic_api_base`, and its routing
+  prefix removal supplies `resolved_model`. The handler receives base in this order:
+  `dynamic_api_base`, `kwargs["api_base"]` through `GenericLiteLLMParams`, `litellm.api_base`, then `None`; the
+  key order is `dynamic_api_key`, `kwargs["api_key"]`, `litellm.api_key`, `litellm.openai_key`, then
+  `get_secret_str("OPENAI_API_KEY")`. `litellm.api_base`, `litellm.api_key` and `litellm.openai_key` default to
+  `None`; an unset `OPENAI_API_KEY` also resolves to `None`. A non-`None` custom provider calls
+  `ProviderConfigManager.get_provider_responses_api_config` with `resolved_model`, `LlmProviders(provider)` and the
+  selected base; a `None` provider passes `responses_api_provider_config=None`. `timeout=None` is forwarded as
+  `None`. The unchanged `user_api_key_dict`, custom provider and logging object are forwarded. `input`,
+  `previous_response_id`, `user_api_key_dict`, `litellm_metadata`, `custom_llm_provider`, `model`, `websocket`,
+  `litellm_logging_obj`, `api_base`, `api_key`, `timeout` and `first_message` are removed from the remaining
+  deployment kwargs; only `input` and `previous_response_id` are removed before request-default extraction.
+  A non-string or absent `first_message` becomes `None`, and `previous_response_id` is a routing hint rather than a
+  provider kwarg. Before resolving the selected base and key, the call writes the result of
+  `infer_openai_data_residency(_custom_llm_provider, dynamic_api_base or kwargs["api_base"] or litellm.api_base)` to
+  `litellm_params_dict["data_residency"]`, then calls `update_from_kwargs` with `optional_params={}`, the resolved
+  model, user and provider; provider configuration and the handler call happen afterward.
 
-  B901 transcripts use the service driver native_responses_relay with typed arguments and scripted client frames.
-  Python calls responses.main.aresponses_websocket and ResponsesAPIStreamingIterator native relay directly with
-  injected transport/clock/logging interfaces; Rust calls this production service. No FastAPI route/global proxy
-  state is recreated. Route authentication and alias parity are exclusively B941/B1125 gateway-driver transcripts.
+  Build metadata from `kwargs["litellm_metadata"] or {}`. Select `kwargs["metadata"]["guardrails"]` when it is
+  truthy, otherwise top-level `kwargs["guardrails"]`, otherwise `[]`; omit `metadata["guardrails"]` when that
+  selected value is falsey. Build `ResponsesWebSocketRequestDefaults` from the optional response parameters. A
+  present `reasoning` suppresses `reasoning_effort`; a scalar `reasoning_effort="high"` is mapped by B918, while
+  `reasoning_effort={"effort": "high"}` is validated as and retained as the same JSON object. `extra_body=None`
+  gives `overrides={}`, and a mapping such as `{"reasoning": {"effort": "low"}, "service_tier": "flex"}` wins
+  over deployment defaults and client-frame fields. A truthy non-mapping `litellm_metadata=[1]` raises
+  `TypeError: 'list' object is not a mapping`; `metadata=["x"]` raises `AttributeError: 'list' object has no
+  attribute 'get'`; and `extra_body=[1]` raises the Pydantic JSON-object `ValidationError`. B918 owns
+  `litellm.reasoning_auto_summary=False` and `LITELLM_REASONING_AUTO_SUMMARY="false"`; this task only forwards its
+  returned value.
 
+  `_first_ws_frame_with_routed_input` returns the exact original frame for `first_message="not-json"`, JSON
+  `"null"`, `routed_input=None`, and an already matching nested or flat input. For a different routed input it
+  rewrites nested `response.input` when `response` is an object with an input, otherwise top-level `input`, preserving
+  every unrelated key. The native event allowlist stores only `response.created`, `response.completed`,
+  `response.failed`, `response.incomplete` and `error`; malformed JSON and `{"type":"response.output_text.delta"}`
+  are dropped without a warning, while a JSON array reaches `.get` and raises `AttributeError`.
+  The text-block mask declaration consumed by B942 contains exactly `input_text`, `output_text` and `text`.
 
-  Implement crates/betterlite-core/src/api/responses_ws_native.rs. Use ResponsesWsNativeInput and ResponsesWsNativeResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Client input logging accepts `{"type":"response.create","input":"hello"}` as
+  `{"role":"user","content":"hello"}` and a user message with
+  `[{"type":"input_text","text":"world"}]` as one `world` message. Empty `input_text`, non-user messages,
+  non-object array items, malformed JSON, malformed client objects and non-`response.create` objects contribute
+  nothing. Every stored client frame calls `pre_call(input=<masked frame>, api_key="")` before backend send when a
+  logging object exists; a missing logging object skips it.
 
+  `backend_to_client` first awaits `backend_ws.recv(decode=False)` and calls `recv()` only after a `TypeError` from
+  that first call. Bytes use UTF-8 decoding. With any output guardrail callback it drops, before masking, exactly
+  `response.output_text.delta`, `response.reasoning_summary_text.delta`, `response.refusal.delta`,
+  `response.function_call_arguments.delta`, `response.output_text.done`, `response.content_part.done`,
+  `response.output_item.done`, `response.function_call_arguments.done`, `response.reasoning_summary_text.done` and
+  `response.reasoning_summary_part.done`; malformed JSON and other event types continue through the relay. The
+  remaining event order is unmask, output-mask, response-wrap, store, then `send_text`. Invalid UTF-8 reaches the
+  outer exception path without a send. `ConnectionClosed` logs debug
+  `Responses WS backend connection closed: %s`; another exception logs exception
+  `Error in responses WS backend_to_client: %s`; both paths run final logging.
 
-  Write adjacent tests.rs behavior functions native_ws_response_create, defaults_on_first_frame, provider_close,
-  client_disconnect, failure_usage_logging under api::responses_ws_native::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
+  `_wrap_response_event` leaves malformed JSON and events without an object `response` unchanged, sends response IDs
+  to B904, and asks encrypted-content wrapping only for `response.output_item.added` and
+  `response.output_item.done`. `_wrap_output_item_encrypted_content` returns no replacement unless
+  `encrypted_content_affinity_enabled=true`, `model_info.id="dep-1"` (or another non-empty string), an object item,
+  and non-empty string `item.encrypted_content` are all present; then it changes only that field through B904.
+  A valid JSON array in `_wrap_response_event` raises `AttributeError` when the response object is read and is handled
+  by the backend exception path.
 
+  `client_to_backend` sends an accepted non-null first frame before receiving later text frames. B942's quota
+  rejection sends exactly `{"type":"error","error":{"type":"rate_limit_exceeded","message":"quota full"}}`,
+  stores and forwards neither the rejected frame nor a `pre_call`, keeps the socket open, and swallows an error while
+  sending that error frame. Other client exceptions are swallowed after debug
+  `Responses WS client_to_backend ended: %s`. `bidirectional_forward` starts backend forwarding, cancels and awaits
+  it when client forwarding ends, swallows `CancelledError`, attempts backend close even when close raises, and
+  returns the first stored failure exception or `None`.
 
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None; litellm_settings.api_key defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY
-  defaults to unset (None). No environment reads occur outside betterlite-config. Test api::responses_ws_native::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
+  `_log_messages` returns for a missing logger or empty `messages`. With input messages it first writes
+  `model_call_details["messages"]`; with no failure it schedules
+  `dispatch_success_handlers(messages, prefer_async_handlers=True)`. With the first stored `error` or
+  `response.failed`, it calls B068's `ResponsesWebSocketTokenUsageProcessor` helpers, uses `service_tier=None` unless
+  exactly one tier is present, constructs `LiteLLMRealtimeStreamLoggingObject`, converts a falsey cost including
+  `None` to `0.0`, records partial usage, formats the traceback, and schedules
+  `dispatch_failure_handlers(exception, traceback, prefer_async_handlers=True)`. For
+  `response.failed` containing `{"type":"server_error","message":"upstream broke","code":"E_UP"}`, the
+  mapped failure has status `500`, type `internal_server_error`, no param, and message
+  `litellm.InternalServerError: Error code: 500 - {'error': {'message': 'upstream broke', 'type': 'server_error', 'code': 'E_UP'}}`.
+  `response.incomplete`, unknown events, and a completed success do not dispatch failure usage; a completed success
+  schedules only the success handlers.
 
+  Own these complete callables and declarations: `main.py:2287-2340`
+  (`_build_litellm_metadata_for_ws`, `_deployment_reasoning_default`, `_first_ws_frame_with_routed_input`,
+  `_build_responses_websocket_request_defaults`); `main.py:2343-2445` (`_aresponses_websocket` and its `@client`
+  decorator); `streaming_iterator.py:1817-1829` (the four event declarations), `1869-1884`
+  (`_wrap_output_item_encrypted_content`), `1900-2099` (the constructor, storage/input/failure/logging methods,
+  wrapping and backend forwarding), and `2439-2477` (`client_to_backend` and `bidirectional_forward`). B942 owns
+  authorization, request defaults, quota rejection and masking; B925 owns shared JSON/error conversion; B904 owns
+  response-ID and encrypted-content codecs; B918 owns scalar reasoning mapping; B173/B010 and provider tasks own
+  provider WebSocket execution, URL construction, TLS and handshake behavior; the B247-B254 owners below own the
+  logging object methods; B068 owns Responses WebSocket usage calculation. This task performs no route registration,
+  database write, environment read in core, decoder or fuzz target, warning emission, or database-backed state write.
+  It loads `litellm_settings.api_base`, `litellm_settings.api_key` and `litellm_settings.openai_key` through B002.
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Use B901 kind: websocket transcripts with the typed native_responses_relay service driver, comparing upstream
-  handshake status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases
-  also compare pre-accept HTTP status. No helper calls a WebSocket route function.
-
-
-  Callable ownership: litellm/responses/main.py: _build_litellm_metadata_for_ws (L2287-L2292); litellm/responses/main.py:
-  _deployment_reasoning_default (L2298-L2306); litellm/responses/main.py: _first_ws_frame_with_routed_input (L2312-L2327);
-  litellm/responses/main.py: _build_responses_websocket_request_defaults (L2330-L2340); litellm/responses/main.py:
-  _aresponses_websocket (L2344-L2445); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming.__init__
-  (L1900-L1932); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._should_store_event (L1934-L1935);
-  litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._store_event (L1937-L1949); litellm/responses/streaming_iterator.py:
-  ResponsesWebSocketStreaming._collect_input_from_client_event (L1951-L1984); litellm/responses/streaming_iterator.py:
-  ResponsesWebSocketStreaming._store_input (L1986-L1989); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._failure_exception
-  (L1991-L1999); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._log_messages (L2001-L2016);
-  litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._record_usage_for_failure (L2018-L2031);
-  litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._wrap_response_event (L2033-L2049); litellm/responses/streaming_iterator.py:
-  ResponsesWebSocketStreaming.backend_to_client (L2051-L2099); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming.client_to_backend
-  (L2439-L2458); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming.bidirectional_forward (L2460-L2477).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 330 owned nonblank/non-comment/non-docstring Python lines (340 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 350 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 42 config tests/seeds and
-  30 wiring; 642 total within the 650-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B012 (Logging pipeline, callback registry and
-  redaction), B171 (Direct helper oracle and URL path encoding), B942 (Responses ws frame policy), B1087 (Api boundaries),
-  B508 (OpenAI Responses replies and event decoding), B905 (Responses parameters), B931 (Responses provider selection),
-  B925 (Responses stream events), B904 (Response id traversal), B901 (Websocket oracle), B002 (Load LiteLLM config.yaml
-  into typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  The source ownership is 346 nonblank, non-comment, non-docstring Python lines. The implementation, seven native
+  behavior cases, seven independent transcripts, adapters and configuration fixtures must fit the 800-line budget.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -99,189 +134,166 @@ scope:
   - tools/oracle/fixtures/responses-ws-native/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
-  why: Setting litellm_settings.openai_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2406-L2406
-  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2287-L2445
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2287-L2340
+  why: The four helpers establish metadata guardrail precedence, mapping validation, routing-frame rewrites, reasoning precedence, optional filtering and extra-body overrides.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2343-L2445
+  why: The decorated SDK entry establishes resolver arguments, base/key precedence, provider-config selection, explicit-kwarg removal and the handler call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1817-L1884
+  why: These declarations and the encrypted-item helper define every stored, failed, output-item and affinity literal consumed by the native relay.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1900-L2099
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2439-L2458
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2460-L2477
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: This complete class slice fixes constructor defaults, input/event storage, first-failure selection, logging order, receive fallback, ten guardrail drops, transformation order and send behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2439-L2477
+  why: These complete forwarding methods define first-frame ordering, the exact quota error frame, swallowed client errors, cancellation, close attempts and returned failure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2884-L2914
+  why: The usage processor supplies the combine and service-tier partition calls made before failed-stream partial usage is recorded.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L959-L1001
+  why: B247's update_from_kwargs call mutates logging metadata before provider execution and receives the exact resolver values from this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1350-L1468
+  why: B249's pre_call receives every stored client frame with the literal empty API key.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2151-L2204
+  why: B250's success dispatch is scheduled with the native messages and prefer_async_handlers=True.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1798-L1825
+  why: The logging object's response-cost calculator is the falsey-to-zero boundary used for failed WebSocket usage.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2206-L2245
+  why: B251 owns partial-usage field writes and failure callback dispatch after the traceback is formatted.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4344-L4352
+  why: B254 defines the LiteLLMRealtimeStreamLoggingObject shape constructed from stored events, combined usage and service tier.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1180-L1197
+  why: B918 supplies scalar reasoning_effort mapping and the false/default reasoning-summary settings consumed by request defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L277
+  why: These globals establish the initial None values for litellm.api_key and litellm.openai_key in the credential chain.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L591-L594
+  why: This initialization establishes litellm.api_base=None before the dynamic and config base fallbacks.
 dod:
-- text: 'native ws response create: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-native-ws-response-create
-  - oracle
-- text: 'defaults on first frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-defaults-on-first-frame
-  - oracle
-- text: 'provider close: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-close
-  - oracle
-- text: 'client disconnect: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-client-disconnect
-  - oracle
-- text: 'failure usage logging: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-failure-usage-logging
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The registered WebSocket service driver runs independent production services before downstream routes exist.
-  proof:
-  - service-python
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    native_ws_response_create sends model="gpt-4o", timeout=7, api_base=None, api_key=None and first_message
+    {"type":"response.create","input":"hello"}. With api_base=None, api_key=None, openai_key=None and
+    OPENAI_API_KEY="sk-env", the mock OpenAI provider receives api_key="sk-env", base=None and timeout=7; it
+    returns created then completed frames, the client sees those frames in order, and the relay returns None after
+    clean backend close.
+  proof: [case-native-ws-response-create, oracle]
+- text: >-
+    request_defaults_and_routing passes first_message="not-json" and separately first_message="null"; each exact
+    string is forwarded unchanged. It passes input="routed", previous_response_id="resp_prev" and
+    {"type":"response.create","response":{"input":"old"},"other":1}; the provider receives response.input="routed",
+    other=1 and no previous_response_id deployment kwarg. It compares flat rewrite, nested rewrite and matching
+    no-op. reasoning_effort="high" with no reasoning yields {"effort":"high"}; reasoning_effort={"effort":"high"}
+    yields the unchanged validated object; reasoning={"effort":"none"} suppresses the effort default; and
+    extra_body={"reasoning":{"effort":"low"},"service_tier":"flex"} wins. The exact malformed inputs
+    litellm_metadata=[1], metadata=["x"] and extra_body=[1] produce TypeError, AttributeError and Pydantic
+    ValidationError respectively.
+  proof: [case-request-defaults-and-routing, oracle]
+- text: >-
+    metadata_and_credentials passes litellm_metadata={"trace":"t1"}, metadata={"guardrails":["pii"]},
+    guardrails=["fallback"], explicit api_base="https://caller.test", explicit api_key="sk-call", and resolver
+    dynamic_api_base="wss://dynamic.test", dynamic_api_key="sk-dynamic"; the handler receives metadata
+    {"trace":"t1","guardrails":["pii"]}, base="wss://dynamic.test" and key="sk-dynamic". Empty metadata
+    guardrails selects top-level ["fallback"], and both empty omits the key. Separate fixtures set
+    litellm_settings.api_base="https://global.test", api_key="sk-global", openai_key="sk-openai", then unset
+    each value to exercise every fallback through OPENAI_API_KEY="sk-env" and finally all None. The provider config
+    is non-None for provider="openai" and None for provider=None.
+  proof: [case-metadata-and-credentials, config-tests, config-corpus, oracle]
+- text: >-
+    event_capture_and_input_log constructs a relay with request_data omitted, non-object litellm_metadata=[1],
+    custom_llm_provider=None, guardrail_callbacks=None, output_guardrail_callbacks=None, quota_callbacks=None,
+    authorized_model=None and request_defaults=None; the fields become {}, empty callback sequences, (), and None.
+    It forwards response.create input="hello" and one user input_text block "world", calls pre_call with api_key="",
+    and stores only response.created and response.completed. It drops response.output_text.delta, {"type":"unknown"},
+    malformed "not-json", malformed client JSON, non-user input, empty text, non-object items and non-response.create
+    objects. It compares encrypted-content affinity true/model_info.id="dep-1"/encrypted_content="cipher" with false
+    affinity, missing id, non-object item and empty content; only the first calls B904 and rewrites that field.
+  proof: [case-event-capture-and-input-log, oracle]
+- text: >-
+    backend_close_and_disconnect feeds b'{"type":"response.created"}' to a peer whose recv(decode=False) raises
+    TypeError and recv() returns bytes; the event is stored before send_text. With an output callback, every one of the
+    ten listed delta/done literals is absent from sends, while malformed JSON is sent. A JSON array [1,2,3] raises
+    AttributeError in wrapping and is not sent. Invalid UTF-8 sends nothing; ConnectionClosed logs
+    "Responses WS backend connection closed: %s" and another exception logs
+    "Error in responses WS backend_to_client: %s", with final logging in both. Client termination cancels backend
+    forwarding, attempts close even when close raises, and returns the first stored failure or None.
+  proof: [case-backend-close-and-disconnect, oracle]
+- text: >-
+    rate_limit_drop makes B942's quota callback raise RateLimitError("quota full"). The client receives exactly
+    {"type":"error","error":{"type":"rate_limit_exceeded","message":"quota full"}}, with no code or param;
+    the rejected frame has no pre_call, stored message or backend send, a following accepted frame is forwarded, and
+    a send failure while reporting the error is swallowed.
+  proof: [case-rate-limit-drop, oracle]
+- text: >-
+    failure_usage_logging stores response.failed with response.error {"type":"server_error","message":"upstream
+    broke","code":"E_UP"}; the first mapped exception has status=500, type="internal_server_error", param absent,
+    and the exact LiteLLM message stated above. Usage is combined, service_tier=None when the partition is not exactly
+    one key, cost None becomes 0.0, partial usage is recorded before traceback dispatch, and failure dispatch receives
+    prefer_async_handlers=True. A response.created followed by response.completed schedules success dispatch only and
+    does not record failure usage; response.incomplete and unknown events do neither.
+  proof: [case-failure-usage-logging, oracle]
+- text: The seven named transcript fixtures execute the native service and pinned MIT service independently and compare handshake, frame order, close outcome, stored messages, callback arguments, exact drops and logger effects.
+  proof: [new-oracle-cases, service-python, oracle]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_native::/)
-      - test(/::replays_corpus$/)'
+    why: A native relay branch or its focused production test is absent; transcript replay cannot prove every helper and ordering outcome.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_native::/) - test(/::replays_corpus$/)'
   - id: case-native-ws-response-create
-    why: the native-ws-response-create behavior or its assertions are absent
+    why: The mock handshake, None defaults, OPENAI_API_KEY fallback, timeout=7 or clean-close result is missing.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::native_ws_response_create($|::)/)'
-  - id: case-defaults-on-first-frame
-    why: the defaults-on-first-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::defaults_on_first_frame($|::)/)'
-  - id: case-provider-close
-    why: the provider-close behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::provider_close($|::)/)'
-  - id: case-client-disconnect
-    why: the client-disconnect behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::client_disconnect($|::)/)'
+  - id: case-request-defaults-and-routing
+    why: The not-json/null no-op, mapping reasoning object, nested/flat rewrite, previous_response_id removal, precedence, extra_body override or typed malformed-input error is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::request_defaults_and_routing($|::)/)'
+  - id: case-metadata-and-credentials
+    why: Guardrail precedence, global/config credential order, dynamic resolver precedence, provider config branch or None fallback is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::metadata_and_credentials($|::)/)'
+  - id: case-event-capture-and-input-log
+    why: Constructor defaults, event allowlist, input extraction, empty pre-call key or encrypted output-item guard is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::event_capture_and_input_log($|::)/)'
+  - id: case-backend-close-and-disconnect
+    why: The recv fallback, UTF-8 outcome, ten output drops, malformed/array handling, logger literals or cancellation/close result is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::backend_close_and_disconnect($|::)/)'
+  - id: case-rate-limit-drop
+    why: The exact rate_limit_exceeded frame, rejected-frame effects or send-error swallowing is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::rate_limit_drop($|::)/)'
   - id: case-failure-usage-logging
-    why: the failure-usage-logging behavior or its assertions are absent
+    why: First-failure status/type/message mapping, usage processor calls, service-tier fallback, cost zeroing, traceback dispatch or success/failure ordering is missing.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_native::tests::failure_usage_logging($|::)/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: api_base, api_key, openai_key and OPENAI_API_KEY lack explicit set and unset loader outcomes.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_native::tests::loads_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-native-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: No added config seed reaches the production loader for the three settings and OPENAI_API_KEY fallback.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-native-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: service-python
-    why: the native WebSocket service adapter is absent or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_ws_native.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The native WebSocket adapter is absent or fails locked ruff and basedpyright checks.
+    run: test -f tools/oracle/helpers/responses_ws_native.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: A named native relay outcome has no newly added transcript fixture.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/responses-ws-native)"
 oracle_cases:
 - tools/oracle/cases/websocket/responses-ws-native/native-ws-response-create.yaml
-- tools/oracle/cases/websocket/responses-ws-native/defaults-on-first-frame.yaml
-- tools/oracle/cases/websocket/responses-ws-native/provider-close.yaml
-- tools/oracle/cases/websocket/responses-ws-native/client-disconnect.yaml
+- tools/oracle/cases/websocket/responses-ws-native/request-defaults-and-routing.yaml
+- tools/oracle/cases/websocket/responses-ws-native/metadata-and-credentials.yaml
+- tools/oracle/cases/websocket/responses-ws-native/event-capture-and-input-log.yaml
+- tools/oracle/cases/websocket/responses-ws-native/backend-close-and-disconnect.yaml
+- tools/oracle/cases/websocket/responses-ws-native/rate-limit-drop.yaml
 - tools/oracle/cases/websocket/responses-ws-native/failure-usage-logging.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/main.py: B1078 owns _has_file_search_tool L98-L102, mock_responses_api_response L105-L154,
-  responses L1128-L1458.'
-- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
-  _responses_try_dispatch_emulated_file_search L1038-L1124.'
-- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure
-  L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap
-  L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions
-  L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790,
-  _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891,
-  _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses
-  L909-L931, _apply_managed_file_id_mapping L934-L964.'
-- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1128-L1458.'
-- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
-  L1929-L1986, cancel_responses L1990-L2077.'
-- 'litellm/responses/main.py: B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items
-  L1794-L1846, list_input_items L1850-L1925.'
-- 'litellm/responses/main.py: B934 owns acompact_responses L2081-L2155, compact_responses L2159-L2279.'
-- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  L64-L70, _get_openai_response_types L74-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90,
-  _json_array_or_empty L93-L95, _is_str_mapping L98-L99, _MutableJsonObject.get L104-L104, _MutableJsonObject.get
-  L106-L106, _MutableJsonObject.__getitem__ L107-L107, _MutableJsonObject.__setitem__ L108-L108, _MutableJsonObject.__contains__
-  L109-L109, _MutableJsonObject.items L110-L110, _GetsLitellmParams.__call__ L114-L114, _UnmasksPiiText.__call__
-  L118-L118, _ShouldStoreResultInCache.__call__ L122-L122, _PostStreamingDeploymentHook.__call__ L126-L132, _typed_gets_litellm_params
-  L140-L141, _load_json_object L148-L150, _load_json_value L153-L155, _model_id_from_metadata L158-L161, _log_background_task_failure
-  L164-L169, _running_loop L175-L179, _spawn_logging_task L182-L189, _error_event_fields L221-L237, _status_code_for_error_field
-  L240-L243, _status_code_for_error_fields L246-L250, stream_error_status_and_message L253-L255, _map_stream_error_to_exception
-  L258-L278, _mid_stream_fallback_eligible L281-L285, BaseResponsesAPIStreamingIterator.__init__ L300-L349, BaseResponsesAPIStreamingIterator._check_max_streaming_duration
-  L351-L361, BaseResponsesAPIStreamingIterator._process_chunk L363-L532.'
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L363-L532,
-  BaseResponsesAPIStreamingIterator._note_yielded_event L954-L957, BaseResponsesAPIStreamingIterator._fallback_error
-  L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event
-  L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error L988-L992, call_post_streaming_hooks_for_testing
-  L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035, ResponsesAPIStreamingIterator.__aiter__ L1037-L1038,
-  ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1094-L1096, SyncResponsesAPIStreamingIterator.__init__ L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__
-  L1127-L1128, SyncResponsesAPIStreamingIterator.__next__ L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1177-L1179, MockResponsesAPIStreamingIterator.__init__ L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response
-  L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__ L1233-L1234, MockResponsesAPIStreamingIterator.__anext__
-  L1236-L1245, MockResponsesAPIStreamingIterator.__iter__ L1247-L1248, MockResponsesAPIStreamingIterator.__next__
-  L1250-L1259, CachedResponsesAPIStreamingIterator.__init__ L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response
-  L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__ L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__
-  L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__ L1314-L1315, CachedResponsesAPIStreamingIterator.__next__
-  L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B926 owns BaseResponsesAPIStreamingIterator._log_completed_response
-  L534-L576, BaseResponsesAPIStreamingIterator._restore_provider_response_headers L578-L606, BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  L608-L609, BaseResponsesAPIStreamingIterator._handle_logging_failed_response L611-L625, BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  L627-L645, BaseResponsesAPIStreamingIterator._map_error_event_exception L647-L648, BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  L650-L671, BaseResponsesAPIStreamingIterator._get_completed_response_object L673-L683, BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  L685-L757, BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook L759-L799, BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  L801-L807, BaseResponsesAPIStreamingIterator._run_post_success_hooks L809-L884, BaseResponsesAPIStreamingIterator._handle_failure
-  L886-L918, BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order L920-L931, BaseResponsesAPIStreamingIterator._submit_sync_failure_handler
-  L933-L943, BaseResponsesAPIStreamingIterator._record_pending_logging_task L945-L946, BaseResponsesAPIStreamingIterator._await_pending_logging
-  L948-L952.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B942 owns _extract_frame_quota_estimate_inputs L1752-L1784, _enforce_frame_project_quota
-  L1787-L1814, _ws_event_error L1832-L1836, _restore_input_item_ids L1839-L1840, _restored_container_fields L1843-L1854,
-  _restore_wrapped_ids_in_response_create L1857-L1866, _wrap_output_item_encrypted_content L1869-L1884, ResponsesWebSocketStreaming._enforce_authorized_model
-  L2101-L2126, ResponsesWebSocketStreaming._with_request_defaults L2128-L2134, ResponsesWebSocketStreaming._mask_response_create
-  L2136-L2238, ResponsesWebSocketStreaming._unmask_response_event L2265-L2328, ResponsesWebSocketStreaming._mask_response_completed
-  L2330-L2408, ResponsesWebSocketStreaming._enforce_or_reject_frame L2410-L2437.'
-- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler.__init__ L2519-L2556, ManagedResponsesWebSocketHandler._serialize_chunk
-  L2563-L2575, ManagedResponsesWebSocketHandler._send_error L2577-L2583, ManagedResponsesWebSocketHandler._get_history_messages
-  L2585-L2594, ManagedResponsesWebSocketHandler._store_history L2596-L2603, ManagedResponsesWebSocketHandler._extract_response_id
-  L2606-L2617, ManagedResponsesWebSocketHandler._extract_output_messages L2620-L2654, ManagedResponsesWebSocketHandler._input_to_messages
-  L2657-L2672, ManagedResponsesWebSocketHandler._parse_message L2678-L2688, ManagedResponsesWebSocketHandler._is_warmup_frame
-  L2691-L2695, ManagedResponsesWebSocketHandler._is_warmup_response_id L2698-L2704, ManagedResponsesWebSocketHandler._warmup_source_params
-  L2707-L2711, ManagedResponsesWebSocketHandler._build_warmup_response L2713-L2729, ManagedResponsesWebSocketHandler._send_warmup_ack
-  L2731-L2751, ManagedResponsesWebSocketHandler._build_base_call_kwargs L2754-L2768, ManagedResponsesWebSocketHandler._apply_history
-  L2770-L2801, ManagedResponsesWebSocketHandler._resolve_provider L2804-L2814, ManagedResponsesWebSocketHandler._same_provider
-  L2816-L2823, ManagedResponsesWebSocketHandler._inject_credentials L2825-L2841, ManagedResponsesWebSocketHandler._update_proxy_request
-  L2844-L2860.'
-- 'litellm/responses/streaming_iterator.py: B945 owns ManagedResponsesWebSocketHandler._stream_and_forward L2862-L2890,
-  ManagedResponsesWebSocketHandler._save_turn_history L2892-L2911, ManagedResponsesWebSocketHandler._process_response_create
-  L2917-L2990, ManagedResponsesWebSocketHandler.run L2996-L3016.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'litellm/responses/main.py: B1078 owns _has_file_search_tool L98-L102 and mock_responses_api_response L105-L154; B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035 and _responses_try_dispatch_emulated_file_search L1038-L1124.'
+- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790, _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891, _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses L909-L931 and _apply_managed_file_id_mapping L934-L964.'
+- 'litellm/responses/main.py: B932 owns aresponses L576-L761; B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses L1929-L1986 and cancel_responses L1990-L2077; B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items L1794-L1846 and list_input_items L1850-L1925; B934 owns acompact_responses L2081-L2155 and compact_responses L2159-L2279.'
+- 'litellm/responses/streaming_iterator.py: B925 owns _is_json_object L80-L81, _is_json_array L84-L85, _load_json_object L148-L150, _ws_event_error L1832-L1836, stream error mapping L221-L278 and ProjectQuotaCallback.enforce_project_io_token_quota_for_frame L64-L70.'
+- 'litellm/responses/streaming_iterator.py: B942 owns ResponsesWebSocketStreaming._enforce_authorized_model L2101-L2126, _with_request_defaults L2128-L2134, _mask_response_create L2136-L2238, _DELTA_EVENT_TYPES L2241-L2248, _OUTPUT_DONE_EVENT_TYPES L2254-L2263, _unmask_response_event L2265-L2328, _mask_response_completed L2330-L2408 and _enforce_or_reject_frame L2410-L2437. B943 owns the four event declarations at L1817-L1829 and encrypted-item helper at L1869-L1884 because its wrapper calls that helper.'
+- 'litellm/litellm_core_utils/litellm_logging.py: B247 owns LiteLLMLoggingObj.update_from_kwargs and model_call_details state; B249 owns pre_call; B250 owns dispatch_success_handlers; B251 owns dispatch_failure_handlers, _response_cost_calculator and record_partial_usage_for_failure. B254 owns LiteLLMRealtimeStreamLoggingObject in types/utils.py. These are direct dependencies, not B012.'
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B918 owns LiteLLMResponsesTransformationHandler._map_reasoning_effort L1180-L1197, including litellm.reasoning_auto_summary and env.LITELLM_REASONING_AUTO_SUMMARY; B943 supplies its input and consumes the returned Reasoning object.'
+- 'Provider-specific BaseLLMHTTPHandler.async_responses_websocket execution, provider validate_environment/get_websocket_url, URL query construction, TLS, handshake status handling and managed fallback belong to B173/B009/B010 and provider or managed WebSocket tasks; B943 supplies typed arguments and consumes the returned failure.'
+- 'Route decorators, paths and aliases /v1/responses, /responses, /openai/v1/responses and gateway provider aliases, pre-accept auth status, error status/type/param/code and query handling belong to B941 and B1125; this task registers no route.'
+- 'Python package exports, sync wrappers and event-loop facades are B158-B161; no duplicate public export is added here.'
 pitfalls:
-- 'streaming_iterator.py:2095 emits the diagnostic ''Responses WS backend connection closed: %s''; retain its level
-  and fallback instead of turning it into a hard error.'
-- 'streaming_iterator.py:2458 emits the diagnostic ''Responses WS client_to_backend ended: %s''; retain its level
-  and fallback instead of turning it into a hard error.'
+- 'The first frame is authorized by B942 before _store_input; RateLimitError("quota full") therefore emits only the exact rate_limit_exceeded error, has no pre_call or storage, and leaves the receive loop open.'
+- '_store_event runs after unmasking, output masking and response wrapping but before send_text, so stored failure and callback messages contain the transformed JSON rather than backend bytes.'
+- 'recv(decode=False) is attempted before recv() without arguments; a scripted peer exposing only recv() must raise TypeError on the first call to reach the fallback.'
+- '_wrap_output_item_encrypted_content does not inspect event type; only _wrap_response_event supplies response.output_item.added and response.output_item.done, so the helper must retain its arbitrary-event direct-call behavior.'
+- '_failure_exception selects the first stored error or response.failed; response.incomplete, unknown events and an empty or multi-key service-tier partition do not create failure dispatch, and the latter records service_tier=None.'
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0

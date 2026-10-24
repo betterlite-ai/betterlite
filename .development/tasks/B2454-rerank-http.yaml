@@ -1,0 +1,90 @@
+id: B2454
+title: Rerank HTTP execution
+description: >-
+  Own BaseLLMHTTPHandler.rerank and arerank at 1289-1416 in betterlite-provider::api::rerank_http. Run
+  validation, complete-URL selection, request transformation and pre-call logging before choosing sync/async
+  transport. B1013 supplies the contract; B173 the bounded client; B2402 _handle_error. Headers default {},
+  litellm_params=None and timeout=None. Log optional_rerank_params.query or "" and the supplied key through
+  B012 redaction. Async is selected only by boolean _is_async=true. Matching-kind clients are reused; wrong
+  kind selects the pooled client. Async send receives logging_obj; sync send does not.
+
+  Send data=json.dumps(transformed_request), not a JSON encoder that silently changes the byte representation:
+  retain Python's default separators and ensure_ascii escaping. This method adds no Content-Type header and
+  leaves header validation to the provider config. Only send exceptions enter B2402 conversion. Response
+  transformation receives model,response,model_response,logging_obj,api_key,request_data; optional_params and
+  litellm_params are not forwarded and retain that method's defaults. Unlike the media handlers, no generic
+  provider-response-header attachment occurs here. Provider transformations own response parsing.
+
+  Add sdk_http rerank_http with a finite injected config, actual mock HTTP and callback-effect observations.
+  Existing SDK/HTTP decoders suffice. Count 117 nonblank/non-comment lines in the two complete methods;
+  budget 115 implementation,110 tests,95 fixtures,80 adapters and 30 wiring, 430 lines.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/rerank_http.rs
+  - crates/betterlite-provider/src/api/rerank_http/**
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/error.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/rerank_http.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/rerank_http.py
+  - tools/oracle/cases/sdk-http/rerank-http/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1289-L1416
+  why: Own complete sync preparation/send and async send/response paths, including string JSON serialization.
+dod:
+- text: >-
+    rerank_http_payload transforms query=é,documents=[a] to {query:é,documents:[a]}. Capture the literal
+    JSON string bytes {"query": "\u00e9", "documents": ["a"]} in one POST, with only config-supplied
+    headers. Empty header input becomes {}; no automatic Content-Type is added by this layer. A mock
+    {id:r,results:[{index:0,relevance_score:0.5}]} is passed to the config transformer and its returned record
+    is returned unchanged. The callback sees request_data but default optional_params/litellm_params={}.
+    Mock x-request-id is not attached by this generic handler.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    rerank_http_execution_order records validate,url,transform,pre_call,post,response_transform once in that
+    order for sync and async. _is_async=true uses the async method; integer 1 does not pass the identity check.
+    Wrong-kind clients are replaced, timeout=None/5 is forwarded unchanged, and only async post receives
+    logging_obj. Missing query logs "". A pre-call or transform exception prevents HTTP and bypasses _handle_error.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    rerank_http_provider_failure makes the mock return 429,body="slow",retry-after=2: B2402 converts exactly
+    that status/message/header set through the config error constructor, with one request and no response
+    transform. A response-transform exception is propagated outside send conversion. SDK parity keeps the
+    failure class/status and nullable type,param,code; only message wording is ignored.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Rerank HTTP has new SDK operation seeds and independent provider capture fixtures.
+  proof: [sdk-corpus, new-cases, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Serialized bytes and response-transform arguments distinguish this transport from image/audio handlers.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::rerank_http::tests::/)'
+  - id: sdk-python
+    why: Rerank provider execution must run in the checked SDK HTTP adapter.
+    run: test -f tools/oracle/sdk_http/rerank_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: The rerank_http variant must be covered by a new SDK parser seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Rerank's raw string JSON transport needs fresh capture fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/rerank-http)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/rerank-http/rerank-http-payload.yaml
+- tools/oracle/cases/sdk-http/rerank-http/rerank-http-execution-order.yaml
+- tools/oracle/cases/sdk-http/rerank-http/rerank-http-provider-failure.yaml
+deviations: []
+out_of_scope:
+- B1079/B1014 own public rerank/arerank SDK dispatch; B1013 config interfaces; B2402 send-error conversion; B173 common clients/post; other llm_http_handler.py functions stay with their endpoint owners.
+pitfalls:
+- Async preparation happens before arerank is called, so its send method must not transform the request twice.
+- The response transformer does not receive litellm_params or optional_params in either path.
+- json.dumps uses ASCII escapes and spaces; a byte-level HTTP oracle can distinguish compact UTF-8 serialization.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

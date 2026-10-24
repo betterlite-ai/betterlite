@@ -1,0 +1,129 @@
+id: B2430
+title: Native Messages reasoning and request transformation
+description: >-
+  Implement the complete _translate_reasoning_effort_to_anthropic, _translate_adaptive_effort_for_non_adaptive_model,
+  _drop_incompatible_temperature_for_thinking and transform_anthropic_messages_request methods, formerly grouped
+  into B962. Put them in betterlite-core::api::messages_native_transform. B962 remains the response/utility owner.
+  Reuse B569's model capability and thinking-budget rules, B961's resolved-provider/billing policy, B571's history
+  cleanup and B2201's OpenAI context-management conversion. AnthropicError comes from B567.
+
+  The request transform consumes max_tokens from optional params first and rejects null/missing before any other
+  work. It then applies the reasoning alias, disabled/legacy thinking normalization, adaptive-to-legacy mapping,
+  temperature removal, optional billing stripping and context conversion, in that order. Build the final record
+  from model, messages and the remaining options. Do not substitute DEFAULT_MAX_TOKENS here: that default belongs
+  to callers. Inputs are parsed records; this task adds no decoder or provider HTTP operation.
+
+  Register messages_native_transform as a B171 helper operation. Cases use pinned model capability records for
+  claude-sonnet-4-5, claude-opus-4-5 and claude-opus-4-6; explicitly supplied capability seams cover unsupported
+  models without inventing catalog model names. Compare mutated options, complete request bodies, warnings and
+  AnthropicError status/message; the exception has no type, param or code. Message wording may differ only for
+  generated failures, never for pass-through text or warning branch selection.
+
+  Own 237 nonblank/non-comment lines, 186 excluding docstrings. Allow 235 implementation, 170 tests, 170 fixtures,
+  90 adapters and 35 wiring lines, 700 total. This split leaves the stream factory and JSON response decoder in B962.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_native_transform.rs
+  - crates/betterlite-core/src/api/messages_native_transform/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/messages_native_transform.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_native_transform.py
+  - tools/oracle/fuzz/corpus/helper_case/messages_native_transform-*
+  - tools/oracle/cases/helpers/messages-native-transform/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L286-L570
+  why: Own four whole methods, including warning-and-drop branches and final request construction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1250-L1326
+  why: B569 provides the actual budget mapping and 1024-token floor reused by these methods.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1416-L1471
+  why: B2201 translates compaction lists; a null translation must leave the original context_management value intact.
+dod:
+- text: >-
+    reasoning_alias_precedence sends reasoning_effort=medium,max_tokens=4096 for claude-sonnet-4-5 and gets
+    thinking={type:enabled,budget_tokens:2048}, with reasoning_effort removed. minimal/low/high/xhigh/max yield
+    budgets 1024/1024/4096/8192/16384 when max_tokens=32768. Existing thinking={type:enabled,budget_tokens:1500}
+    wins via setdefault. A nonstring reasoning_effort=3 is removed without mapping; none removes both thinking
+    and the entire output_config, including format. Invalid effort=extreme raises AnthropicError 400 with source
+    "Unmapped reasoning effort" on the legacy model and "Invalid reasoning_effort" on an adaptive model.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    adaptive_output_effort sends minimal to claude-opus-4-6 and gets thinking={type:adaptive,display:summarized},
+    output_config.effort=low; low/medium/high/xhigh/max retain their respective effort strings when supported.
+    Existing output_config.effort wins; an output_config without effort keeps format and gains the mapped effort.
+    A non-object output_config is replaced with that map. Unsupported effort from B569 raises 400 even when an
+    existing thinking block is present. Capture the source model-specific gate message, with only wording ignored.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    legacy_budget_fit sends medium with max_tokens=1500 and gets budget_tokens=1499. max_tokens=1024 or 0
+    cannot fit the minimum and emits the warning about dropping thinking mapped from reasoning_effort, retaining
+    any pre-existing thinking/output_config rather than deleting them. max_tokens=1025 yields 1024. Missing
+    max_tokens at the full transform raises 400 "max_tokens is required for Anthropic /v1/messages API".
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    nonadaptive_effort_translation sends adaptive thinking and effort=medium to claude-sonnet-4-5; get legacy
+    thinking enabled/2048 and remove only effort from output_config, retaining format. With no effort the fallback
+    is medium. On claude-opus-4-5, supported effort=high stays native while adaptive thinking is removed; unsupported
+    xhigh with adaptive thinking falls back to a capped legacy budget. An effort-only xhigh request remains untouched
+    on that model. No reasoning support or max_tokens=1024 warns, drops thinking and consumes effort; residual
+    output_config survives or is removed if empty. Invalid legacy effort raises 400 rather than warning.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    thinking_temperature_rules removes temperature=0 on a nonadaptive model with thinking.type=enabled or
+    non-null output_config.effort, without a diagnostic. temperature=1 or null stays, and disabled thinking alone
+    keeps temperature=0. Adaptive models keep temperature=0 unchanged. Test these rules after adaptive-to-legacy
+    conversion as well as directly, so dropping thinking does not accidentally drop sampling too.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    native_request_history supplies model=claude-sonnet-4-5,max_tokens=2048,user text=hello and extra temperature=1;
+    retain model/messages/max_tokens/temperature with max_tokens removed from the mutable options. First-party
+    billing system text remains; a strip-enabled subclass removes only x-anthropic-billing-header: text. Context
+    [{type:compaction,compact_threshold:200000}] becomes {edits:[{type:compact_20260112,trigger:{type:input_tokens,
+    value:200000}}]}; unknown context input whose converter returns null stays unchanged. Advisor history drops
+    without advisor_20260301, remains with it, and encrypted reasoning history is always stripped by B571. Native
+    system-role messages stay in place. Capture the debug transformation event without treating message content as credentials.
+  proof: [behavior-tests, oracle, helper-python]
+- text: The split has its own helper tag and independent fixtures, rather than calling a copied transformation algorithm.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: request mutation order or reasoning fallbacks are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_transform::/)'
+  - id: helper-python
+    why: the new native request adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_native_transform.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: messages_native_transform is not a recognized helper input
+    run: grep -qE '^[[:space:]]+messages_native_transform:' tools/oracle/fuzz/corpus/helper_case/messages_native_transform-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no request transformation cases were added for the split
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-native-transform)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-native-transform/reasoning-alias-precedence.yaml
+- tools/oracle/cases/helpers/messages-native-transform/adaptive-output-effort.yaml
+- tools/oracle/cases/helpers/messages-native-transform/legacy-budget-fit.yaml
+- tools/oracle/cases/helpers/messages-native-transform/nonadaptive-effort-translation.yaml
+- tools/oracle/cases/helpers/messages-native-transform/thinking-temperature-rules.yaml
+- tools/oracle/cases/helpers/messages-native-transform/native-request-history.yaml
+deviations: []
+out_of_scope:
+- B961 owns messages/transformation.py L59-L284 preparation; B960 owns _messages_carry_output_config and beta injection L610-L709.
+- B962 owns transform_anthropic_messages_response and get_async_streaming_response_iterator L572-L608.
+- B569 owns thinking model capabilities, budget constants and their environment overrides; B2201 owns context-management field conversion.
+pitfalls:
+- reasoning_effort=none discards output_config.format too; preserving it would change this source branch.
+- The unfittable reasoning alias leaves existing thinking intact, while the unsupported adaptive path removes it.
+- Effort-only xhigh on Opus 4.5 is left for provider subclasses; this layer must not clamp it prematurely.
+review_level: standard
+budget:
+  max_changed_lines: 720
+  max_new_expects: 0

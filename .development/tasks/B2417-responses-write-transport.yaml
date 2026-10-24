@@ -1,0 +1,114 @@
+id: B2417
+title: Responses delete and cancel HTTP transport
+description: >-
+  Add responses_write_http in betterlite-core for the complete sync/async delete handlers at
+  llm_http_handler.py 2910-3083 and cancel handlers at 4205-4358. B1116 calls this service after
+  decoding the ID. Use B1114's provider interface with B509's OpenAI transforms and B173's clients;
+  B249 receives pre-call logs and B2402 converts send failures. No request signing occurs here.
+
+  Pass model="None" into environment validation, retain its mutations to extra_headers, then
+  overlay the resulting caller map. Delete sets Content-Type=application/json only if absent,
+  sends transformed data as JSON only when truthy and logs the base URL. Cancel always sends
+  transformed data as JSON and logs the suffixed URL with input=response_id. Both pass timeout
+  through unchanged; extra_body is unused. Select a matching injected client, otherwise use the
+  pool with ssl_verify=null by default and shared_session for async. Convert provider responses
+  outside the send catch. The Python delete log accidentally passes the built-in input function;
+  native logging records an empty input, as declared below, without changing the HTTP exchange.
+
+  Implement SdkHttpCall::ResponsesWriteTransport under B2401 with actual OpenAI handlers on both
+  sides. Cases exercise DELETE and POST, not scripted return values. Use typed client-selection
+  tests for non-wire effects. This layer adds no decoder; B509 already parses resource bodies.
+  Its four functions contain 286 nonblank/non-comment lines. Plan 230 implementation, 140 tests,
+  85 fixtures, 90 adapters and 30 wiring lines, 575 total within 620.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_write_http.rs
+  - crates/betterlite-core/src/api/responses_write_http/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_write_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_write_transport.py
+  - tools/oracle/cases/sdk-http/responses-write-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2910-L3083
+  why: Delete conditionally attaches JSON, sets Content-Type and passes its timeout in both modes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4205-L4358
+  why: Cancel always posts transformed JSON and logs the final URL and response ID.
+dod:
+- text: >-
+    delete_omits_empty_body uses id=resp/a,timeout=7,extra_body={ignored:true}. Expect DELETE
+    /v1/responses/resp%2Fa with no body and Content-Type=application/json; mock 200
+    {id:resp_a,object:response,deleted:true} returns that result. Native provider-interface rows
+    returning data={} and data={purge:true} assert respectively no JSON argument and that exact
+    JSON. The configured timeout remains 7 in sync and async. An existing Content-Type survives
+    this layer's setdefault, subject to the provider's earlier validation.
+  proof: [delete-body, oracle, python-adapter]
+- text: >-
+    cancel_posts_empty_object uses id=resp_a,extra_body={reason:ignored},api_key=sk-provider and
+    caller Authorization=Bearer sk-caller,X-Trace=trace-a. Expect POST /v1/responses/resp_a/cancel
+    with {}, Authorization=Bearer sk-provider and X-Trace=trace-a for the OpenAI config. A valid
+    mock cancelled response is returned with id=resp_a,status=cancelled and provider headers;
+    this handler does not encode its ID. Assert pre_call input=resp_a,api_key="",final cancel URL
+    and complete_input_dict={} before the send, with no extra_body field.
+  proof: [cancel-body, oracle, python-adapter]
+- text: >-
+    write_transport_failures runs each operation against 429 text=slow down,Retry-After=3.
+    Expect provider error status=429,message=slow down and the response header retained, one
+    request and no retry. A 200 invalid JSON or invalid required response fields fails in the
+    B509 transformation after the send catch, without invoking B2402 again.
+  proof: [write-errors, oracle, python-adapter]
+- text: >-
+    write_client_and_logging_contract compares matching, absent and wrong-kind injected clients.
+    Matching clients are reused; pool selection receives ssl_verify=false when set and null
+    otherwise. Async forwards shared_session and logs "Creating HTTP client for delete_response
+    with shared_session: %s" or "Creating HTTP client for cancel_response with shared_session: %s".
+    Delete logs the unsuffixed base and native input=""; cancel logs the complete URL and ID.
+  proof: [client-logging]
+- text: Each write-transport operation has a newly added SDK-case seed that reaches the production decoder.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: delete-body
+    why: DELETE acquires an empty JSON body or drops a nonempty transformed one
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::delete_omits_empty_body($|::)/)'
+  - id: cancel-body
+    why: cancel body, credentials or pre-call URL differ from the provider contract
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::cancel_posts_empty_object($|::)/)'
+  - id: write-errors
+    why: HTTP failures are retried or response-validation errors are converted twice
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::write_transport_failures($|::)/)'
+  - id: client-logging
+    why: client ownership or the intentional logging projection changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::write_client_and_logging_contract($|::)/)'
+  - id: python-adapter
+    why: delete/cancel parity bypasses the provider HTTP exchange
+    run: test -f tools/oracle/sdk_http/responses_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the write transport variant has no committed decoder input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/responses-write-transport/delete-omits-empty-body.yaml
+- tools/oracle/cases/sdk-http/responses-write-transport/cancel-posts-empty-object.yaml
+- tools/oracle/cases/sdk-http/responses-write-transport/write-transport-failures.yaml
+deviations:
+- what: Delete pre-call callbacks observe input="" instead of Python's built-in input function; HTTP status, body and headers are unchanged.
+  why: The accidental callable cannot be represented as request data in the typed logging boundary.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2965-L2973
+out_of_scope:
+- B1116 owns public SDK write functions, provider choice and decorated errors; B509 owns URL and response transformations.
+- B2414/B2416/B2418 own Responses create/read/compact transports; B2402 owns _handle_error and B173 generic client sends.
+- Other API-family handlers in llm_http_handler.py are outside this four-function ownership slice.
+pitfalls:
+- extra_body is accepted by both methods but never merged into transformed data.
+- DELETE uses no JSON argument for an empty mapping; cancel sends an empty object.
+- Cancel does not call sign_request, unlike create and compact.
+review_level: security
+budget:
+  max_changed_lines: 620
+  max_new_expects: 0

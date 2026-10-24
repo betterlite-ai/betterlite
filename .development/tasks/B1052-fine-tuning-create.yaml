@@ -1,254 +1,118 @@
 id: B1052
-title: Fine tuning create
+title: Create fine-tuning jobs through provider SDKs
 description: >-
-  Implement typed fine-tuning create preparation and provider call through B010, including Azure extra_body, training/validation
-  file IDs, hyperparameters and source timeout precedence. credentials and base URLs come from configured models
-  only.
+  Implement _prepare_azure_extra_body, _build_fine_tuning_job_data and complete sync/async create functions
+  in core::api::fine_tuning_create. B2487 owns _resolve_fine_tuning_timeout and the loaded settings view;
+  call B518 OpenAI, B542 Azure or B1384 Vertex execution directly. GenericLiteLLMParams is B010 and
+  client/logging integration B012. Register FineTuningCreate in B2401 so actual SDK calls send HTTP to a
+  mock provider. Pure helper behavior has native tests and is also observed in those request bodies.
+  model/training_file are required, hyperparameters defaults {}, all suffix/validation_file/integrations/
+  seed/extra_headers/extra_body default null, custom_llm_provider defaults openai. Only true async flag
+  chooses async execution; preserve context across the blocking preparation step.
 
-
-  Managed file resolution belongs to B088 routes, not this SDK call. Unsupported provider returns 400 BadRequestError.
-  Config resolves OPENAI_BASE_URL, OPENAI_API_BASE, OPENAI_ORGANIZATION, OPENAI_API_KEY, AZURE_API_BASE, AZURE_API_VERSION,
-  AZURE_OPENAI_API_KEY, AZURE_API_KEY and VERTEXAI_* using B500/B529/provider settings; the default OpenAI base
-  is https://api.openai.com/v1.
-
-
-  Implement crates/betterlite-core/src/api/fine_tuning_create.rs. Use FineTuningCreateInput and FineTuningCreateResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions fine_tuning_training_file, validation_file, azure_extra_body, timeout_precedence,
-  create_provider_error, unsupported_finetune_provider under api::fine_tuning_create::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None; env.OPENAI_BASE_URL defaults to unset (None); env.OPENAI_API_BASE defaults to unset (None);
-  litellm_settings.organization defaults to None; env.OPENAI_ORGANIZATION defaults to None; litellm_settings.api_key
-  defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY defaults to unset (None); env.AZURE_API_BASE
-  defaults to unset (None); litellm_settings.api_version defaults to None; env.AZURE_API_VERSION defaults to unset
-  (None); litellm_settings.azure_key defaults to None; env.AZURE_OPENAI_API_KEY defaults to unset (None); env.AZURE_API_KEY
-  defaults to unset (None); litellm_settings.vertex_project defaults to None; env.VERTEXAI_PROJECT defaults to unset
-  (None); litellm_settings.vertex_location defaults to None; env.VERTEXAI_LOCATION defaults to unset (None); env.VERTEXAI_CREDENTIALS
-  defaults to unset (None). No environment reads occur outside betterlite-config. Test api::fine_tuning_create::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FineTuningCreate in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {fine_tuning_create: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/fine_tuning/main.py: _prepare_azure_extra_body (L38-L73); litellm/fine_tuning/main.py:
-  acreate_fine_tuning_job (L77-L125); litellm/fine_tuning/main.py: _build_fine_tuning_job_data (L128-L137); litellm/fine_tuning/main.py:
-  _resolve_fine_tuning_timeout (L140-L150); litellm/fine_tuning/main.py: create_fine_tuning_job (L154-L330). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 230 owned nonblank/non-comment/non-docstring Python lines (251 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 250 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 87 config tests/seeds and
-  30 wiring; 605 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1087 (Api boundaries), B518 (OpenAI fine-tuning jobs), B002 (Load LiteLLM config.yaml
-  into typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  Own 237 nonblank/non-comment lines at main.py:38-137,153-330 plus the three-line permissive
+  OpenAIFineTuningHyperparameters compatibility declaration. Reuse B518's leaf job/hyperparameter contracts
+  for that declaration; do not make the Vertex provider depend on this SDK dispatcher. B2487 owns all
+  environment/global defaults and loader tests; their selection must still be observed at outgoing HTTP.
+  Estimate 230 code, 175 tests, 120 adapters, 170 fixtures and 60 wiring, 755 total. B518/B1384 own response
+  byte decoding; extend B2401's case corpus without introducing a second job decoder.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/fine_tuning_create.rs
   - crates/betterlite-core/src/api/fine_tuning_create/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/fine_tuning_create.rs
-  - crates/betterlite-config/src/api/fine_tuning_create/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/fine-tuning-create-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/fine_tuning_create.rs
-  - tools/oracle/src/helpers/fine_tuning_create/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/fine_tuning_create.py
-  - tools/oracle/helpers/fine_tuning_create/**
-  - tools/oracle/fuzz/corpus/helper_case/fine_tuning_create-*
-  - tools/oracle/cases/helpers/fine-tuning-create/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/fine_tuning_create.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/fine_tuning_create.py
+  - tools/oracle/cases/sdk-http/fine-tuning-create/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-create-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L202-L202
-  why: Setting env.OPENAI_BASE_URL and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L203-L203
-  why: Setting env.OPENAI_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L595-L595
-  why: Setting litellm_settings.organization and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L209-L209
-  why: Setting env.OPENAI_ORGANIZATION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
-  why: Setting litellm_settings.openai_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L217-L217
-  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L245-L245
-  why: Setting env.AZURE_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L594-L594
-  why: Setting litellm_settings.api_version and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L247-L247
-  why: Setting env.AZURE_API_VERSION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L283-L283
-  why: Setting litellm_settings.azure_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L253-L253
-  why: Setting env.AZURE_OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L254-L254
-  why: Setting env.AZURE_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L299-L299
-  why: Setting litellm_settings.vertex_project and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L291-L291
-  why: Setting env.VERTEXAI_PROJECT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L300-L300
-  why: Setting litellm_settings.vertex_location and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L294-L294
-  why: Setting env.VERTEXAI_LOCATION and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L296-L296
-  why: Setting env.VERTEXAI_CREDENTIALS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L38-L330
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L38-L137
+  why: Whole Azure extra-body helper, async wrapper and job-data constructor establish mutation and default behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L153-L330
+  why: Complete create dispatch includes all three provider branches and its literal unsupported-provider error.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/fine_tuning.py#L1-L5
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: The response hyperparameter compatibility type allows extra keys; it is not a closed three-field record.
 dod:
-- text: 'fine tuning training file: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-fine-tuning-training-file
-  - oracle
-- text: 'validation file: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-validation-file
-  - oracle
-- text: 'azure extra body: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-azure-extra-body
-  - oracle
-- text: 'timeout precedence: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-timeout-precedence
-  - oracle
-- text: 'create provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-create-provider-error
-  - oracle
-- text: 'unsupported finetune provider: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-unsupported-finetune-provider
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    openai_tuning_body calls both modes with model=gpt-4o-mini,training_file=file_train. POST
+    /v1/fine_tuning/jobs has model,training_file,hyperparameters={} and omits null suffix/validation_file/
+    integrations/seed. Explicit hyperparameters=null also becomes {}. Supplied batch_size=auto,n_epochs=3,
+    learning_rate_multiplier=0.5,extra_flag=x survive; suffix="",validation_file="",integrations=[],seed=0
+    are retained. extra_headers={X-Ignored:x} and explicit extra_body={ignored:true} are not forwarded.
+    Mock queued job ft_a is returned with provider fields intact and no additional route envelope.
+  proof: [create-tests, oracle, python-adapter]
+- text: >-
+    azure_training_parameters sends hyperparameters={n_epochs:2,prompt_loss_weight:0.25},trainingType=2
+    and explicit extra_body={trainingType:9,ignored:true,azure_ad_token:secret}. Source pops prompt_loss_weight
+    from the caller's original nonempty hyperparameter map, sends n_epochs in hyperparameters and root
+    prompt_loss_weight=0.25,trainingType=2 through Azure SDK extra_body. The explicit extra_body argument is
+    discarded when reassigned from GenericLiteLLMParams. Omitted trainingType becomes 1 in B542; 0 stays 0.
+    Native _prepare_azure_extra_body mutates an existing map, kwargs.trainingType wins its prior value, then
+    extracted Azure hyperparameters win collisions. No azure_ad_token reaches provider JSON.
+  proof: [create-tests, oracle, python-adapter]
+- text: >-
+    vertex_tuning_dispatch uses model=gemini-1.5-pro,training_file=gs://bucket/train.jsonl,
+    hyperparameters={n_epochs:2,adapter_size:4},validation_file=gs://bucket/valid.jsonl,suffix=custom.
+    Pass typed job plus original hyperparameters and kwargs to B1384; mock HTTP observes baseModel,
+    supervisedTuningSpec.training_dataset_uri and adapter_size conversion, and returns mapped queued job.
+    Assert B1384's regional tuningJobs destination, never an arbitrary supplied api_base as final URL.
+    The closed Vertex test transport records that resolved regional URL, then redirects only its origin
+    to B2401's bound loopback mock while preserving method/path/query/body; it sends real HTTP and never
+    manufactures a provider response. Supply access token=vertex-test through B1384's credential seam,
+    so neither ADC discovery nor token exchange contacts Google. No case can supply an arbitrary target.
+    OpenAIFineTuningHyperparameters retains a response extra adapter_size=4 through B518's extensible record.
+  proof: [create-tests, oracle, python-adapter]
+- text: >-
+    tuning_credentials_and_timeout exercises B2487's complete OpenAI base/key/organization and Azure
+    base/version/key chains with distinct request/global/env sentinels, removing each winner successively.
+    Include OPENAI_BASE_URL before OPENAI_API_BASE, AZURE_OPENAI_API_KEY before AZURE_API_KEY, empty strings
+    falling through, and Vertex project/location/credentials fallback with api_base default "". Outgoing
+    Authorization/api-key, OpenAI-Organization, api-version and mock target prove selection; native transport
+    capture proves timeout=600 by default, timeout=0/request_timeout=7->7, "7.5"->7.5, structured OpenAI/Azure
+    timeout preserved and Vertex read-only timeout. Only OpenAI receives supplied client; Azure/Vertex ignore it.
+    max_retries request override is passed to OpenAI/Azure; disable retries in oracle scenarios.
+  proof: [create-tests, oracle, python-adapter]
+- text: >-
+    unsupported_tuning_create sends anthropic and gets BadRequestError,status=400,type/param/code=null,
+    source message="LiteLLM doesn't support anthropic for 'create_batch'. Only 'openai' is supported.".
+    The source response body is "Unsupported provider", method=create_thread. No HTTP is sent. A provider
+    HTTP 400 with error={message:bad,type:invalid_request_error,param:training_file,code:invalid_file} retains
+    those fields through the SDK. Invalid timeout="bad" fails before provider construction. Log creation
+    exceptions once at this layer and never raw kwargs secrets. Commit SDK seeds for all three providers.
+  proof: [create-tests, oracle, python-adapter, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::fine_tuning_create::/)
-      - test(/::replays_corpus$/)'
-  - id: case-fine-tuning-training-file
-    why: the fine-tuning-training-file behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::fine_tuning_training_file($|::)/)'
-  - id: case-validation-file
-    why: the validation-file behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::validation_file($|::)/)'
-  - id: case-azure-extra-body
-    why: the azure-extra-body behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::azure_extra_body($|::)/)'
-  - id: case-timeout-precedence
-    why: the timeout-precedence behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::timeout_precedence($|::)/)'
-  - id: case-create-provider-error
-    why: the create-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::create_provider_error($|::)/)'
-  - id: case-unsupported-finetune-provider
-    why: the unsupported-finetune-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::unsupported_finetune_provider($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/fine-tuning-create-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/fine_tuning_create.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/fine_tuning_create-*)"
-      && grep -qE "^[[:space:]]+fine_tuning_create:" tools/oracle/fuzz/corpus/helper_case/fine_tuning_create-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/fine-tuning-create)"
+  - id: create-tests
+    why: a complete fine-tuning provider branch or Azure parameter mutation is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_create::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: create cases do not independently execute the pinned SDK through mock HTTP
+    run: test -f tools/oracle/sdk_http/fine_tuning_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: fine-tuning create's typed operation has no new case-parser input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-create-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/fine-tuning-create/fine-tuning-training-file.yaml
-- tools/oracle/cases/helpers/fine-tuning-create/validation-file.yaml
-- tools/oracle/cases/helpers/fine-tuning-create/azure-extra-body.yaml
-- tools/oracle/cases/helpers/fine-tuning-create/timeout-precedence.yaml
-- tools/oracle/cases/helpers/fine-tuning-create/create-provider-error.yaml
-- tools/oracle/cases/helpers/fine-tuning-create/unsupported-finetune-provider.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/fine-tuning-create/openai-tuning-body.yaml
+- tools/oracle/cases/sdk-http/fine-tuning-create/azure-training-parameters.yaml
+- tools/oracle/cases/sdk-http/fine-tuning-create/vertex-tuning-dispatch.yaml
+- tools/oracle/cases/sdk-http/fine-tuning-create/tuning-credentials-and-timeout.yaml
+- tools/oracle/cases/sdk-http/fine-tuning-create/unsupported-tuning-create.yaml
+deviations:
+- what: Debug logging of acreate kwargs redacts credential values; source prints the kwargs representation.
+  why: Credential output is forbidden by repository policy; preserve the diagnostic event without secret bytes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L96-L96
 out_of_scope:
-- 'litellm/fine_tuning/main.py: B1141 owns acancel_fine_tuning_job L334-L368, cancel_fine_tuning_job L372-L481.'
-- 'litellm/fine_tuning/main.py: B1053 owns alist_fine_tuning_jobs L484-L520, list_fine_tuning_jobs L523-L637, aretrieve_fine_tuning_job
-  L641-L675, retrieve_fine_tuning_job L679-L778.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2487 owns the complete timeout helper at 140-150 and all settings loading; its finite-duration deviation applies here.
+- B1053 owns list/retrieve, B1141 cancellation. B518/B542/B1384 own provider transports and wire contracts; HTTP routes are B088/B1054 and its create split.
 pitfalls:
-- main.py:94 emits the diagnostic 'inside acreate_fine_tuning_job model=%s and kwargs=%s'; retain its level and
-  fallback instead of turning it into a hard error.
-- Within _resolve_fine_tuning_timeout\'s isinstance(timeout, httpx.Timeout) branch, preserve return timeout and
-  its nested guards.
+- Azure removes prompt_loss_weight from the caller's hyperparameters map before constructing OpenAI-style data.
+- The public extra_body parameter is overwritten on Azure and ignored on OpenAI.
+- Vertex is supported for create even though the unsupported-provider message says only openai is supported.
 review_level: security
 budget:
-  max_changed_lines: 610
-  max_new_expects: 1
+  max_changed_lines: 790
+  max_new_expects: 0

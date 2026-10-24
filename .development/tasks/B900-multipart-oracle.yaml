@@ -1,69 +1,77 @@
 id: B900
 title: Multipart oracle
 description: >-
-  Extend B171 HttpCase body variants with JSON, ordered multipart parts and fixture bytes, preserving the existing
-  JSON/SSE case format and CLI.
+  Extend the B171 HTTP oracle with typed request and answer variants that preserve the bytes LiteLLM sends and
+  returns. B900 owns the oracle boundary only: the case schema, fixture loading, request encoding, mock-provider
+  capture, response decoding and comparison. It has no LiteLLM production callable, route, SDK adapter, environment
+  variable, config key, query parameter, database write or warning-and-drop policy; the production owners listed below
+  remain responsible for those behaviors.
 
+  Add an optional request.body_kind with exactly the literals json, multipart and bytes. An omitted body_kind means
+  json. With body_kind omitted or json, body: {multipart: "value", bytes: "value", json: "value"} remains one JSON
+  object with those three keys and the request bytes are serde_json's encoding of that value. A null JSON body sends
+  no request body, as B171 does. With body_kind: multipart, body must be {parts: [...]}. Preserve parts in YAML order,
+  including repeated names, filenames and content_type values. Each part needs a nonempty name and exactly one payload:
+  text: "x" is UTF-8 text, or fixture: "payload.bin" reads a relative file. filename and content_type are optional;
+  absence differs from filename: "" and content_type: "". Both payload keys, or neither, returns exactly part must
+  contain exactly one payload; an absent or empty name returns exactly part name must not be empty. With body_kind:
+  bytes, body must be {fixture, content_type}; read the fixture below tools/oracle/fixtures/multipart-oracle/ and use
+  the exact content_type string on the wire.
 
-  request.body_kind is json (the default), multipart or bytes. With json, request.body remains the legacy bare JSON
-  value, even if it has fields named multipart, bytes or json. With multipart, body is a parts record preserving
-  order with name, optional filename/content_type, and exactly one text or fixture payload per part. With bytes,
-  body is a fixture/content_type record. The explicit discriminator avoids collisions with legacy application JSON.
-  upstream answers accept bytes with status/headers. Confine all binary files to tools/oracle/fixtures/multipart-oracle/;
-  no case-relative alternative. Limits are 16 MiB per fixture, 128 parts, 16 MiB captured request body. decode_multipart_capture
-  reads the bounded Content-Type boundary and bytes of both client and gateway-to-provider requests into ordered
-  parts; normalize only boundary tokens, retaining duplicate names/filenames/content types and payloads. Differences
-  use /request/parts/0/filename or /upstream/0/parts/0/filename, and /response/bytes for binary responses. decode_http_body
-  reads bounded case YAML into these variants; fuzz both production decoders. The sole replay test is multipart_oracle::tests::replays_corpus.
-  Self-check reruns the new fixtures plus tools/oracle/cases/chat and tools/oracle/cases/health. WAV health fixture
-  ownership moves to B1001.
+  Change http::send in tools/oracle/src/http.rs so multipart requests become actual multipart/form-data bytes with a
+  boundary and bytes requests become the fixture bytes, rather than JSON-serializing either specification. The
+  Content-Type sent for multipart includes that boundary; only the random boundary token is normalized by comparison.
+  The capture must retain the exact method, path, headers, part order, metadata and payload bytes. Change the mock
+  provider's whole request handler to accept and record those raw bytes, including non-UTF-8 bytes, while retaining
+  B171's JSON capture for JSON requests. A captured body of exactly 16777216 bytes is valid; 16777217 bytes returns
+  exactly captured body exceeds 16777216 bytes.
 
+  Add an upstream answer bytes variant with body_kind: bytes, fixture: "binary-response.bin" and
+  content_type: "application/octet-stream". The mock provider returns the fixture bytes with its declared status and
+  headers. Change http::parse_body so an application/octet-stream answer returns raw bytes without str::from_utf8;
+  the answer case expects status 200, header content-type: application/octet-stream and the exact fixture bytes. A
+  one-byte difference is compared at /response/bytes. Text and SSE answers retain B171's UTF-8 and JSON parsing;
+  malformed non-binary bytes still produce response body is not valid UTF-8 and exit 2, while a response larger than
+  16777216 bytes produces HTTP response exceeded 16 MiB and exits 2. These CLI errors have no HTTP status, type,
+  param or code.
 
-  Implement tools/oracle/src/multipart_oracle.rs. Use MultipartOracleInput and MultipartOracleResult with typed
-  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
-  constructors. Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+  Implement OracleLimits with max_fixture_bytes=16777216, max_parts=128 and max_captured_body_bytes=16777216.
+  Decode request specifications at the case-loading boundary, and decode both client and provider multipart captures
+  using their Content-Type boundary. Accept quoted boundary="boundary-a" and unquoted boundary=boundary-a, but reject
+  missing or malformed boundaries with exactly multipart capture has no valid boundary. Reject fixture ../outside.bin,
+  /tmp/outside.bin, every absolute name and every .. component with exactly fixture path escapes multipart fixture
+  root. Reject 16777217-byte fixtures with exactly fixture exceeds 16777216 bytes and 129 parts with exactly
+  multipart contains more than 128 parts; accept exactly 16777216 bytes and 128 parts. Never warn and drop a field or
+  part. Compare binary values as bytes, not UTF-8 or JSON, and report the first changed client field at
+  /request/parts/<index>/<field> or provider field at /upstream/<answer-index>/parts/<index>/<field>. Keep all other
+  headers, names, filenames, content types, ordering and payload bytes significant.
 
+  Put binary fixtures only below tools/oracle/fixtures/multipart-oracle/. The multipart_capture fuzz input starts with
+  a two-byte big-endian Content-Type length, then exactly that many Content-Type bytes, then the captured body;
+  truncated prefixes and truncated Content-Type sections are rejected before decode_multipart_capture. Fuzz and replay
+  both production decoders. Add behavior tests under multipart_oracle::tests named
+  preserves_legacy_json_default, json_body_collision, ordered_duplicate_parts, rejects_dual_or_missing_payload,
+  rejects_empty_part_name, sends_real_wire_bytes, binary_answer_exact, rejects_text_binary_mismatch,
+  fixture_root_escape_rejected, rejects_unknown_field, rejects_duplicate_field, rejects_limits,
+  rejects_invalid_boundary, detects_changed_peer and preserves_optional_fields. Each named test invokes production
+  decoding, wire encoding, capture or comparison and checks its literal value, diagnostic or first JSON pointer;
+  replays_corpus remains outside the behavior filter.
 
-  Write adjacent tests.rs behavior functions ordered_duplicate_parts, binary_answer_exact, multipart_diff_pointer,
-  fixture_root_escape_rejected, rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input,
-  preserves_legacy_cases under multipart_oracle::tests. Each named function drives production code and asserts its
-  case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-oracle::multipart_oracle::decode_http_body(bytes: &[u8], limits:
-  &OracleLimits), for bounded HttpCase YAML and captured multipart bytes. Place its implementation in tools/oracle/src/multipart_oracle.rs
-  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
-  passes arbitrary bounded bytes to that exact decoder; multipart_oracle::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 240 implementation,
-  94 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 504 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add legacy-json.yaml, ordered-multipart.yaml and bytes.yaml below tools/oracle/cases/harness/multipart-oracle/.
+  Each uses env: {}, config with model_list: [], empty request headers, GET /health/liveliness, no provider answer and
+  expects HTTP 200. The first omits body_kind and sends {multipart: "value", bytes: "value"}; the second sends ordered
+  duplicate multipart parts; the third sends body_kind: bytes with binary-response.bin and
+  application/octet-stream. Run these beside tools/oracle/cases/chat and tools/oracle/cases/health; B900 adds no
+  Python adapter and makes no SDK call. Keep typed nested records, the existing JSON/SSE output, and the 620-line
+  change budget.
 scope:
   paths:
   - tools/oracle/Cargo.toml
   - tools/oracle/src/lib.rs
-  - tools/oracle/src/error.rs
+  - tools/oracle/src/http.rs
+  - tools/oracle/src/http/**
   - tools/oracle/src/multipart_oracle.rs
   - tools/oracle/src/multipart_oracle/**
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/fuzz/Cargo.toml
-  - tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
-  - tools/oracle/fuzz/corpus/multipart_oracle/**
-  - tools/oracle/fuzz/fuzz_targets/multipart_capture.rs
-  - tools/oracle/fuzz/corpus/multipart_capture/**
   - tools/oracle/src/case.rs
   - tools/oracle/src/case/**
   - tools/oracle/src/runner.rs
@@ -72,115 +80,205 @@ scope:
   - tools/oracle/src/mock/**
   - tools/oracle/src/compare.rs
   - tools/oracle/src/compare/**
-  - tools/oracle/src/main.rs
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
+  - tools/oracle/fuzz/fuzz_targets/multipart_capture.rs
+  - tools/oracle/fuzz/corpus/multipart_oracle/**
+  - tools/oracle/fuzz/corpus/multipart_capture/**
   - tools/oracle/cases/harness/multipart-oracle/**
   - tools/oracle/fixtures/multipart-oracle/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L467
-  why: Pinned HTTP/protocol contract used by this tooling extension.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L296-L320
-  why: Pinned HTTP/protocol contract used by this tooling extension.
+  why: >-
+    B1101 owns get_form_data at this exact range: form.multi_items() preserves arrival order, a key ending in []
+    accumulates under the stripped key, and a repeated plain key keeps only its last value. B900 records raw ordered
+    multipart parts before that production policy is applied.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L226-L353
+  why: >-
+    B082 owns image_edit_api and its three aliases /v1/images/edits, /images/edits and
+    /openai/deployments/{model:path}/images/edits, including the 422 conflicts for image/image[] and mask/mask[] and
+    the prompt=None insertion. B900 only supplies the wire capture consumed by that route's cases.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L247-L255
-  why: Shared dependency/call-site context; ownership is only the callable list above.
+  why: >-
+    B1001 owns get_audio_file_for_health_check, which opens the literal sibling file audio_health_check.wav. B900's
+    binary-response.bin is an oracle fixture under tools/oracle/fixtures/multipart-oracle/ and does not replace it.
 dod:
-- text: 'ordered duplicate parts: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    Omitted body_kind and body_kind: json preserve the JSON object {multipart: "value", bytes: "value", json:
+    "value"}, while body_kind: multipart and body_kind: bytes select only their typed records; the two collision tests
+    exercise all three literal keys.
+  proof:
+  - case-preserves-legacy-json-default
+  - case-json-body-collision
+- text: >-
+    Multipart parts named file, file, field remain in that order with duplicate metadata and payload bytes intact;
+    omitted optional metadata differs from explicitly empty filename: "" and content_type: "".
   proof:
   - case-ordered-duplicate-parts
-- text: 'binary answer exact: the named production behavior test asserts the result and effects described above.'
+  - case-preserves-optional-fields
+- text: >-
+    A dual-payload part {name: "file", text: "x", fixture: "payload.bin"}, a part {name: "file"}, and an absent or
+    empty name produce exactly part must contain exactly one payload or part name must not be empty as applicable.
+  proof:
+  - case-rejects-dual-or-missing-payload
+  - case-rejects-empty-part-name
+- text: >-
+    Multipart and bytes requests travel as real wire bytes: the multipart Content-Type has a boundary and ordered
+    parts, while bytes uses the exact binary-response.bin bytes and application/octet-stream; the raw mock capture
+    retains both bodies.
+  proof:
+  - case-sends-real-wire-bytes
+- text: >-
+    A bytes answer with status 200, content-type application/octet-stream and binary-response.bin returns the exact
+    non-UTF-8 bytes, and changing one byte reports only /response/bytes.
   proof:
   - case-binary-answer-exact
-- text: 'multipart diff pointer: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    A non-binary response containing invalid UTF-8 returns response body is not valid UTF-8 with CLI exit 2, whereas
+    an application/octet-stream response is accepted as bytes; a response over 16777216 bytes returns HTTP response
+    exceeded 16 MiB with CLI exit 2.
   proof:
-  - case-multipart-diff-pointer
-- text: 'fixture root escape rejected: the named production behavior test asserts the result and effects described
-    above.'
+  - case-rejects-text-binary-mismatch
+- text: >-
+    ../outside.bin, /tmp/outside.bin and other absolute or parent-containing fixture names return exactly fixture path
+    escapes multipart fixture root without reading outside the dedicated fixture directory.
   proof:
   - case-fixture-root-escape-rejected
-- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    Unknown field bogus returns exactly field "bogus" is not allowed, and a duplicate name key returns exactly
+    duplicate field "name" before gateway startup.
   proof:
   - case-rejects-unknown-field
-- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
-  proof:
   - case-rejects-duplicate-field
-- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    Fixture and capture sizes at 16777216 bytes and part count 128 are accepted; 16777217 bytes, 129 parts and
+    16777217-byte captured bodies return exactly fixture exceeds 16777216 bytes, multipart contains more than 128
+    parts or captured body exceeds 16777216 bytes, with CLI exit 2 and no HTTP status, type, param or code.
+  proof:
+  - case-rejects-limits
+- text: >-
+    Quoted boundary="boundary-a" and unquoted boundary=boundary-a decode identically, while missing or malformed
+    multipart/form-data boundaries return exactly multipart capture has no valid boundary without warning or dropping
+    a part.
+  proof:
+  - case-rejects-invalid-boundary
+- text: >-
+    The first changed client part and provider answer part retain their respective JSON pointers, and only the random
+    multipart boundary token is ignored; changed non-boundary headers and payload bytes remain differences.
   proof:
   - case-detects-changed-peer
-- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rejects-oversize-input
-- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-preserves-legacy-cases
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
+  - case-multipart-diff-pointer
+- text: >-
+    decode_http_body and decode_multipart_capture are the only fuzz and replay entry points, and committed seeds are
+    replayed through both production decoders for legacy JSON, duplicate parts, invalid payloads, boundary parsing,
+    fixture-root escapes and every numeric limit.
   proof:
   - parser-corpus
-- text: The same single replay function also replays multipart wire corpus through decode_multipart_capture.
+  - capture-corpus
+- text: >-
+    The three harness cases send GET /health/liveliness with empty headers, env: {}, model_list: [], no provider
+    answer and HTTP 200 for omitted/json, ordered multipart and bytes request bodies, while the existing chat and
+    health self-check cases remain executable.
   proof:
-  - multipart-corpus
-- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
-  proof:
-  - behavior-tests
   - harness-self-check
 checks:
-  optional: []
+  optional:
+  - mutants
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    why: The multipart decoder, wire encoder, raw capture or comparator behavior tests are absent, or the filter finds only corpus replay.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::/) - test(/::replays_corpus$/)'
+  - id: case-preserves-legacy-json-default
+    why: Omitted body_kind no longer selects JSON, or JSON preserves neither its default nor its multipart and bytes keys.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::preserves_legacy_json_default($|::)/)'
+  - id: case-json-body-collision
+    why: A JSON body containing multipart, bytes and json keys is interpreted as a variant record.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::json_body_collision($|::)/)'
   - id: case-ordered-duplicate-parts
-    why: the ordered-duplicate-parts behavior or its assertions are absent
+    why: Duplicate multipart names or metadata are reordered, collapsed or rewritten.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::ordered_duplicate_parts($|::)/)'
+  - id: case-rejects-dual-or-missing-payload
+    why: Dual or missing payload fields do not produce the exact part payload diagnostic.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_dual_or_missing_payload($|::)/)'
+  - id: case-rejects-empty-part-name
+    why: An absent or empty multipart name is accepted instead of returning the exact name diagnostic.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_empty_part_name($|::)/)'
+  - id: case-sends-real-wire-bytes
+    why: Multipart or bytes specifications are JSON-encoded, lose their content type or boundary, or are not captured byte-for-byte.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::sends_real_wire_bytes($|::)/)'
   - id: case-binary-answer-exact
-    why: the binary-answer-exact behavior or its assertions are absent
+    why: An application/octet-stream response is decoded as text or JSON, or the exact bytes and content-type header are lost.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::binary_answer_exact($|::)/)'
-  - id: case-multipart-diff-pointer
-    why: the multipart-diff-pointer behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::multipart_diff_pointer($|::)/)'
+  - id: case-rejects-text-binary-mismatch
+    why: Invalid UTF-8 in a non-binary answer is accepted, or the response-size error does not retain its CLI diagnostic and exit 2.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_text_binary_mismatch($|::)/)'
   - id: case-fixture-root-escape-rejected
-    why: the fixture-root-escape-rejected behavior or its assertions are absent
+    why: A parent or absolute fixture path can read outside tools/oracle/fixtures/multipart-oracle/.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::fixture_root_escape_rejected($|::)/)'
   - id: case-rejects-unknown-field
-    why: the rejects-unknown-field behavior or its assertions are absent
+    why: The YAML field bogus is accepted or reaches gateway startup instead of returning its exact field diagnostic.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_unknown_field($|::)/)'
   - id: case-rejects-duplicate-field
-    why: the rejects-duplicate-field behavior or its assertions are absent
+    why: A duplicate YAML name key is silently overwritten instead of returning duplicate field "name".
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_duplicate_field($|::)/)'
+  - id: case-rejects-limits
+    why: An exact 16777216-byte or 128-part boundary is rejected, or an input above one of those limits is accepted.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_limits($|::)/)'
+  - id: case-rejects-invalid-boundary
+    why: Quoted and unquoted boundary-a differ, or an invalid boundary warns and drops data instead of returning the exact diagnostic.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_invalid_boundary($|::)/)'
   - id: case-detects-changed-peer
-    why: the detects-changed-peer behavior or its assertions are absent
+    why: A changed non-boundary peer header or payload is missed, or its first JSON pointer is not retained.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::detects_changed_peer($|::)/)'
-  - id: case-rejects-oversize-input
-    why: the rejects-oversize-input behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_oversize_input($|::)/)'
-  - id: case-preserves-legacy-cases
-    why: the preserves-legacy-cases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::preserves_legacy_cases($|::)/)'
+  - id: case-multipart-diff-pointer
+    why: A changed client or provider part reports a later or generic pointer instead of the first changed field.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::multipart_diff_pointer($|::)/)'
+  - id: case-preserves-optional-fields
+    why: Missing filename or content_type is conflated with an explicitly empty string.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::preserves_optional_fields($|::)/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_oracle)"
-      && test -f tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs && grep -qF "decode_http_body" tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
-  - id: multipart-corpus
-    why: multipart wire bytes never reach their actual production decoder in fuzz/replay
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_capture)"
-      && grep -qF decode_multipart_capture tools/oracle/fuzz/fuzz_targets/multipart_capture.rs && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
+    why: decode_http_body lacks bounded committed seeds or replay bypasses the production request decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_oracle)" && test -f tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs && grep -qF decode_http_body tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
+  - id: capture-corpus
+    why: Capture fuzz inputs omit the two-byte big-endian Content-Type prefix, accept truncation or skip decode_multipart_capture.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_capture)" && test -f tools/oracle/fuzz/fuzz_targets/multipart_capture.rs && grep -qF decode_multipart_capture tools/oracle/fuzz/fuzz_targets/multipart_capture.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
   - id: harness-self-check
-    why: new harness fixtures or backwards-compatible HTTP modes fail
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/multipart-oracle)"
-      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/multipart-oracle
-      tools/oracle/cases/chat tools/oracle/cases/health
-oracle_cases: []
+    why: A new health case sends the wrong body shape, or multipart/bytes support breaks the existing chat or health oracle output.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/multipart-oracle)" && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/multipart-oracle tools/oracle/cases/chat tools/oracle/cases/health
+oracle_cases:
+- tools/oracle/cases/harness/multipart-oracle/legacy-json.yaml
+- tools/oracle/cases/harness/multipart-oracle/ordered-multipart.yaml
+- tools/oracle/cases/harness/multipart-oracle/bytes.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- >-
+  B171 owns the unchanged oracle infrastructure: http::client's 30-second timeout, no-proxy setting and redirect
+  policy; http::ready's GET /health/liveliness probe; the existing CLI, gateway lifecycle, group ordering, artifact
+  files, exit status 0/1/2 and JSON/SSE semantics. B900 owns whole http::send and http::parse_body functions because
+  their request and response byte branches change, plus the whole case-loading, mock request/reply and comparison
+  functions it edits; no function is split between the tasks.
+- >-
+  B1101 owns get_form_data at http_parsing_utils.py:L453-L467 and convert_upload_files_to_file_data at L470-L512.
+  Its observable form.multi_items order, [] accumulation, repeated plain-key last-wins rule, UploadFile tuple reads
+  and any warning or dropped metadata are not reimplemented by B900's raw capture.
+- >-
+  B082 owns image_edit_api at image_endpoints/endpoints.py:L242-L353 and all three POST aliases
+  /v1/images/edits, /images/edits and /openai/deployments/{model:path}/images/edits, including image/image[] and
+  mask/mask[] HTTP 422 details, UploadFile conversion and the prompt=None default. B900 provides only the captured
+  multipart record used by that route's cases.
+- >-
+  B1001 owns get_audio_file_for_health_check at audio_utils/utils.py:L247-L255 and the product fixture
+  audio_health_check.wav. B900 reads only its own binary-response.bin oracle fixture and adds no LiteLLM audio route.
+- B900 has no LiteLLM route or SDK call, so there are no route aliases, provider HTTP cases, environment variables, config keys, query parameters, database writes or production warning-and-drop paths to claim.
 pitfalls:
-- get_form_data accumulates key[] values but retains only the last repeated plain key; compare the resulting upstream
-  form against that source behavior.
-- Multipart boundary strings are random; filenames, content types and ordered payloads are not.
+- Multipart comparison must normalize only the boundary token; changing application/octet-stream to text/plain, a part content_type or any non-boundary header must remain a difference.
+- A missing filename or content_type is distinct from the explicit empty string, so Option<String> must survive request decode, capture decode and comparison.
+- The capture fuzzer's two-byte length is big-endian and counts only Content-Type bytes; boundary-like bytes in the body must remain payload.
+- The mock provider must not call str::from_utf8 before recording a bytes request, and http::parse_body must choose application/octet-stream before any UTF-8 conversion.
+- The three harness cases deliberately send GET /health/liveliness with no provider answer; changing that path or adding an answer would test route ownership instead of the oracle wire boundary.
+- Preserve every duplicate multipart part even though B1101 later applies repeated plain-key last-wins; collapsing capture records loses the input order needed by downstream route cases.
 review_level: standard
 budget:
-  max_changed_lines: 510
+  max_changed_lines: 620
   max_new_expects: 0

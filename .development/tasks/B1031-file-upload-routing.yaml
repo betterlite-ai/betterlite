@@ -1,247 +1,177 @@
 id: B1031
-title: File upload routing
+title: File upload policy and destination routing
 description: >-
-  Resolve upload provider/config, native Vertex batch passthrough and managed versus provider upload routing, including
-  first-row model extraction and deprecation diagnostics. Consume the typed validators and file credentials; exported
-  upload plan is executed by file-upload-route. Support top-level files_settings=None or a list of provider records;
-  resolve os.environ/ values through B002, and preserve the Vertex special case and missing-files_settings error.
+  Implement the complete upload-routing helpers at files_endpoints.py:111-527, including
+  executed-provider selection, Vertex passthrough validation, scan coordination, first-record
+  model extraction, files_settings resolution, deprecated router upload and route_create_file.
+  Put runtime policy in betterlite-core::api::file_upload_routing and settings in
+  betterlite-config::api::file_upload_routing. Use B303/B844 catalog access, B1020 authorization,
+  B1048 executed-provider probing, B1023/B1024 scans, B235 file extraction, B1027 storage and
+  B1028 SDK upload. The complete router upload facade belongs to B162, not a route caller.
 
-
-  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
-  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
-  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
-  out of scope.
-
-
-  Implement crates/betterlite-core/src/api/file_upload_routing.rs. Use FileUploadRoutingInput and FileUploadRoutingResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): files_endpoints.py:157 type='invalid_request_error', param='target_model_names', code=400;
-  files_endpoints.py:281 type='invalid_request_error', param=param, code=400; files_endpoints.py:146 type='invalid_request_error',
-  param='purpose', code=400; files_endpoints.py:237 type='invalid_request_error', param='passthrough', code=400;
-  files_endpoints.py:247 type='invalid_request_error', param='target_storage', code=400; files_endpoints.py:261
-  type='invalid_request_error', param='target_model_names', code=400; files_endpoints.py:309 type='invalid_request_error',
-  param='passthrough', code=400; files_endpoints.py:372 status_code=500, exception_detail=FastAPI detail object;
-  files_endpoints.py:407 type='invalid_request_error', param='target_storage', code=400; files_endpoints.py:476
-  type=ProxyErrorTypes.internal_server_error.value, param=None, code=500; files_endpoints.py:483 type=ProxyErrorTypes.internal_server_error.value,
-  param=None, code=500; files_endpoints.py:490 type=ProxyErrorTypes.internal_server_error.value, param=None, code=500.
-  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
-  tests.
-
-
-  Write adjacent tests.rs behavior functions vertex_only_passthrough, mixed_provider_passthroug_b883, first_json_model,
-  deprecated_loadbalance_warning, managed_upload_no_hook_500 under api::file_upload_routing::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): files_settings
-  defaults to None or provider-record list; os.environ/NAME resolves through the supplied environment; litellm_settings.enable_loadbalancing_on_batch_endpoints
-  defaults to None. No environment reads occur outside betterlite-config. Test api::file_upload_routing::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  The production external-byte decoder is betterlite-core::api::file_upload_routing::decode_file_upload_routing(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input first_record.strip() at litellm/proxy/openai_files_endpoints/files_endpoints.py:349.
-  Place its implementation in crates/betterlite-core/src/api/file_upload_routing.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/file_upload_routing.rs passes arbitrary
-  bounded bytes to that exact decoder; api::file_upload_routing::tests::replays_corpus replays newly committed seeds
-  through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::FileUploadRouting in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_upload_routing: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/openai_files_endpoints/files_endpoints.py: _names_a_litellm_executed_provider
-  (L111-L113); litellm/proxy/openai_files_endpoints/files_endpoints.py: _litellm_executed_batch_input_model (L116-L165);
-  litellm/proxy/openai_files_endpoints/files_endpoints.py: set_files_config (L181-L195); litellm/proxy/openai_files_endpoints/files_endpoints.py:
-  get_files_provider_config (L198-L209); litellm/proxy/openai_files_endpoints/files_endpoints.py: _deployment_provider
-  (L212-L214); litellm/proxy/openai_files_endpoints/files_endpoints.py: _resolves_to_vertex_deployments_only (L217-L224);
-  litellm/proxy/openai_files_endpoints/files_endpoints.py: _validate_passthrough_upload (L227-L289); litellm/proxy/openai_files_endpoints/files_endpoints.py:
-  _scan_batch_upload (L292-L329); litellm/proxy/openai_files_endpoints/files_endpoints.py: get_first_json_object
-  (L332-L351); litellm/proxy/openai_files_endpoints/files_endpoints.py: get_model_from_json_obj (L354-L363); litellm/proxy/openai_files_endpoints/files_endpoints.py:
-  _deprecated_loadbalanced_create_file (L366-L378); litellm/proxy/openai_files_endpoints/files_endpoints.py: route_create_file
-  (L381-L527). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 337 owned nonblank/non-comment/non-docstring Python lines (360 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 357 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 36 config tests/seeds
-  and 30 wiring; 703 total within the 710-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B171 (Direct helper oracle and URL
-  path encoding), B1020 (File credentials), B1021 (File upload options), B1022 (File upload validation), B1024 (File
-  batch rewrite), B1087 (Api boundaries), B1048 (Executed batch input), B1023 (File batch guardrails), B1027 (File
-  storage service), B1019 (File routing ids). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  files_settings starts unset; set_files_config(None) leaves existing state unchanged. A list
+  resolves string values starting os.environ/ through B002 once. loadbalancing uses
+  litellm_settings.enable_loadbalancing_on_batch_endpoints, default null, only literal true.
+  Pure helper file_upload_policy tests projections/validation only. B2401 SDK HTTP operation
+  file_upload_routing calls production routing with injected catalog/principal/callbacks and
+  captures uploads/probes; it never imports the FastAPI handler. B1032 tests the HTTP route.
+  First-record JSON decoding is decode_file_first_record(bytes, limits), reusing B1022's
+  Python-compatible JSON encoding rules; add its own core fuzz target for record selection.
+  Native tests use api::file_upload_routing::tests. The 360 owned nonblank/non-comment lines
+  budget as 270 implementation, 160 tests, 115 cases, 100 adapters, 55 fuzz, 55 config and 35 wiring,
+  790 total. Enterprise-only continuations remain inactive.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_upload_routing.rs
   - crates/betterlite-core/src/api/file_upload_routing/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/file_first_record.rs
+  - crates/betterlite-core/fuzz/corpus/file_first_record/**
   - crates/betterlite-config/src/lib.rs
   - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/file_upload_routing.rs
   - crates/betterlite-config/src/api/file_upload_routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/file_upload_routing.rs
-  - crates/betterlite-core/fuzz/corpus/file_upload_routing/**
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/file_upload_routing.rs
-  - tools/oracle/src/helpers/file_upload_routing/**
+  - tools/oracle/src/helpers/file_upload_policy.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/file_upload_routing.py
-  - tools/oracle/helpers/file_upload_routing/**
-  - tools/oracle/fuzz/corpus/helper_case/file_upload_routing-*
-  - tools/oracle/cases/helpers/file-upload-routing/**
+  - tools/oracle/helpers/file_upload_policy.py
+  - tools/oracle/cases/helpers/file-upload-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_upload_routing.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_upload_routing.py
+  - tools/oracle/cases/sdk-http/file-upload-routing/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-upload-routing-*
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L181-L209
-  why: Setting files_settings and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
-  why: Setting litellm_settings.enable_loadbalancing_on_batch_endpoints and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L111-L527
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Complete helper call graph below create_file; storage, explicit model, managed targets, legacy routing, then direct provider.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
+  why: Legacy file/batch load-balancing setting defaults to None, not false or enabled.
 dod:
-- text: 'vertex only passthrough: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vertex-only-passthrough
-  - oracle
-- text: 'mixed provider passthrough denied: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-mixed-provider-passthrough-denied
-  - oracle
-- text: 'first json model: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-first-json-model
-  - oracle
-- text: 'deprecated loadbalance warning: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-deprecated-loadbalance-warning
-  - oracle
-- text: 'managed upload no hook 500: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-managed-upload-no-hook-500
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    file_settings_lookup loads files_settings=null then [] then records with custom_llm_provider
+    and api_key=os.environ/FILE_TEST_KEY; injected environment resolves the key, including missing
+    secret behavior from B002. Null setter retains the previous list; non-list raises ValueError
+    "invalid files config, expected a list is not a list". Vertex lookup always returns null,
+    even without settings. Other providers with unset settings raise "files_settings is not set,
+    set it on your config.yaml file." First matching record wins; no match returns null.
+    Non-dict list elements survive loading and fail on lookup's .get, not a new silent drop.
+  proof: [behavior-tests, config-tests, config-corpus, oracle, python-adapters]
+- text: >-
+    upload_destination_order rejects explicit target_storage=litellm_db with 400,
+    type=invalid_request_error,param=target_storage,code="400",message="target_storage=litellm_db
+    is not a storage a caller can pick: LiteLLM chooses it on its own for the batch input files
+    of a model whose batches it runs itself, so upload with purpose=batch and name that model
+    instead of target_storage". Other non-default storage wins over model/targets; storage=null,
+    empty or default does not. Executed model selection is attempted before all other destinations.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    executed_upload_selection authorizes candidates known as executed providers before honoring
+    explicit storage. Router absent returns null; model non-null (even "") replaces targets.
+    With no explicit storage, probe all candidates through B1048; no executed provider returns null.
+    One executed model m and purpose=assistants gives 400 invalid_request_error/purpose/"400":
+    "The server behind m has no Files API, so LiteLLM keeps only batch input files for it and runs
+    the batch itself: upload with purpose=batch; got purpose=assistants". Candidates [m,n] with m
+    executed give 400 invalid_request_error/target_model_names/"400": "LiteLLM runs batches for m
+    itself and keeps their input files, so a batch input file can target only that one model; got
+    target_model_names=m, n". Single m/batch selects litellm_db with targets=[m], then B1027's
+    absent managed hook produces its 400 before storage writes; do not invent a managed registration.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    passthrough_upload_errors checks in order purpose, storage, named deployments. Non-batch
+    assistants yields 400 invalid_request_error/passthrough/"400", message="`passthrough` uploads
+    the file bytes unchanged for a native Vertex batch, so purpose must be 'batch', got 'assistants'."
+    target_storage=azure_storage yields param=target_storage and "`passthrough` writes the native
+    batch file to the Vertex AI deployment's GCS bucket, so it cannot be combined with
+    target_storage='azure_storage'." No model/targets yields param=target_model_names and
+    "`passthrough` needs the Vertex AI deployment that will run the batch, since native rows carry
+    no model: pass `target_model_names` or `model`." A non-Vertex m yields param=model (or
+    target_model_names for a target) and "`passthrough` is only supported for Vertex AI deployments;
+    'm' does not resolve to vertex_ai deployments only." All resolved deployments with model_info.id
+    must be Vertex; missing ids are skipped, an empty list passes if the named credential is Vertex.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    scan_upload_gates skips non-batch, bytes input or absent pre-call guardrails. A guarded native
+    passthrough stream fails 400 invalid_request_error/passthrough/"400", message="Batch guardrails
+    cannot scan native Vertex batch rows, so a `passthrough` upload is refused when the key, team,
+    or request has pre-call guardrails configured. The file was not forwarded to the provider."
+    Otherwise use B1024, publish B1023 failures and reject changed scans with zero submitted records
+    using its exact nothing-to-submit error. No provider request follows failure.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    first_record_routing skips blank lines, reads only the first nonblank record, supports BOM and
+    Python JSON byte encodings, rewinds seekable files to zero, and returns null on empty input,
+    malformed JSON, invalid encoding, OSError or ValueError. A parsed scalar/list remains that value;
+    get_model_from_json_obj expects an object, returns body.model only for object body, and does
+    not coerce its value to string. A missing/string body returns null. Native tests preserve the
+    read/seek failure order rather than guaranteeing rewind after an exception.
+  proof: [behavior-tests, decoder-corpus, oracle, python-adapters]
+- text: >-
+    routed_upload_paths gives explicit model m priority over targets, obtains authorized credentials
+    with operation_context="file upload", uploads via B1028, and encodes a truthy result id through
+    B1019, logging DEBUG "Encoded file ID: <old> -> <new> (model: m)". Missing/empty id is unchanged.
+    Targets without model produce 500 internal_server_error,param=null,code="500",message="Managed
+    files hook not found" in MIT. With no targets, literal-true loadbalancing plus known router_model
+    calls B162; missing router raises HTTPException500 detail.error="LLM Router not initialized.
+    Ensure models added to proxy." Otherwise apply team credentials, then matching files_settings
+    overrides those values, remove custom_llm_provider from the request and pass the selected
+    provider separately. Test source errors and successful upstream multipart capture.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: Added config, decoder, helper and SDK seeds replay through their production boundaries.
+  proof: [config-tests, config-corpus, decoder-corpus, case-seeds, new-cases, oracle, python-adapters]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_routing::/)
-      - test(/::replays_corpus$/)'
-  - id: case-vertex-only-passthrough
-    why: the vertex-only-passthrough behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::vertex_only_passthrough($|::)/)'
-  - id: case-mixed-provider-passthrough-denied
-    why: the mixed-provider-passthrough-denied behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::mixed_provider_passthroug_b883($|::)/)'
-  - id: case-first-json-model
-    why: the first-json-model behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::first_json_model($|::)/)'
-  - id: case-deprecated-loadbalance-warning
-    why: the deprecated-loadbalance-warning behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::deprecated_loadbalance_warning($|::)/)'
-  - id: case-managed-upload-no-hook-500
-    why: the managed-upload-no-hook-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::managed_upload_no_hook_500($|::)/)'
+    why: destination precedence or upload gates lack native cases
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_routing::tests::/) - test(/replays_/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: file settings or literal-true legacy routing is not loaded by production config
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_routing::tests::loads_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_upload_routing)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/file_upload_routing.rs && grep -qF "decode_file_upload_routing"
-      crates/betterlite-core/fuzz/fuzz_targets/file_upload_routing.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::file_upload_routing::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_upload_routing.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_routing-*)"
-      && grep -qE "^[[:space:]]+file_upload_routing:" tools/oracle/fuzz/corpus/helper_case/file_upload_routing-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-upload-routing)"
+    why: new file settings keys have no loader corpus input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-routing-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: decoder-corpus
+    why: first-record selection is not replayed against boundary inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_first_record)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::replays_first_record_corpus$/)'
+  - id: python-adapters
+    why: either pure policy or SDK routing comparison is missing
+    run: test -f tools/oracle/helpers/file_upload_policy.py && test -f tools/oracle/sdk_http/file_upload_routing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: case-seeds
+    why: typed policy and SDK inputs lack added seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-upload-routing-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: no new upload-routing network comparison exists
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-upload-routing)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-upload-routing/vertex-only-passthrough.yaml
-- tools/oracle/cases/helpers/file-upload-routing/mixed-provider-passthrough-denied.yaml
-- tools/oracle/cases/helpers/file-upload-routing/first-json-model.yaml
-- tools/oracle/cases/helpers/file-upload-routing/deprecated-loadbalance-warning.yaml
-- tools/oracle/cases/helpers/file-upload-routing/managed-upload-no-hook-500.yaml
-deviations: []
+- tools/oracle/cases/helpers/file-upload-policy/file-settings-lookup.yaml
+- tools/oracle/cases/helpers/file-upload-policy/passthrough-upload-errors.yaml
+- tools/oracle/cases/helpers/file-upload-policy/first-record-routing.yaml
+- tools/oracle/cases/sdk-http/file-upload-routing/upload-destination-order.yaml
+- tools/oracle/cases/sdk-http/file-upload-routing/executed-upload-selection.yaml
+- tools/oracle/cases/sdk-http/file-upload-routing/scan-upload-gates.yaml
+- tools/oracle/cases/sdk-http/file-upload-routing/routed-upload-paths.yaml
+deviations:
+- what: Managed-target upload returns 500 internal_server_error, code="500", message="Managed files hook not found"; automatic executed-batch storage reaches B1027's target_model_names 400 instead.
+  why: Keep observable MIT behavior pending Max's managed files and batches decision, without installing an enterprise hook or license gate.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L473-L480
 out_of_scope:
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1032 owns create_file L545-L927.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1033 owns get_file_content L945-L1233.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1034 owns get_file L1251-L1431, _as_file_list_page
-  L1652-L1655, list_files L1673-L1860.'
-- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B087 owns delete_file L1449-L1649.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1032 owns create_file; B1033 get_file_content; B1034 get_file/list_files/_as_file_list_page; B087 delete_file.
+- The managed-hook continuation L481-L498 cannot run in the MIT checkout. Its router/type checks and managed upload belong to the excluded enterprise capability, not fabricated test doubles.
 pitfalls:
-- 'files_endpoints.py:467 emits the diagnostic ''Encoded file ID: %s -> %s (model: %s)''; retain its level and fallback
-  instead of turning it into a hard error.'
-- _create_file_request reads 'custom_llm_provider' with default None; omission and an explicit value must not collapse
-  into one case.
+- Explicit storage still follows executed-provider authorization; it is not a bypass for a forbidden model.
+- files_settings is merged after team credentials, so its matching record can replace them.
+- First-record JSON selection accepts values other than objects despite its annotation.
 review_level: security
 budget:
-  max_changed_lines: 710
-  max_new_expects: 1
+  max_changed_lines: 790
+  max_new_expects: 0

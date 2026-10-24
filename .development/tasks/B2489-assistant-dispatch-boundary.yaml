@@ -1,0 +1,139 @@
+id: B2489
+title: Assistant router dispatch, settings and JSON boundary
+description: >-
+  Provide server::api::assistant_dispatch::AssistantDispatcher for the eight asynchronous operations installed
+  by Router.initialize_assistants_endpoint. Own that whole function and _pass_through_assistants_endpoint_factory,
+  26 nonblank/non-comment lines including the helper docstring. An enum dispatches to B1055 create, B1130
+  list/delete, B1056 thread create/get, B1057 message create/list and B2488 run. Do not rebuild the generic
+  Router.factory_function or make these SDK services depend on HTTP routes. This split supplies the missing
+  callee to B1085, B1086 and B089.
+
+  Add top-level assistant_settings to B002 Config, default absent/null, with custom_llm_provider and
+  litellm_params. It becomes the SDK Router assistants_config argument, not a new public YAML name.
+  LiteLLM's AssistantsTypedDict is a runtime dict: retain missing-key and unsupported-provider behavior rather
+  than rejecting every value outside its static azure/openai annotation. Resolve shallow os.environ/ values
+  only in the config crate, then pass immutable settings to the dispatcher. Reuse B2487 resource settings.
+
+  Supply decode_assistant_body(bytes:&[u8],limits:&ApiLimits) for the three consuming route tasks. It is a
+  strict JSON decoder matching orjson.loads, with no JSON repair and no implicit object coercion. Reuse
+  B1087 bounds. Fuzz target assistant_body calls this exact function, and replays_corpus consumes its seeds.
+  The source orjson call remains inside each whole route's ownership; this shared native decoder contains
+  no route registration or error-to-HTTP mapping.
+
+  Add B2401 AssistantDispatch with a closed operation enum, typed operation payload and config/environment
+  projection. Python constructs a real Router and invokes its corresponding public method; native calls the
+  production dispatcher. Provider operations must reach the mock HTTP server. Budget 150 dispatch/config,
+  65 decoder/fuzz, 160 tests, 110 adapters, 175 fixtures and 70 wiring/config seeds, 730 changed lines.
+scope:
+  paths:
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/assistant_dispatch.rs
+  - crates/betterlite-server/src/api/assistant_dispatch/**
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/assistant_body.rs
+  - crates/betterlite-server/fuzz/corpus/assistant_body/**
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/assistant_settings.rs
+  - crates/betterlite-config/src/api/assistant_settings/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-settings-*
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/assistant_dispatch.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/assistant_dispatch.py
+  - tools/oracle/cases/sdk-http/assistant-dispatch/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
+  why: These eight installed operations are the complete assistant dispatcher surface.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7175-L7191
+  why: Configuration overlays request kwargs only when the explicit provider is null; client is a separate argument.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6932-L6941
+  why: B002's startup loader supplies assistant_settings and expands only shallow os.environ/ strings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L820-L822
+  why: AssistantsTypedDict documents the provider and parameter keys without runtime validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13156-L13174
+  why: Assistant creation directly decodes raw JSON rather than using the repairing request-body helper.
+dod:
+- text: >-
+    dispatch_all_assistant_operations supplies openai, a mock api_base and sk-test. Parameterized create/list/
+    delete assistant, create/get thread, create/list message and run calls each reach the appropriate real
+    provider method and return the mock asst_a,thread_a,msg_a or run_a record. Run stream=true returns the
+    lazy manager; the adapter enters it to verify provider events. No model-group lookup, retries or fallback
+    routing is added by this dispatcher. The supplied client identity reaches the SDK owner unchanged.
+  proof: [dispatch-tests, oracle, python-adapter]
+- text: >-
+    assistant_config_overlays_request uses assistants_config={custom_llm_provider:openai,litellm_params:
+    {api_key:config-key,model:gpt-4o-mini}} and request api_key=request-key,model=gpt-4o. With provider=null,
+    expect config-key and gpt-4o-mini at mock HTTP; the original config map is unchanged. Explicit provider=azure
+    bypasses the config overlay, including its key/model; explicit provider="" also bypasses it and lets the
+    SDK reject the empty provider. Configuration litellm_params.client or custom_llm_provider collides with
+    the helper's explicit arguments and raises TypeError before HTTP, rather than selecting one silently.
+  proof: [dispatch-tests, oracle, python-adapter]
+- text: >-
+    assistant_dispatch_requires_provider omits provider with absent config and expects Exception with no SDK
+    status/type/param/code, zero HTTP and message="'custom_llm_provider' must be set. Either via:\n
+    `Router(assistants_config={'custom_llm_provider': ..})` \nor\n `router.arun_thread(custom_llm_provider=..)`".
+    A direct empty assistants_config dict raises KeyError('custom_llm_provider'); a config with only that key
+    raises KeyError('litellm_params'). Invalid provider=anthropic reaches the SDK owner's existing rejection.
+  proof: [dispatch-tests, oracle, python-adapter]
+- text: >-
+    config::api::assistant_settings::tests::loads_assistant_settings loads absent,null,{} as no configured
+    assistant, and an openai map as a usable config key absent from the unsupported-key report. For each
+    litellm_params string beginning os.environ/, resolve the environment variable after replacing every
+    occurrence of that prefix: os.environ/Aos.environ/B reads AB. Missing variable becomes null; empty
+    variable remains "". Nested maps and strings without the leading prefix stay unchanged. A nonempty
+    settings map missing litellm_params fails loading with that missing key; missing provider remains a
+    dispatch KeyError. Real SDK HTTP cases verify an env key and explicit-provider bypass, without logging
+    secrets. Replay newly added assistant_settings YAML and SDK protocol seeds.
+  proof: [settings-tests, dispatch-tests, oracle, python-adapter, config-corpus, sdk-corpus]
+- text: >-
+    assistant_body_is_strict accepts {"model":"first","model":"last"} with last winning and returns
+    JSON null/arrays unchanged for the calling route to reject during request setup. Empty input, truncated
+    {, invalid UTF-8 and NaN are decode errors; no Python-literal or trailing-comma repair is attempted.
+    Depth and byte limits are B1087's explicit boundary errors. New fuzz seeds cover duplicate keys, scalars,
+    invalid UTF-8 and nesting; the actual route tasks add HTTP cases for their respective mappings.
+  proof: [decoder-tests, body-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: dispatch-tests
+    why: assistant config no longer selects the correct SDK call or silently changes collision precedence
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::tests::/) - test(/::replays_corpus$/)'
+  - id: settings-tests
+    why: assistant_settings is accepted in prose but not loaded by Config
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_settings::tests::loads_assistant_settings($|::)/)'
+  - id: decoder-tests
+    why: the shared assistant boundary repairs malformed JSON or loses duplicate-key semantics
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::tests::assistant_body_is_strict($|::)/)'
+  - id: body-corpus
+    why: assistant JSON parsing has no executable fuzz target or new replay seeds
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/assistant_body.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/assistant_body)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::tests::replays_corpus$/)'
+  - id: config-corpus
+    why: environment expansion has no configuration decoder regression seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/assistant-settings-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: sdk-corpus
+    why: assistant dispatch variants do not survive SDK case parsing
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: python-adapter
+    why: dispatch comparisons bypass the actual Router or have no checked adapter
+    run: test -f tools/oracle/sdk_http/assistant_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/sdk-http/assistant-dispatch/all-operations.yaml
+- tools/oracle/cases/sdk-http/assistant-dispatch/config-overlays-request.yaml
+- tools/oracle/cases/sdk-http/assistant-dispatch/requires-provider.yaml
+- tools/oracle/cases/sdk-http/assistant-dispatch/config-environment.yaml
+deviations: []
+out_of_scope:
+- B002 owns the complete startup config loader; the quoted assistant_settings block specifies its new typed projection, not a second owner for part of that function.
+- B016 owns generic Router machinery, including factory_function; this task's closed dispatcher replaces its assistant registration use without splitting that function. Other router functions retain their existing backlog owners.
+- B2487 owns shared credentials/timeouts, B1087 input limits, and B1085/B1086/B089 own every consuming HTTP handler and its error mapping.
+pitfalls:
+- assistant_settings is singular in YAML even though Router takes assistants_config.
+- Config credentials override caller credentials only when custom_llm_provider is null.
+- TypedDict does not validate provider literals or missing keys at runtime, so a Rust enum must not accidentally move those errors to startup.
+review_level: security
+budget:
+  max_changed_lines: 760
+  max_new_expects: 0

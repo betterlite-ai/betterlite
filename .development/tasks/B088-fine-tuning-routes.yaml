@@ -1,219 +1,130 @@
 id: B088
-title: Fine tuning routes
+title: Fine-tuning create, retrieve and list HTTP routes
 description: >-
-  Install fine-tuning create/retrieve/list aliases using the split services, source model-routing hints and authenticated
-  configured credentials. Extend B014 exhaustive operations and compare job schemas, headers, query strings and
-  normalized errors.
+  Register POST and GET /v1/fine_tuning/jobs and /fine_tuning/jobs, plus GET
+  /v1/fine_tuning/jobs/{fine_tuning_job_id:path} and /fine_tuning/jobs/{fine_tuning_job_id:path} in
+  server::api::fine_tuning_routes. Own all three complete handlers at endpoints.py:62-492. B003 authenticates,
+  B004 supplies common pre-call, resolved-model execution and custom headers, B012 hooks/status work,
+  B1021 managed-id validation, B1019 unified-id detection, B1141 finetune_settings lookup and B1052/B1053
+  SDK execution. B2400 converts caught errors. Inject a typed resolved-model executor for Router calls;
+  its catalog/credential services remain B302/B303, not a dependency on a later family composer.
 
-
-  Implement crates/betterlite-server/src/api/fine_tuning_routes.rs, crates/betterlite-core/src/api/fine_tuning_routes.rs.
-  Use FineTuningRoutesInput and FineTuningRoutesResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v1/fine_tuning/jobs; POST /fine_tuning/jobs; GET /v1/fine_tuning/jobs/{fine_tuning_job_id:path};
-  GET /fine_tuning/jobs/{fine_tuning_job_id:path}; GET /v1/fine_tuning/jobs; GET /fine_tuning/jobs. Each alias is
-  exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories
-  without re-registering their methods/paths.
-
-
-  Route input projections: data.litellm_call_id (absent '').
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:320 status_code=400, exception_detail=FastAPI detail string; endpoints.py:463
-  status_code=400, exception_detail=FastAPI detail string; endpoints.py:157 status_code=500, exception_detail=FastAPI
-  detail object; endpoints.py:297 status_code=500, exception_detail=FastAPI detail object; endpoints.py:433 status_code=400,
-  exception_detail=FastAPI detail string; endpoints.py:439 status_code=500, exception_detail=FastAPI detail string.
-  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
-  tests.
-
-
-  Write adjacent tests.rs behavior functions fine_tuning_create_route, fine_tuning_retrieve_route, fine_tuning_list_route,
-  training_file_access_denied, route_aliases, auth_missing, auth_invalid under api::fine_tuning_routes::tests. Each
-  named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-server::api::fine_tuning_routes::decode_fine_tuning_routes(bytes:
-  &[u8], limits: &ApiLimits), for bounded HTTP JSON body; called by the production axum extractor. Place its implementation
-  in crates/betterlite-server/src/api/fine_tuning_routes.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_routes.rs passes arbitrary bounded bytes to that
-  exact decoder; api::fine_tuning_routes::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/fine_tuning_endpoints/endpoints.py: create_fine_tuning_job (L74-L219); litellm/proxy/fine_tuning_endpoints/endpoints.py:
-  retrieve_fine_tuning_job (L234-L365); litellm/proxy/fine_tuning_endpoints/endpoints.py: list_fine_tuning_jobs
-  (L380-L492). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 337 owned nonblank/non-comment/non-docstring Python lines (370 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 357 implementation,
-  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 621 total within the 630-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B1020 (File credentials), B1052 (Fine tuning create), B1053 (Fine
-  tuning read), B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
-  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B1021 (File upload
-  options), B1019 (File routing ids), B1141 (Fine tuning cancel call and settings), B003 (HTTP server, health routes
-  and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres
-  test fixture). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Remove premium_user checks under README Decisions, keeping other MIT branches. Create binds a
+  LiteLLMFineTuningJobCreate request; decode_fine_tuning_create(bytes,ApiLimits) uses B518's job fields and
+  the nullable openai/azure/vertex_ai provider plus allowed extra fields. Missing model/training_file is
+  framework 422, not an SDK error. Add fine_tuning_create fuzz target/corpus for that actual decoder.
+  GET retrieve uses B1100 raw JSON, recovering {} only on decode failure. List query defaults provider,
+  target_model_names,after,limit to null. These 370 nonblank/non-comment lines share common services;
+  allow 250 code, 200 tests, 190 HTTP fixtures and 100 decoder/wiring, 740 under 800.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/fine_tuning_routes.rs
   - crates/betterlite-server/src/api/fine_tuning_routes/**
-  - crates/betterlite-server/src/api.rs
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/fine_tuning_routes.rs
-  - crates/betterlite-core/src/api/fine_tuning_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-server/fuzz/Cargo.toml
-  - crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_routes.rs
-  - crates/betterlite-server/fuzz/corpus/fine_tuning_routes/**
+  - crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_create.rs
+  - crates/betterlite-server/fuzz/corpus/fine_tuning_create/**
   - tools/oracle/cases/api/fine-tuning-routes/**
-  - tools/oracle/fixtures/fine-tuning-routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/dispatch.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L62-L492
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: Three whole handlers expose all six paths and different body, query, managed-id and success-hook behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1118-L1160
+  why: Create requires model/training_file, permits hyperparameter extras and defaults optional fields/provider to null.
 dod:
-- text: 'fine tuning create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-fine-tuning-create-route
-  - oracle
-- text: 'fine tuning retrieve route: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-fine-tuning-retrieve-route
-  - oracle
-- text: 'fine tuning list route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-fine-tuning-list-route
-  - oracle
-- text: 'training file access denied: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-training-file-access-denied
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    create_job_aliases_and_validation posts {model:gpt-4o-mini,training_file:file_train,custom_llm_provider:openai,
+    hyperparameters:{n_epochs:2}} on both aliases with matching finetune_settings. Expect SDK POST and
+    200 queued job ft_a. Request model_dump excludes null fields but retains seed=0,suffix="",integrations=[]
+    and permitted extras. Config map overlays caller fields, including model. Missing model/training_file
+    or provider=unknown is 422 detail validation with no error type/param/code and no pre-call/provider call.
+    Non-managed file with missing/null provider yields 500,internal_server_error,param=null,code="500",
+    source message="Invalid request, No litellm managed file id or custom_llm_provider provided.".
+  proof: [route-tests, oracle, create-corpus, new-cases]
+- text: >-
+    create_managed_file_order validates training_file then validation_file after common pre-call.
+    require_managed_files=true rejects raw training/validation id with 400,internal_server_error,param=null,
+    code="400" and the B1021 message "Raw provider file ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed file id returned when the file was created.".
+    Null validation_file is a no-op. A unified id without MIT ownership hook gives 500 with
+    message="Managed resource ownership validation is unavailable.". Default false allows detection/routing;
+    no router yields 500,internal_server_error,code="500",param=null with source detail
+    {error:"LLM Router not initialized. Ensure models added to proxy."}. A scripted resolved-model success
+    sets response.training_file and hidden unified_file_id to the decoded litellm_proxy:... string, not the
+    incoming base64. The encoded training id takes precedence over custom_llm_provider routing.
+  proof: [route-tests, oracle]
+- text: >-
+    retrieve_provider_body_over_query calls both id aliases with ?custom_llm_provider=openai and JSON
+    {custom_llm_provider:azure}; body truthy azure selects its config. Empty/null body provider falls back
+    to query. Invalid/empty JSON is ignored; valid [] or null fails .get with 500 internal_server_error,
+    param=null,code="500". Query provider outside openai/azure is 422 before handler, while body string
+    is not constrained by the query enum. No selected provider and native id yields 400,
+    internal_server_error,param=null,code="400", message="Invalid request, No litellm managed file id or custom_llm_provider provided.".
+    The path id is authoritative. A matching config overlays data; no match in [] calls SDK default openai.
+    Unset finetune_settings gives 500 with "fine_tuning_config is not set, set it on your config.yaml file.".
+  proof: [route-tests, oracle]
+- text: >-
+    retrieve_managed_job checks require_managed_files before common pre-call. Raw ft_a under true gives
+    400 internal_server_error,param=null,code="400" and message="Raw provider fine-tuning job ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed fine-tuning job id returned when the fine-tuning job was created.".
+    Unified id without checker gives 500 "Managed resource ownership validation is unavailable.". With
+    requirement false and missing router, detected unified id gives the same router-missing 500 as create.
+    A resolved-model success adds hidden unified_finetuning_job_id equal to decoded string but leaves
+    public id unchanged. A slash-containing native job id is captured whole on both retrieve aliases.
+  proof: [route-tests, oracle]
+- text: >-
+    list_target_model_and_pagination calls both list aliases with provider=openai,after=ft_prev,limit=7;
+    SDK receives those values. No after/limit leaves both null rather than setting 20; 0 and empty after
+    remain literal. Invalid limit text/query provider produces 422 detail. target_model_names=" a "
+    routes model=" a " without trimming; "a,b" or "a," yields 400,internal_server_error,param=null,code="400",
+    message="target_model_names on list fine-tuning jobs must be a list of one model name. Example: ['gpt-4o']".
+    One target with no router gives 500 with "LLM Router not initialized. Ensure models added to proxy.".
+    Empty target falls through to provider selection; absent both gives the invalid-request 400 above.
+    The target-model path returns immediately and adds no route custom headers or success hook/status event.
+  proof: [route-tests, oracle]
+- text: >-
+    tuning_route_hooks_and_errors proves create/retrieve replace a success-hook result only when it is
+    a LiteLLMFineTuningJob, then enqueue status=success with call id or "". List never calls that success
+    hook/status update. Non-early returns build B004 headers from hidden model_id/cache_key/api_base or ""
+    and caller allowed_model_region or "". Caught errors invoke failure hook, log, then B2400: provider 404
+    becomes 404,internal_server_error,param=null,code="404"; HTTPException 400 retains status but type is
+    internal_server_error. Missing/invalid bearer on all six routes yields 401,authentication_error,
+    param=null,code="401" before handler. Success response is application/json with source x-litellm-* headers.
+  proof: [route-tests, oracle]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-fine-tuning-create-route
-    why: the fine-tuning-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::fine_tuning_create_route($|::)/)'
-  - id: case-fine-tuning-retrieve-route
-    why: the fine-tuning-retrieve-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::fine_tuning_retrieve_route($|::)/)'
-  - id: case-fine-tuning-list-route
-    why: the fine-tuning-list-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::fine_tuning_list_route($|::)/)'
-  - id: case-training-file-access-denied
-    why: the training-file-access-denied behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::training_file_access_denied($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::auth_invalid($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/fine_tuning_routes)"
-      && test -f crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_routes.rs && grep -qF "decode_fine_tuning_routes"
-      crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_routes.rs && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::replays_corpus$/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+  - id: route-tests
+    why: a fine-tuning alias, source default or operation-specific hook path is absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::/) - test(/::replays_corpus$/)'
+  - id: create-corpus
+    why: typed fine-tuning request validation is not fuzzed through its production decoder
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/fine_tuning_create.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/fine_tuning_create)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::fine_tuning_routes::tests::replays_corpus$/)'
+  - id: new-cases
+    why: create/retrieve/list lack new real HTTP comparisons
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/fine-tuning-routes)"
 oracle_cases:
-- tools/oracle/cases/api/fine-tuning-routes/fine-tuning-create-route.yaml
-- tools/oracle/cases/api/fine-tuning-routes/fine-tuning-retrieve-route.yaml
-- tools/oracle/cases/api/fine-tuning-routes/fine-tuning-list-route.yaml
-- tools/oracle/cases/api/fine-tuning-routes/training-file-access-denied.yaml
-- tools/oracle/cases/api/fine-tuning-routes/route-aliases.yaml
-- tools/oracle/cases/api/fine-tuning-routes/auth-missing.yaml
-- tools/oracle/cases/api/fine-tuning-routes/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/fine-tuning-routes/create-job-aliases-and-validation.yaml
+- tools/oracle/cases/api/fine-tuning-routes/create-managed-file-order.yaml
+- tools/oracle/cases/api/fine-tuning-routes/retrieve-provider-body-over-query.yaml
+- tools/oracle/cases/api/fine-tuning-routes/retrieve-managed-job.yaml
+- tools/oracle/cases/api/fine-tuning-routes/list-target-model-and-pagination.yaml
+- tools/oracle/cases/api/fine-tuning-routes/tuning-route-hooks-and-errors.yaml
+deviations:
+- what: >-
+    betterlite permits authenticated fine-tuning without a license. Default MIT reference premium_user=false
+    returns 500 internal_server_error,code="500" with "Only premium users can use this endpoint" instead.
+  why: README Decisions removes paid-tier gates. Compare the remaining HTTP behavior with only the reference premium flag enabled and a separate default-license deviation case; never install enterprise code.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L117-L119
+- what: Managed files/jobs retain MIT default raw-id handling and the explicit 400/500 require_managed_files errors in these cases.
+  why: Max's managed-files/batches decision is still open; no ownership hook is fabricated.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L143-L178
 out_of_scope:
-- 'litellm/proxy/fine_tuning_endpoints/endpoints.py: B1141 owns set_fine_tuning_config L32-L46, get_fine_tuning_provider_config
-  L50-L59.'
-- 'litellm/proxy/fine_tuning_endpoints/endpoints.py: B1054 owns cancel_fine_tuning_job L507-L638.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1141 owns provider config helpers at 32-59; B1054 owns complete cancellation handler at 495-638.
+- B1052/B1053 own SDK calls and B518 typed jobs; B1021 owns managed-id policy/config. Router model selection uses injected B004 execution backed by B302/B303, without owning a fragment of Router.factory_function.
 pitfalls:
-- endpoints.py:115 emits the diagnostic 'Request received by LiteLLM:\n%s'; retain its level and fallback instead
-  of turning it into a hard error.
-- data reads 'litellm_call_id' with default ''; omission and an explicit value must not collapse into one case.
+- Create's invalid-selector branch is a ValueError mapped to 500, while retrieve/list explicitly return HTTP 400.
+- List target names are split on commas without trimming and return before custom response headers.
+- Managed create returns a decoded training-file string, not the incoming encoded id.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 800
   max_new_expects: 0

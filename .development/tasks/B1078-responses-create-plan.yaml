@@ -1,195 +1,169 @@
 id: B1078
-title: Responses create plan
+title: Responses synchronous create execution
 description: >-
-  Build the typed create-call plan before execution: snapshot optional arguments, merge forwarded headers/text format,
-  apply prompt-management and model resolution once, and produce native/chat/MCP/file-search dispatch inputs. Internal
-  skip/encrypted-task flags are trusted context fields, never public JSON fields. Complete execution is responses-create-call.
+  Own the whole responses function, _has_file_search_tool and mock_responses_api_response in
+  main.py, replacing the former split inside a call argument list. Implement responses_create
+  in betterlite-core. B932 owns only aresponses above it. B905 handles forwarded headers/text
+  format/options, B931 prefix/provider/prompt/file mapping, B176 affinity, B918 reasoning-effort
+  mapping, B916 chat execution, B2414 native HTTP, B904 item/response IDs, B247 logging, B500
+  residency and B185/B186 errors. B010 supplies generic parameters, B174 provisional resolution,
+  B206 drop_params normalization and B198 REQUEST_TIMEOUT=6000.
 
+  Keep one complete create state machine. Define a CreateInterception port here with MCP and
+  file-search operations and typed Continue/Handled results. B080 supplies B955 at composition;
+  this task does not import that dependent. Send MCP the prepared call before capability checks,
+  then file-search the mapped reasoning/options before native/chat execution. The port preserves
+  the source's complete argument lists and returns an intercepted result immediately. This is
+  dependency inversion at an actual call boundary, not a split of responses into line stages.
+  Default no-interception execution supports native/chat SDK cases before the outer composition.
 
-  At the MCP/file-search decision points in responses(), return CreateDispatch::GatewayMcp / EmulatedFileSearch
-  / Native / Chat plus the prepared arguments. B080 composes B955 execution above this plan. The planner does not
-  invoke _responses_try_dispatch_mcp_gateway or _responses_try_dispatch_emulated_file_search as runtime calls; tests
-  assert the emitted variant and call-order trace.
+  All named optional create arguments default null. Pop trusted aresponses and
+  _require_encrypted_task_support with exact-true semantics, _skip_mcp_handler with ordinary
+  truthiness and use_chat_completions_api through B931. Public JSON cannot manufacture trusted
+  controls under B176; direct SDK/config callers can supply them. Merge headers, convert text,
+  normalize prefix, run prompt management and affinity before the truthy-string mock shortcut.
+  Afterwards resolve full provider, map supplied file IDs, invoke MCP, check encrypted support,
+  overlay locals with kwargs, map reasoning, invoke file search and choose chat/native.
 
-
-  Implement crates/betterlite-core/src/api/responses_create_plan.rs. Use ResponsesCreatePlanInput and ResponsesCreatePlanResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions forwarded_header_merge, text_format_precedence, prompt_hook_once, model_prefix_plan,
-  request_cannot_set_intern_94df, no_native_file_search under api::responses_create_plan::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesCreatePlan in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_create_plan: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/main.py: _has_file_search_tool (L98-L102); litellm/responses/main.py: mock_responses_api_response
-  (L105-L154); litellm/responses/main.py: responses (L1128-L1367). Abstract/protocol declarations map to native
-  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 253 owned nonblank/non-comment/non-docstring Python lines (258 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 273 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 541 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B176 (Trusted controls, provider headers
-  and affinity), B198 (Injected call context and shared settings), B905 (Responses parameters), B931 (Responses
-  provider selection), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register SdkHttpCall::ResponsesCreate with real provider calls through B2401 and a pure
+  HelperCall::ResponsesCreateLiterals for the mock builder/predicate via B171. The latter alone
+  is a helper; HTTP tests must record actual requests. Keep input decoding in B902/B1087 and
+  transport decoding below B2414. Owned source count 335 nonblank/non-comment lines. Estimate
+  285 implementation, 160 tests, 115 fixtures, 130 adapters and 35 wiring, 725 total under 790.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/responses_create_plan.rs
-  - crates/betterlite-core/src/api/responses_create_plan/**
   - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/src/api/responses_create.rs
+  - crates/betterlite-core/src/api/responses_create/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_create.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_create.py
+  - tools/oracle/cases/sdk-http/responses-create/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-create-*
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_create_plan.rs
-  - tools/oracle/src/helpers/responses_create_plan/**
+  - tools/oracle/src/helpers/responses_create_literals.rs
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/responses_create_plan.py
-  - tools/oracle/helpers/responses_create_plan/**
-  - tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*
-  - tools/oracle/cases/helpers/responses-create-plan/**
+  - tools/oracle/helpers/responses_create_literals.py
+  - tools/oracle/cases/helpers/responses-create-literals/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_create_literals-*
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L98-L102
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105-L154
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1128-L1367
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L98-L154
+  why: File-search predicate and every fixed field/default of the local mock response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1127-L1458
+  why: The complete decorated create function, including both dispatch calls and native execution tail.
 dod:
-- text: 'forwarded header merge: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-forwarded-header-merge
-  - oracle
-- text: 'text format precedence: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-text-format-precedence
-  - oracle
-- text: 'prompt hook once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-prompt-hook-once
-  - oracle
-- text: 'model prefix plan: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-model-prefix-plan
-  - oracle
-- text: 'request cannot set internal flags: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-request-cannot-set-internal-flags
-  - oracle
-- text: 'no native file search: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-no-native-file-search
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    native_create_options_and_ids sends model=openai/gpt-4o,input=hello,headers={X-Trace:a},
+    extra_headers={x-trace:b},text_format={type:json_object},temperature=0.2,service_tier=flex,
+    safety_identifier=user-a. Expect POST /v1/responses with model=gpt-4o,input=hello,text.format.type=json_object,
+    temperature=0.2,service_tier=flex,safety_identifier=user-a and only the winning trace value b.
+    Null optional fields are omitted. A complete mock response id=resp_a is B904-encoded with
+    provider=openai/model_id=deployment_a and hidden custom_llm_provider=openai. An encoded encrypted
+    input item ID is restored before HTTP. extra_query={ignored:yes} is not sent on native create.
+  proof: [native-create, oracle, python-sdk]
+- text: >-
+    chat_create_prefix_and_reasoning sends openai/chat_completions/gpt-4o and gets one POST
+    /v1/chat/completions through B916 with the normalized model, not /responses. use_chat_completions_api=true
+    does the same; absent native config also bridges. reasoning={effort:low} beats reasoning_effort=high;
+    reasoning=null with reasoning_effort=low uses B918's {effort:low} plus its configured summary policy.
+    Native timeout=null/0 becomes 6000 (or injected REQUEST_TIMEOUT=17); bridge timeout=0 remains 0,
+    while null uses that shared default. allowed_openai_params and normalized drop_params reach
+    B905; client_metadata is removed from bridge kwargs even if explicitly allowed.
+  proof: [chat-create, oracle, python-sdk]
+- text: >-
+    create_affinity_and_interception_order sets provider_affinity_header=X-Session,session_id=s:
+    upstream receives X-Session=s unless an existing case-insensitive header already supplies x.
+    A session containing newline fails before mock/provider dispatch with BadRequestError,status=400,
+    cause "session_id cannot contain HTTP header control characters",type=null,param=null,code=null.
+    B176 owns invalid header-name literals. Native call traces show prompt then affinity then
+    mock/full-resolution then file mapping then MCP then encrypted-capability then file search.
+    A handled MCP result skips capability/native work. Its argument set omits service_tier,
+    safety_identifier,text_format,allowed_openai_params; file-search receives all four. Its reasoning
+    is mapped, while MCP receives the originally bound reasoning. True encrypted-support demand
+    rejects an incapable/bridged target via B931's exact compatibility cause; 1 does not demand it.
+  proof: [create-order, oracle, python-sdk]
+- text: >-
+    create_logging_metadata_precedence logs mapped options plus aresponses,call_id,model_info,
+    data_residency and provider_affinity_header. A present litellm_metadata=null overrides the
+    fallback metadata lookup; the named metadata argument remains a provider option, not that
+    kwargs fallback. B500 supplies eu/us/null residency. Native execution receives client,
+    shared_session, metadata default={} and provider should_fake_stream(model,original stream,provider).
+    A typed returned response is ID-encoded/stamped; an iterator or coroutine is left for its
+    consuming layer. HTTP 401 projects AuthenticationError,status=401,type=null,param=null,code=null
+    under B185, with the shared bounded-message deviation rather than invented provider-body fields.
+  proof: [create-logging, oracle, python-sdk]
+- text: >-
+    mock_response_literals calls the actual helper with text=hi and without an argument. The
+    default text is "In a peaceful grove beneath a silver moon, a unicorn named Lumina discovered
+    a hidden pool that reflected the stars. As she dipped her horn into the water, the pool began
+    to shimmer, revealing a pathway to a magical realm of endless night skies. Filled with wonder,
+    Lumina whispered a wish for all who dream to find their own hidden magic, and as she glanced
+    back, her hoofprints sparkled like stardust." Expect id=resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b,
+    message id=msg_67ccd2bf17f0819081ff3bb2cf6508e60bb6a6b452d3795b,created_at=1741476542,
+    object=response,status=completed,model=gpt-4.1-2025-04-14, one assistant message/status=completed
+    with output_text and annotations=[]. error,incomplete_details,instructions,max_output_tokens,
+    previous_response_id,user and reasoning.effort/summary are null; parallel_tool_calls/store=true,
+    temperature/top_p=1.0,text.format.type=text,tool_choice=auto,tools=[],truncation=disabled,metadata={}.
+    Usage is input=36,cached=0,output=87,output_tokens_details={},total=123. SDK mock_response="hi"
+    returns this without provider HTTP even if stream=true; empty string/non-string does not take
+    the shortcut. File-search predicate is true only for a dict tool whose type is file_search;
+    null,[],a different type or a non-dict item alone yields false.
+  proof: [mock-literals, oracle, python-helper, python-sdk]
+- text: Both SDK and pure-literal operation tags have new committed decoder seeds.
+  proof: [case-corpora, oracle, python-sdk, python-helper]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::/)
-      - test(/::replays_corpus$/)'
-  - id: case-forwarded-header-merge
-    why: the forwarded-header-merge behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::forwarded_header_merge($|::)/)'
-  - id: case-text-format-precedence
-    why: the text-format-precedence behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::text_format_precedence($|::)/)'
-  - id: case-prompt-hook-once
-    why: the prompt-hook-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::prompt_hook_once($|::)/)'
-  - id: case-model-prefix-plan
-    why: the model-prefix-plan behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::model_prefix_plan($|::)/)'
-  - id: case-request-cannot-set-internal-flags
-    why: the request-cannot-set-internal-flags behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::request_cannot_set_intern_94df($|::)/)'
-  - id: case-no-native-file-search
-    why: the no-native-file-search behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::no_native_file_search($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_create_plan.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*)"
-      && grep -qE "^[[:space:]]+responses_create_plan:" tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-create-plan)"
+  - id: native-create
+    why: native creation changes parameter/header precedence or ID provenance
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::native_create_options_and_ids($|::)/)'
+  - id: chat-create
+    why: the prefix reaches Responses HTTP or reasoning/zero-timeout behavior changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::chat_create_prefix_and_reasoning($|::)/)'
+  - id: create-order
+    why: interception bypasses the wrong preparation or credential-affinity checks
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::create_affinity_and_interception_order($|::)/)'
+  - id: create-logging
+    why: provider response identity or metadata precedence is lost
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::create_logging_metadata_precedence($|::)/)'
+  - id: mock-literals
+    why: the fixed mock payload/default text or file-search predicate changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::mock_response_literals($|::)/)'
+  - id: python-sdk
+    why: create parity lacks real decorated SDK calls against the provider mock
+    run: test -f tools/oracle/sdk_http/responses_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: python-helper
+    why: literal helper results are copied rather than independently executed
+    run: test -f tools/oracle/helpers/responses_create_literals.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: case-corpora
+    why: one of the two create operation tags has no new parser input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-create-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_create_literals-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-create-plan/forwarded-header-merge.yaml
-- tools/oracle/cases/helpers/responses-create-plan/text-format-precedence.yaml
-- tools/oracle/cases/helpers/responses-create-plan/prompt-hook-once.yaml
-- tools/oracle/cases/helpers/responses-create-plan/model-prefix-plan.yaml
-- tools/oracle/cases/helpers/responses-create-plan/request-cannot-set-internal-flags.yaml
-- tools/oracle/cases/helpers/responses-create-plan/no-native-file-search.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/responses-create/native-create-options-and-ids.yaml
+- tools/oracle/cases/sdk-http/responses-create/chat-create-prefix-and-reasoning.yaml
+- tools/oracle/cases/sdk-http/responses-create/create-affinity-and-interception-order.yaml
+- tools/oracle/cases/sdk-http/responses-create/create-logging-metadata-precedence.yaml
+- tools/oracle/cases/sdk-http/responses-create/mock-response-shortcut.yaml
+- tools/oracle/cases/helpers/responses-create-literals/mock-response-literals.yaml
+deviations:
+- what: Internal SDK errors retain status/class but use B184/B187 bounded messages instead of Python traceback text.
+  why: The existing diagnostic policy applies to create's exception mapper too.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1450-L1458
 out_of_scope:
-- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
-  _responses_try_dispatch_emulated_file_search L1038-L1124.'
-- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure
-  L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap
-  L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions
-  L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790,
-  _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891,
-  _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses
-  L909-L931, _apply_managed_file_id_mapping L934-L964.'
-- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1369-L1458 stage.'
-- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
-  L1929-L1986, cancel_responses L1990-L2077.'
-- 'litellm/responses/main.py: B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items
-  L1794-L1846, list_input_items L1850-L1925.'
-- 'litellm/responses/main.py: B934 owns acompact_responses L2081-L2155, compact_responses L2159-L2279.'
-- 'litellm/responses/main.py: B943 owns _build_litellm_metadata_for_ws L2287-L2292, _deployment_reasoning_default
-  L2298-L2306, _first_ws_frame_with_routed_input L2312-L2327, _build_responses_websocket_request_defaults L2330-L2340,
-  _aresponses_websocket L2344-L2445.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B932 owns aresponses, B931 shared helpers, B1116 delete/cancel, B933 retrieve/input-items, B934 compact and B943 websocket functions.
+- B955 owns whole MCP/file-search dispatch helpers and aresponses_api_with_mcp; B080 installs them behind the port defined here.
+- The defensive custom_llm_provider=null native-send error is unreachable after a null config selects chat; do not invent a production branch to test it.
+- B234 owns supplied managed-file mappings behind B931; managed storage and URL downloads are not performed by this create function.
 pitfalls:
-- Within responses\'s litellm_params.mock_response and isinstance(litellm_params.mock_response, str) branch, preserve
-  return mock_responses_api_response(mock_response=litellm_params.mock_response) and its nested guards.
-- Within responses\'s _mcp_dispatch is not None branch, preserve return _mcp_dispatch and its nested guards.
+- Mock response returns before full model resolution and response-ID stamping, but after prompt and affinity processing.
+- Native timeout=0 falls back while chat-bridge timeout=0 is preserved.
+- MCP receives bound reasoning before reasoning_effort mapping and omits four arguments present in file-search dispatch.
 review_level: security
 budget:
-  max_changed_lines: 550
-  max_new_expects: 1
+  max_changed_lines: 790
+  max_new_expects: 0

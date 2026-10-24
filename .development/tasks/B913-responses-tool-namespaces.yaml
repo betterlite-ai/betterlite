@@ -1,219 +1,109 @@
 id: B913
-title: Responses tool namespaces
+title: Responses tool namespaces and tool output
 description: >-
-  Implement namespace flattening and restoration for Responses tools, including collision detection and model-visible
-  names. Export NamespaceMap and transformed tool lists for request and response use; map server tools separately
-  from user functions.
+  Implement every tool-form, namespace and tool-output method at transformation.py L1886-L2264
+  in betterlite-core::api::responses_tool_namespaces. Namespace descriptions join with "\n\n";
+  nested function names flatten to namespace__name, while custom tools keep their own name.
+  B907 supplies custom schemas, argument serialization and item IDs. B2226 owns the injected
+  in-memory tool-call cache shared with B911/B912; output conversion stores each call before
+  deciding its public output type. Use B004 chat records and B902 output shapes.
 
-
-  Implement crates/betterlite-core/src/api/responses_tool_namespaces.rs. Use ResponsesToolNamespaceInput and ResponsesToolNamespaceResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions namespace_tool_flatten, namespace_name_collision, namespace_restore,
-  allowed_tool_choice, custom_tool_namespace under api::responses_tool_namespaces::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesToolNamespaces in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_tool_namespaces: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._build_ns_chat_tool
-  (L1887-L1926); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._namespace_chat_tools
-  (L1929-L1951); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._validate_namespace_name_collisions
-  (L1954-L1972); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._responses_tool_to_chat_form
-  (L1975-L2034); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.responses_tools_to_chat_forms
-  (L2037-L2039); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools
-  (L2042-L2058); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools
-  (L2061-L2099); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.namespace_tool_name_map
-  (L2102-L2129); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._restore_namespace_tool_name
-  (L2132-L2137); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.transform_chat_completion_tools_to_responses_tools
-  (L2140-L2235); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._web_search_calls_by_call_id
-  (L2238-L2264). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 340 owned nonblank/non-comment/non-docstring Python lines (354 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 360 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 610 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B178 (Tool argument parsing and schema
-  transforms), B907 (Responses codex tools), B1087 (Api boundaries). These are callable/type/config owners, not
-  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Register responses_tool_namespaces in B171 with cache writes and ordered warnings in its
+  result projection. This is parsed-record mapping, not tool execution. Count 301 nonblank,
+  non-comment source lines; allow 290 implementation, 190 tests, 110 fixtures, 85 adapters
+  and 25 wiring, 700 changed lines. No additional byte parser belongs here.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_tool_namespaces.rs
   - crates/betterlite-core/src/api/responses_tool_namespaces/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_tool_namespaces.rs
-  - tools/oracle/src/helpers/responses_tool_namespaces/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_tool_namespaces.py
-  - tools/oracle/helpers/responses_tool_namespaces/**
   - tools/oracle/fuzz/corpus/helper_case/responses_tool_namespaces-*
   - tools/oracle/cases/helpers/responses-tool-namespaces/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L1887-L2235
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2237-L2264
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L1886-L2264
+  why: Complete namespace flattening/collision checks, both tool-list directions and cached output conversion.
 dod:
-- text: 'namespace tool flatten: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-namespace-tool-flatten
-  - oracle
-- text: 'namespace name collision: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-namespace-name-collision
-  - oracle
-- text: 'namespace restore: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-namespace-restore
-  - oracle
-- text: 'allowed tool choice: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-allowed-tool-choice
-  - oracle
-- text: 'custom tool namespace: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-custom-tool-namespace
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    namespace_flatten maps namespace=ns,description=Group,tools=[{type:function,name:f,description:Fn}]
+    to function ns__f,description="Group\n\nFn",parameters={type:object},strict=false.
+    Missing member description uses Group; no group description uses Fn. Nested custom edit
+    keeps name=edit and uses the combined description in B907's schema. Other nested types
+    are dropped silently. Non-sequence/string tools invokes the flat namespace fallback,
+    producing name=ns. Null/non-mapping parameters become {type:object}; strict uses bool().
+    allowed_callers is strictly validated by B907, including preserving [].
+  proof: [namespace-tests, oracle, namespace-adapter]
+- text: >-
+    namespace_collisions rejects a top-level function ns__f plus namespace ns/function f
+    with ValueError("Top-level function names conflict with flattened namespace tools: ns__f").
+    Multiple conflicts are sorted and joined by ", ". Name restoration maps ns__f -> (f,ns)
+    and bare f only if it appears once across namespaces and is not top-level. Ambiguous
+    bare f stays (f,null). Custom members are excluded from this map/collision check.
+  proof: [namespace-tests, oracle, namespace-adapter]
+- text: >-
+    tool_forms preserves mcp and unknown tool maps. web_search/web_search_preview becomes
+    web_search_options with search_context_size as supplied (missing=null), user_location
+    falsy->null; the last search tool wins. Function defaults name/description="",
+    parameters.type=object,strict=false. cache_control,defer_loading,allowed_callers,input_examples
+    copy only when truthy; eager_input_streaming=false copies because it is non-null.
+    Reverse conversion copies these five fields when non-null, including false/[]/{},
+    and passes non-functions through as dictionaries. Null/empty tools returns [] and no search options.
+  proof: [namespace-tests, oracle, namespace-adapter]
+- text: >-
+    unsupported_builtins supplies computer_use,image_generation,local_shell,shell,tool_search;
+    each is removed with warning "Dropping Responses API tool of type '<type>': it has no
+    Chat Completions equivalent and the target provider would reject the request." Other
+    types are not included in that drop list. Duplicate builtins emit one warning per occurrence.
+  proof: [namespace-tests, oracle, namespace-adapter]
+- text: >-
+    tool_outputs caches every tool call in every Choices entry under tool.id before filtering
+    to type=function outputs. A function named ns__f yields type=function_call,name=f,
+    namespace=ns,call_id=c,id=fc_c,arguments serialized by B907,status=completed unless the
+    function has a truthy status. Provider-specific fields on the tool beat fields on its
+    function; truthy attribute objects are converted only if they have __dict__. Custom edit
+    yields type=custom_tool_call,id=ctc_c,input unwrapped by B907 and no namespace.
+  proof: [namespace-tests, oracle, namespace-adapter]
+- text: >-
+    hosted_search_output reads message.provider_specific_fields.web_search_calls from a
+    mapping's values or a sequence, validates each item, silently ignores invalid items and
+    indexes valid ws_c under c. A matching function call c becomes that web_search_call
+    instead of a custom/function call. Later entries with the same stripped ID overwrite
+    earlier entries; non-mapping provider fields are ignored and malformed items do not fail the response.
+  proof: [namespace-tests, oracle, namespace-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::/)
-      - test(/::replays_corpus$/)'
-  - id: case-namespace-tool-flatten
-    why: the namespace-tool-flatten behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::tests::namespace_tool_flatten($|::)/)'
-  - id: case-namespace-name-collision
-    why: the namespace-name-collision behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::tests::namespace_name_collision($|::)/)'
-  - id: case-namespace-restore
-    why: the namespace-restore behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::tests::namespace_restore($|::)/)'
-  - id: case-allowed-tool-choice
-    why: the allowed-tool-choice behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::tests::allowed_tool_choice($|::)/)'
-  - id: case-custom-tool-namespace
-    why: the custom-tool-namespace behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::tests::custom_tool_namespace($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_tool_namespaces.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_tool_namespaces-*)"
-      && grep -qE "^[[:space:]]+responses_tool_namespaces:" tools/oracle/fuzz/corpus/helper_case/responses_tool_namespaces-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-tool-namespaces)"
+  - id: namespace-tests
+    why: namespace correlation, tool filtering or cache/output ordering changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_tool_namespaces::/)'
+  - id: namespace-adapter
+    why: namespace helpers lack checked independent mappings and ordered diagnostics
+    run: test -f tools/oracle/helpers/responses_tool_namespaces.py && grep -qE '^[[:space:]]+responses_tool_namespaces:' tools/oracle/fuzz/corpus/helper_case/responses_tool_namespaces-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-tool-namespaces/namespace-tool-flatten.yaml
-- tools/oracle/cases/helpers/responses-tool-namespaces/namespace-name-collision.yaml
-- tools/oracle/cases/helpers/responses-tool-namespaces/namespace-restore.yaml
-- tools/oracle/cases/helpers/responses-tool-namespaces/allowed-tool-choice.yaml
-- tools/oracle/cases/helpers/responses-tool-namespaces/custom-tool-namespace.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/namespace-flatten.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/namespace-collisions.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/tool-forms.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/unsupported-builtins.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/tool-outputs.yaml
+- tools/oracle/cases/helpers/responses-tool-namespaces/hosted-search-output.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B908 owns _SupportsIter.__iter__ L152-L152,
-  _ResponsesToolCallItem.get L169-L169, LiteLLMCompletionResponsesConfig.get_supported_openai_params L205-L225,
-  LiteLLMCompletionResponsesConfig._should_drop_derived_web_search_options L311-L324, LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api
-  L327-L357, LiteLLMCompletionResponsesConfig._transform_reasoning_for_chat_completion L360-L397, LiteLLMCompletionResponsesConfig.transform_responses_api_request_to_chat_completion_request
-  L400-L484, LiteLLMCompletionResponsesConfig._transform_text_format_to_response_format L2897-L2945.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B907 owns _attribute_fields L179-L182,
-  _input_item_role L185-L186, LiteLLMCompletionResponsesConfig._transform_tool_choice L228-L287, LiteLLMCompletionResponsesConfig._transform_tool_choice_for_responses_api_response
-  L290-L296, LiteLLMCompletionResponsesConfig._chat_tool_choice_as_responses_api_tool_choice L299-L308.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B909 owns LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages
-  L487-L532, LiteLLMCompletionResponsesConfig._transform_response_input_param_to_chat_completion_message L603-L729,
-  LiteLLMCompletionResponsesConfig._transform_responses_api_input_item_to_chat_completion_message L1326-L1423, LiteLLMCompletionResponsesConfig._reasoning_text_from_content
-  L1426-L1448, LiteLLMCompletionResponsesConfig._reasoning_text_from_summary L1451-L1466, LiteLLMCompletionResponsesConfig._extract_reasoning_text_from_input_item
-  L1469-L1478, LiteLLMCompletionResponsesConfig._decode_thinking_blocks_from_input_item L1481-L1515, LiteLLMCompletionResponsesConfig._is_replayable_thinking_block
-  L1518-L1529, LiteLLMCompletionResponsesConfig._is_input_item_tool_call_output L1532-L1541, LiteLLMCompletionResponsesConfig._is_input_item_function_call
-  L1544-L1550, LiteLLMCompletionResponsesConfig._resolve_file_id L1741-L1747, LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item
-  L1750-L1772, LiteLLMCompletionResponsesConfig._transform_input_image_item_to_image_item L1775-L1785, LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content
-  L1788-L1842, LiteLLMCompletionResponsesConfig._get_chat_completion_request_content_type L1845-L1875, LiteLLMCompletionResponsesConfig.transform_instructions_to_system_message
-  L1878-L1884.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B915 owns LiteLLMCompletionResponsesConfig.async_responses_api_session_handler
-  L535-L600.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B910 owns LiteLLMCompletionResponsesConfig._reasoning_only_assistant_message
-  L732-L746, LiteLLMCompletionResponsesConfig._merge_reasoning_only_assistant_messages L749-L872, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message
-  L875-L922.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._deduplicate_tool_call_output_messages
-  L925-L985, LiteLLMCompletionResponsesConfig._ensure_tool_call_output_has_corresponding_tool_call L988-L997, LiteLLMCompletionResponsesConfig._transform_responses_api_outputs_to_chat_completion_messages
-  L2725-L2752 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B911 owns LiteLLMCompletionResponsesConfig._find_previous_assistant_idx
-  L1000-L1014, LiteLLMCompletionResponsesConfig._recover_tool_call_id_from_assistant L1017-L1043, LiteLLMCompletionResponsesConfig._get_tool_calls_list
-  L1046-L1065, LiteLLMCompletionResponsesConfig._check_tool_call_exists L1068-L1078, LiteLLMCompletionResponsesConfig._reconstruct_tool_call_from_tools
-  L1081-L1097, LiteLLMCompletionResponsesConfig._get_mapping_or_attr_value L1100-L1117, LiteLLMCompletionResponsesConfig._create_tool_call_chunk
-  L1120-L1143, LiteLLMCompletionResponsesConfig._normalize_tool_use_definition L1146-L1184, LiteLLMCompletionResponsesConfig._add_tool_call_to_assistant
-  L1187-L1200, LiteLLMCompletionResponsesConfig._ensure_tool_results_have_corresponding_tool_calls L1203-L1323.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B912 owns LiteLLMCompletionResponsesConfig._transform_responses_api_tool_call_output_to_chat_completion_message
-  L1553-L1686, LiteLLMCompletionResponsesConfig._transform_responses_api_function_call_to_chat_completion_message
-  L1689-L1738, LiteLLMCompletionResponsesConfig._tool_call_id_from_responses_item L2307-L2316, LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call
-  L2319-L2370, LiteLLMCompletionResponsesConfig.convert_apply_patch_tool_call_to_chat_completion_tool_call L2373-L2403.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B914 owns LiteLLMCompletionResponsesConfig._map_chat_completion_finish_reason_to_responses_status
-  L2267-L2292, LiteLLMCompletionResponsesConfig._incomplete_details_for_finish_reason L2295-L2304, LiteLLMCompletionResponsesConfig.transform_chat_completion_response_to_responses_api_response
-  L2406-L2468, LiteLLMCompletionResponsesConfig._transform_chat_completion_choices_to_responses_output L2471-L2526,
-  LiteLLMCompletionResponsesConfig._extract_tool_result_output_items L2529-L2557, LiteLLMCompletionResponsesConfig._encode_thinking_blocks
-  L2560-L2563, LiteLLMCompletionResponsesConfig._extract_reasoning_output_items L2566-L2597, LiteLLMCompletionResponsesConfig._extract_message_output_items
-  L2693-L2722, LiteLLMCompletionResponsesConfig._transform_responses_output_tool_call_to_chat_completion_output_tool_call
-  L2755-L2765, LiteLLMCompletionResponsesConfig._transform_chat_message_to_response_output_text L2768-L2782.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B1115 owns LiteLLMCompletionResponsesConfig._extract_image_generation_output_items
-  L2600-L2646, LiteLLMCompletionResponsesConfig._map_finish_reason_to_image_generation_status L2649-L2666, LiteLLMCompletionResponsesConfig._extract_base64_from_data_url
-  L2669-L2690, LiteLLMCompletionResponsesConfig._transform_chat_completion_annotations_to_response_output_annotations
-  L2785-L2808, LiteLLMCompletionResponsesConfig._transform_chat_completion_usage_to_responses_usage L2811-L2894.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- Other transformation.py functions belong to B907 custom tools, B908 options, B909 input dispatch, B910 reasoning merges, B911 repair, B912 results, B914 assembly, B915 sessions, B1115 details and B2411 input content.
+- The legacy deduplicate/correspondence helpers at L925-L995 have no caller at the pin.
 pitfalls:
-- 'transformation.py:2028 emits the diagnostic "Dropping Responses API tool of type ''%s'': it has no Chat Completions
-  equivalent and the target provider would reject the request."; retain its level and fallback instead of turning
-  it into a hard error.'
-- Within LiteLLMCompletionResponsesConfig._build_ns_chat_tool\'s nested and tool_type not in NAMESPACE_MEMBER_TYPES_WITH_CHAT_TOOLS
-  branch, preserve return None and its nested guards.
+- Top-level function allowed_callers is passed through on truthiness, unlike strict custom/namespace allowed_callers validation.
+- Only the last web-search tool's options survive; combining search options would differ from the pinned result.
+- Cache writes precede public-type filtering, so even a call omitted from output can affect later tool-result reconstruction.
 review_level: standard
 budget:
-  max_changed_lines: 610
+  max_changed_lines: 700
   max_new_expects: 1

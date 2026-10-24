@@ -1,172 +1,134 @@
 id: B1118
-title: Messages native execution
+title: Run the async Messages entry pipeline and its hook short circuits
 description: >-
-  Execute anthropic_messages after provider preparation, using injected interceptor outcomes in source order. Keep
-  the public dispatcher and MCP expansion in B982/B081; no callback closes over an umbrella task.
+  Own the complete _execute_pre_request_hooks,_try_websearch_short_circuit and decorated anthropic_messages
+  functions at messages/handler.py L115-L408. Implement api::messages_native_execute as the ordered async
+  entry pipeline, before native/chat/Responses selection. Apply B571 empty-block/id sanitizers and B572 web-search
+  replay flattening, then cache-control hook, pre-request callbacks, web-search short circuit, interceptors and
+  final dispatch. max_tokens is required and stream defaults false; this range reads no DEFAULT_MAX_TOKENS.
 
+  The existing B982 entry depends on this task although source anthropic_messages calls its handler. Avoid a
+  reverse implementation edge: define a typed MessagesExecutionContinuation here, returning a prepared dispatch
+  effect to the composing caller, which executes B982 and resumes this pipeline's result/error handling. No
+  import or closure calls back into B982/B081. Likewise B119's cache-control/web-search implementations depend
+  on Messages and have no task file: accept typed installed hook capabilities/outcomes here, supplied by the
+  composition layer. B189 owns callback identity/order; B987 supplies interceptor contracts. The interfaces must
+  carry actual calls/results, not pretend those later implementations already exist.
 
-  get_messages_interceptors is supplied as an ordered set of typed interceptor outcomes by B081, which composes
-  B987; the native execution helper never calls its parent. Preserve the short-circuit order at handler.py:343.
-
-
-  Implement crates/betterlite-core/src/api/messages_native_execute.rs. Use MessagesNativeExecuteInput and MessagesNativeExecuteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions native_messages_body, websearch_short_circuit under api::messages_native_execute::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
-  defaults to 4096. No environment reads occur outside betterlite-config. Test api::messages_native_execute::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesNativeExecute in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_native_execute: <typed input>};
-  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
-  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/messages/handler.py: _execute_pre_request_hooks (L115-L174);
-  litellm/llms/anthropic/pass_through/messages/handler.py: _try_websearch_short_circuit (L177-L225); litellm/llms/anthropic/pass_through/messages/handler.py:
-  anthropic_messages (L229-L408). Abstract/protocol declarations map to native types and synchronous/async wrappers
-  share one implementation; a partial function span is the explicit preparation/transition stage described above,
-  with typed values passed to the following stage.
-
-
-  Sizing: 191 owned nonblank/non-comment/non-docstring Python lines (219 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 211 implementation,
-  52 behavior tests, 24 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 440 total within the 440-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B011 (Exception
-  types and provider error mapping), B961 (Messages native prepare), B962 (Messages thinking), B963 (Messages options),
-  B979 (Messages native stream), B981 (Messages agentic stream), B171 (Direct helper oracle and URL path encoding),
-  B1087 (Api boundaries), B570 (Anthropic request headers and model discovery), B002 (Load LiteLLM config.yaml into
-  typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
+  Add only SdkHttpCall::MessagesNativeExecute through B2401. Python runs the real @client entry with typed test
+  callbacks and the pinned final handler; native composition uses the continuation with B961/B2430/B962 and
+  B009's real mock-provider transport for the Anthropic fixture. Assert HTTP and ordered hook effects; short
+  circuits assert zero LLM requests. Parsed messages require no new decoder. Own219 nonblank/non-comment
+  physical lines; budget 245 implementation,160 tests,180 fixtures,110 adapters and35 wiring,730 total.
+  Core tests use api::messages_native_execute.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_native_execute.rs
   - crates/betterlite-core/src/api/messages_native_execute/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/messages_native_execute.rs
-  - crates/betterlite-config/src/api/messages_native_execute/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-execute-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_native_execute.rs
-  - tools/oracle/src/helpers/messages_native_execute/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_native_execute.py
-  - tools/oracle/helpers/messages_native_execute/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_native_execute-*
-  - tools/oracle/cases/helpers/messages-native-execute/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_native_execute.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_native_execute.py
+  - tools/oracle/cases/sdk-http/messages-native-execute/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-execute-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
-  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L115-L408
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L115-L225
+  why: Own ordered CustomLogger pre-hooks and the first non-null WebSearchInterceptionLogger short circuit.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L228-L408
+  why: Own the whole decorated async entry, all forwarded arguments and the BaseLLMException conversion boundary.
 dod:
-- text: 'native messages body: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-native-messages-body
-  - oracle
-- text: 'websearch short circuit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-websearch-short-circuit
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    sanitize_before_hooks sends history with whitespace text,empty unsigned thinking,tool id functions.Bash:0
+    and unencrypted web-search results. The cache hook and all callbacks see B571/B572's sanitized result,
+    including id functions_Bash_0, never raw history. Cache hook receives model,provider,tools,api_base,kwargs
+    and may replace messages/system before callbacks. A successful native call captures one POST /v1/messages
+    with model=claude-sonnet-4-20250514,max_tokens=32,sanitized messages,x-api-key=sk-test and
+    anthropic-version=2023-06-01; returned mock content/usage remain unchanged through this wrapper.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    prerequest_hook_order resolves a falsey provider from model; resolution errors are ignored. Initial hook
+    kwargs contains tools,stream,litellm_params={custom_llm_provider:resolved}, then explicit kwargs override
+    those fields, including the entire litellm_params map. Only CustomLogger instances run, in registry order;
+    each receives model,current messages and the prior hook's map. Null return keeps the map, {} replaces it,
+    in-place mutation survives and exceptions stop execution with zero provider calls. An empty callback list
+    still returns the initialized request kwargs.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    hook_named_overrides pops tools,stream,metadata,stop_sequences,system,temperature,thinking,tool_choice,top_k,
+    top_p from the hook map with original arguments as defaults, honoring explicit null/false/0. It forwards
+    tool_choice to the pre-hook even though it is a named parameter. A missing/falsey provider first tries the
+    hook's litellm_params.custom_llm_provider, then B174 resolution; explicit provider wins. litellm_params is
+    removed from the returned hook map before merging extras, but an original kwargs.litellm_params is not
+    deleted by kwargs.update. A null hook litellm_params with no provider raises the source AttributeError;
+    adding duplicate max_tokens/model/api_key as raw hook extras raises TypeError before final HTTP.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    original_stream_survives_websearch_conversion records original_stream=stream or
+    _websearch_interception_converted_stream before hooks. With stream=true then hook stream=false, web-search
+    and interceptors still receive true while normal dispatch receives false. With stream=false and marker=true,
+    short circuit also returns B2435 fake SSE. Only WebSearchInterceptionLogger callbacks are tried, in order;
+    first non-null result, including {}, ends the search. Pass modified tools/provider/messages and kwargs with
+    current metadata overriding any extra metadata. A nonstream synthetic result is returned directly and makes
+    no LLM request; the web-search implementation itself remains the installed B119 capability.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    first_matching_interceptor_wins skips the registry entirely after a web-search result. Otherwise call
+    can_handle(tools,provider) in order, then await only the first matching handle with original_stream,max_tokens,
+    model,messages,tools,provider,api_key,api_base,metadata,stop_sequences,system,temperature,thinking,tool_choice,
+    top_k,top_p and remaining kwargs. client is not a forwarded interceptor argument. Its result is returned even
+    if null; its exception propagates. No matching interceptor yields the final dispatch effect.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    final_dispatch_preserves_context adds is_async=true and trusted _litellm_messages_presanitized=true, retaining
+    all explicit named arguments including client/api_key/api_base and hook-modified fields. Run the blocking
+    setup with copied logical call context, then await its result only if it is a coroutine; a direct response
+    returns directly. The presanitized marker reaches B982's boundary and never reaches provider JSON. No second
+    empty-block scan is requested by this entry; B982 retains its separately-owned cache-hook behavior.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    dispatch_errors_keep_the_boundary uses a mock401 from final execution and verifies B011 AuthenticationError
+    status401,type/param/code null with captured wording normalized only under B011. BaseLLMException from final
+    setup or awaited result goes through exception_type with original model,provider and updated kwargs. Errors
+    from cache/pre-hooks/web-search/interceptors occur before that local try block and are left to the @client
+    decorator's own handling; do not run exception_type twice. All failure cases assert actual request counts.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: Newly added entry-pipeline fixtures and a messages_native_execute tag reach the HTTP driver, with no helper substitute for execution.
+  proof: [new-cases, corpus, oracle, python-adapter]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_execute::/)
-      - test(/::replays_corpus$/)'
-  - id: case-native-messages-body
-    why: the native-messages-body behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_execute::tests::native_messages_body($|::)/)'
-  - id: case-websearch-short-circuit
-    why: the websearch-short-circuit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_execute::tests::websearch_short_circuit($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_native_execute::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-execute-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_native_execute.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_native_execute-*)"
-      && grep -qE "^[[:space:]]+messages_native_execute:" tools/oracle/fuzz/corpus/helper_case/messages_native_execute-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-native-execute)"
+    why: hook order, argument forwarding or the continuation result boundary is absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_execute::/)'
+  - id: python-adapter
+    why: native-entry provider parity lacks a checked independent SDK driver
+    run: test -f tools/oracle/sdk_http/messages_native_execute.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: sdk_http does not recognize Messages entry-pipeline scenarios
+    run: grep -qE '^[[:space:]]+messages_native_execute:' tools/oracle/fuzz/corpus/sdk_http_case/messages-native-execute-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: the hook/dispatch pipeline has no added HTTP scenarios
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-native-execute)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-native-execute/native-messages-body.yaml
-- tools/oracle/cases/helpers/messages-native-execute/websearch-short-circuit.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/sanitize-before-hooks.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/prerequest-hook-order.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/hook-named-overrides.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/original-stream-survives-websearch-conversion.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/first-matching-interceptor-wins.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/final-dispatch-preserves-context.yaml
+- tools/oracle/cases/sdk-http/messages-native-execute/dispatch-errors-keep-the-boundary.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/messages/handler.py: B982 owns _bridges_to_responses_api L50-L54, _responses_mode_is_lost_by_prefix_strip
-  L57-L70, _should_route_to_responses_api L73-L89, _deployment_passes_through_anthropic_messages L92-L102, _deployment_supports_cache_control_ttl
-  L105-L106, validate_anthropic_api_metadata L411-L420, anthropic_messages_handler L423-L675.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B982 owns messages/handler.py L50-L106 selection helpers, L411-L420 metadata validation and whole anthropic_messages_handler L423-L675; the composer executes its continuation, not this leaf.
+- B119 owns cache-control/web-search implementations, B987 advisor interceptor bodies and B189 callback registry identity. Only their typed invocation seams live here.
+- B571/B572 own message sanitization and B2435 fake SSE. B011/@client own public SDK exception normalization; B081 owns routes.
 pitfalls:
-- Within _execute_pre_request_hooks\'s not litellm.callbacks branch, preserve return request_kwargs and its nested
-  guards.
-- Within _try_websearch_short_circuit\'s not litellm.callbacks branch, preserve return None and its nested guards.
-review_level: standard
+- original_stream is captured before callback changes and governs short circuits but not ordinary final dispatch.
+- Hook replacement with an empty dict is meaningful; testing truthiness would accidentally retain the old map.
+- Removing litellm_params from the hook result does not remove a preexisting copy from original kwargs.
+review_level: security
 budget:
-  max_changed_lines: 440
-  max_new_expects: 1
+  max_changed_lines: 780
+  max_new_expects: 0

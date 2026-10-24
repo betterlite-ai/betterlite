@@ -1,195 +1,138 @@
 id: B998
-title: Image generation call
+title: Image generation SDK dispatch
 description: >-
-  Implement configured image generation through B010/B014, preserving model resolution, response_format, n/size/quality/style/user
-  and provider passthrough fields. Reuse provider transforms from B024 and other M3 tasks; return typed image objects,
-  revised_prompt and exact usage rather than decoding provider image bytes. B046 consumes this family's base contract
-  and adds its provider-specific executable variants later; keep the generic prepared-call seam independent of those
-  downstream adapters.
+  Implement the entire image_generation function (183-561) in betterlite-core::api::image_generation_call.
+  The overload declarations are signatures, not extra executable ownership. B1121 owns aimage_generation
+  and depends on this function. Resolve provider/model with B174 when either is supplied; otherwise use
+  openai/dall-e-2. timeout defaults to 600, all named image options to None, aimg_generation=false,
+  metadata={},headers={}; extra_headers overwrite headers. B175 filters LiteLLM controls and maps options
+  using base_model or model. Keep logging's azure=false,preset_cache_key=None,stream_response={} and the
+  hidden response model; set custom_llm_provider only when logging lacks it. B249 owns mock_image_generation,
+  called whenever mock_response is non-None, including an empty string, after option mapping/logging.
 
+  Azure resolves api_base from call, litellm.api_base, AZURE_API_BASE; api_version from call, litellm.api_version,
+  AZURE_API_VERSION; key from call, litellm.api_key,litellm.azure_key,AZURE_OPENAI_API_KEY,AZURE_API_KEY. All global
+  values default None. AZURE_API_TYPE defaults azure but its local value is unused. A nonempty string
+  optional azure_ad_token wins over AZURE_AD_TOKEN; pop it from options. With no token-provider callback,
+  truthy tenant_id/client_id/client_secret create B673's callback, using azure_scope or
+  https://cognitiveservices.azure.com/.default. Existing case-sensitive Content-Type and api-key keys are
+  preserved; only missing defaults are inserted and api-key is inserted only for a non-None resolved key.
 
-  The source image_generation function is factored at provider execution: B1121 returns ImageGenerationPlan; B998
-  executes it. Synchronous and asynchronous wrappers share the plan, with no back-call into B998 during preparation.
+  Recraft, AIML, Gemini, Fal AI, Stability, RunwayML, Vertex AI, OpenRouter, DashScope, QwenCloud,
+  Qwen AI Platform and EdenAI use B2450; require B157's generation config and set litellm_params.api_base to
+  call api_base or litellm.api_base. B046 owns their provider transformations and Black Forest Labs polling;
+  B536 owns Azure execution, B549 Foundry auth/base/key, B511 OpenAI/compatible execution and B634 Bedrock.
+  B046 depends on B082, so this task cannot import its implementations. Inject B010's prepared image operation
+  interface for those branches; its config and transport are constructor inputs. Native branch tests supply a
+  finite HTTP operation, while B046 owns end-to-end tests of its transforms/polling. Do not call that downstream
+  task from SDK preparation. B044 owns custom handler
+  execution; this function selects the last matching map entry and the matching sync/async client kind.
 
-
-  Implement crates/betterlite-core/src/api/image_generation_call.rs. Use ImageGenerationCallInput and ImageGenerationCallResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions generation_url_result, generation_base64_result, revised_prompt, provider_error
-  under api::image_generation_call::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None. No environment reads occur outside betterlite-config. Test api::image_generation_call::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ImageGenerationCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {image_generation_call: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/images/main.py: aimage_generation (L80-L129); litellm/images/main.py: image_generation
-  (L136-L154); litellm/images/main.py: image_generation (L160-L178); litellm/images/main.py: image_generation (L366-L561).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 246 owned nonblank/non-comment/non-docstring Python lines (254 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 266 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 531 total within the 540-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B014 (Call dispatch
-  across providers and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding),
-  B997 (Image contracts), B1087 (Api boundaries), B1121 (Image generation call preparation), B511 (OpenAI image
-  generation variants), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Use B2401 sdk_http cases, never HelperCall, and B011 exception projection without inventing proxy error
+  fields. Load the settings above in betterlite-config::api::image_generation_call::tests::loads_settings,
+  including unset, each fallback tier and empty-string fallthrough. Reuse the config YAML parser/corpus.
+  Count 336 owned nonblank/non-comment lines, excluding 38 overload lines; budget 315 implementation,
+  170 tests, 150 HTTP fixtures, 75 adapters, 50 config/corpus and 30 wiring lines, 790 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/image_generation_call.rs
   - crates/betterlite-core/src/api/image_generation_call/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-core/src/error.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/image_generation_call.rs
   - crates/betterlite-config/src/api/image_generation_call/**
+  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/image_generation_call.rs
-  - tools/oracle/src/helpers/image_generation_call/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/image_generation_call.py
-  - tools/oracle/helpers/image_generation_call/**
-  - tools/oracle/fuzz/corpus/helper_case/image_generation_call-*
-  - tools/oracle/cases/helpers/image-generation-call/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/image_generation_call.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/image_generation_call.py
+  - tools/oracle/cases/sdk-http/image-generation-call/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L80-L183
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L366-L561
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
+  why: Own the complete generation function, including Azure credential setup and the call previously split at line 366.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L283
+  why: Global api_key and azure_key begin unset.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L596
+  why: Global base, version and headers have no implicit provider-specific values here.
 dod:
-- text: 'generation url result: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-generation-url-result
-  - oracle
-- text: 'generation base64 result: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-generation-base64-result
-  - oracle
-- text: 'revised prompt: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-revised-prompt
-  - oracle
-- text: 'provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-error
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    generation_defaults_and_options sends prompt=cat without model/provider: one OpenAI POST /v1/images/generations
+    uses model=dall-e-2 and timeout=600. Explicit openai/dall-e-3,n=1,size=1024x1024,quality=hd,style=natural,
+    user=u,response_format=b64_json reaches its provider mapper. Mock replies {created:1,data:[{b64_json:YQ==,
+    revised_prompt:kitten}]} and {created:1,data:[{url:https://example.test/image.png}]} are returned with those
+    values; response URLs are not downloaded. organization=org_test reaches OpenAI-Organization. extra_headers
+    overrides headers on collision. With mock_response="" or "image", B249's result is returned with zero HTTP.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    azure_image_credentials exercises each named key/base/version fallback independently and asserts the selected
+    mock URL, api-version query and api-key header. Set headers={api-key:caller,Content-Type:custom} plus a different
+    resolved key: caller/custom survive. With no key and a token, no api-key is added. optional azure_ad_token="token"
+    beats AZURE_AD_TOKEN=env; empty or nonstring falls back to env and is removed from options. An existing callback
+    prevents Entra callback construction; otherwise complete tenant/client/secret invokes B673 with the default
+    scope above, and a partial triple does not. Native logging asserts azure=false even on this branch.
+  proof: [behavior-tests, config-tests, oracle, sdk-python]
+- text: >-
+    foundry_caller_authorization sends azure_ai with Authorization="Bearer caller", then API-KEY=caller in a
+    second case. Case-insensitive detection preserves either credential and never injects another auth header.
+    Without either, B549 auth is merged before caller headers, with Content-Type=application/json unless caller
+    overrides it. extra_headers is also retained in optional_params.extra_headers; Azure AD token argument is None.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    generation_provider_selection supplies an injected configured image operation for each provider in the
+    twelve-provider group and a mock endpoint. The selected config receives api_base=call when truthy, else global base;
+    absent config raises ValueError("image generation config is not supported for <provider>") before HTTP.
+    Black Forest Labs' injected operation and Bedrock receive the resolved model and async flag; a resolver seam returning model=None
+    raises respectively "Model needs to be set for black_forest_labs" and "Model needs to be set for bedrock".
+    Those impossible-after-normal-resolution branches are native injected-resolver tests, not invalid model fixtures.
+  proof: [behavior-tests, config-tests, oracle, sdk-python]
+- text: >-
+    custom_image_handler_selection configures two matching custom map entries: the last handles the call.
+    aimg_generation=true selects aimage_generation and only an AsyncHTTPHandler client; false selects image_generation
+    and only HTTPHandler. A wrong-kind client becomes None. A registered custom name with no map handler raises
+    LiteLLMUnknownProvider. A mock upstream 429 is mapped by B011 with its SDK class/status and nullable fields;
+    compare captures and result, ignoring only message wording, never manufacturing code="429".
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Settings and SDK seeds reach the existing parsers and every new capture comes from an actual provider HTTP exchange.
+  proof: [config-tests, corpora, new-cases, oracle, sdk-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_generation_call::/)
-      - test(/::replays_corpus$/)'
-  - id: case-generation-url-result
-    why: the generation-url-result behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_generation_call::tests::generation_url_result($|::)/)'
-  - id: case-generation-base64-result
-    why: the generation-base64-result behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_generation_call::tests::generation_base64_result($|::)/)'
-  - id: case-revised-prompt
-    why: the revised-prompt behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_generation_call::tests::revised_prompt($|::)/)'
-  - id: case-provider-error
-    why: the provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_generation_call::tests::provider_error($|::)/)'
+    why: Generation dispatch needs assertions for defaults, all branch selections and credential precedence.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_generation_call::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: Every Azure/global fallback must load through the production configuration loader.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::image_generation_call::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/image_generation_call.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/image_generation_call-*)"
-      && grep -qE "^[[:space:]]+image_generation_call:" tools/oracle/fuzz/corpus/helper_case/image_generation_call-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/image-generation-call)"
+  - id: sdk-python
+    why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
+    run: test -f tools/oracle/sdk_http/image_generation_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpora
+    why: New settings and SDK operation tags must have parser seeds.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'
+  - id: new-cases
+    why: Generation requires its own mock-provider HTTP cases.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/image-generation-call)"
 oracle_cases:
-- tools/oracle/cases/helpers/image-generation-call/generation-url-result.yaml
-- tools/oracle/cases/helpers/image-generation-call/generation-base64-result.yaml
-- tools/oracle/cases/helpers/image-generation-call/revised-prompt.yaml
-- tools/oracle/cases/helpers/image-generation-call/provider-error.yaml
+- tools/oracle/cases/sdk-http/image-generation-call/generation-defaults-and-options.yaml
+- tools/oracle/cases/sdk-http/image-generation-call/azure-image-credentials.yaml
+- tools/oracle/cases/sdk-http/image-generation-call/foundry-caller-authorization.yaml
+- tools/oracle/cases/sdk-http/image-generation-call/generation-provider-selection.yaml
+- tools/oracle/cases/sdk-http/image-generation-call/custom-image-handler-selection.yaml
 deviations: []
 out_of_scope:
-- 'litellm/images/main.py: B999 owns _get_ImageEditRequestUtils L67-L75, image_edit L712-L960, aimage_edit L964-L1043,
-  __getattr__ L1046-L1056.'
-- 'litellm/images/main.py: B1121 owns image_generation L184-L365 stage, image_generation L184-L365 stage, image_generation
-  L184-L365 stage.'
-- 'litellm/images/main.py: B1000 owns aimage_variation L565-L612, image_variation L616-L708.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1121 owns aimage_generation; B999 owns _get_ImageEditRequestUtils,image_edit,aimage_edit,__getattr__; B1000 owns image_variation,aimage_variation.
+- B175 owns get_optional_params_image_gen; B157 owns ProviderConfigManager.get_provider_image_generation_config; B176 owns get_litellm_params/filter_out_litellm_params; B012 owns logging; B011 owns exception_type; B249 owns mock_image_generation.
+- B2450 owns the generic generation HTTP methods. B046 owns concrete image-specialist transforms/polling and their provider-wire fixtures; this task uses an injected B010 operation because B046 depends on the consuming route.
+- B511,B536,B549,B634 own executable OpenAI,Azure,Foundry and Bedrock methods; B044 owns custom handler execution.
 pitfalls:
-- Within aimage_generation\'s response is None branch, preserve raise ValueError('Unable to get Image Response.
-  Please pass a valid llm_provider.') and its nested guards.
-- aimage_generation uses kwargs.get('api_base', None); retain its missing-value behavior and field spelling in the
-  typed projection.
-review_level: standard
+- Foundry checks credential header names case-insensitively; Azure's set-default loop uses exact spelling.
+- The generic HTTP branch alone assigns the global api_base fallback into litellm_params before calling its handler.
+- The overloads add no behavior; counting them as implementation hid the function split in the previous estimate.
+review_level: security
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 800
   max_new_expects: 1

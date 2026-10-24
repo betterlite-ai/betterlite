@@ -1,0 +1,134 @@
+id: B2414
+title: Native Responses create HTTP transport
+description: >-
+  Implement responses_create_http for the whole response_api_handler and async_response_api_handler,
+  _prepare_fake_stream_request and _wrap_responses_response_as_fake_stream functions. B2419 owns
+  the synchronous deployment pre-hook and capability detection; B2415 handles nonstream agentic
+  results. B1114 supplies provider contracts/normalization, B507/B508 OpenAI transformation,
+  B173 clients, B595 async AWS signing, B2418 signed-body selection, B249 logging and B2402 send
+  errors. B927 owns live and synthetic iterators. This task wires those services without importing
+  the higher create SDK functions; recursive continuations arrive through B2415's typed port.
+
+  Validate the optional parameter map's extra_headers first, then overlay the separately supplied
+  extra_headers. Transform the input, normalize typed values, overlay transformed truthy extra_body,
+  compute stream as bool(original stream OR body.stream), prepare fake streaming, then sign the
+  final body. Preserve request_context={input,...optional_params,litellm_params} only for iterator
+  callbacks, never in upstream JSON. Async transforms asynchronously and does not rerun the sync
+  pre-hook. Streamed calls return an iterator before nonstream response/agentic processing.
+
+  Add SdkHttpCall::ResponsesCreateTransport under B2401 with real pinned handlers and mock HTTP.
+  Native tests cover signing/pre-hook and clock-independent effects; iterator decoding/fuzzing
+  stays B927/B2413/B508. The four whole functions contain 404 nonblank/non-comment lines, much of
+  it duplicated sync/async signatures. One shared native sender estimates 320 implementation,
+  170 tests, 110 fixtures, 100 adapters and 35 wiring lines, 735 total under 790.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_create_http.rs
+  - crates/betterlite-core/src/api/responses_create_http/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_create_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_create_transport.py
+  - tools/oracle/cases/sdk-http/responses-create-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-create-transport-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2489-L2908
+  why: Both complete create handlers, including header/body order, stream selection and agentic asymmetry.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5196-L5209
+  why: Fake streaming removes stream from the body only when fake_stream is exactly true.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5577-L5605
+  why: Post-agentic fake wrapping serializes a complete result into a synthetic HTTP 200 for B927.
+dod:
+- text: >-
+    create_transform_overlay_order sends model=gpt-4o,input=hello,optional temperature=0.2 and
+    extra_body={temperature:0.8}. Expect POST /v1/responses with temperature=0.8. Optional headers
+    contain Authorization=Bearer optional and X-Option=a; provider validation supplies its key,
+    then separate extra_headers={Authorization:Bearer explicit,X-Trace:b} overrides it, so the
+    mock sees Bearer explicit,X-Option=a,X-Trace=b. Generic litellm_params and request_context
+    are not sent. Mock complete response id=resp_a is transformed by B508. Sync pre-hook may
+    replace model/input/key before transformation; async does not call that sync hook again.
+  proof: [request-order, oracle, python-adapter]
+- text: >-
+    create_stream_and_fake_selection covers optional stream=false with extra_body.stream=true:
+    send stream=true and consume B927 live SSE. optional stream=true with extra_body.stream=false
+    still selects a streaming HTTP call because the OR retains the original flag. fake_stream=true
+    removes body.stream, sends a nonstream HTTP request and returns B927's synthetic events from
+    mock JSON, preserving original request context, metadata and call_type=responses. fake_stream=1
+    does not satisfy the identity guard. Nonstream calls return the transformed response directly.
+  proof: [stream-selection, oracle, python-adapter]
+- text: >-
+    create_sign_timeout_and_client signs after extra_body and fake-stream removal; empty signed
+    bytes stay empty through B2418. Timeout uses explicit nonzero value, otherwise float(optional
+    timeout), default 0: explicit=7 wins, explicit=0 with optional="9" yields 9, neither yields 0.
+    Bad optional timeout raises inside the send catch and is converted by B2402 before any HTTP.
+    Async sends include logging_obj; sync sends do not. Matching clients are reused, wrong kinds
+    select the pool; async forwards shared_session and ssl_verify=null or the supplied value and
+    emits "Creating HTTP client for responses API with shared_session: %s". AWS signing is off-loop
+    only in async. pre_call logs original input,api_key="",final data,base URL and signed headers.
+  proof: [send-options]
+- text: >-
+    create_agentic_result_wrapping passes a complete nonstream response and scripted B2415 result.
+    Non-null false still replaces the initial result; null keeps it. Async always calls B2415;
+    sync calls it only when B2419 detects an overridden hook. For each truthy converted flag
+    _websearch_interception_converted_stream,_compression_interception_converted_stream,
+    _headroom_interception_converted_stream,_code_interpreter_interception_converted_stream,
+    outer depth absent/0 wraps the result as fake Responses SSE. Nonzero depth prevents wrapping.
+    Sync with no agentic hook returns plain JSON even when a converted flag exists. The post-agentic
+    wrapper has no request_data or litellm_metadata arguments, unlike the initial fake-stream path.
+  proof: [agentic-wrap, oracle, python-adapter]
+- text: >-
+    create_transport_failure supplies HTTP 429 text=slow down,Retry-After=3: expect B2402 status=429,
+    message=slow down and preserved header with one request. Transformation, normalization and
+    signing errors occur before the send catch; successful-response conversion occurs after it.
+    Those failures are not converted by this layer. Request-context optional-map update failure
+    alone is silently ignored and generic parameters are still attached to the iterator context.
+  proof: [failure-order, oracle, python-adapter]
+- text: New create-transport SDK seeds exercise JSON, live SSE and fake SSE through actual provider sends.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: request-order
+    why: header/body overlays or sync deployment-hook timing change the wire request
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_transform_overlay_order($|::)/)'
+  - id: stream-selection
+    why: fake streaming sends stream upstream or extra_body changes the wrong stream predicate
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_stream_and_fake_selection($|::)/)'
+  - id: send-options
+    why: signing, client reuse, timeout or logging order differs between modes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_sign_timeout_and_client($|::)/)'
+  - id: agentic-wrap
+    why: converted-stream flags are ignored or synthetic streams inherit the wrong metadata
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_agentic_result_wrapping($|::)/)'
+  - id: failure-order
+    why: non-send errors are converted as transport failures or provider errors retry
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_transport_failure($|::)/)'
+  - id: python-adapter
+    why: create transport parity bypasses a real HTTP request
+    run: test -f tools/oracle/sdk_http/responses_create_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the new transport variant has no decoder input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-create-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/responses-create-transport/create-transform-overlay-order.yaml
+- tools/oracle/cases/sdk-http/responses-create-transport/create-stream-and-fake-selection.yaml
+- tools/oracle/cases/sdk-http/responses-create-transport/create-agentic-result-wrapping.yaml
+- tools/oracle/cases/sdk-http/responses-create-transport/create-transport-failure.yaml
+deviations: []
+out_of_scope:
+- B1078/B932 own public create wrappers and provider selection; B2419 owns pre-hook policy and B2415 agentic execution.
+- B2418 owns _signed_body_kwargs; B2416/B2417/B2418 own resource transports; B2402 owns _handle_error.
+- B927 owns stream lifetime/iteration, B508 event/response conversion and B173 generic outbound requests.
+- Remaining llm_http_handler.py endpoint families keep their individual API owners.
+pitfalls:
+- Separate extra_headers override validated credentials; the optional map's headers are validated earlier.
+- is_stream_request is captured before fake-stream preparation, so a JSON HTTP response can still produce an iterator.
+- The async nonstream path runs agentic post-processing even when sync capability detection would skip it.
+review_level: security
+budget:
+  max_changed_lines: 790
+  max_new_expects: 0

@@ -1,177 +1,100 @@
 id: B090
-title: Vector stores
+title: Attach retrieval results and failures to model responses
 description: >-
-  Finish retrieval response/stream metadata integration using vector-retrieval-context and B014's terminal hooks.
-  Preserve source vector-store search results in final and streamed output without a second retrieval call, and
-  export the authorized search service consumed by Responses file_search.
+  Implement VectorStorePreCallHook's two post-call methods in core::api::vector_stores and register them
+  with B012's existing deployment-hook pipeline. They consume already collected search_results and
+  vector_store_search_failures; they do not call search or register vector-store routes. The success hook
+  reads a logging object from request_data and its model_call_details. The streaming hook instead reads
+  the two fields directly from request_data. Preserve that distinction in typed entry points.
 
+  For chat responses attach nonempty fields under each choice.message.provider_specific_fields, retaining
+  unrelated provider fields. ResponsesAPIResponse gets only top-level vector_store_search_failures, as a
+  list, and never search_results. Streaming choices use delta.provider_specific_fields. Empty/missing
+  choices or message/delta objects are skipped. Wrap decoration failures with diagnostics and preserve
+  the source return conventions below. These are transformations over decoded records, so HelperCall::VectorStores
+  may compare them directly; no provider-I/O helper or new decoder is needed.
 
-  Implement crates/betterlite-core/src/api/vector_stores.rs. Use VectorStoresInput and VectorStoresResult with typed
-  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
-  constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions retrieval_response_metadata, retrieval_stream_metadata, requested_vector_store_ids,
-  retrieval_failure_mode, no_double_search under api::vector_stores::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorStores in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_stores: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook.async_post_call_success_deployment_hook
-  (L415-L470); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook.async_post_call_streaming_deployment_hook
-  (L472-L512). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 95 owned nonblank/non-comment/non-docstring Python lines (105 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 115 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 365 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B1064 (Vector store search), B1067 (Vector search routes), B1068
-  (Vector store routes), B1070 (Vector management read), B1076 (Vector file routes), B1077 (Vector retrieval context),
-  B1081 (Vector file mutation routes), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  The two methods at 415-512 contain 74 nonblank/non-comment lines. Budget 100 implementation, 125 tests,
+  85 adapters, 65 fixtures and 25 wiring/corpus, 400 total. Native tests use api::vector_stores::tests.
+  The __init__.py files are export manifests only; their owning API parts expose those operations and
+  Python facade tasks mirror the public names without this task registering routes a second time.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_stores.rs
   - crates/betterlite-core/src/api/vector_stores/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/src/dispatch.rs
   - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/vector_stores.rs
-  - tools/oracle/src/helpers/vector_stores/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/vector_stores.py
-  - tools/oracle/helpers/vector_stores/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_stores-*
   - tools/oracle/cases/helpers/vector-stores/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/dispatch.rs
+  - tools/oracle/fuzz/corpus/helper_case/vector_stores-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L415-L514
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L520-L521
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L415-L512
+  why: The two complete post-call hooks use different metadata sources and have different failure/empty return values.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/__init__.py#L1-L4
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Store exports are VectorStoreRegistry,acreate,asearch,create,search; this manifest contains no extra route implementation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/__init__.py#L1-L29
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: File exports expose six sync/async operation pairs already owned by B1072-B1074.
 dod:
-- text: 'retrieval response metadata: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-retrieval-response-metadata
-  - oracle
-- text: 'retrieval stream metadata: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-retrieval-stream-metadata
-  - oracle
-- text: 'requested vector store ids: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-requested-vector-store-ids
-  - oracle
-- text: 'retrieval failure mode: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-retrieval-failure-mode
-  - oracle
-- text: 'no double search: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-no-double-search
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    chat_retrieval_fields supplies logging details search_results=[{search_query:q,data:[]}],
+    vector_store_search_failures=[{vector_store_id:vs_a,custom_llm_provider:openai,error:failed}], and two
+    chat choices with provider_specific_fields={keep:x,search_results:old}. Each nonempty message keeps
+    keep=x and replaces search_results plus vector_store_search_failures with the supplied sequences.
+    Empty failure/results inputs do not erase existing fields. Return the modified response; no search executes.
+  proof: [post-tests, oracle, helper-python]
+- text: >-
+    responses_only_receive_failures gives the same logging details to a ResponsesAPIResponse. Expect
+    only top-level vector_store_search_failures=[{vector_store_id:vs_a,custom_llm_provider:openai,error:failed}],
+    no added search_results and unchanged output/id. Success-only search results return the Responses
+    object unchanged. A response with no choices, choices=[] or a choice without a message is returned unchanged.
+  proof: [post-tests, oracle, helper-python]
+- text: >-
+    successful_hook_noop has no logging object or empty model_call_details. Return null, not the response,
+    with debug diagnostic "No litellm_logging_obj in request_data" or "No search results or search failures found".
+    A malformed writable provider-fields target causes exception diagnostic "Error adding search results to response: %s"
+    and null; it does not fail the completed model request or roll back already modified earlier choices.
+  proof: [post-tests, oracle, helper-python]
+- text: >-
+    streaming_retrieval_fields passes the two fields directly in request_data and a chunk with two deltas.
+    Attach both nonempty fields to each nonempty delta.provider_specific_fields while preserving keep=x.
+    A logging object alone does not provide streaming metadata. Absent/empty fields return the identical
+    chunk with debug "No search results or search failures found for streaming chunk"; no choice or delta
+    is created. A mutation failure emits "Error adding search results to streaming chunk: %s" and returns
+    the original chunk, including any earlier mutation. Neither hook performs a second retrieval.
+  proof: [post-tests, oracle, helper-python]
+- text: New vector_stores seeds cover both post-call transformations in the shared helper-case replay.
+  proof: [helper-corpus]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::/) - test(/::replays_corpus$/)'
-  - id: case-retrieval-response-metadata
-    why: the retrieval-response-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::retrieval_response_metadata($|::)/)'
-  - id: case-retrieval-stream-metadata
-    why: the retrieval-stream-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::retrieval_stream_metadata($|::)/)'
-  - id: case-requested-vector-store-ids
-    why: the requested-vector-store-ids behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::requested_vector_store_ids($|::)/)'
-  - id: case-retrieval-failure-mode
-    why: the retrieval-failure-mode behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::retrieval_failure_mode($|::)/)'
-  - id: case-no-double-search
-    why: the no-double-search behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::no_double_search($|::)/)'
+  - id: post-tests
+    why: response decoration uses the wrong metadata source, return value or response field
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_stores::tests::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_stores.py && uv run --locked --project tools/oracle/litellm ruff check
-      tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: post-hook parity is absent or invokes fabricated expected output
+    run: test -f tools/oracle/helpers/vector_stores.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_stores-*)"
-      && grep -qE "^[[:space:]]+vector_stores:" tools/oracle/fuzz/corpus/helper_case/vector_stores-* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-stores)"
+    why: the added post-hook variants have no shared-decoder seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_stores-*)" && grep -qE '^[[:space:]]+vector_stores:' tools/oracle/fuzz/corpus/helper_case/vector_stores-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-stores/retrieval-response-metadata.yaml
-- tools/oracle/cases/helpers/vector-stores/retrieval-stream-metadata.yaml
-- tools/oracle/cases/helpers/vector-stores/requested-vector-store-ids.yaml
-- tools/oracle/cases/helpers/vector-stores/retrieval-failure-mode.yaml
-- tools/oracle/cases/helpers/vector-stores/no-double-search.yaml
+- tools/oracle/cases/helpers/vector-stores/chat-retrieval-fields.yaml
+- tools/oracle/cases/helpers/vector-stores/responses-only-receive-failures.yaml
+- tools/oracle/cases/helpers/vector-stores/successful-hook-noop.yaml
+- tools/oracle/cases/helpers/vector-stores/streaming-retrieval-fields.yaml
 deviations: []
 out_of_scope:
-- 'litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: B1077 owns _scan_request L55-L66,
-  ProxyRuntime.llm_router L70-L70, ProxyRuntime.prisma_client L72-L72, ProxyServerRuntime.llm_router L77-L82, ProxyServerRuntime.prisma_client
-  L84-L89, VectorStorePreCallHook.__init__ L124-L126, VectorStorePreCallHook.async_get_chat_completion_prompt L128-L205,
-  VectorStorePreCallHook._scanned_context_messages L207-L226, VectorStorePreCallHook._scan_through L228-L239, VectorStorePreCallHook._augment_messages
-  L241-L306, VectorStorePreCallHook._search_one L308-L347, VectorStorePreCallHook._extract_query_from_messages L349-L376,
-  VectorStorePreCallHook._context_messages L378-L383, VectorStorePreCallHook._messages_with_context L385-L392, VectorStorePreCallHook._context_message
-  L394-L413, _requested_vector_store_ids L515-L519, _configured_failure_mode L522-L532.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1077 owns pre-call execution and B2483 owns its seven pure shaping/policy helpers; lines 520-521 are blank and claim no callable.
+- B1062/B1064 own VectorStoreRegistry/create/search exports; B1072-B1074 own every vector_store_files operation. The proxy vector_store_files_endpoints __init__.py is empty.
+- Gateway routes remain B1067/B1068/B1076/B1081; B158-B161 own Python package exports, so this task adds no route registration.
 pitfalls:
-- vector_store_pre_call_hook.py:428 emits the diagnostic 'VectorStorePreCallHook.async_post_call_success_deployment_hook
-  called'; retain its level and fallback instead of turning it into a hard error.
-- vector_store_pre_call_hook.py:485 emits the diagnostic 'VectorStorePreCallHook.async_post_call_streaming_deployment_hook
-  called'; retain its level and fallback instead of turning it into a hard error.
-review_level: security
+- The successful Responses hook advertises failed retrievals only; adding successful search_results would change its wire format.
+- Streaming reads request_data directly, while non-streaming reads the logging object's model_call_details.
+- A post-hook failure returns null for success but the original chunk for streaming, without atomic rollback.
+review_level: standard
 budget:
   max_changed_lines: 400
-  max_new_expects: 1
+  max_new_expects: 0

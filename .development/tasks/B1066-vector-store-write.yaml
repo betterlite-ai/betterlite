@@ -1,189 +1,118 @@
 id: B1066
-title: Vector store write
+title: Vector store update and delete SDK calls
 description: >-
-  Implement provider vector store update/delete through B010, preserving metadata/name/expires_after projection
-  and deletion results. Do not mutate proxy registry records until the separate management operation requests it.
+  Implement complete aupdate/update and adelete/delete functions from vector_stores/main.py in
+  betterlite-core::api::vector_store_write. Omitted custom_llm_provider becomes openai; values containing
+  slash go through B174 get_llm_provider for api_type and provider. B010 selects the provider configuration; then
+  call B2402's HTTP write service. Keep B011 SDK exception mapping and B012 logging context active in
+  both execution modes. The aupdate/adelete flags select async only for boolean true.
 
-  B2402 owns the complete sync/async vector_store_update_handler and vector_store_delete_handler functions in
-  llms/custom_httpx/llm_http_handler.py, including metadata cleanup through B668 and the shared _handle_error.
-  Use that service directly; B173 supplies only the underlying pooled transport and does not own these endpoints.
+  Update overlays kwargs on locals before B1058's create-parameter filter; file_ids and chunking_strategy
+  therefore pass on updates. extra_query is accepted but never forwarded. Optional arguments default to
+  null. timeout=null or 0 selects REQUEST_TIMEOUT, default 6000 seconds, while a nonzero timeout wins.
+  Reuse betterlite-config's existing timeout field and loader. Log model=null, the provider and
+  litellm_call_id (null by default), plus update's id/name/filtered params or delete's id alone.
+  Neither operation changes the proxy registry.
 
-
-  Implement crates/betterlite-core/src/api/vector_store_write.rs. Use VectorStoreWriteInput and VectorStoreWriteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions vector_update_metadata, vector_update_expiry, vector_delete, provider_update_error
-  under api::vector_store_write::tests. Each named function drives production code and asserts its case result;
-  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_store_write::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorStoreWrite in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_write: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/vector_stores/main.py: aupdate (L779-L833); litellm/vector_stores/main.py: update
-  (L837-L930); litellm/vector_stores/main.py: adelete (L934-L982); litellm/vector_stores/main.py: delete (L986-L1062).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 223 owned nonblank/non-comment/non-docstring Python lines (246 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 243 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 508 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1058 (Vector store contracts), B1087 (Api boundaries), B527 (OpenAI vector stores
-  and attached files), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add SdkHttpCall::VectorStoreWrite to B2401, with public SDK calls against the mock in Python and
+  production execution in Rust. Implement the named tests below in api::vector_store_write::tests,
+  and loads_request_timeout in betterlite-config. Reuse the SDK-case and config YAML decoders; these
+  wrappers introduce no byte parser. The four functions contain 247 nonblank/non-comment lines.
+  Budget 245 implementation, 155 tests, 90 adapters, 90 fixtures and 50 config/corpus/wiring lines,
+  630 total within 650.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_store_write.rs
   - crates/betterlite-core/src/api/vector_store_write/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/vector_store_write.rs
   - crates/betterlite-config/src/api/vector_store_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-write-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/vector_store_write.rs
-  - tools/oracle/src/helpers/vector_store_write/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/vector_store_write.py
-  - tools/oracle/helpers/vector_store_write/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_store_write-*
-  - tools/oracle/cases/helpers/vector-store-write/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_store_write.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_store_write.py
+  - tools/oracle/cases/sdk-http/vector-store-write/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-write-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779-L1062
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L778-L1062
+  why: Whole write functions show provider parsing, update's create-field filtering and the unused extra_query.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/utils.py#L39-L54
+  why: B1058 retains recognized non-null create fields without imposing an update schema.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
+  why: REQUEST_TIMEOUT is converted to float with default 6000 before call-level truthy selection.
 dod:
-- text: 'vector update metadata: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-update-metadata
-  - oracle
-- text: 'vector update expiry: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-update-expiry
-  - oracle
-- text: 'vector delete: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-delete
-  - oracle
-- text: 'provider update error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-update-error
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    update_accepts_create_fields sends vs_a,name=notes,metadata={owner:alice,count:2},
+    expires_after={anchor:last_active_at,days:3},file_ids=[file_a],chunking_strategy={type:auto},unknown=1.
+    Expect POST /v1/vector_stores/vs_a with those five recognized fields, metadata={owner:alice}, no unknown
+    and no vector_store_id body field. Null fields disappear; empty name and metadata remain. Mock 200
+    {id:vs_a,object:vector_store,name:notes} is returned in sync and async modes.
+  proof: [write-tests, oracle, sdk-python]
+- text: >-
+    write_ignores_extra_query sends update and delete with extra_query={trace:lost},extra_headers={X-Trace:kept}
+    and extra_body={name:replacement}. Both requests omit query trace and retain X-Trace=kept. Update's
+    body name is replacement; DELETE has no body and returns mock 200
+    {id:vs_a,object:vector_store.deleted,deleted:true}. A repository spy records no registry write.
+  proof: [write-tests, oracle, sdk-python]
+- text: >-
+    write_provider_selection compares absent provider with openai; their requests match. Provider
+    openai/gpt-4o resolves provider=openai,api_type=gpt-4o before config selection. Unknown not_a_provider
+    fails enum conversion with cause "'not_a_provider' is not a valid LlmProviders" and no request.
+    Known unsupported anthropic fails with source ValueError
+    "Vector store update is not supported for anthropic" or "Vector store delete is not supported for anthropic".
+    B011 maps these failures to APIConnectionError,status=500,type=null,param=null,code=null in both modes.
+    Record the source cause above; only traceback-dependent failure.message wording may be ignored.
+  proof: [write-tests, oracle, sdk-python]
+- text: >-
+    write_timeout_and_logging passes timeout=null,0,7 with REQUEST_TIMEOUT unset and then 12. The handler
+    receives 6000,6000,7 then 12,12,7; B2402 owns client application of that value. Logging carries
+    model=null,litellm_call_id=null or the supplied call-a, update's name/filtered fields and delete's id.
+    Async execution retains context; integer 1 in aupdate/adelete does not select async.
+    loads_request_timeout loads absent=6000,"12"=12 and rejects "bad" through the production config loader.
+  proof: [write-tests, config-tests, config-corpus]
+- text: >-
+    write_provider_errors supplies HTTP 404 with type=invalid_request_error,param=null,code=missing and
+    message="vector store not found" for each method. Expect NotFoundError,status=404,type=null,param=null,
+    code=null and one captured request; ignore only failure.message for betterlite wording. The SDK code is not replaced
+    with the proxy string "404". New vector_store_write corpus seeds cover update and delete.
+  proof: [write-tests, oracle, sdk-python, sdk-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_write::/)
-      - test(/::replays_corpus$/)'
-  - id: case-vector-update-metadata
-    why: the vector-update-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_write::tests::vector_update_metadata($|::)/)'
-  - id: case-vector-update-expiry
-    why: the vector-update-expiry behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_write::tests::vector_update_expiry($|::)/)'
-  - id: case-vector-delete
-    why: the vector-delete behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_write::tests::vector_delete($|::)/)'
-  - id: case-provider-update-error
-    why: the provider-update-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_write::tests::provider_update_error($|::)/)'
+  - id: write-tests
+    why: public writes lose argument filtering, provider selection or logging before the HTTP send
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_write::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_write::tests::loads_settings($|::)/)'
+    why: REQUEST_TIMEOUT is declared without being loaded
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_write::tests::loads_request_timeout($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-write-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_store_write.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_write-*)"
-      && grep -qE "^[[:space:]]+vector_store_write:" tools/oracle/fuzz/corpus/helper_case/vector_store_write-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-write)"
+    why: timeout configuration has no new production-decoder coverage
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-write-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: sdk-python
+    why: the provider comparison lacks its independent public SDK adapter
+    run: test -f tools/oracle/sdk_http/vector_store_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the SDK HTTP decoder has no write-operation seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-store-write/vector-update-metadata.yaml
-- tools/oracle/cases/helpers/vector-store-write/vector-update-expiry.yaml
-- tools/oracle/cases/helpers/vector-store-write/vector-delete.yaml
-- tools/oracle/cases/helpers/vector-store-write/provider-update-error.yaml
+- tools/oracle/cases/sdk-http/vector-store-write/update-accepts-create-fields.yaml
+- tools/oracle/cases/sdk-http/vector-store-write/write-ignores-extra-query.yaml
+- tools/oracle/cases/sdk-http/vector-store-write/write-provider-selection.yaml
+- tools/oracle/cases/sdk-http/vector-store-write/write-provider-errors.yaml
 deviations: []
 out_of_scope:
-- B2402 owns provider HTTP update/delete execution and metadata cleanup; this task owns the public SDK wrappers and argument filtering.
-- 'litellm/vector_stores/main.py: B1064 owns _direct_vector_store_embedding_executor L46-L53, mock_vector_store_search_response
-  L56-L77, mock_vector_store_create_response L80-L105, acreate L109-L169, create L173-L282, asearch L286-L355, search
-  L359-L491.'
-- 'litellm/vector_stores/main.py: B1065 owns aretrieve L495-L543, retrieve L547-L623, alist L627-L681, list L685-L775.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2402 owns four HTTP write handlers and _handle_error; B668 cleans metadata there after this task filters arguments.
+- B1064 owns create/search, mock responses and the direct embedding executor in vector_stores/main.py; B1065 owns list/retrieve.
+- B1058 owns VectorStoreRequestUtils and provider contracts; B1131 owns wire records; B527 owns OpenAI transformations.
+- B174 resolves provider names, B010 owns config selection/GenericLiteLLMParams, B011 maps SDK exceptions and B012 supplies logging.
 pitfalls:
-- Within update\'s vector_store_provider_config is None branch, preserve raise ValueError(f'Vector store update
-  is not supported for {custom_llm_provider}') and its nested guards.
-- update uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field spelling in the typed
-  projection.
-review_level: standard
+- An update accepts file_ids and chunking_strategy because it uses the create allowlist.
+- extra_query appears in the public signature but neither write passes it to the HTTP handler.
+- timeout=0 selects REQUEST_TIMEOUT rather than disabling the deadline.
+review_level: security
 budget:
-  max_changed_lines: 510
-  max_new_expects: 1
+  max_changed_lines: 650
+  max_new_expects: 0
