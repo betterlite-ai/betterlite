@@ -1,0 +1,83 @@
+id: B182
+title: Gemini, Cohere and Azure message helpers
+description: >-
+  Implement the remaining reusable Azure, Gemini and Cohere message helpers in separate betterlite-prompts modules.
+  Translate typed common messages into provider data without executing requests: Azure tool/image/file forms, Gemini
+  tool invocation/results and thought signatures, and Cohere chat history/tool output. Reuse B183 media descriptors
+  and B178 argument parsing. Preserve helper output ordering and returned message/history separation, but keep input
+  ownership explicit so a conversion never mutates another call's request. Add provider_messages helper cases using
+  pinned functions and synthetic signatures/tool IDs; extend a provider_messages fuzz target for embedded signature/tool-argument
+  decoding. Budget 350 transforms/types, 80 wiring and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/azure.rs
+  - crates/betterlite-prompts/src/azure/**
+  - crates/betterlite-prompts/src/gemini.rs
+  - crates/betterlite-prompts/src/gemini/**
+  - crates/betterlite-prompts/src/cohere.rs
+  - crates/betterlite-prompts/src/cohere/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-messages/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1062-L1520
+  why: Azure forms and Gemini tool invocation/results with signatures.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2881-L3153
+  why: Cohere tool results, final message and preceding history.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3207-L3347
+  why: Gemini text/image and Azure text prompt helpers.
+dod:
+- text: Each provider-specific helper matches the listed oracle cases without ignoring message ordering or signature
+    fields.
+  proof:
+  - oracle
+- text: Malformed signature/argument input fails within limits and source messages survive repeated conversions
+    unchanged.
+  proof:
+  - provider-message-tests
+  - provider-messages-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-message-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/provider_messages/)'
+  - id: provider-messages-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-prompts/fuzz/fuzz_targets/provider_messages.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/provider_messages)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_provider_messages_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/provider-messages/azure-tools.yaml
+- tools/oracle/cases/helpers/provider-messages/azure-file-image.yaml
+- tools/oracle/cases/helpers/provider-messages/gemini-tool-id-signature.yaml
+- tools/oracle/cases/helpers/provider-messages/gemini-parallel-results.yaml
+- tools/oracle/cases/helpers/provider-messages/gemini-text-image.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-last-user.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-last-tool.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-role-merging.yaml
+deviations: []
+out_of_scope:
+- Provider credentials and HTTP endpoints are B025, B031, B035 and B037.
+- Provider API schema extensions not consumed by these helpers remain in their provider tasks.
+pitfalls:
+- Cohere's Python helper pops the last message; compare its returned value without reproducing shared-input mutation.
+- Gemini thought signatures cannot be regenerated from tool names.
+- Do not apply Gemini's content ordering to Azure or Cohere.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
