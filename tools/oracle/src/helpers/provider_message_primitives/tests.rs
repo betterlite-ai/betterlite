@@ -45,13 +45,15 @@ fn provider_message_primitives_cases_match_litellm(#[case] name: &str) {
 }
 
 #[rstest::rstest]
-#[case::number("2")]
-#[case::zero("0")]
-#[case::text("x")]
-#[case::list("[1]")]
-fn schema_truthiness_matches_litellm(#[case] schema: &str) {
+#[case::number("{response_schema: 2}")]
+#[case::zero("{response_schema: 0}")]
+#[case::text("{response_schema: x}")]
+#[case::list("{response_schema: [1]}")]
+#[case::missing_schema("{json_schema: {name: answer}}")]
+#[case::not_object("{json_schema: 5}")]
+fn response_formats_match_litellm(#[case] value: &str) {
     let source = format!(
-        "kind: helper\nname: truthiness\ncall: {{provider_message_primitives: {{function: response_format, optional_params: {{}}, value: {{response_schema: {schema}}}, supported: false, enforce_tool_choice: null}}}}\nenv: {{}}\ncompare: {{ignore: []}}\n"
+        "kind: helper\nname: format\ncall: {{provider_message_primitives: {{function: response_format, optional_params: {{}}, value: {value}, supported: false, enforce_tool_choice: null}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: /error/message, why: betterlite writes its own message}}]}}\n"
     );
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
     let run = super::super::run_case(&case, false).unwrap();

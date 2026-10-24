@@ -236,7 +236,7 @@ fn batch_initializer() {
 
 fn chat_id_prefix() {
     let id = Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
-    let rendered = String::from(ChatCompletionId(id));
+    let rendered = ChatCompletionId(id).to_string();
     assert_eq!(rendered, "chatcmpl-01234567-89ab-4def-8123-456789abcdef");
 }
 

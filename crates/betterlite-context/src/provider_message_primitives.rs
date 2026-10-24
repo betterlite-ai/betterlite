@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use derive_more::Display;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -235,11 +236,6 @@ impl<Stream, Response> From<Stream> for StreamState<Stream, Response> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BatchConfigBase;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[display("chatcmpl-{_0}")]
 pub struct ChatCompletionId(pub Uuid);
-
-impl From<ChatCompletionId> for String {
-    fn from(value: ChatCompletionId) -> Self {
-        format!("chatcmpl-{}", value.0.hyphenated())
-    }
-}

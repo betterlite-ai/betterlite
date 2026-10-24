@@ -51,12 +51,19 @@ pub(crate) enum JsonModeInput {
 pub(crate) fn invoke(input: &PrimitivesInput) -> Result<Value, Box<HelperError>> {
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let result = with_default(subscriber, || outcome(input.clone()))?;
+    let result = with_default(subscriber, || outcome(input.clone()))
+        .map_err(|failure| Box::new(helper_error(&failure)))?;
     let lines = logs.0.lock().map(|lines| lines.clone()).unwrap_or_default();
     Ok(json!({"result": result, "logs": lines}))
 }
 
-fn outcome(input: PrimitivesInput) -> Result<Value, Box<HelperError>> {
+enum Failure {
+    Context(ContextError),
+    Uuid(uuid::Error),
+    ToolsNotList,
+}
+
+fn outcome(input: PrimitivesInput) -> Result<Value, Failure> {
     match input {
         PrimitivesInput::ResponseFormat {
             optional_params,
@@ -66,7 +73,7 @@ fn outcome(input: PrimitivesInput) -> Result<Value, Box<HelperError>> {
         } => response_format(optional_params, value, supported, enforce_tool_choice),
         PrimitivesInput::DeveloperRole { messages } => developer_to_system(messages)
             .map(|projected| json!(projected))
-            .map_err(|error| Box::new(failure(&error))),
+            .map_err(Failure::Context),
         PrimitivesInput::IteratorState { json_mode } => {
             let state: StreamState<usize, String> = match json_mode {
                 JsonModeInput::Default => StreamState::from(0),
@@ -84,8 +91,8 @@ fn outcome(input: PrimitivesInput) -> Result<Value, Box<HelperError>> {
             Ok(json!({"attributes": size_of_val(&BatchConfigBase)}))
         }
         PrimitivesInput::ChatId { uuid } => uuid::Uuid::parse_str(&uuid)
-            .map(|id| json!(String::from(ChatCompletionId(id))))
-            .map_err(|error| Box::new(helper_error("ValueError", error.to_string()))),
+            .map(|id| json!(ChatCompletionId(id).to_string()))
+            .map_err(Failure::Uuid),
         PrimitivesInput::ToolCall { record } => Ok(project_tool_call(record, &Recorder)),
     }
 }
@@ -95,7 +102,7 @@ fn response_format(
     value: Value,
     supported: bool,
     enforce_tool_choice: Option<bool>,
-) -> Result<Value, Box<HelperError>> {
+) -> Result<Value, Failure> {
     let support = if supported {
         FormatSupport::Native
     } else {
@@ -108,10 +115,7 @@ fn response_format(
     let tools = match optional_params.remove("tools") {
         None => None,
         Some(Value::Array(tools)) => Some(tools.into_iter().map(ToolParam::Supplied).collect()),
-        Some(_) => {
-            let message = "tools is not a list".to_owned();
-            return Err(Box::new(helper_error("AttributeError", message)));
-        }
+        Some(_) => return Err(Failure::ToolsNotList),
     };
     let mut params = FormatParams {
         tools,
@@ -120,7 +124,7 @@ fn response_format(
         response_format: None,
     };
     add_response_format(&mut params, format_record(value), support, policy)
-        .map_err(|error| Box::new(failure(&error)))?;
+        .map_err(Failure::Context)?;
     if let Ok(Value::Object(changed)) = serde_json::to_value(&params) {
         optional_params.extend(changed);
     }
@@ -172,17 +176,17 @@ impl ToolCallProjection<Value> for Recorder {
     }
 }
 
-fn failure(error: &ContextError) -> HelperError {
-    let class = match error {
-        ContextError::SchemaNotObject => "TypeError",
-        ContextError::MissingSchema
-        | ContextError::MissingRole { .. }
-        | ContextError::MissingContent { .. } => "KeyError",
+fn helper_error(failure: &Failure) -> HelperError {
+    let (class, message) = match failure {
+        Failure::Context(error @ ContextError::SchemaNotObject) => ("TypeError", error.to_string()),
+        Failure::Context(
+            error @ (ContextError::MissingSchema
+            | ContextError::MissingRole { .. }
+            | ContextError::MissingContent { .. }),
+        ) => ("KeyError", error.to_string()),
+        Failure::Uuid(error) => ("ValueError", error.to_string()),
+        Failure::ToolsNotList => ("AttributeError", "tools is not a list".to_owned()),
     };
-    helper_error(class, error.to_string())
-}
-
-fn helper_error(class: &str, message: String) -> HelperError {
     HelperError {
         class: class.to_owned(),
         status: None,
