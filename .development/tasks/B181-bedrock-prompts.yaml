@@ -1,0 +1,85 @@
+id: B181
+title: Bedrock message and tool conversion helpers
+description: >-
+  Implement the pure Bedrock prompt helpers in betterlite-prompts/bedrock, consuming B183's inline media descriptors
+  and B179's messages. Cover Converse content ordering, role continuation, tool use/results, document naming, duplicate
+  content handling, cache-point blocks and tool-name normalization with a per-call reverse-name map. Return all
+  provider blocks and reverse mappings as typed data; inject model capability flags instead of consulting global
+  provider state. Use B180 only for shared Anthropic-family block transformations where the behavior actually matches.
+  Add bedrock_prompt oracle operations for the processor and its smaller helpers using local media fixtures; parse
+  any provider-native tool passthrough through a bounded typed adapter with the prompt_bedrock fuzz target. Budget
+  400 transforms/types, 80 wiring and 280 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/bedrock.rs
+  - crates/betterlite-prompts/src/bedrock/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/bedrock-prompt/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3389-L3616
+  why: Image input forms for Bedrock.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3619-L4309
+  why: Tool/result media, deduplication, document names and content ordering.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4312-L4963
+  why: Converse message processor.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4966-L5160
+  why: Tool-name mapping, native blocks and cache points.
+dod:
+- text: Bedrock message/tool/caching output and per-call reverse names match listed helper cases.
+  proof:
+  - oracle
+- text: Parallel conversions cannot exchange reverse-name mappings, duplicate content decisions are observable,
+    and source inputs are unchanged.
+  proof:
+  - bedrock-prompt-tests
+- text: Malformed native blocks and over-limit inputs fail through the parser exercised by the corpus.
+  proof:
+  - prompt-bedrock-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: bedrock-prompt-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/bedrock_prompt/)'
+  - id: prompt-bedrock-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-prompts/fuzz/fuzz_targets/prompt_bedrock.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/prompt_bedrock)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_prompt_bedrock_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/bedrock-prompt/converse-text.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/role-continuation.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/tool-result-media.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/document-only.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/duplicate-content.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/duplicate-document-name.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/thinking-order.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/tool-name-roundtrip.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/native-tool-block.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/cache-point-ttl.yaml
+deviations: []
+out_of_scope:
+- SigV4, credentials, model discovery and Converse/Invoke execution are B028-B030.
+- Remote images are governed by B009/B183 and are never fetched here.
+pitfalls:
+- Keep the first authoritative Bedrock duplicate block; do not reuse Anthropic's last-result repair blindly.
+- A global reverse-name cache leaks state between requests and is forbidden.
+- Cache TTL eligibility is a model capability, not a property of every Bedrock model.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

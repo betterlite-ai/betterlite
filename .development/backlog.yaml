@@ -1893,7 +1893,7 @@ tasks:
     title: Bedrock message and tool conversion helpers
     status: todo
     depends_on: [B180, B183]
-    file: null
+    file: tasks/B181-bedrock-prompts.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/factory.py"
   - id: B182
