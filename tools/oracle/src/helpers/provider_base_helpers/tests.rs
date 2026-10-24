@@ -6,6 +6,20 @@ use std::path::Path;
 use crate::case::{HelperCase, parse_helper_case};
 use crate::helpers::HelperCall;
 
+use super::{BaseCall, invoke};
+
+#[test]
+fn hidden_params_call_reports_the_projection_and_the_attached_map() {
+    let call: BaseCall = serde_json::from_str(
+        r#"{"hidden_params": {"kind": "dict", "hidden": {"mapping": {"id": "m"}}, "create": true}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        invoke(&call).unwrap().to_string(),
+        r#"[{"id":"m"},{"id":"m"}]"#
+    );
+}
+
 #[test]
 fn helper_seeds_select_provider_base_helpers() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
