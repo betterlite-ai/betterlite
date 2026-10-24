@@ -20,7 +20,10 @@ struct CountingNonces;
 
 impl NonceSource for CountingNonces {
     fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
-        nonce.iter_mut().zip(0_u8..).for_each(|(byte, index)| *byte = index);
+        nonce
+            .iter_mut()
+            .zip(0_u8..)
+            .for_each(|(byte, index)| *byte = index);
         Ok(())
     }
 }
@@ -45,18 +48,53 @@ fn encrypt_hello(salt: Option<&str>, yaml: &str, override_key: Option<&str>) -> 
 }
 
 #[rstest]
-#[case::salt_before_master(Some("salt-one"), "general_settings: {master_key: other}", None, SALT_ONE)]
+#[case::salt_before_master(
+    Some("salt-one"),
+    "general_settings: {master_key: other}",
+    None,
+    SALT_ONE
+)]
 #[case::absent_salt_uses_master(None, "general_settings: {master_key: salt-one}", None, SALT_ONE)]
 #[case::empty_salt_kept(Some(""), "general_settings: {master_key: salt-one}", None, EMPTY_SALT)]
-#[case::no_key_at_all(None, "{}", None, "no LITELLM_SALT_KEY or master key is set to encrypt with")]
+#[case::no_key_at_all(
+    None,
+    "{}",
+    None,
+    "no LITELLM_SALT_KEY or master key is set to encrypt with"
+)]
 #[case::truthy_new_key_override(Some("salt-one"), "{}", Some("override-key"), OVERRIDE)]
 #[case::empty_new_key_falls_back(Some("salt-one"), "{}", Some(""), SALT_ONE)]
 #[case::default_legacy_algorithm(Some("salt-one"), "general_settings: {}", None, SALT_ONE)]
-#[case::aes_casefold_without_trim(Some("salt-one"), "general_settings: {encryption_algorithm: AES-256-GCM}", None, SALT_ONE_AES)]
-#[case::aes_untrimmed_is_legacy(Some("salt-one"), "general_settings: {encryption_algorithm: ' aes-256-gcm'}", None, SALT_ONE)]
-#[case::unknown_algorithm_legacy(Some("salt-one"), "general_settings: {encryption_algorithm: chacha20}", None, SALT_ONE)]
-#[case::non_string_algorithm_legacy(Some("salt-one"), "general_settings: {encryption_algorithm: [aes-256-gcm]}", None, SALT_ONE)]
-#[case::null_algorithm_legacy(Some("salt-one"), "general_settings: {encryption_algorithm: null}", None, SALT_ONE)]
+#[case::aes_casefold_without_trim(
+    Some("salt-one"),
+    "general_settings: {encryption_algorithm: AES-256-GCM}",
+    None,
+    SALT_ONE_AES
+)]
+#[case::aes_untrimmed_is_legacy(
+    Some("salt-one"),
+    "general_settings: {encryption_algorithm: ' aes-256-gcm'}",
+    None,
+    SALT_ONE
+)]
+#[case::unknown_algorithm_legacy(
+    Some("salt-one"),
+    "general_settings: {encryption_algorithm: chacha20}",
+    None,
+    SALT_ONE
+)]
+#[case::non_string_algorithm_legacy(
+    Some("salt-one"),
+    "general_settings: {encryption_algorithm: [aes-256-gcm]}",
+    None,
+    SALT_ONE
+)]
+#[case::null_algorithm_legacy(
+    Some("salt-one"),
+    "general_settings: {encryption_algorithm: null}",
+    None,
+    SALT_ONE
+)]
 fn configured_values_reach_the_codec(
     #[case] salt: Option<&str>,
     #[case] yaml: &str,
@@ -69,7 +107,18 @@ fn configured_values_reach_the_codec(
 #[test]
 fn algorithm_reload_consumed() {
     let before = encrypt_hello(Some("salt-one"), "{}", None);
-    let after = encrypt_hello(Some("salt-one"), "general_settings: {encryption_algorithm: aes-256-gcm}", None);
-    let reverted = encrypt_hello(Some("salt-one"), "general_settings: {encryption_algorithm: xsalsa20-poly1305}", None);
-    assert_eq!([before, after, reverted], [SALT_ONE, SALT_ONE_AES, SALT_ONE]);
+    let after = encrypt_hello(
+        Some("salt-one"),
+        "general_settings: {encryption_algorithm: aes-256-gcm}",
+        None,
+    );
+    let reverted = encrypt_hello(
+        Some("salt-one"),
+        "general_settings: {encryption_algorithm: xsalsa20-poly1305}",
+        None,
+    );
+    assert_eq!(
+        [before, after, reverted],
+        [SALT_ONE, SALT_ONE_AES, SALT_ONE]
+    );
 }

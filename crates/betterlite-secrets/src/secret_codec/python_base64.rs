@@ -97,7 +97,5 @@ pub(crate) fn decode_strict(encoded: &str) -> Result<Vec<u8>, SecretError> {
     while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
-    STRICT
-        .decode(padded)
-        .map_err(|_decode| SecretError::Base64)
+    STRICT.decode(padded).map_err(|_decode| SecretError::Base64)
 }

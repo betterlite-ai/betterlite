@@ -10,8 +10,12 @@ pub enum Level {
 
 #[derive(Debug)]
 pub enum SecretEvent<'event> {
-    NotAString { value_type: &'event str },
-    UnableToDecrypt { field: &'event str },
+    NotAString {
+        value_type: &'event str,
+    },
+    UnableToDecrypt {
+        field: &'event str,
+    },
     DecryptFailed {
         field: &'event str,
         error: &'event SecretError,
@@ -24,7 +28,9 @@ impl SecretEvent<'_> {
     pub fn message(&self) -> String {
         match self {
             Self::NotAString { value_type } => {
-                format!("Invalid value type passed to encrypt_value: {value_type}; value must be a string")
+                format!(
+                    "Invalid value type passed to encrypt_value: {value_type}; value must be a string"
+                )
             }
             Self::UnableToDecrypt { field } => {
                 format!("Unable to decrypt value for key: {field}, returning None")

@@ -4,13 +4,11 @@ use std::num::{ParseFloatError, ParseIntError};
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::raw::{
-    RawConfig, RawDeployment, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
-};
-use crate::secret_codec::resolve_cipher;
+use crate::raw::{RawConfig, RawDeployment, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter};
 use crate::resolve::{
     parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
+use crate::secret_codec::resolve_cipher;
 use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     RouterSettings,

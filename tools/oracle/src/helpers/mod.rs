@@ -1,4 +1,5 @@
 mod catalog_generalizations;
+mod secret_codec;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -17,10 +18,12 @@ use crate::process::sync_litellm;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) enum HelperCall {
-    #[serde(rename = "url_path")]
-    UrlPath(url_path::UrlPathInput),
     #[serde(rename = "catalog_generalizations")]
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
+    #[serde(rename = "secret_codec")]
+    SecretCodec(secret_codec::SecretCodecInput),
+    #[serde(rename = "url_path")]
+    UrlPath(url_path::UrlPathInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -77,6 +80,8 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 
 fn invoke(call: &HelperCall) -> HelperOutput {
     match call {
+        HelperCall::CatalogGeneralizations(input) => catalog_generalizations::invoke(input),
+        HelperCall::SecretCodec(input) => secret_codec::invoke(input),
         HelperCall::UrlPath(input) => match url_path::invoke(input) {
             Ok(value) => HelperOutput {
                 ok: true,
@@ -89,7 +94,6 @@ fn invoke(call: &HelperCall) -> HelperOutput {
                 error: Some(*error),
             },
         },
-        HelperCall::CatalogGeneralizations(input) => catalog_generalizations::invoke(input),
     }
 }
 

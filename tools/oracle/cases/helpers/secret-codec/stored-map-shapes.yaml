@@ -1,0 +1,35 @@
+kind: helper
+name: secret-codec-stored-map-shapes
+call:
+  secret_codec:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {encryption_algorithm: aes-256-gcm}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_map, value: {}, new_key: null}
+      - {op: encrypt_map, value: {a: "1"}, new_key: null}
+      - {op: encrypt_map, value: {a: "1", b: "hé\n\"x\""}, new_key: override-key}
+      - {op: decode_map, value: null, field: headers}
+      - {op: decode_map, value: {a: "1"}, field: headers}
+      - {op: decode_map, value: {}, field: headers}
+      - {op: decode_map, value: {a: 1}, field: headers}
+      - {op: decode_map, value: [a], field: headers}
+      - {op: decode_map, value: 3, field: headers}
+      - {op: decode_map, value: "{\"a\":\"1\"}", field: headers}
+      - {op: decode_map, value: "\"v2:gcm:AAECAwQFBgcICQoLqBrfMC0Q6wYQjNwMNTf7eipqg70QyiuAwg==\"", field: headers}
+      - {op: decode_map, value: "v2:gcm:AAECAwQFBgcICQoLqBrfMC0Q6wYQjNwMNTf7eipqg70QyiuAwg==", field: headers}
+      - {op: decode_map, value: "\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXyOd3Se2GVAYxQwAxhBdAdjfiU452iub4zvGsIlKdSUK-\"", field: headers}
+      - {op: decode_map, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXPg3fa5gBvN9CDmncHUEtnze9", field: headers}
+      - {op: decode_map, value: " \n{\"a\":\"1\",\"a\":\"2\"}", field: headers}
+      - {op: decode_map, value: "  {\"a\":\"1\"}", field: headers}
+      - {op: decode_map, value: "\x1c{\"a\":\"1\"}", field: headers}
+      - {op: decode_map, value: "{\"a\":{\"b\":\"c\"}}", field: headers}
+      - {op: decode_map, value: "{bad", field: headers}
+      - {op: decode_map, value: "\"a\" ", field: headers}
+      - {op: decode_map, value: "sk-live-secret", field: headers}
+      - {op: decode_map, value: "", field: headers}
+      - {op: decode_map, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", field: headers}
+env: {}
+compare:
+  ignore: []

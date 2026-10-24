@@ -41,7 +41,10 @@ struct CountingNonces;
 
 impl NonceSource for CountingNonces {
     fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
-        nonce.iter_mut().zip(0_u8..).for_each(|(byte, index)| *byte = index);
+        nonce
+            .iter_mut()
+            .zip(0_u8..)
+            .for_each(|(byte, index)| *byte = index);
         Ok(())
     }
 }
@@ -81,8 +84,16 @@ fn encrypt(cipher: &Cipher, value: &str, override_key: Option<&str>) -> Option<S
     }
 }
 
-fn decrypt(cipher: &Cipher, value: &str, log: FailureLog, fallback: FailureValue) -> Option<String> {
-    let policy = DecryptPolicy { log, value: fallback };
+fn decrypt(
+    cipher: &Cipher,
+    value: &str,
+    log: FailureLog,
+    fallback: FailureValue,
+) -> Option<String> {
+    let policy = DecryptPolicy {
+        log,
+        value: fallback,
+    };
     match cipher.decrypt_value(StoredValue::<()>::Text(value.to_owned()), "api_key", policy) {
         Some(StoredValue::Text(text)) => Some(text),
         Some(StoredValue::Other(())) | None => None,
@@ -111,7 +122,11 @@ fn decode_text(cipher: &Cipher, value: &str) -> String {
 fn utf8_bearer(cipher: &Cipher) -> Option<String> {
     let key = SecretString::from("salt-one");
     let sealed = seal_aes(&key, &CountingNonces, &[0xff], PREFIX.as_bytes()).unwrap();
-    decrypt_bearer_token(cipher, &format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(sealed)), PREFIX)
+    decrypt_bearer_token(
+        cipher,
+        &format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(sealed)),
+        PREFIX,
+    )
 }
 
 fn bad_bearers(cipher: &Cipher) -> Option<String> {
@@ -119,12 +134,18 @@ fn bad_bearers(cipher: &Cipher) -> Option<String> {
     let alphabet = decrypt_bearer_token(cipher, &BEARER.replace('-', "*"), PREFIX);
     let length = decrypt_bearer_token(cipher, &format!("{BEARER}AA"), PREFIX);
     let tag = decrypt_bearer_token(cipher, &BEARER.replace('Q', "R"), PREFIX);
-    [wrong_prefix, alphabet, length, tag, utf8_bearer(cipher)].into_iter().flatten().next()
+    [wrong_prefix, alphabet, length, tag, utf8_bearer(cipher)]
+        .into_iter()
+        .flatten()
+        .next()
 }
 
 fn passthrough(cipher: &Cipher) -> String {
     let encrypted = cipher.encrypt_value(StoredValue::Other(7_u8), None).ok();
-    let policy = DecryptPolicy { log: FailureLog::Error, value: FailureValue::Nothing };
+    let policy = DecryptPolicy {
+        log: FailureLog::Error,
+        value: FailureValue::Nothing,
+    };
     let decrypted = cipher.decrypt_value(StoredValue::Other(8_u8), "k", policy);
     format!("{encrypted:?} {decrypted:?}")
 }
@@ -201,29 +222,43 @@ fn secret_maps(
     assert_eq!(probe(&cipher), expected);
     let recorded = logs(&cipher);
     assert_eq!(recorded.len(), debug_logs);
-    assert!(recorded.iter().all(|(level, message)| *level == Level::Debug && !message.contains("sk-live")));
+    assert!(
+        recorded
+            .iter()
+            .all(|(level, message)| *level == Level::Debug && !message.contains("sk-live"))
+    );
 }
 
 #[test]
 fn native_secret_diagnostics_redact_values() {
     let cipher = build(SALT, LEGACY);
     let structured = BTreeMap::from([("api_key".to_owned(), "sk-live-secret".to_owned())]);
-    let passed = cipher.encrypt_value(StoredValue::Other(structured.clone()), None).unwrap();
+    let passed = cipher
+        .encrypt_value(StoredValue::Other(structured.clone()), None)
+        .unwrap();
     assert_eq!(passed, StoredValue::Other(structured));
     assert_eq!(loud(&cipher, "sk-live-secret"), None);
     let stored = StoredMap::Text("sk-live-secret".to_owned());
     let error = decode_secret_map(&cipher, Some(&stored), "headers").unwrap_err();
-    let messages: Vec<String> = logs(&cipher).into_iter().map(|(_, message)| message).collect();
+    let messages: Vec<String> = logs(&cipher)
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect();
     assert_eq!(messages.len(), 4);
     assert!(messages[0].contains("BTreeMap"));
     assert!(messages[2].contains("api_key") && messages[2].contains("salt key change recently"));
-    assert!(messages[2].ends_with("https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key"));
+    assert!(
+        messages[2].ends_with("https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key")
+    );
     let rendered = format!("{messages:?} {error} {error:?}");
     assert!(!rendered.contains("sk-live"));
 }
 
 fn padded(value: &str, filler: &str, length: usize) -> String {
-    format!("{}{value}", filler.repeat(length.checked_sub(value.len()).unwrap()))
+    format!(
+        "{}{value}",
+        filler.repeat(length.checked_sub(value.len()).unwrap())
+    )
 }
 
 #[rstest]
@@ -252,12 +287,18 @@ fn replays_the_secret_value_corpus() {
         .unwrap()
         .map(|entry| fs::read(entry.unwrap().path()).unwrap())
         .collect();
-    let opened = seeds.iter().filter_map(|seed| str::from_utf8(seed).ok()).filter(|value| {
-        let stored: Option<StoredMap> = serde_json::from_str(value).ok();
-        let map = decode_secret_map(&cipher, stored.as_ref(), "corpus");
-        let bearer = decrypt_bearer_token(&cipher, value, PREFIX);
-        let scalar = loud(&cipher, value);
-        map.is_ok_and(|decoded| decoded.is_some()) | bearer.is_some() | scalar.is_some() | probe_with(value, "salt-one").is_some()
-    });
+    let opened = seeds
+        .iter()
+        .filter_map(|seed| str::from_utf8(seed).ok())
+        .filter(|value| {
+            let stored: Option<StoredMap> = serde_json::from_str(value).ok();
+            let map = decode_secret_map(&cipher, stored.as_ref(), "corpus");
+            let bearer = decrypt_bearer_token(&cipher, value, PREFIX);
+            let scalar = loud(&cipher, value);
+            map.is_ok_and(|decoded| decoded.is_some())
+                | bearer.is_some()
+                | scalar.is_some()
+                | probe_with(value, "salt-one").is_some()
+        });
     assert_eq!((seeds.len(), opened.count()), (10, 5));
 }
