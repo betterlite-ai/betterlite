@@ -489,6 +489,6 @@ pitfalls:
 - Metadata ownership follows the allowlist alone; no surviving values must still evict every caller spelling of
   X-Amzn-Bedrock-Request-Metadata.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1350
   max_new_expects: 0
 review_level: security
