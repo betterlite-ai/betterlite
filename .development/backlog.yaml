@@ -1988,10 +1988,15 @@ tasks:
     milestone: M1 openai data plane
     title: Gemini, Cohere and Azure message helpers
     status: todo
-    depends_on: [B179, B183]
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B232
+    - B233
     file: tasks/B182-other-prompts.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/factory.py"
+    - litellm/litellm_core_utils/prompt_templates/factory.py
   - id: B183
     milestone: M1 openai data plane
     title: Bounded inline media conversion
@@ -2452,5 +2457,28 @@ tasks:
     - B178
     - B179
     file: tasks/B231-bedrock-tools.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B232
+    milestone: M1 openai data plane
+    title: Gemini tool invocations and thought signatures
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    file: tasks/B232-gemini-tool-invokes.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B233
+    milestone: M1 openai data plane
+    title: Gemini tool-result conversion
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B232
+    file: tasks/B233-gemini-tool-results.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/factory.py
