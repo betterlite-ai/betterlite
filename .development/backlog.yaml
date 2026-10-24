@@ -127,7 +127,7 @@ tasks:
     title: Model cost map, provider capability data and token counting
     status: todo
     depends_on: [B004, B193, B194, B195, B196, B197, B204, B205]
-    file: null
+    file: tasks/B013-model-capabilities.yaml
     covers:
       - "provider_endpoints_support.json"
       - "litellm/provider_endpoints_support_backup.json"
