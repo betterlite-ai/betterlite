@@ -2046,14 +2046,14 @@ tasks:
     title: Fallback provider and capability generalization rules
     status: todo
     depends_on:
-    - B016
     - B010
     - B013
     - B301
+    - B361
+    - B002
     file: tasks/B313-model-generalizations.yaml
     covers:
     - litellm/litellm_core_utils/fallback_generalizations.py
-
   - id: B314
     milestone: M2 routing
     title: Least-busy selection and in-flight accounting

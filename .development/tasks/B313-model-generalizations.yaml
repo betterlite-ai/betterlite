@@ -1,79 +1,136 @@
 id: B313
 title: Fallback provider and capability generalization rules
-description: Implement the pinned cost-map generalization rules as a typed bounded rule engine consumed
+description: 'Implement the pinned cost-map generalization rules as a typed bounded rule engine consumed
   through B010/B013 integration points. Compile patterns once, separate provider inference from capability
   merging and exact-entry fill, and preserve legacy single-level parent expansion. This is model catalog
   fallback, not failure retry. Keep the rules in the router only as an adapter if B013 already owns an
-  equivalent engine; do not duplicate it. Reject malformed configuration by full path under the no-silent-drops
-  rule. Use the existing Rust crate boundaries from B004 and B008; integrate through the server when the
-  provider dispatcher or callbacks live in another core crate. This task's source slices are the linked
-  ranges, not a port of their Python classes. Add the listed oracle cases and the matching adapters to
-  B301's component runner where state is not observable over HTTP; adapters call production logic and
-  never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons, and
-  separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target and
-  committed corpus for every newly accepted config form; unsupported keys still fail by full path. Add
-  a cargo-fuzz target model_rules under crates/betterlite-router/fuzz and a normal replays_the_model_rules_corpus
-  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
-  fixtures and oracle cases are budget-excluded by checks.yaml.
+  equivalent engine; do not duplicate it. Warn and skip malformed rules exactly as the pin does; preserve
+  ignored descriptive fields without interpreting them. Use a maintained Python-compatible regex implementation
+  with an explicit work bound. Unsupported valid Python constructs or exhausted work produce a named warning
+  and skip the pattern; never silently reinterpret it. Keep the integration adapter in betterlite-server
+  in this task module; consume predecessor public interfaces without editing their implementation crates.
+  Configuration boundary keys introduced or consumed here: fallback_generalizations. Implement the owned
+  native service in crates/betterlite-router/src/model_generalizations.rs. Add ProbeOperation::B313 in
+  tools/oracle/src/router_probes/mod.rs and the corresponding B313 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/litellm_core_utils/fallback_generalizations.py:
+  _resolve_legacy_extends (L69-L95), _resolve_legacy_extends.resolved (L85-L93), _parse_fill_missing_for_providers
+  (L114-L127), _compile_rule (L130-L181), _FallbackGeneralizations.__init__ (L187-L191), _FallbackGeneralizations.set_rules
+  (L193-L199), _FallbackGeneralizations.match_routing (L201-L207), _FallbackGeneralizations.match_capabilities
+  (L209-L215), _FallbackGeneralizations.match_fill_missing (L217-L230), set_fallback_generalizations (L236-L244),
+  get_fallback_generalization_rules (L247-L249), match_routing_generalization (L252-L257), match_capability_generalizations
+  (L260-L266), match_fill_missing_generalizations (L269-L277). Implement these behaviors through the typed
+  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
+  separate ports. Bound the model_rules outside-byte parser to 1048576 bytes before decoding; on excess
+  use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
+  path).'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/model-generalizations/**
+  - crates/betterlite-router/src/model_generalizations.rs
+  - crates/betterlite-router/src/model_generalizations/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/model_generalizations.rs
+  - crates/betterlite-server/src/routing/model_generalizations/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/model_generalizations.rs
   - tools/oracle/src/router_probes/model_generalizations/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/model_generalizations.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/model_generalizations.py
+  - tools/oracle/cases/routing/model-generalizations/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/model_generalizations.rs
+  - crates/betterlite-config/src/model_generalizations/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b313-*
   - Cargo.toml
   - deny.toml
+  - crates/betterlite-router/Cargo.toml
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/model_rules.rs
+  - crates/betterlite-router/fuzz/corpus/model_rules/b313-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277
   why: Rule compilation, legacy inheritance, first-hit routing and merged capability lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L69-L95
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b313_behaviors and b313_boundaries under model_generalizations::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b313-behaviors
+  - b313-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the model_generalizations prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b313-invalid.yaml;
+    the valid seed contains fallback_generalizations. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
-    replays.
+  - b313-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/model_rules/b313-valid.json and crates/betterlite-router/fuzz/corpus/model_rules/b313-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target model_rules and normal replays_the_model_rules_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-- text: All mutants in changed router, config or wire code are caught.
+  - b313-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(model_generalizations)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/model_rules.rs && test -n "$(ls -A
-      crates/betterlite-router/fuzz/corpus/model_rules)" && cargo nextest run --locked -p betterlite-router
-      --no-tests=fail -E 'test(replays_the_model_rules_corpus)'
+  - id: b313-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b313_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b313-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b313_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/model_generalizations.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/model_generalizations.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b313-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b313-" && grep -Fq 'fallback_generalizations' crates/betterlite-config/fuzz/corpus/config_yaml/b313-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/model_rules/b313-valid.json && test -f crates/betterlite-router/fuzz/corpus/model_rules/b313-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/model_rules
+      | grep -Fq "/b313-" && test -f crates/betterlite-router/fuzz/fuzz_targets/model_rules.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_model_rules_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/model-generalizations/provider-first-match.yaml
 - tools/oracle/cases/routing/model-generalizations/capabilities-last-match.yaml
@@ -82,18 +139,30 @@ oracle_cases:
 - tools/oracle/cases/routing/model-generalizations/legacy-single-level-parent.yaml
 - tools/oracle/cases/routing/model-generalizations/case-insensitive-search.yaml
 - tools/oracle/cases/routing/model-generalizations/no-match.yaml
+- tools/oracle/cases/routing/model-generalizations/malformed-rule-warning-skip.yaml
+- tools/oracle/cases/routing/model-generalizations/unknown-description-ignored.yaml
+- tools/oracle/cases/routing/model-generalizations/duplicate-name-parent-last-wins.yaml
+- tools/oracle/cases/routing/model-generalizations/bounded-regex-warning.yaml
+- tools/oracle/cases/routing/model-generalizations/parser-byte-bound.yaml
 deviations:
-- what: Malformed generalization rules fail loading instead of being logged and skipped.
-  why: The no-silent-drops rule forbids silently losing configuration.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L122-L180
+- what: A regex exceeding 2048 pattern bytes or 100000 match steps is warned about and skipped.
+  why: The pin has no execution bound; bounded-inputs requires one. Keep supported Python syntax and first-match
+    semantics within the bound.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L130-L181
+- what: The model_rules byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277
 out_of_scope:
 - Downloading a newer price map or changing the B013 catalog pin.
 pitfalls:
-- The architect must confirm the B010/B013 engine location and add its exact crate paths before dispatch
-  if they are not in the existing scoped crates.
 - Rust regex syntax is not all Python re syntax; unsupported constructs need an explicit error and a reported
   deviation.
 - Do not reinterpret capability fallback as a retry chain.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: standard
 budget:
   max_changed_lines: 800
