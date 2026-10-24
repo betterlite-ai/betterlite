@@ -278,6 +278,7 @@ tasks:
     - B341
     - B342
     - B343
+    - B344
     file: null
     covers:
     - router_plugins.json
@@ -2428,3 +2429,17 @@ tasks:
     - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
     - litellm/proxy/auth/auto_router_checks.py
     - litellm/proxy/management_helpers/auto_router_permissions.py
+
+  - id: B344
+    milestone: M2 routing
+    title: Atomic auto-router session rollups
+    status: todo
+    depends_on:
+    - B342
+    - B051
+    - B070
+    file: tasks/B344-auto-router-rollups.yaml
+    covers:
+    - litellm/proxy/db/autorouter_session_rollup.py
+    - litellm/models/autorouter_session.py
+    - litellm/repositories/autorouter_session_repository.py

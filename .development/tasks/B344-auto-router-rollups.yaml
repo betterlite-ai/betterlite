@@ -1,0 +1,91 @@
+id: B344
+title: Atomic auto-router session rollups
+description: Use B051/B070 repository and write-queue infrastructure to persist B342 evidence and B012
+  routing decisions in the existing LiteLLM_AutoRouterSession and LiteLLM_AutoRouterUserSession tables.
+  Implement bounded session identity, turn classification and ordered per-session drains with atomic row
+  updates. Store costs as Decimal at the Rust boundary and reuse B051's approved conversion for the unchanged
+  database schema. Add real Postgres integration cases for concurrent and out-of-order turns; typed repository
+  probes also compare the pinned transaction builder. Use the existing Rust crate boundaries from B004
+  and B008; integrate through the server when the provider dispatcher or callbacks live in another core
+  crate. This task's source slices are the linked ranges, not a port of their Python classes. Add the
+  listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
+  unsupported keys still fail by full path. Keep the implementation, adapters and tests within 800 changed
+  lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/auto-router-rollups/**
+  - tools/oracle/src/router_probes/auto-router-rollups/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/auto_router_rollups.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L117-L283
+  why: Turn facts, bounded IDs and transaction builder.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L323-L520
+  why: Atomic upserts and partitioned flush.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/autorouter_session.py#L16-L45
+  why: Row shape.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L15-L34
+  why: Latest session lookup.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(auto_router_rollups)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/auto-router-rollups/same-first-return-turn.yaml
+- tools/oracle/cases/routing/auto-router-rollups/ttl-five-minute-one-hour.yaml
+- tools/oracle/cases/routing/auto-router-rollups/out-of-order-turn.yaml
+- tools/oracle/cases/routing/auto-router-rollups/two-writers-same-session.yaml
+- tools/oracle/cases/routing/auto-router-rollups/key-and-user-scope.yaml
+- tools/oracle/cases/routing/auto-router-rollups/internal-call-excluded.yaml
+- tools/oracle/cases/routing/auto-router-rollups/classifier-cost-coverage.yaml
+- tools/oracle/cases/routing/auto-router-rollups/bounded-session-id.yaml
+deviations: []
+out_of_scope:
+- Benchmark and session HTTP response aggregation (B355).
+- Changing the established Prisma schema.
+pitfalls:
+- Do not cast monetary sums through a Rust float to match the source SQL float8 casts.
+- A read-then-write update loses concurrent turns.
+- B051/B070 must expose the repository and queue interfaces, with their exact paths added before dispatch
+  if needed.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
