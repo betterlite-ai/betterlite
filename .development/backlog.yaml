@@ -690,7 +690,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Compose response charges and expose the shared cost service
     status: todo
-    depends_on: [B171, B193, B198, B204, B205, B1649, B1673, B1677, B1678, B1681, B1682, B1683, B1685, B1686, B1687, B1688, B1689, B1692, B1694]
+    depends_on: [B171, B193, B198, B204, B205, B1649, B1673, B1677, B1678, B1681, B1682, B1683, B1685, B1686, B1687, B1688, B1689, B1694]
     file: tasks/B068-response-cost-service.yaml
     covers:
       - "litellm/cost_calculator.py"
