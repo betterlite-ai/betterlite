@@ -11,26 +11,11 @@ pub(super) fn resolve_secret(
     path: &str,
     lookup: Lookup<'_>,
 ) -> Result<Option<SecretString>, ConfigError> {
-    let mut values = value.into_iter();
-    let Some(text) = values.next() else {
+    let Some(text) = value else {
         return Ok(None);
     };
     let secret = SecretString::from(resolve_string(text, path, lookup)?);
     Ok(Some(secret))
-}
-
-pub(super) fn resolve_optional(
-    value: Option<String>,
-    path: &str,
-    lookup: Lookup<'_>,
-) -> Result<Option<String>, ConfigError> {
-    match value {
-        None => Ok(None),
-        Some(text) => {
-            let resolved = resolve_string(text, path, lookup)?;
-            Ok(Some(resolved))
-        }
-    }
 }
 
 pub(super) fn resolve_string(
@@ -85,8 +70,7 @@ where
         return Ok(None);
     };
     let text = number_text(number, path, lookup)?;
-    let parsed = parser(&text, path)?;
-    Ok(Some(parsed))
+    Ok(Some(parser(&text, path)?))
 }
 
 fn number_text(

@@ -81,16 +81,19 @@ fn debug_does_not_expose_secrets() {
     let mut values = BTreeMap::new();
     values.insert("API_KEY".to_owned(), "api-secret".to_owned());
     values.insert("MASTER_KEY".to_owned(), "master-secret".to_owned());
+    values.insert("REDIS_PASSWORD".to_owned(), "redis-secret".to_owned());
     let config = map_loader(values)
         .load(
-            "model_list:\n  - model_name: x\n    litellm_params:\n      model: openai/x\n      api_key: os.environ/API_KEY\ngeneral_settings:\n  master_key: os.environ/MASTER_KEY\n",
+            "model_list:\n  - model_name: x\n    litellm_params:\n      model: openai/x\n      api_key: os.environ/API_KEY\ngeneral_settings:\n  master_key: os.environ/MASTER_KEY\nenvironment_variables:\n  REDIS_PASSWORD: os.environ/REDIS_PASSWORD\n",
         )
         .unwrap();
     let debug = format!("{config:?}");
 
     assert!(!debug.contains("api-secret"));
     assert!(!debug.contains("master-secret"));
+    assert!(!debug.contains("redis-secret"));
 }
+
 #[test]
 fn rejects_boolean_in_numeric_field_as_invalid_scalar() {
     assert!(
