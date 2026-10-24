@@ -1,0 +1,12 @@
+kind: helper
+name: fuzz-seed
+call:
+  provider_message_primitives:
+    function: response_format
+    optional_params: {tools: [], tool_choice: auto}
+    value: {type: json_schema, json_schema: {name: answer, schema: {type: object}}}
+    supported: false
+    enforce_tool_choice: null
+env: {}
+compare:
+  ignore: []

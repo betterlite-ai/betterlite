@@ -8,12 +8,14 @@ os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 from catalog_generalizations import run as run_catalog_generalizations
 from dot_paths import run as run_dot_paths
+from provider_message_primitives import run as run_provider_message_primitives
 from url_path import run as run_url_path
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 RUNNERS: dict[str, Callable[[dict[str, Json]], Json]] = {
     "catalog_generalizations": run_catalog_generalizations,
     "dot_paths": run_dot_paths,
+    "provider_message_primitives": run_provider_message_primitives,
     "url_path": run_url_path,
 }
 

@@ -1,5 +1,6 @@
 mod catalog_generalizations;
 mod dot_paths;
+mod provider_message_primitives;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -22,6 +23,8 @@ pub(crate) enum HelperCall {
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
     #[serde(rename = "dot_paths")]
     DotPaths(dot_paths::DotPathsInput),
+    #[serde(rename = "provider_message_primitives")]
+    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
 }
@@ -82,6 +85,7 @@ fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
         HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
         HelperCall::DotPaths(input) => dot_paths::invoke(input),
+        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
         HelperCall::UrlPath(input) => url_path::invoke(input),
     };
     match result {
