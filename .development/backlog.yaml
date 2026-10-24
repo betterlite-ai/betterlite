@@ -2139,12 +2139,12 @@ tasks:
     title: Typed tag selectors and bounded header patterns
     status: todo
     depends_on:
-    - B016
+    - B002
     - B301
+    - B361
     file: tasks/B320-tag-matchers.yaml
     covers:
     - litellm/router_strategy/tag_based_routing.py
-
   - id: B321
     milestone: M2 routing
     title: Tag policy across aliases and fallback chains
