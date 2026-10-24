@@ -318,10 +318,14 @@ tasks:
     - B016
     - B052
     - B348
-    file: null
+    - B008
+    - B055
+    - B057
+    - B060
+    - B066
+    file: tasks/B023-router-weights.yaml
     covers:
-    - litellm/proxy/management_endpoints/{router_settings_endpoints,router_weights}.py
-    - litellm/types/management_endpoints/router_settings_endpoints.py
+    - litellm/proxy/management_endpoints/router_weights.py
   - id: B024
     milestone: M3 providers
     title: OpenAI provider, every remaining endpoint

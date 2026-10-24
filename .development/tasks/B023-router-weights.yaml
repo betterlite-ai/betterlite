@@ -1,0 +1,99 @@
+id: B023
+title: Scoped router weights validation and application
+description: Finish router settings compatibility with typed scoped weights and reference validation in
+  B055/B057 key/team writes and B066 config updates. Resolve deployment references against B051/B060 stored
+  rows plus B302 configured entries, respecting authenticated team scope and canonical public model names.
+  Apply the validated effective weights through B008's existing simple-shuffle input and strip internal
+  routing controls before provider dispatch. Do not rewrite the weighted-choice algorithm or add an endpoint
+  absent from the pin. Fuzz the weights payload parser and seed the config and management corpora. Use
+  the existing Rust crate boundaries from B004 and B008; integrate through the server when the provider
+  dispatcher or callbacks live in another core crate. This task's source slices are the linked ranges,
+  not a port of their Python classes. Add the listed oracle cases and the matching adapters to B301's
+  component runner where state is not observable over HTTP; adapters call production logic and never reproduce
+  it. Use deterministic candidate sets or supplied random samples for comparisons, and separate seeded
+  distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
+  for every newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target
+  router_weights under crates/betterlite-server/fuzz and a normal replays_the_router_weights_corpus test
+  using the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
+  and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/router-weights/**
+  - tools/oracle/src/router_probes/router-weights/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/router_weights.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L147
+  why: Reference and team validation with mandatory DB checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L7-L35
+  why: Identifier and positive-group validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
+  why: Existing scoped-weight selection precedence.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(router_weights)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/router_weights.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/router_weights)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_router_weights_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/router-weights/negative-nonfinite-bool-weight.yaml
+- tools/oracle/cases/routing/router-weights/all-zero-nonempty-group.yaml
+- tools/oracle/cases/routing/router-weights/empty-clears-override.yaml
+- tools/oracle/cases/routing/router-weights/unknown-deployment.yaml
+- tools/oracle/cases/routing/router-weights/wrong-group.yaml
+- tools/oracle/cases/routing/router-weights/cross-team-id.yaml
+- tools/oracle/cases/routing/router-weights/stale-db-model-not-config-fallback.yaml
+- tools/oracle/cases/routing/router-weights/database-unavailable-503.yaml
+- tools/oracle/cases/routing/router-weights/scoped-weights-drive-shuffle.yaml
+deviations: []
+out_of_scope:
+- Key/team CRUD from scratch.
+- Settings endpoints already delivered by B348.
+pitfalls:
+- router_weights.py is a validation helper used by other APIs, not a standalone /router/weights route.
+- A database-backed deployment missing from storage cannot be resurrected from stale router memory.
+- B008 remains the sole implementation of weighted selection.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
