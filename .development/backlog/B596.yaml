@@ -1,7 +1,7 @@
 id: B596
 milestone: M3 providers
 title: Bedrock trusted request metadata and SDK projection
-status: in-progress
+status: done
 depends_on: [B171, B002]
 file: tasks/B596-bedrock-request-policy.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/bedrock/chat/converse_transformation.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 86
