@@ -293,6 +293,7 @@ tasks:
     - B359
     - B349
     - B351
+    - B362
     file: null
     covers:
     - router_plugins.json
@@ -2686,3 +2687,20 @@ tasks:
     - B301
     file: tasks/B361-oracle-comparison-contracts.yaml
     covers: []
+
+  - id: B362
+    milestone: M2 routing
+    title: Tagged automatic-router registry and alias bindings
+    status: todo
+    depends_on:
+    - B327
+    - B334
+    - B338
+    - B339
+    - B321
+    - B343
+    - B360
+    file: tasks/B362-pre-routing-registry.yaml
+    covers:
+    - litellm/router.py
+    - litellm/types/router.py

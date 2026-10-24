@@ -1,0 +1,92 @@
+id: B362
+title: Tagged automatic-router registry and alias bindings
+description: Add the native closed pre-routing strategy registry over B016 snapshots for semantic, complexity,
+  adaptive and quality markers. Resolve tagged/team alias registrations, construct typed marker-parameter
+  inheritance and maintain bounded caller-scoped Claude Code session-to-router bindings through B360.
+  Publish replacements atomically and retire previous registry-owned resources. This task only chooses
+  the strategy and its inheritance context; B021 owns the final cross-strategy hook composition. Use the
+  existing Rust crate boundaries from B004 and B008; integrate through the server when the provider dispatcher
+  or callbacks live in another core crate. This task's source slices are the linked ranges, not a port
+  of their Python classes. Add the listed oracle cases and the matching adapters to B301's component runner
+  where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
+  deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
+  tests for random choices. Extend the existing config_yaml fuzz target and committed corpus for every
+  newly accepted config form; unsupported keys still fail by full path. Keep the implementation, adapters
+  and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/pre-routing-registry/**
+  - tools/oracle/src/router_probes/pre-routing-registry/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/pre_routing_registry.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13644-L13794
+  why: Tagged strategy choice and caller-scoped router bindings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13944-L14100
+  why: Marker lookup, inherited params and consumed tags.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1108-L1161
+  why: Hook result and tagged strategy records.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(pre_routing_registry)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/pre-routing-registry/tagged-marker-first-match.yaml
+- tools/oracle/cases/routing/pre-routing-registry/default-tag-strategy.yaml
+- tools/oracle/cases/routing/pre-routing-registry/unmatched-tag-plain-deployment.yaml
+- tools/oracle/cases/routing/pre-routing-registry/team-public-router-name.yaml
+- tools/oracle/cases/routing/pre-routing-registry/marker-params-fill-gaps.yaml
+- tools/oracle/cases/routing/pre-routing-registry/tier-and-deployment-params-win.yaml
+- tools/oracle/cases/routing/pre-routing-registry/alias-price-never-forwarded.yaml
+- tools/oracle/cases/routing/pre-routing-registry/stale-marker-clears-carriers.yaml
+- tools/oracle/cases/routing/pre-routing-registry/parent-agent-session-binding.yaml
+- tools/oracle/cases/routing/pre-routing-registry/subagent-inherits-router.yaml
+- tools/oracle/cases/routing/pre-routing-registry/binding-key-isolation.yaml
+- tools/oracle/cases/routing/pre-routing-registry/fallback-does-not-rebind.yaml
+- tools/oracle/cases/routing/pre-routing-registry/removed-router-binding-cleared.yaml
+deviations: []
+out_of_scope:
+- Running classification, plugin dispatch or compaction.
+pitfalls:
+- Plain deployments sharing a marker's alias must never donate credentials to that marker.
+- Alias pricing belongs to the alias; inheriting it onto the chosen deployment can make paid calls appear
+  free.
+- Optional binding-store failure must not skip the final authorization checks.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
