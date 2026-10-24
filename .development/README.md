@@ -21,7 +21,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 
 - backlog.yaml lists every task with its milestone, status, dependencies and the LiteLLM paths it covers. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
 - tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls and budget.
-- rules.yaml is the code standard: 25 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
+- rules.yaml is the code standard: 33 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
 - checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
 - agents.yaml maps roles to runners, models and limits.
 - litellm.yaml pins the LiteLLM release betterlite follows: repository, version, commit, the folders and files that make up LiteLLM outside its enterprise directory, and the paths left out, each with its reason.
@@ -54,6 +54,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: the admin UI is LiteLLM's MIT dashboard, kept, rebranded and served by betterlite (B144 to B150), not rewritten.
 - 2026-10-24: LiteLLM's Terraform provider and VS Code extension are not rewritten. B155 and B156 make them work against betterlite.
 - 2026-10-24: betterlite ships a Python package over the Rust core with LiteLLM's public API, used as `import betterlite as litellm`, and the proxy runs the Python callbacks and hooks config.yaml names (M12). The module is named betterlite because LiteLLM's name stays out of what betterlite ships.
+- 2026-10-24: the rule questions R1 to R21 are answered. The answers live in rules.yaml, the clippy.toml and Cargo.toml templates, the no-loops-in-tests ast-grep rule and the 300-line source limit in checks.yaml.
 
 ## Writing a task
 
@@ -64,6 +65,7 @@ The gate reads every format into Rust types that reject unknown fields, missing 
 - Behavior LiteLLM has belongs in oracle cases, not in prose.
 - LiteLLM links point at the pinned commit d665dc1a6315847fcad6cc2c1264ceb47c06abce, never at main.
 - Keep a task between 400 and 800 changed lines. Bigger work gets split.
+- A task that changes the config, router or wire-format crates lists mutants in checks.optional, and a task that adds a parser of outside bytes adds its fuzz target and a test that replays the corpus.
 - scope.paths lists exactly what the task may touch. Shared files like Cargo.toml and deny.toml go in only when the task needs them.
 
 ## Gate commands

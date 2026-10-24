@@ -17,6 +17,7 @@ You turn backlog entries into task files that a cheaper model can finish without
 - Every DoD item names checks that fail when the outcome is missing. Behavior LiteLLM has goes into oracle cases, not prose. Test checks use `--no-tests=fail`.
 - References link LiteLLM at the pinned commit with line ranges, plus the docs a worker needs.
 - Pitfalls name the traps you found while reading, one sentence each.
+- A task on the config, router or wire-format crates lists mutants in checks.optional. A task that adds a parser of outside bytes (config, request bodies, SSE) adds a cargo-fuzz target and a check that replays its corpus.
 - Run `cargo gate validate` until it prints valid, then commit.
 
 ## Final answer

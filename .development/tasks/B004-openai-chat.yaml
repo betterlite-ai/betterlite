@@ -7,7 +7,8 @@ description: >-
   The model name in the request picks the deployments with that model_name. When there are several, pick one uniformly at random through a random source passed in through the constructor; weighted choice comes in B008.
   api_key comes from litellm_params, and when it is absent from OPENAI_API_KEY through the config crate's environment lookup. api_base defaults to https://api.openai.com/v1. A deployment's timeout (or litellm_settings.request_timeout, default 6000 seconds) bounds the whole upstream call, and an expired timeout answers 408 like LiteLLM.
   Send the x-litellm-* response headers LiteLLM sends on these responses (call id, model id, model group, model api base and every other one the oracle shows), so clients that read them keep working. The cost and key-limit headers wait for spend tracking and virtual keys.
-  Provider errors map to the same status, type and code LiteLLM returns. What betterlite sends upstream and what it returns to the client must match LiteLLM on every case listed below; write those cases under tools/oracle/cases/chat/.
+  Provider errors map to the same status, type, param and code LiteLLM returns, with betterlite's own message (rule errors-match-litellm). What betterlite sends upstream and what it returns to the client must match LiteLLM on every case listed below; write those cases under tools/oracle/cases/chat/.
+  Add a cargo-fuzz target that feeds arbitrary bytes to the chat request parser, seed its corpus with the request bodies of the chat cases, and replay every corpus file in a normal test named replays_the_chat_request_corpus (rule fuzz-parsers).
 scope:
   paths:
     - Cargo.toml
@@ -44,11 +45,16 @@ dod:
     proof: [openai-tests]
   - text: Outbound clients are built only in betterlite-http.
     proof: [clippy, layering]
+  - text: The chat request parser has a cargo-fuzz target at crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs, and replays_the_chat_request_corpus parses every file in its corpus without a panic.
+    proof: [chat-fuzz-corpus]
   - text: Every mutant in the request mapping and error mapping is caught by a test.
     proof: [mutants]
 checks:
   optional: [mutants]
   commands:
+    - id: chat-fuzz-corpus
+      why: the chat request fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
     - id: openai-tests
       why: the provider or server tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-openai -p betterlite-http -p betterlite-server --no-tests=fail
@@ -81,6 +87,7 @@ pitfalls:
   - Never seed the random source from a global. Tests pass a seeded one and the binary passes one seeded from the OS.
   - LiteLLM may add fields to the response that OpenAI did not send. Follow the oracle, and when a field is random per request, ignore its pointer in the case with a why.
   - The oracle under tools/ depends on reqwest directly, so the deny.toml entry is { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle"] }.
+  - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
 budget:
   max_changed_lines: 800
   max_new_expects: 2

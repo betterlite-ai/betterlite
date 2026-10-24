@@ -5,7 +5,8 @@ description: >-
   Each chunk goes to the client as soon as it arrives from the provider: no buffering of the whole answer, and a slow provider never holds back a chunk it already sent.
   stream_options.include_usage behaves as in LiteLLM, and the stream ends with data: [DONE] exactly when LiteLLM's does.
   When the client disconnects, betterlite drops the upstream request so the provider stops generating.
-  When the provider fails before the first chunk, the client gets the same status and error body LiteLLM gives. Write the cases under tools/oracle/cases/chat/ and match LiteLLM on all of them.
+  When the provider fails before the first chunk, the client gets the same status, error type, param and code LiteLLM gives, with betterlite's own message (rule errors-match-litellm). Write the cases under tools/oracle/cases/chat/ and match LiteLLM on all of them.
+  Add a cargo-fuzz target that feeds arbitrary bytes to the SSE parser, seed its corpus with the event streams of the streaming cases, and replay every corpus file in a normal test named replays_the_sse_events_corpus (rule fuzz-parsers).
 scope:
   paths:
     - Cargo.toml
@@ -30,11 +31,16 @@ dod:
     proof: [stream-tests]
   - text: An SSE event split across two network reads is parsed as one event.
     proof: [stream-tests]
+  - text: The SSE parser has a cargo-fuzz target at crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs, and replays_the_sse_events_corpus parses every file in its corpus without a panic or a hang.
+    proof: [sse-fuzz-corpus]
   - text: Every mutant in the SSE parsing and chunk mapping is caught by a test.
     proof: [mutants]
 checks:
   optional: [mutants]
   commands:
+    - id: sse-fuzz-corpus
+      why: the SSE fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/sse_events.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/sse_events)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_sse_events_corpus)'
     - id: stream-tests
       why: the streaming tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/stream/)'
@@ -52,6 +58,7 @@ pitfalls:
   - Test names must contain stream so the stream-tests filter selects them, and the filter must match at least one test.
   - Timing tests use a mock provider that pauses between chunks and tokio's paused clock where the code allows it, not real sleeps of seconds.
   - An SSE parser that splits on newlines inside one read breaks on events split across reads. Buffer until the blank line.
+  - B004 created the fuzz crate under crates/betterlite-openai/fuzz/. Add sse_events as a second target there instead of a second fuzz crate.
 budget:
   max_changed_lines: 800
   max_new_expects: 0

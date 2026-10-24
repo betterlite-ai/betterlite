@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["**/fixtures/**", "**/snapshots/**", "tools/oracle/cases/**", ".development/schema/**"]
+extend-exclude = ["**/fixtures/**", "**/snapshots/**", "**/fuzz/corpus/**", "**/fuzz/artifacts/**", "tools/oracle/cases/**", ".development/schema/**"]
 
 [default.extend-words]
 # LiteLLM spells its own file client_initalization_utils.py this way, and the backlog quotes it

@@ -22,8 +22,10 @@ dod:
     proof: [oracle]
   - text: The embeddings code reuses B004's routing, auth, client and error mapping instead of copying it.
     proof: [similarity, embeddings-tests]
+  - text: Every mutant in the embeddings request and response mapping is caught by a test.
+    proof: [mutants]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
     - id: embeddings-tests
       why: the embeddings tests fail or do not exist
