@@ -2,6 +2,7 @@ mod attempt;
 mod prompt;
 mod review;
 mod runner;
+mod sandbox;
 mod seat;
 mod worktree;
 
@@ -38,6 +39,7 @@ pub(crate) struct Places<'run> {
     pub(crate) journal: &'run Path,
     pub(crate) git_common_dir: &'run Path,
     pub(crate) home: &'run Path,
+    pub(crate) writable: &'run [String],
 }
 
 pub(crate) struct Attempt<'run> {
@@ -56,6 +58,26 @@ pub(crate) fn find_runner<'agents>(
         task: String::new(),
         reason: format!("agents.yaml has no runner {id}"),
     })
+}
+
+fn writable_dirs(
+    agents: &Agents,
+    git_common_dir: &Path,
+    home: &Path,
+) -> Result<Vec<String>, GateError> {
+    let (Some(git), Some(home_text)) = (git_common_dir.to_str(), home.to_str()) else {
+        return Err(GateError::NotUnicode("the .git folder or HOME"));
+    };
+    Ok(agents
+        .policy
+        .writable
+        .iter()
+        .map(|entry| {
+            entry
+                .replace("{git_common_dir}", git)
+                .replace("{home}", home_text)
+        })
+        .collect())
 }
 
 pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel) -> &Role {
@@ -192,11 +214,13 @@ pub(crate) fn dispatch(
             task: task_id.to_owned(),
             reason: "HOME is not set, so the worker's cache folders are unknown".to_owned(),
         })?;
+    let writable = writable_dirs(&agents, &git_common_dir, &home)?;
     let places = Places {
         worktree: &worktree,
         journal: &journal,
         git_common_dir: &git_common_dir,
         home: &home,
+        writable: &writable,
     };
     run_ladder(&agents, &brief, &places, notes)
 }

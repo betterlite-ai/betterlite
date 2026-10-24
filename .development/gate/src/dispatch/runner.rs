@@ -16,6 +16,8 @@ pub(crate) struct Invocation<'paths> {
     pub(crate) worktree: &'paths Path,
     pub(crate) git_common_dir: &'paths Path,
     pub(crate) home: &'paths Path,
+    pub(crate) sandbox_settings: &'paths Path,
+    pub(crate) writable_roots: &'paths str,
     pub(crate) schema: &'paths Path,
     pub(crate) output: &'paths Path,
     pub(crate) instructions: &'paths Path,
@@ -34,7 +36,12 @@ fn expand(
     invocation: &Invocation<'_>,
     schema_text: &str,
 ) -> Result<String, GateError> {
-    let mut values = vec![rung.model.as_str(), rung.effort.as_str(), schema_text];
+    let mut values = vec![
+        rung.model.as_str(),
+        rung.effort.as_str(),
+        schema_text,
+        invocation.writable_roots,
+    ];
     let paths = [
         invocation.worktree,
         invocation.schema,
@@ -42,6 +49,7 @@ fn expand(
         invocation.instructions,
         invocation.git_common_dir,
         invocation.home,
+        invocation.sandbox_settings,
     ];
     for path in paths {
         let text = path.to_str().ok_or_else(|| GateError::Dispatch {
