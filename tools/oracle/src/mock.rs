@@ -29,7 +29,7 @@ pub(crate) struct ProviderRequest {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum MockError {
+pub enum MockError {
     #[error("mock provider failed: {0}")]
     Io(#[from] Error),
     #[error("mock provider thread panicked")]

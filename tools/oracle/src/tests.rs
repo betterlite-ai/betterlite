@@ -29,6 +29,7 @@ use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
 use crate::process::{Gateway, GatewaySpec, ProcessError};
 use crate::runner::{self, artifacts};
+use crate::{OracleError, case::CaseError, runner::HarnessError};
 
 fn response(body: Value) -> Response {
     Response {
@@ -144,6 +145,25 @@ fn case_loads_directories_and_ignores_non_yaml_files() {
 fn exit_status_maps_success_and_difference() {
     assert_eq!(runner::exit_status(false), process::ExitCode::SUCCESS);
     assert_eq!(runner::exit_status(true), process::ExitCode::from(1));
+}
+
+#[test]
+fn oracle_error_preserves_typed_sources() {
+    let cli_error = <Options as clap::Parser>::try_parse_from(["oracle", "--unknown"])
+        .expect_err("an unknown option should fail parsing");
+    let cli = OracleError::from(cli_error);
+    assert!(matches!(cli, OracleError::Cli(_)));
+
+    let case_error = CaseError::Invalid {
+        path: PathBuf::from("case.yaml"),
+        message: "invalid".to_owned(),
+    };
+    let error = OracleError::from(case_error);
+    assert!(matches!(error, OracleError::Case(_)));
+
+    let harness_error = HarnessError::MissingCapture(0);
+    let harness = OracleError::from(harness_error);
+    assert!(matches!(harness, OracleError::Harness(_)));
 }
 
 fn wire_response(bytes: Vec<u8>) -> Result<Response, HttpError> {

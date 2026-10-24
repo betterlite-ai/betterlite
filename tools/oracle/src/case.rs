@@ -53,7 +53,7 @@ pub(crate) struct Ignore {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum CaseError {
+pub enum CaseError {
     #[error("cannot read case {path}: {source}")]
     Read { path: PathBuf, source: Error },
     #[error("cannot parse case {path}: {source}")]

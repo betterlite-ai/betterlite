@@ -24,7 +24,7 @@ use super::gateway::{GatewayInput, start as start_gateway};
 pub(crate) mod artifacts;
 
 #[derive(Debug, Error)]
-pub(crate) enum HarnessError {
+pub enum HarnessError {
     #[error("gateway did not return a response for case {0}")]
     MissingCapture(usize),
     #[error("cannot write progress: {0}")]

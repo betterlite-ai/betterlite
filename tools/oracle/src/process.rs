@@ -26,7 +26,7 @@ pub(crate) struct GatewaySpec {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ProcessError {
+pub enum ProcessError {
     #[error("cannot open gateway log {path}: {source}")]
     Log { path: PathBuf, source: Error },
     #[error("cannot start gateway: {0}")]

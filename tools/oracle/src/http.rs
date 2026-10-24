@@ -20,7 +20,7 @@ pub(crate) struct Response {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum HttpError {
+pub enum HttpError {
     #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
     #[error("HTTP I/O failed: {0}")]
