@@ -2,7 +2,7 @@ id: B776
 milestone: M4 keys, spend and management
 title: Bulk key and team-key update routes
 status: todo
-depends_on: [B001, B003, B052, B171, B732, B770, B774, B775, B800, B856, B860, B861, B865, B1220, B1224]
+depends_on: [B001, B003, B052, B124, B722, B732, B770, B800, B860, B861, B865, B1220, B1224]
 file: tasks/B776-key-bulk-update.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

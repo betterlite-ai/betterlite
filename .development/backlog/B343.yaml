@@ -2,7 +2,7 @@ id: B343
 milestone: M2 routing
 title: Auto-router identity, member permissions and inference checks
 status: todo
-depends_on: [B377, B378, B052, B060, B301, B361]
+depends_on: [B377, B378, B052, B060, B301, B361, B2318]
 file: tasks/B343-auto-router-access.yaml
 covers:
   - "litellm/proxy/auth/auto_router_checks.py"

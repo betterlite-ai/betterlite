@@ -2,7 +2,7 @@ id: B842
 milestone: M4 keys, spend and management
 title: Discoverable and healthy model visibility
 status: todo
-depends_on: [B002, B003, B171, B302, B304, B732, B856]
+depends_on: [B002, B003, B171, B174, B209, B302, B307, B732, B844, B856]
 file: tasks/B842-model-visibility.yaml
 covers:
   - "litellm/proxy/common_utils/discoverable_model_filter.py"

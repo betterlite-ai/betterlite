@@ -2,7 +2,7 @@ id: B069
 milestone: M4 keys, spend and management
 title: Spend tracking and spend logs
 status: todo
-depends_on: [B002, B003, B052, B070, B098, B111, B116, B118, B124, B171, B173, B189, B198, B204, B206, B715, B860, B1035, B1704, B1707, B1708, B1709, B1712, B1714, B1715, B1716, B1719, B1720, B1721, B1722, B1723, B1724, B1725, B1726, B1727, B1729, B1730, B1731, B1732, B1742]
+depends_on: [B002, B003, B070, B098, B111, B116, B118, B124, B171, B173, B189, B198, B204, B206, B715, B860, B1035, B1704, B1707, B1708, B1709, B1712, B1714, B1716, B1719, B1720, B1721, B1727, B1729, B1732, B1742]
 file: tasks/B069-spend-callbacks.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

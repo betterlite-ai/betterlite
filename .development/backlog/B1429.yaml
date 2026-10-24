@@ -1,0 +1,9 @@
+id: B1429
+milestone: M3 providers
+title: DeepSeek reasoning history, vision messages and tool filtering
+status: todo
+depends_on: [B002, B004, B218, B503, B668, B2221, B171]
+file: tasks/B1429-deepseek-chat.yaml
+covers:
+  - "litellm/llms/deepseek/chat/transformation.py"
+  - "litellm/llms/deepseek/cost_calculator.py"

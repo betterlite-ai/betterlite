@@ -3,7 +3,40 @@ title: JWT key mapping management routes
 description: >-
   Add typed JWT mapping create/update/delete/list/info routes behind shared administrator policy. Use
   issuer+claim identity and validate the referenced key hash; update/remove both old and new cache identities
-  after commit. Serialize only source response fields, not the raw virtual key.
+  after each individual write commits. Responses omit both plaintext keys and token hashes.
+  B2314 provides hash_token and user_api_key_has_admin_view (imported as _user_has_admin_view),
+  B726 provides JWTKeyMappingRepository, B738 supplies jwt_key_mapping_cache_key, and B878
+  evict_and_broadcast performs the post-write cache operation.
+
+  create_key_or_hash requires exactly one non-null key/token; update_key_or_hash allows neither
+  but rejects both. hash_lower_hex rejects anything outside exactly 64 lowercase hex characters
+  with HTTP 400; plaintext_key_hashed hashes the supplied key exactly once. Nullable request
+  fields default None; create requires jwt_claim_name and jwt_claim_value, update/delete require
+  id. No claim rename fields exist on UpdateJWTKeyMappingRequest. create_global_issuer stores
+  null/empty issuer as '', records created_by=updated_by=caller.user_id and omits description
+  unless non-null. response_redacts_hash includes all ten response fields, mapping '' back to null.
+
+  update_unset_vs_null uses exclude_unset, excludes id/key/token, normalizes explicit issuer null
+  to '', permits explicit description null and writes updated_by even on an empty patch.
+  update_invalidates_old reads old row, updates, then evicts old/new identities once each; same
+  identity is evicted once. delete_mapping reads, deletes, evicts and returns {status: success}.
+  postgres_failure_effects proves a write remains after a later eviction failure. There is no
+  multi-write transaction. Unknown keys are rejected by the DB foreign key, not a preflight read.
+
+  mutations_admin_only rejects admin-viewers and ordinary callers with 403; read_admin_viewer
+  allows both admin roles for info/list. database_disconnected gives 500 before DB operations.
+  create_duplicate and update_duplicate map 'unique'/'p2002' to 409; create_foreign_key and
+  update_foreign_key map 'foreign'/'p2003' to 400. update_missing, update_result_missing,
+  delete_missing and info_missing give 404. create_failure, update_failure, delete_failure,
+  list_failure and info_failure give their operation-specific 500 details; HTTPException passes
+  through. These route-owned except blocks return FastAPI {detail: ...}, with no error.type,
+  error.param or error.code. The B052 auth middleware can fail earlier with its own envelope.
+  Compare the shape and status, ignoring /detail only for betterlite's diagnostic wording.
+
+  list_defaults uses page=1, size=50, ordered created_at desc; page_minimum and size_bounds
+  reject page<1 or size outside 1..100 with framework 422. list_empty has total_pages=0;
+  list_partial_page uses ceiling division, current_page and total_count. missing_info_id and
+  malformed_mapping_body exercise required-field 422. No invented invalid-target case for list.
 
 
   Build the production jwt_mapping_api module in betterlite-server; reuse the typed dependencies listed
@@ -33,12 +66,9 @@ description: >-
   Register these actual HTTP routes and aliases exactly once: POST /jwt/key/mapping/new -> create_jwt_key_mapping;
   POST /jwt/key/mapping/update -> update_jwt_key_mapping; POST /jwt/key/mapping/delete -> delete_jwt_key_mapping;
   GET /jwt/key/mapping/list -> list_jwt_key_mappings; GET /jwt/key/mapping/info -> info_jwt_key_mapping.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Send the named mapping cases through B001 HttpCase against both booted servers. Check JSON
+  content-type and the exact response fields; these routes set no cookie, redirect or changed-by
+  header. Keep partial database writes visible to the Postgres assertions.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -71,12 +101,12 @@ description: >-
 
 
   Sizing: 248 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  248 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 515 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  248 production, 320 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 678 changed lines estimated within a 725-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: mapping_body_limits.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -108,8 +138,6 @@ references:
     why: Own UpdateJWTKeyMappingRequest; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4926-L4927
     why: Own DeleteJWTKeyMappingRequest; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
-    why: JWT settings declaration; only the fields consumed by this task are enabled.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L28-L38
     why: Own _validated_token_hash; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L49-L57
@@ -152,20 +180,20 @@ references:
     why: Own _mapping_table; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L126-L139
     why: Own _to_response; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L147-L195
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L142-L195
     why: Own create_jwt_key_mapping; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L203-L263
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L198-L263
     why: Own update_jwt_key_mapping; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L267-L298
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L266-L298
     why: Own delete_jwt_key_mapping; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L305-L336
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L301-L336
     why: Own list_jwt_key_mappings; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L344-L365
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L339-L365
     why: Own info_jwt_key_mapping; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4930-L4940
     why: Own JWTKeyMappingResponse; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: HTTPException uses FastAPI detail responses, not handle_exception_on_proxy.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: create_mapping, duplicate_issuer_claim,
       update_invalidates_old, delete_mapping, paginated_list, non_admin_denied, unknown_key, postgres_pinned_rows,
@@ -185,7 +213,8 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: All named mapping branches above have individually named cases; mapping_body_limits proves
+      the decoder's native size/depth deviation.
     proof:
       - behavior-tests
 checks:
@@ -207,21 +236,13 @@ checks:
         -- crates/betterlite-server/fuzz/corpus/jwt_mapping_api)" && cargo nextest run --locked -p betterlite-server
         --no-tests=fail -E 'test(replays_the_jwt_mapping_api_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-success.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-invalid-target.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-unauthorized-caller.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-success.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-invalid-target.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-success.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-invalid-target.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-unauthorized-caller.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-success.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-invalid-target.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-success.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-invalid-target.yaml
-  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/identifier-matrix.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/update-unset-vs-null.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/read-admin-viewer.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/missing-rows.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/operation-errors.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/pagination-boundaries.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/response-redacts-hash.yaml
   - tools/oracle/cases/management/jwt-mapping-api/create-mapping.yaml
   - tools/oracle/cases/management/jwt-mapping-api/duplicate-issuer-claim.yaml
   - tools/oracle/cases/management/jwt-mapping-api/update-invalidates-old.yaml
@@ -236,8 +257,7 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L28-L38
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2314 owns the shared SHA-256 function and read-admin predicate; no encrypted secret is stored here.
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
     GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
   - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
@@ -290,8 +310,9 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - Changing a JWT mapping evicts both old and new issuer/claim cache identities.
+  - Null issuer is stored as the empty string but serialized as null; omitting it on update leaves the old issuer.
+  - Do not expose token in the response even though the mapping table needs it as a foreign key.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: security

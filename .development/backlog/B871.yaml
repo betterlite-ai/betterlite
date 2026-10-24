@@ -2,7 +2,7 @@ id: B871
 milestone: M4 keys, spend and management
 title: Resolve user and membership authentication grants
 status: todo
-depends_on: [B001, B003, B700, B720, B732, B856, B859, B860]
+depends_on: [B171, B720, B732, B736, B737, B757, B856, B859, B860, B2310, B2318]
 file: tasks/B871-identity-grants.yaml
 covers:
   - "litellm/proxy/auth/resolvers/grants.py"

@@ -2,7 +2,7 @@ id: B047
 milestone: M3 providers
 title: Speech and transcription providers
 status: todo
-depends_on: [B083]
-file: null
+depends_on: [B002, B010, B083, B165, B174, B900, B1082, B1084, B1540, B1541, B1542, B1543, B1544, B1545, B1546, B1547, B1548, B1549, B1550, B1551]
+file: tasks/B047-speech-provider-dispatch.yaml
 covers:
-  - "litellm/llms/{elevenlabs,deepgram,aws_polly,nvidia_riva,soniox}/**"
+  - "litellm/llms/soniox/{__init__.py,audio_transcription/{__init__.py,handler.py}}"

@@ -1,9 +1,47 @@
 id: B782
 title: Paginated key lists and aliases
 description: >-
-  Expose GET /key/list and /key/aliases with KeyListScope, pinned query defaults and typed response pagination/count
-  metadata. Fetch rows using bound filters and retain deterministic ordering and source null-key alias
-  behavior.
+  Expose GET /key/list and /key/aliases once, with B865 wrappers on both. /key/list defaults page=1,
+  size=10 (page>=1, 1<=size<=100); user_id, team_id, organization_id, key_hash, key_alias, search,
+  sort_by, expand, status, project_id, access_group_id, agent_id and expires are null. The booleans
+  return_full_object, include_team_keys, include_created_by_keys and substring_matching default
+  false; sort_order is desc. Cases list_query_defaults, list_pagination_422 and list_selector_forwarding
+  assert every default and pass-through argument to B897 _list_key_helper. Its full-object expansion,
+  sort allowlist, filters and returned keys/total_count/current_page/total_pages remain B897's contract.
+
+  Validate status when non-null against active, expired, revoked, deleted, and string expires against
+  active, expired; invalid values raise HTTPException 400 before B781 authorization. Run B781 scope
+  validation then fetch team objects once iff include_team_keys or include_created_by_keys. Compute
+  member IDs in that case (otherwise null), and admin plus /key/list-permission team IDs only when
+  include_team_keys (otherwise null). Their union is deduplicated without a promised ordering.
+  Cases list_invalid_status, list_invalid_expires, list_validation_before_scope,
+  list_team_fetch_once, list_creator_member_scope and list_permission_team_union cover composition.
+
+  Proxy admin and proxy_admin_viewer can omit user_id for all users; non-admin falsey user_id becomes
+  caller.user_id. User substring matching requires both the flag and admin/viewer role; alias substring
+  matching needs only the flag. Default matching remains exact, so alice must not select alice2.
+  Cases list_default_self, list_admin_unscoped, list_user_exact_default,
+  list_admin_user_substring and list_member_alias_substring distinguish the two flags.
+
+  /key/aliases defaults page=1,size=50 (same bounds), search=null,team_id=null. Its first bound value
+  is UI_SESSION_TOKEN_TEAM_ID, exactly litellm-dashboard. Select non-null, nonempty key_alias rows
+  whose team_id is null or not that value; use B781 alias scope for non-admin/viewer callers.
+  A truthy search adds ILIKE with %<search>% (SQL wildcard characters are not escaped); truthy
+  team_id adds equality. Count matching rows, not distinct aliases. A second query selects key_alias
+  ordered ASC with bound size and (page-1)*size; retain duplicates and skip falsey returned aliases.
+  Empty count results mean zero; total_pages is ceil(count/size) or zero. Return aliases,total_count,
+  current_page,total_pages,size. Cases aliases_defaults, aliases_ui_session_exclusion,
+  aliases_duplicate_rows_count, aliases_wildcards_and_bound_parameters, aliases_team_intersection,
+  aliases_empty_count and aliases_out_of_range_page cover query and response literals. Count and page
+  are separate reads, not a snapshot transaction; aliases_concurrent_change permits their source race.
+
+  Each route has its own except block (L6667-L6684 and L6823-L6840), not a call to
+  handle_exception_on_proxy. HTTPException becomes internal_server_error with its status and param
+  attribute or the string None; ProxyException passes through unchanged. Other exceptions, including
+  missing DB, become 500 internal_server_error, param string None, code 500, with an authentication-error
+  message prefix in LiteLLM. Thus B781's bad_request_error denials stay intact. Cases list_scope_error_shape,
+  list_filter_error_shape, aliases_database_error and list_database_error compare these fields using
+  README-permitted message wording. Neither route reads litellm-changed-by or mutates rows.
 
 
   Build the production key_list module in betterlite-server; reuse the typed dependencies listed in the
@@ -15,14 +53,9 @@ description: >-
   list_keys (L6492-L6684; 164 source lines), key_aliases (L6727-L6840; 93 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /key/list -> list_keys; GET /key/aliases
-  -> key_aliases. For each route send a typed successful request, an invalid or missing target, and a
-  caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy and
-  betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes. Compare
-  status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
-  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
-  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
-  inspection.
+  All route cases use B001 HTTP against independent Postgres schemas, using POSTGRES_TEST_URL
+  when set and testcontainers otherwise. Infrastructure failures fail the tests. Seed duplicate aliases,
+  UI tokens, null-team keys and distinct member/admin/list-permission teams to distinguish the policies.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -42,8 +75,8 @@ description: >-
 
 
   Sizing: 257 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  257 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 470 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  257 production, 320 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 642 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -62,15 +95,15 @@ scope:
     - tools/oracle/cases/management/key-list/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6492-L6684
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6486-L6684
     why: Own list_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6727-L6840
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6721-L6840
     why: Own key_aliases; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725-L1725
+    why: Exact UI-session team ID read by the aliases SQL predicate.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: first_page, page_count,
-      alias_search, empty_page, non_admin_scoped, invalid_sort.'
+  - text: Every named route case above proves the defaults, scope composition, bound SQL values,
+      duplicate alias counts and route-local exception envelopes through HTTP.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -86,12 +119,11 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_list::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-list/get--key-list-success.yaml
-  - tools/oracle/cases/management/key-list/get--key-list-invalid-target.yaml
-  - tools/oracle/cases/management/key-list/get--key-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-list/get--key-aliases-success.yaml
-  - tools/oracle/cases/management/key-list/get--key-aliases-invalid-target.yaml
-  - tools/oracle/cases/management/key-list/get--key-aliases-unauthorized-caller.yaml
+  - tools/oracle/cases/management/key-list/query-defaults-and-validation.yaml
+  - tools/oracle/cases/management/key-list/team-list-permission-union.yaml
+  - tools/oracle/cases/management/key-list/substring-role-differences.yaml
+  - tools/oracle/cases/management/key-list/duplicate-aliases-and-ui-exclusion.yaml
+  - tools/oracle/cases/management/key-list/local-exception-shapes.yaml
   - tools/oracle/cases/management/key-list/first-page.yaml
   - tools/oracle/cases/management/key-list/page-count.yaml
   - tools/oracle/cases/management/key-list/alias-search.yaml
@@ -100,8 +132,8 @@ oracle_cases:
   - tools/oracle/cases/management/key-list/invalid-sort.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B781 owns caller scope and team collection; B897 owns _list_key_helper and its SQL/filter
+    helpers. B124 supplies the database query port. This task has no credential storage behavior.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -197,8 +229,8 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - An empty page retains the source total count instead of reporting zero results globally.
+  - The aliases count is COUNT(*) without DISTINCT, so duplicate names occupy separate page slots.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

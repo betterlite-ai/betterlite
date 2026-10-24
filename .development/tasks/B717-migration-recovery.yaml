@@ -1,249 +1,199 @@
 id: B717
 title: Native migration recovery and drift guards
 description: >-
-  Implement the native v2 MigrationRecovery state machine with bounded attempts, permission-failure classification
-  and completion recovery through MigrationLedger and MigrationDeploy. Preserve contention accounting
-  and replica-identity ordering. Delegate ahead-of-head warnings, partition/Lens guards and invalid-index
-  repair to B857 and replica identity to B718.
+  Implement betterlite-db::migration_recovery as the native v2 resolver over B873 MigrationDeploy and
+  B716 MigrationLedger. Own _is_permission_error, _setup_database_v2, _run_database_v2,
+  _v2_failed_migration_name/_v2_failed_migration_started_at projections,
+  _v2_roll_back_migration_best_effort, _budget_after_deploy_failure and
+  apply_replica_identity_full_if_requested from extras/utils.py, plus proxy_cli.py's
+  resolve_v2_migration_resolver. Do not call back up to B051 for command timeouts: B716 now owns
+  prisma_command_timeout and prisma_migrate_deploy_timeout as well as lock timeout parsing.
 
+  Before a migrate pass require a truthy DATABASE_URL, otherwise raise RuntimeError with
+  'DATABASE_URL is required for v2 migrations', even when DIRECT_URL exists. Select a truthy DIRECT_URL
+  or the writer URL for the lock connection, strip Prisma-only params through B711, and select the
+  namespace from DATABASE_URL's first nonblank schema or public through B716. Recovery accepts only
+  a single packaged migration name: reject directory traversal, any backslash and names absent from
+  the compiled catalog without opening a coordinator. Under B716's migration lock, try confirmed
+  completion first, then inert-migration rollback only if completion returned false. A true result
+  ends the current deploy pass at a committed recovery checkpoint; start a fresh pass afterward.
+  A nonempty preexisting schema without history similarly invokes B716 baseline under the coordinator
+  and then starts another pass. Baseline/recovery failures propagate immediately.
 
-  Build the production migration_recovery module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Ask B857 to warn about ahead-of-head history at each deploy pass; that informational check cannot
+  block deployment. Each pass starts four failure attempts and B716's configured contention budget
+  (default 600 seconds). Each deploy call receives B716's deploy timeout, default 600 with its
+  documented command-timeout precedence. Success returns true and logs completion. Timeout warns
+  with attempt number, elapsed limit and LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT guidance, then consumes
+  one failure attempt. For any branch that consumes an attempt, sleep a random integer in [5,14]
+  seconds before continuing, including after the fourth consumed attempt. Contention consumes only
+  its measured monotonic elapsed time and does not take that extra sleep. Recovery checkpoints reset
+  both budgets for the next pass; there is no single four-attempt cap across successful checkpoints.
 
+  Represent the native equivalents of Prisma P3005 (nonempty unbaselined schema), P3009 (unfinished
+  history), P3018 (failed migration step) and P1002 advisory-lock contention as typed deploy outcomes
+  carrying exact ledger identity and SQLSTATE, not a new parser of Prisma stderr. The reference
+  name extraction prioritizes P3009 over P3018 and accepts digit-plus-underscore names, independently
+  of B716's stricter fourteen-digit timestamp ranking. P3009 start-time matching uses the exact
+  escaped migration name. Native outcomes must retain the actual started_at identity rather than
+  finding an arbitrary failed row by name. Completion recovery runs before budget classification,
+  including before permission-error rejection, because verified completion is stronger evidence.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm-proxy-extras/litellm_proxy_extras/utils.py:
-  ProxyExtrasDBManager._is_permission_error (L409-L433; 21 source lines), ProxyExtrasDBManager._setup_database_v2
-  (L951-L990; 36 source lines), ProxyExtrasDBManager._run_database_v2 (L993-L1101; 94 source lines), ProxyExtrasDBManager._v2_failed_migration_name
-  (L1104-L1111; 8 source lines), ProxyExtrasDBManager._v2_failed_migration_started_at (L1114-L1116; 3
-  source lines), ProxyExtrasDBManager._v2_roll_back_migration_best_effort (L1119-L1129; 10 source lines),
-  ProxyExtrasDBManager._budget_after_deploy_failure (L1132-L1226; 87 source lines), ProxyExtrasDBManager.apply_replica_identity_full_if_requested
-  (L1252-L1282; 29 source lines). litellm/proxy/proxy_cli.py: resolve_v2_migration_resolver (L184-L191;
-  7 source lines).
+  For an unresolved P3009-equivalent, require name and started_at before consulting B716's failed
+  logs/recovered-row queries. Logs containing the case-sensitive marker 'deadlock detected' cause
+  an informational deadlock-race message, best-effort history rollback and one spent attempt. Otherwise
+  an already finished or rolled-back row with that exact identity logs concurrent recovery and spends
+  one attempt. Missing identity, unavailable/empty logs without recovery, or uncertain completion
+  stops startup. Preserve the full source recovery guidance beginning 'Migration completion could
+  not be verified. LiteLLM startup has stopped.': inspect the named SQL, actual objects/data and logs;
+  only resolve applied after proving every change is present, or rolled back after proving no changes
+  remain/undoing partial changes. Resolving history does not undo SQL, and restarting alone does not
+  resolve uncertainty. Test the complete message, including both operator recovery choices.
 
+  For P3018-equivalent failure, permission rejection takes precedence over deadlock retry. The source
+  recognizes, case-insensitively, 'Database error code: 42501', 'must be owner of table', 'permission
+  denied for schema', 'permission denied for table' and 'must be owner of schema'. Native SQLSTATE
+  42501 maps to this permission outcome; preserve the message 'Database migration failed due to
+  insufficient permissions. Please grant the required privileges and retry.' and attached native
+  error detail. Do not mark it applied or rolled back. A named deadlock instead rolls back failed
+  history best-effort and spends an attempt. Other step failures stop with 'Database migration failed
+  and cannot be auto-recovered. Manual intervention required.' and detail. Outside those outcomes,
+  a deadlock consumes an attempt before the advisory-lock contention branch; unrecognized failures
+  use the same manual-intervention error. Exhaustion reports four attempts that made no progress,
+  identifies timeouts/deadlock retries and advises checking connectivity, load and _prisma_migrations
+  and raising LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT for timeouts.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_URL=None;
-  DIRECT_URL=None.
+  Best-effort rolled-back resolution is a separate history operation before the next deploy attempt;
+  it does not roll back already committed DDL or replay the migration. Mark the failed, unfinished,
+  non-rolled-back records for the named migration rolled_back_at while preserving checksum, logs,
+  started_at and applied_steps_count. Completed records are not rewritten. Source resolve-command
+  failure and timeout are silently ignored here so the next pass can inspect the actual ledger state;
+  native database failure/timeout must likewise leave the attempt consumed and continue without a
+  new warning. Other failures, including cancellation, propagate. Test successful marking and a
+  permission-denied marker write separately; never assume rollback bookkeeping succeeded.
 
+  Resolve USE_V2_MIGRATION_RESOLVER with default true through B2307's extras str_to_bool (no stripping,
+  'on' is false); the CLI legacy flag forces false before the env value is considered. Keep the current
+  deviation: requested legacy mode starts native v2 with a warning. USE_PRISMA_DB_PUSH defaults absent
+  and uses that same boolean parser in migrations/run.py; the CLI --use_prisma_db_push supplies a
+  separate boolean. When either requests push, reject before any database mutation with guidance to
+  use pinned migrations or baseline an already-current schema. The v1 diff-and-force and accept-data-loss
+  paths remain excluded. No generic invalid_value_fallback case belongs to these permissive booleans.
 
-  LITELLM_SET_REPLICA_IDENTITY_FULL=false controls B718 replica identity updates. USE_V2_MIGRATION_RESOLVER
-  defaults true; false and B121 --use_legacy_migration_resolver start with v2 and warn. B121 --use_prisma_db_push
-  and migrations/run.py USE_PRISMA_DB_PUSH request the unsupported destructive schema-diff operation;
-  reject with guidance to use pinned migrations or baseline an already-current schema.
+  LITELLM_SET_REPLICA_IDENTITY_FULL defaults absent/false and uses the same extras boolean parser.
+  apply_replica_identity_full_if_requested returns false without calling B718 when disabled; when
+  enabled it delegates to B718 and returns that result. The source catches migration-path discovery
+  OSError, logs 'Could not resolve the migrations directory for the REPLICA IDENTITY FULL step,
+  skipping it. Error: ...' and returns false. Native compiled catalogs eliminate that filesystem step,
+  while B718 still owns statement/connection errors and their nonfatal result. B051 invokes this
+  optional helper after successful setup; the retry loop itself must not run it after every attempt.
 
+  Exercise recovery through real isolated Postgres ledger/catalog fixtures from B860 using
+  POSTGRES_TEST_URL or testcontainers. Verify separate committed checkpoints, failed marker updates,
+  preserved partial DDL and permission failures; use deterministic clocks/jitter injection for budgets.
+  Compare pinned error-guidance fixtures without spawning a gateway Prisma CLI. Config tests load the
+  three mode/replica env settings through B002 and consume B716's timeout values. Typed deploy outcomes
+  introduce no byte parser; do not add unused regex/fuzz code just to imitate subprocess stderr.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  Write betterlite-config::migration_recovery::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Startup configuration seeds belong
-  to B051; this orchestration task only consumes resolved settings.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 295 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  295 production, 151 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 526 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Migration orchestration consumes the typed startup settings; configuration behavior tests prove warning/deviation
-  decisions, but this task adds no config-corpus or parser-corpus check.
-
-
-  Native-only deviation tests in this production module: native_legacy_resolver_settings_start_native_v2_with_a_warning_use_prisma_db.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  The reference ownership is 295 nonblank noncomment lines including docstrings. Allow 300 native
+  orchestration, 340 recovery/Postgres tests, 70 config/tests and 35 wiring lines, 745 within 800.
+  Keep mode policy, failure recovery and retry orchestration in source files below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/migration_recovery.rs
     - crates/betterlite-db/src/migration_recovery/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - Cargo.toml
-    - deny.toml
-    - crates/betterlite-db/src/migration_recovery/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/migration_recovery.rs
     - crates/betterlite-config/src/migration_recovery/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/migration-recovery-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L409-L462
-    why: Pinned implementation and exact ownership boundary for migration_recovery.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L480-L627
-    why: Pinned implementation and exact ownership boundary for migration_recovery.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L705-L730
-    why: Pinned implementation and exact ownership boundary for migration_recovery.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L951-L1282
-    why: Pinned implementation and exact ownership boundary for migration_recovery.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1355-L1607
-    why: Pinned implementation and exact ownership boundary for migration_recovery.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L409-L433
-    why: Own ProxyExtrasDBManager._is_permission_error; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L951-L990
-    why: Own ProxyExtrasDBManager._setup_database_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L993-L1101
-    why: Own ProxyExtrasDBManager._run_database_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1104-L1111
-    why: Own ProxyExtrasDBManager._v2_failed_migration_name; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1114-L1116
-    why: Own ProxyExtrasDBManager._v2_failed_migration_started_at; preserve caller-visible values and
-      failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1119-L1129
-    why: Own ProxyExtrasDBManager._v2_roll_back_migration_best_effort; preserve caller-visible values
-      and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1132-L1226
-    why: Own ProxyExtrasDBManager._budget_after_deploy_failure; preserve caller-visible values and failure
-      ordering.
+    why: Permission-failure indicators and their case-insensitive matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L951-L1101
+    why: Coordinator callbacks, checkpoint passes, timeout and retry budgets, sleep order and exhaustion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1104-L1226
+    why: Migration identity, silent best-effort rollback, error precedence and complete manual recovery guidance.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1252-L1282
-    why: Own ProxyExtrasDBManager.apply_replica_identity_full_if_requested; preserve caller-visible values
-      and failure ordering.
+    why: Actual replica-identity env read and nonfatal discovery failure.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L184-L191
-    why: Own resolve_v2_migration_resolver; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L961-L966
-    why: DATABASE_URL default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L964-L969
-    why: DIRECT_URL default and read site.
+    why: Legacy CLI flag precedence over the default-true environment selector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L50-L63
+    why: Actual migration-job reads of USE_V2_MIGRATION_RESOLVER and USE_PRISMA_DB_PUSH.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: v2_permission_failure,
-      contention_keeps_attempt, legacy_warns_v2, db_push_rejected, replica_identity_after_deploy, postgres_pinned_rows,
-      postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_legacy_resolver_settings_start_native_v2_with_a_warning_use_prisma_db.'
-    proof:
-      - behavior-tests
+  - text: 'Setup/checkpoint tests cover writer_url_required_even_with_direct,
+      direct_lock_url_writer_namespace, recovery_rejects_path_and_unknown_name,
+      completion_before_inert_rollback, baseline_checkpoint_before_new_pass,
+      recovery_checkpoint_resets_budgets, callback_failure_propagates,
+      ahead_history_warning_is_nonfatal and completion_evidence_before_permission_classification.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Failure/budget tests cover timeout_warning_and_attempt_spend, integer_jitter_five_to_fourteen,
+      exhausted_attempt_still_sleeps, contention_only_elapsed_budget, contention_exhaustion,
+      unfinished_history_exact_identity, ledger_deadlock_rolls_back_before_retry,
+      concurrent_recovered_row_spends_attempt, uncertain_completion_full_guidance,
+      permission_patterns_and_sqlstate, permission_before_deadlock,
+      named_step_deadlock, bare_deadlock_before_contention, unknown_failure_manual_intervention,
+      exhaustion_full_message, native_diagnostics_carry_sqlstate_and_ledger_identity,
+      postgres_rollback_marker_preserves_history,
+      postgres_failed_marker_write_is_silent, completed_history_not_rewritten,
+      rollback_cancel_propagates and postgres_partial_ddl_not_undone.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Config and delegation tests prove mode_env_defaults, extras_boolean_spellings,
+      legacy_cli_flag_precedence, native_legacy_mode_warns_and_runs_v2,
+      native_requested_db_push_rejected_before_mutation, replica_identity_disabled_no_call,
+      replica_identity_result_forwarded and shared_timeout_policy_consumed.'
+    proof: [config-tests, config-corpus, behavior-tests]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_recovery::tests::/)
-        - test(/replays_the_/)'
+      why: Each checkpoint, error classification, retry budget and mode branch must pass independently.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_recovery::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_failure_effects$/)'
+      why: Marker writes and failed recovery must preserve the actual ledger and partially committed SQL.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_rollback_marker_preserves_history$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_failed_marker_write_is_silent$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_partial_ddl_not_undone$/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^migration_recovery::tests::/)
-        - test(/replays_the_/)'
+      why: Env selectors and caller-supplied timeouts must drive the production native resolver.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^migration_recovery::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: Added migration mode inputs must replay through the actual config decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/migration-recovery-*")" && grep -rlq USE_V2_MIGRATION_RESOLVER crates/betterlite-config/fuzz/corpus/config_yaml/migration-recovery-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases: []
 deviations:
-  - what: Legacy resolver settings start native v2 with a warning; --use_prisma_db_push and the migration
-      job USE_PRISMA_DB_PUSH are rejected before mutation with migration/baseline guidance.
-    why: A native schema-diff engine with accept-data-loss is not implemented.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L951-L1101
+  - what: Legacy resolver requests warn and run native v2; --use_prisma_db_push and truthy
+      USE_PRISMA_DB_PUSH stop startup before mutation with pinned-migration/baseline guidance.
+    why: Preserve the existing native plan; no destructive schema-diff engine is implemented.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L993-L1037
+  - what: Migration diagnostics attach native SQLSTATE and ledger identity instead of Prisma CLI
+      stderr/P-code output; compiled migrations need no working-directory change or Prisma path discovery.
+    why: Native deployment preserves the recovery decisions and manual-recovery guidance without
+      fabricating subprocess failures or parsing a CLI that the gateway cannot run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1041-L1282
 out_of_scope:
-  - 'utils.py: legacy _run_migrations force-diff and Prisma db-push branches are excluded by the explicit
-    unsupported-setting deviation; v2 recovery is native. The entry point rejects these modes before mutation.'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
-    (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
-    (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
-    (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
-    _MigrateAttemptBudget.attempt_number (L112-L113), _MigrateAttemptBudget.spend (L115-L116), _MigrateAttemptBudget.after_contention
-    (L118-L125), _migration_timestamp (L188-L195), _max_migration_timestamp (L198-L202), ProxyExtrasDBManager._get_migration_names
-    (L323-L327), ProxyExtrasDBManager._read_migration_ledger (L356-L376), ProxyExtrasDBManager._failed_migration_logs
-    (L379-L387), ProxyExtrasDBManager._failed_migration_recovered (L390-L396).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B857 owns ProxyExtrasDBManager.raise_if_lens_rename_pending
-    (L630-L657), ProxyExtrasDBManager.spend_logs_is_partitioned (L660-L702), ProxyExtrasDBManager._warn_if_db_ahead_of_head
-    (L756-L825), ProxyExtrasDBManager._invalid_litellm_indexes (L828-L832), ProxyExtrasDBManager._index_repair
-    (L835-L841), ProxyExtrasDBManager._repair_index (L844-L860), ProxyExtrasDBManager.repair_invalid_indexes
-    (L863-L926), ProxyExtrasDBManager._repair_under_migration_lock (L929-L948).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration:
-    v1 only; native v2 recovery does not call it.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir: Prisma
-    filesystem/tool discovery is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments: v1 only; native startup
-    always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses: v1 only; native
-    startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
-  - 'litellm/proxy/proxy_cli.py: B710 owns _build_db_connection_url_params (L65-L97).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error (L436-L462):
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations
-    (L480-L602): v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied
-    (L605-L627): v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations (L1355-L1607):
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied
-    (L1229-L1249): no caller at the pin.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - 'litellm/proxy/proxy_cli.py: B121 owns the remaining functions _drop_script_dir_from_sys_path (L36-L46),
-    _pg_options_with_timeouts (L113-L149), _url_query_value (L152-L156), _with_query_value (L159-L163),
-    append_query_params (L166-L181), deprecated_v2_flag_passed_on_cli (L194-L198), ProxyInitializationHelpers._echo_litellm_version
-    (L202-L205), ProxyInitializationHelpers._run_health_check (L207-L211), ProxyInitializationHelpers._run_config_validation
-    (L213-L230), ProxyInitializationHelpers._run_test_chat_completion (L232-L280), ProxyInitializationHelpers._get_default_unvicorn_init_args
-    (L282-L325), ProxyInitializationHelpers._apply_uvicorn_max_requests_jitter (L327-L353), ProxyInitializationHelpers._get_reload_options
-    (L355-L374), ProxyInitializationHelpers._patch_statreload_extra_paths (L376-L415), ProxyInitializationHelpers._configure_dev_reload
-    (L417-L433), ProxyInitializationHelpers._init_hypercorn_server (L435-L466), ProxyInitializationHelpers._init_granian_server
-    (L468-L516), ProxyInitializationHelpers._run_gunicorn_server (L518-L632), ProxyInitializationHelpers._run_ollama_serve
-    (L634-L644), ProxyInitializationHelpers._is_port_in_use (L646-L651), ProxyInitializationHelpers._get_loop_type
-    (L653-L658), ProxyInitializationHelpers._prometheus_callback_configured (L660-L672), ProxyInitializationHelpers._maybe_setup_prometheus_multiproc_dir
-    (L674-L702), run_server (L705-L1579).'
+  - B716 owns ledger reads, completion/inert recovery, baseline, locks, attempt-budget arithmetic,
+    _prisma_schema_param and command/deploy/lock timeout accessors. B873 owns SQL deployment and
+    migration_files; B711 owns _strip_prisma_query_params/_libpq_tls_params.
+  - B857 owns ahead-of-head diagnostics, pending Lens/partition guards and invalid-index repair;
+    B718 owns the REPLICA IDENTITY FULL statement and its failure logging.
+  - B051 owns setup_database, build_request_log_indexes, run_migration_job and
+    start_request_log_index_build, including post-setup replica-identity ordering.
+  - The native-v2 deviation excludes _get_prisma_env, _get_prisma_command, _get_prisma_dir,
+    _create_baseline_migration, _without_sql_comments, _without_spend_logs_pk_clauses,
+    filter_partitioned_spend_logs_diff, _roll_back_migration, _resolve_specific_migration,
+    _is_idempotent_error, _resolve_all_migrations, _mark_migrations_applied, _run_migrations
+    and _filter_migration_job_owned_drift. _roll_back_migration_best_effort and _mark_migration_applied
+    have no caller at the pin. Do not confuse those with the live _v2_ rollback helper owned here.
+  - B2307 owns extras str_to_bool and CLI query/timeout-option helpers; B121 owns the remaining
+    proxy_cli.py shell and flag declarations, while this task owns resolve_v2_migration_resolver.
 pitfalls:
-  - USE_PRISMA_DB_PUSH is read by migrations/run.py, while the proxy uses --use_prisma_db_push.
-  - A migration completed by another pod does not consume the same retry budget as a real failed deploy.
+  - A confirmed recovery checkpoint restarts the per-pass budgets; it is not one of the four failed attempts.
+  - Best-effort rollback failure is silent and still consumes an attempt, so a retry must reread history.
+  - Replica identity runs through the outer setup caller after success, not inside every retry pass.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,10 +1,39 @@
 id: B752
-title: Team, member, project and organization budget admission
+title: Project, organization, tag and access-group budget admission
 description: >-
-  Implement TenantBudgetChecks over typed rows and injected current spend values. Keep per-member model
-  scope, hard and soft budgets, organization lookup failures and model-access-group counters distinct.
-  Return Decimal-based admission decisions and typed alerts; spend aggregation/reservations remain B069/B071
-  services supplied at integration.
+  Implement TenantBudgetChecks using B2321 current-spend reads, B740 batch lookups, B879 organization
+  lookup, B733 counter keys, B2325 carried organization state and B116 alert delivery. Project hard
+  budgets skip missing rows, missing ceilings and nonfinite ceilings before reading spend:project:<id>.
+  Use row spend or zero as fallback; spend >= ceiling denies, including a zero ceiling. When a token
+  exists, enqueue project_budget before raising; without a token still deny, without an alert. Soft
+  budgets use the row spend directly, not the counter: nonnull spend >= nonnull soft_budget logs DEBUG
+  even at zero; a token additionally schedules soft_budget with max_budget null. Soft budgets never deny.
+
+
+  Organization checks skip absent tokens/databases. A nonnull token org_id, including an empty string,
+  wins over the team's organization_id. Fetch with include_budget_table=true; every lookup exception
+  and a missing row silently skip enforcement. Carry organization_alias and OrgBudgetSnapshot before
+  checking the ceiling, even when no ceiling exists. Read spend:org:<id> with row spend or zero before
+  testing finiteness; finite ceilings deny at equality and schedule organization_budget before raising.
+  Project and organization alert payloads retain token, spend, ceiling, user_id, team_id, team_alias,
+  organization_id and PROJECT/ORGANIZATION event_group; soft alerts also carry soft_budget.
+
+
+  B1102 extracts tags from the selected metadata object/string and top-level tags, metadata first,
+  retaining string entries and duplicates. No database or no tags skips the batch. Iterate input order;
+  missing tag/budget/ceiling skips. Read spend:tag:<name> with fallback_authoritative=true and row spend
+  or zero. Tags allow equality (spend <= ceiling), with no finite or positive-ceiling guard, and raise
+  at the first violation without scheduling an alert. Matched model access groups alone are checked:
+  absent rows/ceilings and ceilings <= 0 skip. Their B733 counters use budget.spend as authoritative
+  fallback and deny at equality (allow only spend < ceiling). These reads do not reserve budget;
+  simultaneous requests can overshoot. Counter failures propagate. Preserve source NaN/infinity
+  comparisons at the typed compatibility boundary rather than silently treating them as zero.
+
+
+  Every denial is BudgetExceededError with current_cost, max_budget, entity_type and entity_id, and
+  the exact Project=<id>, Organization=<id>, Tag=<name> or Model access group=<name> message followed
+  by Current cost and Max budget. B757 maps it to the configured budget status (default 422),
+  budget_exceeded, null param and the corresponding code. There are no database writes in this task.
 
 
   Build the production auth_tenant_budgets module in betterlite-auth; reuse the typed dependencies listed
@@ -19,8 +48,8 @@ description: >-
   (L6470-L6522; 45 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Preserve tenant-specific >= versus > checks and explicit finiteness branches before converting
+  finite amounts for checked arithmetic; a missing budget relation is not a zero-valued limit.
 
 
   Add the auth_tenant_budgets operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -30,33 +59,21 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Through B732 admission on POST /v1/chat/completions, distinguish project, organization, tag and
+  access-group denials by their budget entity fields and B757 envelope, including equality boundaries.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 fixtures use POSTGRES_TEST_URL or testcontainers with separately exhausted entity budgets;
+  a failure in one entity must not be mistaken for another entity's cache miss.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Parsed tags and snapshot rows come from their declared dependencies. No tenant-budget byte
+  decoder, premium gate or management write is added by admission.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 265 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  265 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 537 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  Sizing: 265 owned source lines; allow 265 production, 270 table-driven behavior/Postgres tests,
+  90 helper adapters and 100 route/manifests/wiring lines, 725 changed lines within a 775-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -86,7 +103,7 @@ scope:
     - crates/betterlite-server/src/auth/auth_tenant_budgets/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5823-L6235
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6136-L6235
     why: Pinned implementation and exact ownership boundary for auth_tenant_budgets.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6302-L6522
     why: Pinned implementation and exact ownership boundary for auth_tenant_budgets.
@@ -107,8 +124,22 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: project_hard_denial,
-      organization_temp_budget, tag_budget, group_budget.'
+  - text: 'Project cases: project_absent_budget_and_nonfinite_skip, project_counter_key_and_fallback,
+      project_equality_and_zero_deny, project_alert_before_error, project_without_token_denies_without_alert,
+      project_soft_row_spend_zero_boundary, project_soft_debug_without_token, project_soft_payload.'
+    proof:
+      - behavior-tests
+  - text: 'Organization cases: org_token_id_precedes_team_including_empty, org_missing_context_skips,
+      org_lookup_error_and_missing_row_skip, org_snapshot_before_missing_ceiling_return,
+      org_counter_read_before_finite_test, org_equality_alert_payload_and_error.'
+    proof:
+      - behavior-tests
+  - text: 'Tag/group cases: metadata_and_body_tags_string_only_ordered_duplicates, no_db_or_names_skips,
+      missing_budget_rows_skip, authoritative_fallbacks_and_counter_names, tag_equality_allowed,
+      tag_zero_negative_and_nonfinite_ceilings, first_tag_denial_has_no_alert,
+      group_nonpositive_skips_and_equality_denies, only_matched_groups_checked,
+      counter_failure_propagates, read_only_concurrent_checks_can_overshoot,
+      all_budget_error_fields_and_default_422. Each case includes its boundary rows.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -132,7 +163,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_tenant_budgets::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/auth_tenant_budgets::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -150,17 +181,18 @@ checks:
         - test(/replays_the_/)'
 oracle_cases:
   - tools/oracle/cases/helpers/auth-tenant-budgets/project-hard-denial.yaml
-  - tools/oracle/cases/helpers/auth-tenant-budgets/organization-temp-budget.yaml
+  - tools/oracle/cases/helpers/auth-tenant-budgets/organization-lookup-skip-and-snapshot.yaml
+  - tools/oracle/cases/helpers/auth-tenant-budgets/project-soft-alert.yaml
   - tools/oracle/cases/helpers/auth-tenant-budgets/tag-budget.yaml
   - tools/oracle/cases/helpers/auth-tenant-budgets/group-budget.yaml
   - tools/oracle/cases/auth/auth-tenant-budgets/project-hard-denial.yaml
-  - tools/oracle/cases/auth/auth-tenant-budgets/organization-temp-budget.yaml
+  - tools/oracle/cases/auth/auth-tenant-budgets/organization-equality-budget.yaml
   - tools/oracle/cases/auth/auth-tenant-budgets/tag-budget.yaml
   - tools/oracle/cases/auth/auth-tenant-budgets/group-budget.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B887 owns team/member budgets; B071 owns reservations and aggregation. B2321 owns current-spend
+    verification and B2325 owns carried snapshots. None of these checks writes a reservation.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -275,8 +307,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Organization lookup failure cannot be converted into an absent organization budget.
+  - The organization lookup catch intentionally skips all errors; a counter error after lookup still fails.
+  - Tags allow equality while groups deny it. Neither branch schedules the alert promised by the tag docstring.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

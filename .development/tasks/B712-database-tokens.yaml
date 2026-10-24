@@ -1,92 +1,97 @@
 id: B712
 title: RDS IAM and Azure database token authentication
 description: >-
-  Implement DatabaseTokenAuth, IamEndpoint and token-expiry parsing with injected AWS credential/token
-  and Azure token providers. Use maintained AWS signing and Azure identity libraries, not handwritten
-  signing. Match IAM_TOKEN_DB_AUTH and AZURE_POSTGRESQL_AUTH flags (both false by default), conflicting-mode
-  errors, token URL quoting and optional expiration. Tokens remain SecretString and logs contain only
-  endpoint identity. AWS credential source selection in init_rds_client belongs here; reuse B010 HTTP/provider
-  facilities only when actually needed, never spawn aws CLI.
+  Implement betterlite-db::database_tokens with DatabaseTokenAuth, IamEndpoint, token URL construction
+  and expiry hints. Own token_auth.py except B2307's token_auth_flag_enabled; own db_url_settings.py's
+  token_auth and token branches L410-L435/L476-L500, and pgbouncer.py::database_url_is_pooled. Consume
+  B2308's RDS signer, B129's Azure credential provider and B710's resolved endpoint fields. The parent
+  startup service chooses this strategy before invoking the password-only branch; B710 never calls
+  back up into this task. Token refresh and connection replacement remain in B854.
 
+  IAM_TOKEN_DB_AUTH and AZURE_POSTGRESQL_AUTH default false and use B2307's strict boolean parser.
+  Resolve IAM first, Azure second, and reject both enabled before constructing a provider, reading
+  endpoint fields or minting. Preserve the exact RuntimeError message: 'IAM_TOKEN_DB_AUTH and
+  AZURE_POSTGRESQL_AUTH are both enabled, but the database password can only come from one token
+  source. Keep IAM_TOKEN_DB_AUTH for AWS RDS IAM auth, or AZURE_POSTGRESQL_AUTH for Azure Database for
+  PostgreSQL with Microsoft Entra ID, and unset the other one.' Neither enabled returns None. RDS
+  exposes label 'RDS IAM token' and env_var IAM_TOKEN_DB_AUTH; Azure exposes 'Azure Entra token' and
+  AZURE_POSTGRESQL_AUTH. Azure builds one process-wide provider for the explicit scope
+  https://ossrdbms-aad.database.windows.net/.default, regardless of AZURE_SCOPE. Reuse that provider
+  across writer, reader and refresh calls; a failed provider construction is retried on a later call,
+  while successful caching does not freeze one token forever. B129 owns credential inference and its
+  Azure env inputs, errors and logging.
 
-  Use aws-config credential providers and aws-sigv4 directly for the RDS auth signature, plus the maintained
-  Azure identity provider; no B010 provider-framework dependency or handwritten signer. Token refresh
-  orchestration belongs to B854. Missing writer/reader IAM endpoint fields fail with their exact environment
-  names.
+  IamEndpoint stores host, string port, user, database name and optional schema=None. build_url
+  normalizes user/name/schema by percent-decoding once then quote(safe=''), avoiding double-encoding
+  a pre-encoded '@'; spaces become %20, not B710's '+'. Host and port are retained, and an empty schema
+  is omitted. The token is inserted verbatim as an already encoded password. RDS minting delegates
+  host/port/user unchanged to B2308; Azure invokes its provider each mint and quote(safe='')-encodes
+  the returned token. Provider failures propagate without switching auth style.
 
+  parse_iam_endpoint_from_url rejects missing/empty host or username with ValueError
+  'Cannot parse IAM endpoint from URL: missing host or username', then decodes the path after removing
+  all leading '/' and rejects an empty name with 'Cannot parse IAM endpoint from URL: missing database name'.
+  Decode username once; use parsed lower-case hostname, parsed port converted to a string or '5432'
+  when absent/zero, and the first nonblank schema query value. Bad ports/brackets propagate URL errors.
+  Parsing is not a database connection and does not inspect or validate the password.
 
-  Build the production database_tokens module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Writer token assembly resolves the strategy before consulting LITELLM_PGBOUNCER_POOLED_DATABASE_URL.
+  Only the exact string 'true' marks a pooled URL and returns no replacement; 'True', '1', empty and
+  absent do not. In other cases token auth overwrites even a truthy pinned DATABASE_URL. Require
+  truthy DATABASE_HOST, DATABASE_USER (already resolved from B710's aliases) and DATABASE_NAME in
+  that order. The RuntimeError names the enabled auth env, the missing fields and the strategy label:
+  '{env} is enabled but required DB env var(s) are unset: {fields}. Set them so the writer DATABASE_URL
+  can be assembled with a minted {label}.' Port defaults '5432' through B710, schema remains optional.
+  After successful assembly the typed update result normalizes only enabled token toggles to 'True'.
+  A failed mint produces no URL/toggle update; the native pool policy never sets the pooled marker itself.
 
+  Reader host opt-in and pinned-URL preservation occur before resolving its token strategy. For a
+  reader that needs assembly, use B710's truthy reader-or-writer field fallback, then require resolved
+  user and name in that order. Missing fields are spelled DATABASE_USER[_READ_REPLICA] and
+  DATABASE_NAME[_READ_REPLICA]; preserve the source RuntimeError ending '(no *_READ_REPLICA value and
+  no writer fallback). Set the reader fields or the writer defaults.' Reader token minting is not
+  disabled by the pooled writer marker. B710 wraps assembled endpoints with its missing-only TLS
+  params; neither this task nor the lower password module recursively resolves the other strategy.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/token_auth.py:
-  token_auth_flag_enabled (L42-L67; 24 source lines), _quote (L70-L71; 2 source lines), _normalize_quote
-  (L74-L82; 8 source lines), IAMEndpoint.build_url (L101-L115; 14 source lines), parse_iam_endpoint_from_url
-  (L118-L138; 20 source lines), RdsIamTokenAuth.label (L146-L147; 2 source lines), RdsIamTokenAuth.env_var
-  (L150-L151; 2 source lines), AzureEntraTokenAuth.label (L165-L166; 2 source lines), AzureEntraTokenAuth.env_var
-  (L169-L170; 2 source lines), mint_database_token (L176-L186; 10 source lines), parse_database_token_expiration
-  (L189-L201; 12 source lines), _parse_rds_token_expiration (L204-L217; 14 source lines), _parse_entra_token_expiration
-  (L224-L236; 13 source lines), build_azure_entra_token_provider (L240-L251; 10 source lines), build_database_token_auth
-  (L254-L262; 9 source lines), resolve_database_token_auth (L265-L274; 10 source lines). litellm/proxy/auth/rds_iam_token.py:
-  init_rds_client (L7-L151; 112 source lines), generate_iam_auth_token (L154-L173; 17 source lines). litellm/proxy/db/db_url_settings.py:
-  DatabaseURLSettings.token_auth (L364-L373; 9 source lines), DatabaseURLSettings._assemble_writer_url.token_branch
-  (L410-L435; 26 source lines), DatabaseURLSettings._assemble_reader_url.token_branch (L476-L500; 25 source
-  lines).
+  Expiry parsing consumes the decoded password supplied by B854, not the percent-encoded URL. RDS
+  requires a literal '?', reads the first nonblank X-Amz-Date and X-Amz-Expires values, parses UTC
+  '%Y%m%dT%H%M%SZ', adds int(expires) seconds and returns naive UTC. Missing query/fields returns None
+  without a log; invalid date/integer or overflow returns None with the debug prefix 'Failed to parse
+  RDS IAM token expiration:'. Negative expiry seconds are not rejected. Azure requires exactly three
+  dot-separated segments, restores base64url padding on the middle segment, and validates JSON with
+  required exp:int and ignored extra fields. It does not verify a JWT signature or require an unexpired
+  token: this is only a scheduling hint. Wrong segment count returns None silently; base64/JSON/claim
+  ValueError returns None with 'Failed to parse Azure Entra token expiration:'. A valid integer outside
+  the platform timestamp range fails after validation and propagates an error, rather than taking
+  the caught-malformed-token fallback. Both successful paths return naive UTC; None lets B854 choose
+  its existing fixed refresh interval, whose constants belong to B854.
 
+  Add decode_database_token_expiry(&[u8], auth_kind) and its database_token_expiry fuzz target to
+  B2307's database fuzz workspace. The production parser and replay use the same path; do not bolt
+  a fuzz-only parser onto the adapter. Bound token input at 1048576 bytes and Entra JSON depth at 64;
+  exceeding those bounds yields the unreadable-expiry result with a redacted debug reason. Test exact
+  boundary values, malformed UTF-8/base64/JSON, duplicate exp fields, integer extremes and encoded-vs-raw
+  RDS passwords. This limit and diagnostic redaction are deviations below. URL decoding itself reuses
+  B2307, while B129/B2308 own SDK credential responses.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): AWS_REGION_NAME=None;
-  AWS_REGION=None; AWS_ACCESS_KEY_ID=None; AWS_SECRET_ACCESS_KEY=None; AWS_SESSION_NAME=None; AWS_PROFILE_NAME=None;
-  AWS_ROLE_NAME=os.getenv('AWS_ROLE_ARN'); AWS_WEB_IDENTITY_TOKEN=os.getenv('AWS_WEB_IDENTITY_TOKEN_FILE');
-  AWS_ROLE_ARN=None; AWS_WEB_IDENTITY_TOKEN_FILE=None.
+  Pure oracle cases call IAMEndpoint methods and the real expiry parsers; compare values, exception
+  categories, exact endpoint errors and debug-vs-silent behavior. Keep cloud provider construction,
+  mint failures, cached-provider lifecycle and ordered startup updates in native service tests with
+  injected providers, not a FastAPI or network HelperCall. Config tests load both strict toggles and
+  the exact pooled marker through B002 and consume them. No persistent secret format or Postgres row
+  is written by this task.
 
-
-  IAM_TOKEN_DB_AUTH=false and AZURE_POSTGRESQL_AUTH=false are mutually exclusive. AWS region is explicit
-  aws_region_name, then AWS_REGION_NAME, then AWS_REGION, otherwise an error. AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-  AWS_SESSION_NAME, AWS_PROFILE_NAME default absent; AWS_ROLE_NAME falls back to AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN
-  to AWS_WEB_IDENTITY_TOKEN_FILE, all absent by default. Resolve os.environ/ references for all seven
-  RDS auth parameters before credential selection.
-
-
-  Add the database_tokens operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a database-tokens-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::database_tokens::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 343 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  343 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 636 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  After extracting 129 RDS source lines and the 24-line flag parser, the owned token helpers contain
+  128 nonblank noncomment lines, plus declarations, 60 settings-branch lines and the two-line marker
+  predicate. Allow 250 production/parser, 290 behavior tests, 70 config/tests, 70 adapters and 70
+  fuzz/wiring lines, 750 within 800. Keep endpoint, expiry and strategy modules below 300 lines each.
 scope:
   paths:
     - crates/betterlite-db/src/database_tokens.rs
     - crates/betterlite-db/src/database_tokens/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - Cargo.toml
-    - deny.toml
-    - crates/betterlite-db/src/database_tokens/fixtures/**
     - tools/oracle/src/helpers/database_tokens.rs
-    - tools/oracle/src/helpers/database_tokens/**
     - tools/oracle/helpers/database_tokens.py
     - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
@@ -99,152 +104,101 @@ scope:
     - crates/betterlite-config/src/database_tokens.rs
     - crates/betterlite-config/src/database_tokens/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-*
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/database_token_expiry.rs
+    - crates/betterlite-db/fuzz/corpus/database_token_expiry/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L1-L274
-    why: Pinned implementation and exact ownership boundary for database_tokens.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L1-L173
-    why: Pinned implementation and exact ownership boundary for database_tokens.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L42-L67
-    why: Own token_auth_flag_enabled; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L70-L71
-    why: Own _quote; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L74-L82
-    why: Own _normalize_quote; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L101-L115
-    why: Own IAMEndpoint.build_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L118-L138
-    why: Own parse_iam_endpoint_from_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L146-L147
-    why: Own RdsIamTokenAuth.label; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L150-L151
-    why: Own RdsIamTokenAuth.env_var; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L165-L166
-    why: Own AzureEntraTokenAuth.label; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L169-L170
-    why: Own AzureEntraTokenAuth.env_var; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L176-L186
-    why: Own mint_database_token; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L189-L201
-    why: Own parse_database_token_expiration; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L204-L217
-    why: Own _parse_rds_token_expiration; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L224-L236
-    why: Own _parse_entra_token_expiration; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L240-L251
-    why: Own build_azure_entra_token_provider; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L254-L262
-    why: Own build_database_token_auth; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L265-L274
-    why: Own resolve_database_token_auth; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L7-L151
-    why: Own init_rds_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L154-L173
-    why: Own generate_iam_auth_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L25-L38
+    why: Literal env names, Azure scope, conflict message and port default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L70-L274
+    why: Endpoint normalization, strategy labels, token encoding, expiry parsing and cached provider creation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L364-L373
-    why: Own DatabaseURLSettings.token_auth; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L410-L435
-    why: Own DatabaseURLSettings._assemble_writer_url.token_branch; preserve caller-visible values and
-      failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L476-L500
-    why: Own DatabaseURLSettings._assemble_reader_url.token_branch; preserve caller-visible values and
-      failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L20-L25
-    why: AWS_REGION_NAME default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L21-L26
-    why: AWS_REGION default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L160-L165
-    why: AWS_ACCESS_KEY_ID default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L161-L166
-    why: AWS_SECRET_ACCESS_KEY default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L162-L167
-    why: AWS_SESSION_NAME default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L163-L168
-    why: AWS_PROFILE_NAME default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L164-L169
-    why: AWS_ROLE_ARN default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L165-L170
-    why: AWS_WEB_IDENTITY_TOKEN_FILE default and read site.
+    why: Resolved settings delegate to the strategy selector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L408-L435
+    why: Writer pooled-marker check, missing-field error and replacement of a pinned URL under token auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L463-L500
+    why: Reader gating precedes token resolution, with exact missing-field text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L560-L578
+    why: Successful writer updates normalize enabled flags only after URL assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L341-L342
+    why: Actual marker read site uses exact equality to the string true.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: rds_signature_and_encoding,
-      rds_expiration, entra_expiration, invalid_expiration_none, mutually_exclusive_flags, missing_aws_credentials.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Native strategy tests cover no_token_strategy, conflicting_flags_exact_error_before_provider,
+      strategy_labels_and_env_names, azure_scope_ignores_azure_scope_env, azure_provider_cached_once,
+      failed_provider_creation_retried, azure_mint_quotes_fresh_token, rds_mint_delegates_endpoint,
+      provider_error_no_password_fallback, writer_token_overwrites_pinned_url,
+      pooled_writer_skips_mint_after_conflict_check, writer_missing_fields_order_and_message,
+      enabled_flag_update_after_success_only, reader_gates_before_strategy,
+      reader_missing_fields_exact_message, reader_mints_with_pooled_writer.'
+    proof: [behavior-tests]
+  - text: 'Pure endpoint/expiry cases cover normalized_url_components, token_inserted_verbatim,
+      absent_or_empty_schema, endpoint_missing_host_user, endpoint_missing_name,
+      endpoint_first_schema_and_default_port, endpoint_bad_port, rds_expiry_first_values,
+      rds_missing_fields_silent, rds_invalid_fields_debug, rds_negative_expiry,
+      encoded_rds_password_not_parsed, entra_segment_count_silent, entra_base64_padding,
+      entra_exp_required_and_extra_claims, entra_invalid_claim_debug, entra_timestamp_overflow_propagates,
+      entra_expired_unsigned_token_is_hint and naive_utc_expiry.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Actual loader tests prove flags_default_false, flags_all_strict_spellings,
+      invalid_flag_stops_loading, both_flags_conflict and pooled_marker_exact_true_only.'
+    proof: [config-tests, config-corpus]
+  - text: 'native_expiry_size_depth_limits and native_expiry_debug_redaction test the recorded differences;
+      the real token decoder replays the added boundary corpus.'
+    proof: [behavior-tests, parser-corpus]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tokens::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/database_tokens.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-tokens-*")"
-        && grep -rlq "database_tokens" tools/oracle/fuzz/corpus/helper_case/database-tokens-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Endpoint, expiry, strategy and failure ordering must pass beyond corpus replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tokens::tests::/) - test(replays_the_database_token_expiry_corpus)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tokens::tests::/)
-        - test(/replays_the_/)'
+      why: Strict auth flags and the exact pooled marker must reach production strategy selection.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tokens::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Pure adapters must use the actual pinned endpoint and expiry functions.
+      run: test -f tools/oracle/helpers/database_tokens.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: New endpoint/expiry calls must replay through the existing HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-tokens-*")" && grep -rlq database_tokens tools/oracle/fuzz/corpus/helper_case/database-tokens-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-*")"
-        && grep -rlq "AWS_REGION_NAME" crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Auth env-resolution seeds must be newly added and accepted by the actual config decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-*")" && grep -rlq IAM_TOKEN_DB_AUTH crates/betterlite-config/fuzz/corpus/config_yaml/database-tokens-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: parser-corpus
+      why: The production expiry parser must be the fuzz target and replay new malformed/boundary inputs.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/database_token_expiry.rs && grep -q database_token_expiry crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/database_token_expiry)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_database_token_expiry_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/database-tokens/rds-signature-and-encoding.yaml
-  - tools/oracle/cases/helpers/database-tokens/rds-expiration.yaml
-  - tools/oracle/cases/helpers/database-tokens/entra-expiration.yaml
-  - tools/oracle/cases/helpers/database-tokens/invalid-expiration-none.yaml
-  - tools/oracle/cases/helpers/database-tokens/mutually-exclusive-flags.yaml
-  - tools/oracle/cases/helpers/database-tokens/missing-aws-credentials.yaml
-deviations: []
+  - tools/oracle/cases/helpers/database-tokens/endpoint-encoding.yaml
+  - tools/oracle/cases/helpers/database-tokens/endpoint-parse-errors.yaml
+  - tools/oracle/cases/helpers/database-tokens/rds-expiry-fields.yaml
+  - tools/oracle/cases/helpers/database-tokens/rds-invalid-and-encoded.yaml
+  - tools/oracle/cases/helpers/database-tokens/entra-expiry-claims.yaml
+  - tools/oracle/cases/helpers/database-tokens/entra-invalid-and-overflow.yaml
+deviations:
+  - what: Token-expiry input over 1048576 bytes or Entra JSON depth 64 is treated as unreadable with a
+      redacted debug reason, so the existing refresh scheduler uses its fixed-interval fallback.
+    why: Bound the new token parser without turning an expiry hint into authentication validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L204-L236
+  - what: Expiry-parser debug logs retain the RDS/Azure failure prefix but omit raw validation values
+      that could contain tokens or credential claims.
+    why: The reference exception representation can expose secret input in operator logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L215-L236
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/db/db_url_settings.py: B710 owns idle_lifetime_params (L111-L119), add_missing_query_params
-    (L122-L136), reader_shareable_params (L257-L259), connection_params_from_url (L262-L266), token_refresh_params_from_url
-    (L269-L279), unsupported_db_scheme (L282-L298), unsupported_db_scheme_message (L301-L309), DatabaseURLSettings.from_env
-    (L360-L362), DatabaseURLSettings.tls_params (L375-L392), DatabaseURLSettings.build_writer_url (L394-L406),
-    DatabaseURLSettings._assemble_writer_url (L408-L449), DatabaseURLSettings.build_reader_url (L451-L461),
-    DatabaseURLSettings._assemble_reader_url (L463-L512), DatabaseURLSettings._password_url (L515-L538),
-    DatabaseURLSettings._raise_for_unsupported_scheme (L540-L558), DatabaseURLSettings.apply_writer_url_to_env
-    (L560-L578).'
-  - 'litellm/proxy/db/db_url_settings.py: B711 owns translate_libpq_ssl_params (L221-L254).'
-  - 'litellm/proxy/db/db_url_settings.py::_VerifiedChainSource.get_verified_chain: Prisma-only first-certificate
-    bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_verified_chain_der: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_server_trust_anchor: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::pin_bundle_root: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_replace_file: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::DatabaseURLSettings.apply_to_env: native config returns resolved
-    values; B051 composes TLS/token/pool stages without mutating process environment.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B2308 owns init_rds_client and generate_iam_auth_token, AWS env precedence, STS selection and signing.
+  - B2307 owns token_auth_flag_enabled, URL byte parsing and query projection; B710 owns the settings
+    declarations, TLS parameter defaults, password branches and reader field fallback.
+  - B711 owns translate_libpq_ssl_params and native TLS/pool policy; B051 sequences apply_to_env and
+    applies successful typed updates without changing process globals. B854 owns extraction of the
+    decoded password, refresh intervals and reconnect/pool replacement.
+  - B129 owns get_azure_ad_token_provider and its credential types/env selectors. This task passes
+    the PostgreSQL scope and caches the returned provider; it does not duplicate Azure credential logic.
+  - All pgbouncer.py functions except database_url_is_pooled remain excluded under B711's recorded
+    embedded-process deviation; the marker predicate is retained for externally supplied compatibility state.
 pitfalls:
-  - AWS_REGION_NAME takes precedence over AWS_REGION, but an explicit resolved region wins both.
-  - The minted token is percent-encoded once as the password, including its query separators.
+  - RDS expiry expects a decoded password containing a literal question mark, not the quoted token returned by minting.
+  - Entra timestamp conversion happens outside the caught validation block, so a huge valid exp is not a None fallback.
+  - A pinned reader URL suppresses token resolution before the reader reaches the conflicting-flag check.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

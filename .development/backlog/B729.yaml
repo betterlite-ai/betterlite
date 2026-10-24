@@ -2,7 +2,7 @@ id: B729
 milestone: M4 keys, spend and management
 title: Execute daily activity reports and recover key metadata
 status: todo
-depends_on: [B171, B700, B710, B714, B722, B727, B728, B856, B860]
+depends_on: [B171, B700, B714, B727, B728, B856, B860, B2312]
 file: tasks/B729-daily-activity-repository.yaml
 covers:
   - "litellm/repositories/daily_activity_repository.py"

@@ -3,7 +3,7 @@ title: Dispatch JWT and OAuth authentication stages
 description: >-
   Implement the JWT/OAuth dispatch stage of authentication using installed AuthBackend ports. Preserve
   OAuth override selection only for inference/info routes, JWT mapped-key flow, managed-agent mapping
-  prohibition (403), SCIM inactive-user refusal (401), and the common-check/budget sequence. B053 installs
+  prohibition (403), SCIM inactive-user refusal (401), and the user-model budget sequence. B053 installs
   JWT/OAuth and B054 custom callables; this stage cannot treat an absent configured backend as authenticated.
   Define AgentIdentity::resolve(VerifiedClaims)->Result<Option<ManagedAgent>,AuthError> and record(ManagedAgent)->Result<IdentityEvidence,AuthError>
   ports; B141 implements them.
@@ -14,14 +14,38 @@ description: >-
   a named startup error, never a success stub.
 
 
-  Injected port instead of a reverse dependency on B766: JwtKeyMapping::resolve(VerifiedClaims)->Result<MappingOutcome,AuthError>;
-  B766 installs mapping and auto-registration after policy. A configured but unregistered implementation
-  is a named startup error, never a success stub.
+  Own JwtKeyMapping::resolve and register_after_policy operations with resolved-key, PendingAutoRegister
+  and no-mapping outcomes. B053 installs B766 behind these operations; this stage calls only its own
+  typed port, never B766 directly, since B766 reaches the B052 installer through SCIM. The registration
+  operation accepts the validated team/user/org/end-user/agent identity and pending claim/cache fields.
 
 
-  Injected port instead of a reverse dependency on B768: AuthBackend::oauth(SecretString,RequestContext)->Result<AuthContext,AuthError>;
-  B053 registers B768. A configured but unregistered implementation is a named startup error, never a
-  success stub.
+  B768 supplies OAuth introspection and trusted proxy-header authentication. The standard JWT builder
+  remains an injected operation owned by this stage and installed by B053, avoiding a call back into
+  its installer. Its verified result conversion is part of that operation's contract, not another
+  call to B053. JWT recognition/claim accessors come from B760 and verification from B762, safe headers from
+  B1100, route predicates/method from B882, user lookup from B736, project lookup from B879, zero-cost
+  classification from B750, model extraction from B881 and user budget enforcement from B753.
+
+  All three enable flags activate only on literal True. Global OAuth applies only to LLM/info routes
+  and non-JWT inputs; an explicit routing override can send a JWT to OAuth on those routes. This
+  choice precedes enable_oauth2_proxy_auth, which otherwise returns immediately before JWT handling.
+  Non-JWT tokens fall through. Mapping verifies claims first; a managed-agent match raises HTTP 403
+  auth_error with param "None". Resolved mappings replace api_key with token or empty string and
+  retain jwt_claims, then fall through to virtual-key checks outside this task. Backfill a missing
+  email only when claim user_id matches key user_id and claim email is present; fetch without upsert,
+  use the returned row's email, and debug-log/drop any lookup failure.
+
+  Standard JWT auth receives body, route, safe headers and request method. Refuse metadata.scim_active
+  only when it is literal False, with 401 auth_error/param "None". Proxy admins return immediately;
+  pending registration first caches __JWT_PROXY_ADMIN__ under its pending cache key with configured TTL.
+  Non-admin pending registration runs only after full JWT policy and only with a database. A returned
+  key retains verified claims, email and the already-loaded user's model_max_budget; None leaves the
+  JWT identity unchanged. Resolve the model with the selected team. A zero-cost model logs and skips
+  user-model budget checks only. Fetch a project when project_id exists and copy metadata/alias if found;
+  then check every B881 budget model name unless zero-cost and return the resulting token. This range
+  neither invokes centralized common checks nor reserves a budget. Failures propagate through B757's
+  auth exception projector; budget failures are 429 budget_exceeded with null param.
 
 
   Build the production auth_backend_dispatch module in betterlite-auth; reuse the typed dependencies listed
@@ -33,50 +57,27 @@ description: >-
   _user_api_key_auth_builder.backend_dispatch (L1603-L1856; 192 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.enable_oauth2_auth=False;
-  general_settings.enable_jwt_auth=False; general_settings.enable_oauth2_proxy_auth=False; enable_oauth2_auth=False;
-  enable_jwt_auth=False; enable_oauth2_proxy_auth=False; litellm_jwtauth.oidc_userinfo_enabled=False;
+  general_settings.enable_jwt_auth=False; general_settings.enable_oauth2_proxy_auth=False;
   litellm_jwtauth.virtual_key_mapping_cache_ttl=300.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Drive backend dispatch through B732's installed stage and an actual inference route. Native JWT/OAuth
+  cases prove the license deviation; the MIT corpus contains only branches reachable without enterprise.
+  Provision its auth rows through B860 using POSTGRES_TEST_URL, or testcontainers when absent.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::auth_backend_dispatch::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_backend_dispatch::tests::flags_default_false, literal_true_enables,
+  string_true_does_not_enable and mapping_ttl_default_and_override.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 192 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  192 production, 142 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 449 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: 192 nonblank, noncomment pinned source lines; allow
+  220 production, 280 behavior/server tests, 65 wiring and 60 config lines, 625 within a 650-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -112,17 +113,21 @@ references:
     why: general_settings.enable_jwt_auth default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1634-L1639
     why: general_settings.enable_oauth2_proxy_auth default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
-    why: litellm_jwtauth.virtual_key_mapping_cache_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5457-L5460
+    why: Mapping cache TTL default; consumed by the sentinel write at user_api_key_auth.py:1758-1763.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: jwt_override, jwt_mapped_key,
-      scim_inactive_401, managed_agent_mapping_403.'
+  - text: 'Native cases cover oauth_nonjwt_llm_info_only, jwt_override_route_boundary,
+      oauth_before_proxy_before_jwt, nonjwt_fallthrough, mapped_key_claims_and_empty_token,
+      mapped_email_identity_match, backfill_failure_debug_drop, managed_agent_mapping_403,
+      pending_policy_before_create, scim_literal_false_401, admin_sentinel_ttl_and_early_return,
+      pending_without_db, registration_none_keeps_identity, registration_keeps_user_budget,
+      zero_cost_logs_skip_budget, project_fields_before_budget and budget_429_envelope.'
     proof:
       - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
+  - text: Disabled JWT/OAuth and ordinary bearer fallthrough match the MIT HTTP server; native server tests
+      jwt_without_license and oauth_without_license exercise the enabled branches that MIT gates with 403.
     proof:
       - oracle
       - behavior-tests
@@ -158,14 +163,14 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_backend_dispatch::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/auth/auth-backend-dispatch/jwt-override.yaml
-  - tools/oracle/cases/auth/auth-backend-dispatch/jwt-mapped-key.yaml
-  - tools/oracle/cases/auth/auth-backend-dispatch/scim-inactive-401.yaml
-  - tools/oracle/cases/auth/auth-backend-dispatch/managed-agent-mapping-403.yaml
-deviations: []
+  - tools/oracle/cases/auth/auth-backend-dispatch/disabled-backends.yaml
+  - tools/oracle/cases/auth/auth-backend-dispatch/ordinary-bearer-fallthrough.yaml
+deviations:
+  - what: Enabled OAuth and JWT authentication proceed without a license instead of returning 403 auth_error with param premium_user.
+    why: The README removes paid-tier gating; jwt_without_license and oauth_without_license prove the changed HTTP behavior without an enterprise import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1620-L1649
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - The oidc_userinfo_enabled and not-is_jwt branch at L1657 cannot run inside the enclosing if-is_jwt at L1640; B760 owns OIDC elsewhere and no reachable dispatch case is invented here.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -211,9 +216,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve OAuth override selection only for inference/info routes, JWT mapped-key flow, managed-agent
-    mapping prohibition (403), SCIM inactive-user refusal (401), and the common-check/budget sequence.
+  - A resolved mapping falls through to virtual-key checks, whereas standard JWT returns here; merging those paths loses key restrictions or double-checks budgets.
+  - Auto-registration must carry user_model_max_budget from the loaded user, since the new key row has no user budget.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

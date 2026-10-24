@@ -2,8 +2,8 @@ id: B776
 title: Bulk key and team-key update routes
 description: >-
   Implement /key/bulk_update and /team/key/bulk_update using the same KeyPatchPlan and single-key update
-  executor. Retain per-key failures, deterministic result order, selection validation and parent-team
-  authorization; bounded concurrency never turns partial success into an all-success response.
+  executor B1220 _process_single_key_update, not B775's single-key HTTP handler. Execute sequentially
+  as LiteLLM does: later entries observe earlier writes and failures do not abort subsequent entries.
 
 
   Build the production key_bulk_update module in betterlite-server; reuse the typed dependencies listed
@@ -15,15 +15,45 @@ description: >-
   bulk_update_keys (L3627-L3783; 139 source lines), _build_failed_team_key_update (L3786-L3812; 25 source
   lines), bulk_update_team_keys (L3822-L4000; 153 source lines).
 
+  bulk_admin_only gives HTTP 403 detail.error before the DB check; bulk_no_db is 500, bulk_empty
+  and bulk_over_500 are 400. Exactly 500 is accepted. bulk_duplicate_repeated processes duplicates
+  repeatedly and total_requested includes them. bulk_presence converts each item's exclude_unset
+  dump into B770 UpdateKeyRequest, preserving explicit null. Pass changed-by (default None), router,
+  caches/logging and B1224's custom update/policy hooks into B1220. result_order keeps original
+  order separately within successful_updates and failed_updates; all_failed_still_200 is valid.
+
+  failure_http_dict extracts detail.error or str(exception); failure_http_string uses detail;
+  failure_proxy_message uses ProxyException.message; failure_other uses str(exception). For ordinary
+  bulk, failure_info_refetch calls B124 PrismaClient.get_data(token=input,table_name='key',
+  query_type='find_unique'), uses model_dump before legacy dict, and removes token from nonempty
+  key_info. failure_refetch_swallowed returns key_info=null on any refetch error. Never roll back
+  earlier row writes. Redact raw keys from the source's exception log; preserve failed_reason
+  semantics with betterlite wording and no credential fragments.
+
+  team_no_db precedes team_id_empty (500 then 400). team_input_limit checks the original key_ids
+  length before deduplication, even with all_keys_in_team=true. team_all_active queries team_id,
+  blocked=false OR null, expires=null OR strictly greater than UTC now, order token asc, take=501;
+  team_all_over_limit gives 400 before membership checking. team_expiry_equal_now is excluded.
+  Explicit key_ids include blocked/expired keys, hash only sk- via B770, deduplicate by hash and
+  preserve the first raw identifier (duplicate_selection). Fetch rows scoped to the specified team.
+
+  empty_team_still_authorizes uses B800 KEY_UPDATE permission with a synthetic row token
+  '__team_scope_auth_check__', team_id=request.team_id, models=[] when no rows exist. It does not
+  require a role named team-admin separately from B800's grant. passthrough_before_empty checks
+  B861's metadata.allowed_passthrough_routes guard, then team_empty is 404 detail.error.
+  Missing/wrong-team explicit keys are per-item 404 failures in a 200 response. Team updates merge
+  key and validated team_id with exclude_unset update_fields, use preloaded existing rows, and
+  report total_requested after deduplication. team_failure_uses_snapshot returns the preloaded row
+  minus token, never the ordinary route's post-failure refetch. Failure logs omit the source's
+  hash prefix too. No new rate/config/env setting controls the literal batch limit 500.
+
 
   Register these actual HTTP routes and aliases exactly once: POST /key/bulk_update -> bulk_update_keys;
-  POST /team/key/bulk_update -> bulk_update_team_keys. For each route send a typed successful request,
-  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
-  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
-  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
-  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
-  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
-  partial writes visible in fixture inspection.
+  POST /team/key/bulk_update -> bulk_update_team_keys. Their outer failures are uncaught HTTPException
+  passed through B865 and serialized as FastAPI detail objects; they have no error.type/param/code.
+  Neither route calls handle_exception_on_proxy. Item errors are failed_reason strings, not HTTP error
+  envelopes. B052 may reject authentication earlier. HTTP cases compare these shapes, status and JSON
+  content-type; only diagnostic text is ignored. Inspect writes with POSTGRES_TEST_URL or testcontainers.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -43,8 +73,8 @@ description: >-
 
 
   Sizing: 317 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  317 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 530 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  317 production, 340 behavior/Postgres tests and 65 route/manifests/wiring lines,
+  722 changed lines within a 775-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -63,17 +93,20 @@ scope:
     - tools/oracle/cases/management/key-bulk-update/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3627-L4000
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3620-L4000
     why: Pinned implementation and exact ownership boundary for key_bulk_update.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3627-L3783
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3620-L3783
     why: Own bulk_update_keys; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3786-L3812
     why: Own _build_failed_team_key_update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3822-L4000
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3815-L4000
     why: Own bulk_update_team_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: Outer HTTPException uses detail, while the per-item except blocks build failed_updates.
 dod:
+  - text: Each named admission, selection, sequential-effect and failure-projection case above is covered
+      through HTTP; bulk_logs_redacted proves the diagnostic-only deviation.
+    proof: [behavior-tests, oracle]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_mixed_success,
       duplicate_selection, team_selection_required, non_admin_selection_denied, partial_db_failure, result_order.'
     proof:
@@ -91,22 +124,27 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_bulk_update::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-bulk-update/post--key-bulk-update-success.yaml
-  - tools/oracle/cases/management/key-bulk-update/post--key-bulk-update-invalid-target.yaml
-  - tools/oracle/cases/management/key-bulk-update/post--key-bulk-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-bulk-update/post--team-key-bulk-update-success.yaml
-  - tools/oracle/cases/management/key-bulk-update/post--team-key-bulk-update-invalid-target.yaml
-  - tools/oracle/cases/management/key-bulk-update/post--team-key-bulk-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/key-bulk-update/bulk-admission-errors.yaml
+  - tools/oracle/cases/management/key-bulk-update/bulk-duplicate-repeated.yaml
+  - tools/oracle/cases/management/key-bulk-update/bulk-presence.yaml
+  - tools/oracle/cases/management/key-bulk-update/failure-info-refetch.yaml
+  - tools/oracle/cases/management/key-bulk-update/team-all-active.yaml
+  - tools/oracle/cases/management/key-bulk-update/team-input-limit.yaml
+  - tools/oracle/cases/management/key-bulk-update/empty-team-still-authorizes.yaml
+  - tools/oracle/cases/management/key-bulk-update/passthrough-before-empty.yaml
+  - tools/oracle/cases/management/key-bulk-update/team-failure-snapshot.yaml
+  - tools/oracle/cases/management/key-bulk-update/all-failed-still-200.yaml
   - tools/oracle/cases/management/key-bulk-update/bulk-mixed-success.yaml
   - tools/oracle/cases/management/key-bulk-update/duplicate-selection.yaml
   - tools/oracle/cases/management/key-bulk-update/team-selection-required.yaml
   - tools/oracle/cases/management/key-bulk-update/non-admin-selection-denied.yaml
   - tools/oracle/cases/management/key-bulk-update/partial-db-failure.yaml
   - tools/oracle/cases/management/key-bulk-update/result-order.yaml
-deviations: []
+deviations:
+  - what: Bulk update failure logs omit raw key identifiers and token-hash prefixes.
+    why: Secrets and credential identifiers must not leak through persisted diagnostics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3740-L3741
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -202,8 +240,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A partial bulk result must keep row-local failures and original ordering.
+  - Ordinary bulk preserves duplicate requests, but team bulk deduplicates hashes only after checking the 500-item limit.
+  - The all-team query must include blocked=null explicitly; SQL NOT blocked would discard newly generated keys.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,9 @@
+id: B1418
+milestone: M3 providers
+title: Legacy Cohere embedding execution for signed endpoints
+status: todo
+depends_on: [B006, B173, B249, B1417, B171]
+file: tasks/B1418-cohere-legacy-embedding.yaml
+covers:
+  - "litellm/llms/cohere/embed/handler.py"
+  - "litellm/llms/cohere/embed/v1_transformation.py"

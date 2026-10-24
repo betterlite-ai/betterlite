@@ -2,7 +2,7 @@ id: B899
 milestone: M4 keys, spend and management
 title: Password login HTTP routes and cookies
 status: todo
-depends_on: [B001, B002, B003, B052, B732, B770, B787, B788, B789, B856, B860]
+depends_on: [B001, B002, B003, B124, B126, B732, B733, B770, B787, B788, B860, B2300]
 file: tasks/B899-login-routes.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

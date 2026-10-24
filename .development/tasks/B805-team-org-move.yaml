@@ -2,13 +2,44 @@ id: B805
 title: Team organization moves and membership cache effects
 description: >-
   Implement TeamOrganizationMove, model-table update, team-update audit projection and membership cache
-  eviction. Validate the old and new org scope before writes, preserve allowed-model/budget compatibility
-  and auto-add team members to the target organization through the user repository.
+  eviction. fetch_and_validate_organization first requires a router (HTTP 500 no_llm_router), then
+  reads B801's organization table by ID including litellm_budget_table, members and teams. A missing
+  row is HTTP 404 Organization not found. Validate the stored team and organization models, call
+  validate_team_org_change, and only for an explicit proxy-admin caller auto-add missing members.
+  None caller is not a proxy admin. Return the original database organization row, not the projection.
 
+  An unchanged organization ID immediately passes all move validation. Otherwise an empty org model
+  list or all-proxy-models permits any team models; a restricted organization rejects an empty/null
+  team model list with HTTP 403, or checks EACH model through B886.can_org_access_model. Then compare
+  nonnull team/org max_budget (zero is a real cap), then membership for non-proxy-admins, then truthy
+  tpm_limit and rpm_limit ceilings in that order. Each local failure is HTTP 403 with {error: detail}
+  naming the incompatible limit/member/model access. Null team budgets bypass the comparison;
+  zero rate ceilings bypass their truthiness tests. Membership requires every roster user ID in
+  organization.members except literal default_user_id; None may therefore be a missing member.
+  Proxy admins bypass membership only, never models or limits.
 
-  Build the production team_org_move module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Auto-add uses the original organization-member ID set and iterates roster order, skipping None,
+  default_user_id, existing members and organization_id=None. Call B828.add_member_to_organization
+  with role internal_user. Do not update the set between calls, so duplicate absent roster IDs can
+  cause repeated additions. Each addition error is debug-logged with user_id and swallowed, then
+  processing continues. These membership writes happen during validation and can survive a later
+  team update failure; there is no all-or-nothing organization move.
+
+  _update_model_table writes only dict model_aliases, including {}. Preserve JSON-string aliases,
+  created_by/updated_by=caller.user_id or proxy admin name, create for model_id=None, and upsert
+  (same create/update values) for an existing ID. Return the stored ID; non-dict/null aliases return
+  the input ID without writing. B725 owns model rows and B801 the table accessor.
+
+  _create_team_update_audit_log schedules B065.create_audit_log_for_update with UUID, UTC timestamp,
+  TEAM_TABLE_NAME, updated action, caller key and B065's authorized changed-by/header fallback.
+  before_value is deliberately JSON-encoded AGAIN after existing_team_row.json(exclude_none=True);
+  updated_values is JSON of the patch with default=str. Preserve this double-encoded before image.
+  This helper does not check enabled state itself; B065 owns audit storage and configuration.
+
+  _member_user_ids keeps only string IDs, retaining empty strings, duplicates and order. For each ID,
+  _evict_created_membership_caches concurrently invokes B734.invalidate_team_member_spend_state;
+  empty input is a no-op, one error propagates while other started invalidations can still finish.
+  Preserve removal of negative membership cache entries after creation, not just cached positive rows.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -18,39 +49,18 @@ description: >-
   (L2074-L2080; 6 source lines), _evict_created_membership_caches (L2083-L2104; 21 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Expose only validate_team_org_change and _member_user_ids as pure team_org_move oracle operations
+  under B856 Management::teams. Compare HTTPException status/detail shape and delegated error fields,
+  ignoring only message wording. Native Postgres/cache tests cover fetch/add/model/audit effects;
+  they do not invoke global-reading handlers in helper adapters. B806 owns the HTTP update surface.
 
 
-  Add the team_org_move operation under B856 Management::teams. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-org-move-*
-  seed to B171 helper_case, which already owns this decoder.
+  Organization-move row tests use B860 with POSTGRES_TEST_URL, or testcontainers when unset;
+  connection failures must fail these tests, including the warn-and-skip member-enrollment cases.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 267 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  267 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 516 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing: 267 nonblank, noncomment lines include docstrings; allow 265 production, 320 behavioral
+  and Postgres tests, 75 adapters and 30 wiring lines, 690 within a 725-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/team_org_move.rs
@@ -91,7 +101,13 @@ references:
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: move_team_org, org_move_denied,
       target_model_denied, auto_add_org_members, model_alias_row_update, new_membership_invalidation,
-      postgres_pinned_rows, postgres_failure_effects.'
+      postgres_pinned_rows, postgres_failure_effects, router_missing_500, org_missing_404,
+      expanded_org_read, same_org_no_checks, org_all_models, empty_team_models_denied,
+      max_budget_zero_cap, null_budget_skipped, zero_rate_ceiling_skipped, limit_check_order,
+      proxy_bypasses_members_only, null_member_rejected, default_user_exempt, no_caller_nonadmin,
+      auto_add_skip_matrix, duplicate_auto_add, auto_add_failure_continues, alias_empty_dict,
+      alias_noop, alias_create_upsert_actor, audit_before_double_json, audit_changed_by,
+      string_member_ids, parallel_eviction_error and negative_cache_evicted.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -128,13 +144,12 @@ oracle_cases:
   - tools/oracle/cases/helpers/team-org-move/move-team-org.yaml
   - tools/oracle/cases/helpers/team-org-move/org-move-denied.yaml
   - tools/oracle/cases/helpers/team-org-move/target-model-denied.yaml
-  - tools/oracle/cases/helpers/team-org-move/auto-add-org-members.yaml
-  - tools/oracle/cases/helpers/team-org-move/model-alias-row-update.yaml
-  - tools/oracle/cases/helpers/team-org-move/new-membership-invalidation.yaml
+  - tools/oracle/cases/helpers/team-org-move/same-org-and-model-scope.yaml
+  - tools/oracle/cases/helpers/team-org-move/budget-and-rate-ceilings.yaml
+  - tools/oracle/cases/helpers/team-org-move/member-scope-matrix.yaml
+  - tools/oracle/cases/helpers/team-org-move/string-member-ids.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -215,8 +230,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Move validation checks the target organization models before updating organization membership.
+  - Successful auto-adds survive a later failed team write, and failed auto-adds do not reject the move.
+  - The audit before_value contains a JSON string of JSON, unlike updated_values.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: security

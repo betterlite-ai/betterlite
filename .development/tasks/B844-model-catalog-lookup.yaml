@@ -7,6 +7,64 @@ description: >-
   model name.
 
 
+  Direct collaborators are B368's _update_team_model_index and _add_model_to_list_and_index_map,
+  B401 generate_model_id, B302 alias and early-route resolution, B323 routing-group lookup/materialization,
+  B367 pattern matching and B301 Deployment contracts. Move the seven-line _deployment_ids projection
+  L11506-L11513 here from the residual B016 bucket: it is the local candidate-id collector, ignores
+  absent/null ids and stringifies present ids into a set. This task owns the cache-clear handles,
+  not calls into B845 or B847: those later metadata services populate the shared caches. Clearing
+  model-group/deployment-info/zero-cost caches and routing-group rows must work before either exists.
+
+
+  get_deployment uses the id index only, returning None for a miss and a typed error for an invalid
+  row; group lookup returns only the first indexed sibling or None for missing/empty index. Name-index
+  rebuild clears name/team indices and public team names, then appends indices for truthy model_name
+  in source order and calls B368's team-index helper even for unnamed rows. Id-index build empties
+  model_list, clears metadata/access caches, generates ids only when id is None (default name "",
+  params {}), writes generated ids into the input record and delegates each append to B368. It does
+  not itself clear preexisting id/name maps: preserve that precondition and partial rebuild on failure.
+  Duplicate id replacement is B368's behavior, not permission to discard duplicate names here.
+
+
+  get_model_ids defaults model_name=None/exclude_team_models=false. Named lookup walks all indexed
+  siblings; unfiltered lookup follows id-map insertion order. Require model_info/id fields, retain
+  their actual values and skip only truthy team_id when excluding teams. has_model_id is literal id-map
+  membership. Candidate ids resolve alias first, then a routing group even when it is empty, then
+  the first non-null early result (mapping singleton or sequence), then exact/team lookup. This is
+  read-only: no fallback writes, provider-bound metadata or admission exception is added.
+
+
+  resolve_model_name_from_model_id returns None for None/empty input; public name wins over id collision,
+  then an id resolves to its deployment's nonempty name or the id itself. Finally scan get_model_list
+  in order for exact provider model, '/<id>' or ':<id>' suffix and return the first truthy public name.
+  Preserve case and suffix boundaries. Empty catalog or no match returns None.
+
+
+  should_include_deployment accepts a matching team's public name, else the exact internal name when
+  the caller has no team constraint, the deployment is global (team_id is None), or team ids match.
+  An empty team id is distinct from None in this predicate. _get_all_deployments tries (team,name)
+  index first and returns it if any rows survive; otherwise use name index; scan only when that index
+  lacks the name and team_id is supplied. model_alias rewrites only a returned shallow projection's
+  model_name, never the stored row. get_model_names uses the full listing, emitting team public names
+  only for matching teams with a truthy result; globals emit model_name or "". Keep duplicates/order.
+
+
+  Alias listing uses direct lookup when a name is supplied or alias insertion order otherwise.
+  String targets work; mapping targets with hidden=true are skipped only in the all-model list,
+  not direct lookup. Unsupported target types are skipped; malformed mapping targets propagate errors.
+  Alias routing groups materialize through B323; other targets use all-deployments without a team
+  constraint. get_model_list appends exact/team results, alias rows, then routing-group rows. Only
+  when none exist, try global patterns and then team patterns, rewriting projected names to the
+  requested name. For model_name=None append raw model_list after aliases/groups, preserving duplicates.
+  Pattern/alias/group resolution does not inherit a team filter unless that specific source call passes it.
+
+
+  _invalidate_model_group_info_cache clears group-info, deployment-info and zero-cost entries and sets
+  routing-group rows to None; _invalidate_access_groups_cache sets only access-group cache to None.
+  Test invalidation with the same model count and changed price; stale zero-cost=true must disappear.
+  No setting or credential encryption is implemented by these read/index operations.
+
+
   Build the production model_catalog_lookup module in betterlite-router; reuse the typed dependencies
   listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
   with adjacent tests.rs files.
@@ -32,20 +90,10 @@ description: >-
   a model-catalog-lookup-* seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 363 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  363 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 609 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The 17 original methods contain 249 nonblank noncomment lines excluding docstrings; the moved
+  projection adds 7. Allow 270 production, 345 behavior tests, 105 adapters and 40 wiring lines,
+  760 within 800. Native rebuild tests cover index transitions/failure with source traces; pure oracle
+  calls cover lookups on equivalent prebuilt snapshots. No HTTP or database fixtures are needed.
 scope:
   paths:
     - crates/betterlite-router/src/model_catalog_lookup.rs
@@ -70,6 +118,8 @@ references:
     why: Pinned implementation and exact ownership boundary for model_catalog_lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11515-L11583
     why: Pinned implementation and exact ownership boundary for model_catalog_lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11506-L11513
+    why: Own the candidate-id projection below its direct caller instead of depending on B016.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11618-L11734
     why: Pinned implementation and exact ownership boundary for model_catalog_lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11820-L11887
@@ -116,6 +166,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
+  - text: rebuild_names, generate_missing_id, retain_explicit_empty_id, stale_map_precondition, rebuild_partial_failure, clear_all_metadata and clear_access_only prove index mutation and cache invalidation.
+    proof: [behavior-tests]
 checks:
   optional:
     - mutants
@@ -142,6 +194,34 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-catalog-lookup/multiple-deployments.yaml
   - tools/oracle/cases/helpers/model-catalog-lookup/alias-model-list.yaml
   - tools/oracle/cases/helpers/model-catalog-lookup/include-deployment.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/empty-group-index.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/invalid-row.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/id-order-and-team-exclusion.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/named-id-missing-info.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-alias-group-first.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-empty-group.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-early-singleton.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-early-sequence.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-index-fallback.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/candidate-id-stringification.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/resolve-name-before-id.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/resolve-id-empty-name.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/resolve-provider-suffix.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/resolve-first-match.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/resolve-empty-input.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/team-index-precedes-global.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/team-index-empty-fallback.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/team-scan-only-missing-index.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/empty-team-id.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/alias-preserves-stored-row.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/hidden-alias-direct.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/unsupported-alias-skipped.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/malformed-alias-error.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/alias-routing-group.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/list-channel-order.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/wildcard-only-on-empty.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/global-then-team-pattern.yaml
+  - tools/oracle/cases/helpers/model-catalog-lookup/public-name-duplicates.yaml
 deviations: []
 out_of_scope:
   - 'litellm/router.py: B013 owns _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
@@ -213,7 +293,7 @@ out_of_scope:
     Router._deployment_tags (L9089-L9091), Router._is_complexity_router_deployment (L9138-L9144), Router.config_deployments
     (L9146-L9153), Router._is_adaptive_router_deployment (L9233-L9235), Router._deployment_participates_in_adaptive_routing
     (L9237-L9250), Router.deployment_is_active_for_environment (L9504-L9517), Router._backend_cost_map_keys
-    (L10024-L10029), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11507-L11513),
+    (L10024-L10029), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router._declared_param_allowlist (L11946-L11950), Router._deployment_accepts_param
     (L11953-L11982), Router.resolved_litellm_models (L12080-L12097), Router._is_model_access_group_for_wildcard_route
     (L12166-L12183), Router.get_available_deployment (L14153-L14312), Router.get_available_deployment_for_pass_through
@@ -331,8 +411,6 @@ out_of_scope:
   - 'litellm/router.py: B012 owns Router._redact_prompt_text_if_needed (L14121-L14151).'
   - 'litellm/router.py: B308 owns Router.get_allowed_fails_from_policy (L14643-L14695).'
   - 'litellm/router.py: B114 owns Router._initialize_alerting (L14697-L14717).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/router.py: B845 owns Router.arefresh_model_info (L10350-L10362), Router._arefresh_deployment_model_info
     (L10364-L10411), Router.get_discovered_model_info (L10413-L10422), Router.get_model_listing_info (L10424-L10480),
     Router._widest_configured_limit (L10483-L10490), Router.get_configured_token_limits (L10492-L10517),
@@ -340,14 +418,14 @@ out_of_scope:
     (L10572-L10579), Router.get_router_model_info (L10664-L10670), Router.get_router_model_info (L10673-L10674),
     Router.get_router_model_info (L10676-L10800), Router.get_model_info (L10802-L10816), Router.get_model_group
     (L10818-L10828), Router.get_deployment_model_info (L10830-L10907).'
-  - 'litellm/router.py: B846 owns Router._set_model_group_info (L10909-L11169), Router.get_model_group_info
+  - 'litellm/router.py: B846 owns _cost_value_as_float (L391-L397), Router._set_model_group_info (L10909-L11169), Router.get_model_group_info
     (L11171-L11198).'
   - 'litellm/router.py: B847 owns Router.get_model_group_usage (L11200-L11265), Router.get_model_group_io_token_usage
     (L11267-L11317), Router._cached_get_model_group_info (L11320-L11326), Router.get_remaining_model_group_usage
     (L11331-L11365), Router.set_response_headers (L11367-L11395), Router.get_model_access_groups (L12120-L12164),
     Router._filter_deployments_by_model_access_groups (L12941-L12993).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - 'litellm/router.py: B016 owns the remaining functions _cost_value_as_float (L391-L397), _as_retry_skipped_deployment_ids
+  - 'litellm/router.py: B016 owns the remaining functions _as_retry_skipped_deployment_ids
     (L479-L480), _silent_experiment_targets (L483-L494), _silent_experiment_kwargs_snapshot (L497-L501),
     _with_router_resolved_session_model (L504-L517), FallbackAwareAnthropicMessagesStream.__init__ (L633-L637),
     FallbackAwareAnthropicMessagesStream.has_buffered_provider_output (L639-L641), FallbackAwareAnthropicMessagesStream.chunks
@@ -423,7 +501,7 @@ out_of_scope:
     (L10248-L10265), Router.get_deployment_credentials (L10286-L10299), Router._deployment_usable_by_team
     (L10323-L10331), Router._get_model_group_deployment_usable_by_team (L10333-L10348), Router.get_credential_deployment
     (L10550-L10570), Router._get_wildcard_deployment_usable_by_team (L10581-L10597), Router.get_deployment_credentials_with_provider
-    (L10599-L10661), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11506-L11513),
+    (L10599-L10661), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
     (L11757-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
     (L11769-L11818), Router.get_model_list_from_routing_groups (L11889-L11912), Router._materialize_routing_group_rows
@@ -518,8 +596,10 @@ out_of_scope:
     (L14097-L14118).'
   - 'litellm/router.py: B021 owns the remaining functions Router.async_pre_routing_hook (L13796-L13980).'
 pitfalls:
-  - Catalog lookup by public model name returns all sibling deployments, not one overwritten map entry.
+  - An explicitly requested hidden alias is returned; hidden suppresses only unqualified listing.
+  - _build_model_id_to_deployment_index_map resets the row list but relies on its caller for map clearing.
+  - Unconstrained alias expansion can return team rows because that call omits team_id.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

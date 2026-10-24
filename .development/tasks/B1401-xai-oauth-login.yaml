@@ -1,0 +1,93 @@
+id: B1401
+title: xAI interactive authorization and loopback callback
+description: >-
+  Implement the interactive half of oauth.py in betterlite-openai::xai_login, exposing a
+  login service for B151's CLI. It first returns an unexpired existing record unless force
+  is true, then attempts renewal of an expired record with a refresh token; only XAIOAuthError
+  falls through to a new authorization. B1400 supplies discovery, token exchange and storage.
+  Construct PKCE from 32 random bytes with unpadded URL-safe base64 and SHA256; inject random
+  bytes, state/nonce UUIDs, time, browser callback and stdout sink. The gateway library never
+  starts a browser process itself. Pass the full authorization URL to the frontend callback;
+  no_browser or a false browser result prints it. Retain response_type=code, scope=openid
+  profile email offline_access grok-cli:access api:access, code_challenge_method=S256 and
+  the B1400 client ID. Own login, _pkce_pair, _start_callback_server, _build_authorize_url,
+  _wait_for_callback, _CallbackServer and both _CallbackHandler methods.
+
+  Bind only 127.0.0.1, try port 56121 before ephemeral port zero, and close the listener on
+  success and failure. The receiver is local CLI infrastructure, not a proxy route. GET
+  /callback captures the first nonblank code/state/error/error_description query values;
+  unrelated paths return 404. Store the callback before checking state, matching the source's
+  termination on a bad state. A mismatch returns 400 HTML; matching state returns 200 HTML
+  even for an authorization error. Suppress access logging. Login checks state, provider error,
+  then missing code before exchanging authorization_code with redirect_uri and code_verifier.
+  Poll on a one-second wait with a 180-second overall deadline. Test the listener through real
+  loopback HTTP, including wrong path followed by a valid callback, port collision, state
+  mismatch, provider error, missing code, timeout and cleanup. Use independent pinned Python
+  callback-server fixtures in the socket tests, comparing status/content-type and callback
+  fields; no FastAPI handler is called as a helper.
+
+  Pure helper operation xai_login_url compares _pkce_pair and _build_authorize_url using
+  fixed entropy, redirect port and UUIDs. Add decode_xai_callback for bounded request-target
+  bytes using the existing URL/query library; its fuzz corpus includes duplicate and blank
+  query fields, percent escapes and non-callback paths. The owned functions contain 125
+  nonblank/noncomment lines plus callback state declarations. Allow 230 service/listener,
+  240 socket/flow tests, 100 oracle, 80 fuzz and 40 wiring lines within 725 changed lines.
+scope:
+  paths:
+    - crates/betterlite-openai/Cargo.toml
+    - crates/betterlite-openai/src/{lib,error,xai_login}.rs
+    - crates/betterlite-openai/src/xai_login/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/xai_callback.rs
+    - crates/betterlite-openai/fuzz/corpus/xai_callback/**
+    - tools/oracle/src/helpers/{mod,xai_login_url}.rs
+    - tools/oracle/helpers/{dispatch,xai_login_url}.py
+    - tools/oracle/fixtures/xai-login/**
+    - tools/oracle/cases/helpers/xai-login-url/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_login_url*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L78-L120
+    why: Loopback callback response and first-value query semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L154-L204
+    why: Existing-login fast path and interactive exchange order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L294-L343
+    why: PKCE, callback bind fallback and fixed authorization query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1070-L1079
+    why: Active caller proving that interactive login is part of the public CLI contract.
+dod:
+  - text: The loopback receiver and login state machine retain callback status, port fallback and shutdown behavior.
+    proof: [xai-login-tests]
+  - text: Fixed entropy yields identical PKCE and authorization parameters.
+    proof: [oracle, xai-login-python, xai-login-seeds]
+  - text: Request-target fuzz replay uses the callback decoder used by the listener.
+    proof: [xai-login-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: xai-login-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_login::/) - test(replays_xai_callback_corpus)'
+      why: Real loopback requests detect wrong HTTP status, a leaked listener or changed callback ordering.
+    - id: xai-login-python
+      run: test -f tools/oracle/helpers/xai_login_url.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Entropy injection must leave the pinned PKCE implementation in control.
+    - id: xai-login-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_login_url*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_login_url::/)'
+      why: The helper parser must accept the new xai_login_url call tag.
+    - id: xai-login-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_callback.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_callback)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_callback_corpus)'
+      why: Query decoding must remain bounded with malformed or repeated parameters.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-login-url/unpadded-pkce.yaml
+  - tools/oracle/cases/helpers/xai-login-url/authorization-scope-and-nonce.yaml
+  - tools/oracle/cases/helpers/xai-login-url/ephemeral-redirect.yaml
+deviations: []
+out_of_scope:
+  - Token/discovery records and all remaining XAIOAuthAuthenticator methods in oauth.py belong to B1400.
+  - B151 installs the xai-oauth login CLI command and its browser-opening frontend; this task supplies its callable service.
+pitfalls:
+  - A callback with matching state and error still receives HTTP 200 before login reports the authorization failure.
+  - parse_qs discards blank values, so code=&code=ok selects ok.
+  - A failed refresh only triggers interactive authorization when its error is an XAIOAuthError.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: security

@@ -2,7 +2,7 @@ id: B874
 milestone: M4 keys, spend and management
 title: Offline verification-token import and team repair
 status: todo
-depends_on: [B700, B701, B710, B856, B860, B1232]
+depends_on: [B700, B701, B856, B860, B1232, B2307]
 file: tasks/B874-database-repair.yaml
 covers:
   - "db_scripts/migrate_keys.py"

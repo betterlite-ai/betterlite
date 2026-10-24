@@ -2,7 +2,7 @@ id: B055
 milestone: M4 keys, spend and management
 title: Register key generation and management routes
 status: todo
-depends_on: [B001, B003, B052, B171, B732, B737, B770, B771, B772, B773, B774, B775, B776, B777, B778, B779, B780, B781, B782, B783, B784, B785, B856, B860, B861, B864, B865, B892, B894, B1224, B1228]
+depends_on: [B001, B003, B052, B124, B732, B737, B770, B771, B772, B773, B860, B861, B864, B865, B892, B894, B1224]
 file: tasks/B055-key-management.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

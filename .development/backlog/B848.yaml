@@ -2,7 +2,7 @@ id: B848
 milestone: M4 keys, spend and management
 title: Authorize deployment visibility for model info
 status: todo
-depends_on: [B003, B171, B725, B732, B759, B800, B841, B844, B856, B1216]
+depends_on: [B003, B171, B720, B721, B723, B724, B725, B726, B732, B759, B841, B844, B847, B856, B860]
 file: tasks/B848-model-info-scope.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

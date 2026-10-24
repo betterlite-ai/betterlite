@@ -1,91 +1,107 @@
 id: B733
 title: Typed key and management-object caches
 description: >-
-  Implement AuthCache over B125 DualCache/B126 Redis with a separate in-memory key-object namespace. Retain
-  every pinned cache-key constructor and management TTL policy, decode typed rows through RowCodec, and
-  expose batch invalidation without a second hashing convention. Read the pinned default TTL/size constants
-  through config; do not inherit response-cache namespaces. user_api_key_cache_ttl is optional; DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL
-  defaults to 60 seconds, while source memory limits remain 200 entries and 1024 KiB per value unless
-  configured.
+  Implement auth_cache in betterlite-auth over B125 DualCache/InMemoryCache/CacheCodec and B126 Redis.
+  Own user_api_key_cache.py and the shallow cache copy at auth_checks.py L3970-L3978. Reuse B2314's
+  resolved-key records; there is no principal resolver, SQL access, key hashing or response-cache
+  namespace transformation here. Both in-memory partitions share the same Redis client and literal
+  keys. Select the key-object partition only for a full match of 64 lowercase ASCII hex characters;
+  uppercase, prefixes, newlines, wrong lengths and hashed-jwt- values use the ordinary partition.
+  A raw 64-hex management identifier also selects the key partition; do not infer object type instead.
 
+  Construct two DualCaches with independent memory stores, the same optional Redis and the same
+  supplied TTLs. Reuse B125's constructor truthiness and defaults, including default capacity 200 and
+  max item size 1024 KiB for each fresh memory store. in_memory_cache_for exposes the selected store
+  to prefetch and invalidation. Update TTL/capacity and attach Redis on ordinary then key partition;
+  None TTL leaves a previous setting unchanged, zero updates it, None capacity resets to 200.
+  Redis attachment is a no-op for None or an already attached client, changes the TTL only when a
+  new client is attached with a nonnull TTL, and never backfills existing memory. Preserve independent
+  eviction; ordinary-object churn cannot evict key objects. Underlying expiry, item-size refusal,
+  Redis failures and request batching remain B125/B126 behavior, not a second implementation.
 
-  Build the production auth_cache module in betterlite-auth; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Sync and async reads pass local_only=false by default, trace context and extra cache options to
+  the selected backend. Without model_type return the raw cached payload, including false/zero/empty
+  values. With model_type, a None miss returns silently; all other payloads pass through B125 CacheCodec.
+  That codec returns an existing matching model unchanged, validates dictionaries, warns on a model
+  ValidationError and returns None, and returns None silently for other payload kinds. If decoding
+  returns None after a nonnull hit, this wrapper additionally logs ERROR naming get_cache or
+  async_get_cache and the requested model, then returns a miss. Do not evict or repair that entry.
+  A malformed dict therefore produces warning then error; a scalar produces only error. Other codec
+  exceptions propagate. Native diagnostics retain these severities and order but redact payloads
+  and sensitive cache-key contents.
 
+  Every write serializes through CacheCodec before contacting either tier. With model_type, matching
+  models dump directly; dictionaries/other BaseModels validate before dumping, and other scalar values
+  pass through. Without it, BaseModels dump in JSON mode while other values remain unchanged. This
+  deliberately gives memory and Redis the same representation and preserves B2314 serialization
+  exclusions. Invalid model serialization fails before any write. A None key still goes through
+  serialization and is forwarded to the ordinary backend; do not classify or hash it.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/user_api_key_cache.py:
-  is_user_key_cache_key (L27-L29; 3 source lines), UserApiKeyCache.__init__ (L64-L83; 20 source lines),
-  UserApiKeyCache.in_memory_cache_for (L85-L86; 2 source lines), UserApiKeyCache.update_cache_ttl (L88-L92;
-  5 source lines), UserApiKeyCache.update_in_memory_max_size (L94-L96; 3 source lines), UserApiKeyCache.attach_redis_cache
-  (L98-L102; 5 source lines), UserApiKeyCache.get_cache (L105-L113; 9 source lines), UserApiKeyCache.get_cache
-  (L116-L123; 8 source lines), UserApiKeyCache.get_cache (L125-L152; 28 source lines), UserApiKeyCache.async_get_cache
-  (L155-L163; 9 source lines), UserApiKeyCache.async_get_cache (L166-L173; 8 source lines), UserApiKeyCache.async_get_cache
-  (L175-L206; 32 source lines), UserApiKeyCache.set_cache (L208-L213; 6 source lines), UserApiKeyCache.async_set_cache
-  (L215-L233; 19 source lines), UserApiKeyCache.delete_cache (L235-L239; 5 source lines), UserApiKeyCache.async_delete_cache
-  (L241-L245; 5 source lines), UserApiKeyCache.async_delete_cache_pre_call (L247-L250; 4 source lines),
-  UserApiKeyCache.async_delete_cache_keys (L252-L268; 16 source lines), UserApiKeyCache.flush_cache (L270-L272;
-  3 source lines), UserApiKeyCache.async_set_cache_pipeline (L274-L289; 16 source lines), user_object_permission_id_cache_key
-  (L298-L306; 8 source lines), object_permission_cache_key (L309-L311; 3 source lines), tag_cache_key
-  (L319-L321; 3 source lines), tag_registry_cache_key (L324-L326; 3 source lines), model_access_group_cache_key
-  (L334-L336; 3 source lines), model_access_group_registry_cache_key (L339-L341; 3 source lines), model_access_group_spend_counter_key
-  (L344-L352; 8 source lines), project_cache_key (L355-L356; 2 source lines), project_spend_counter_key
-  (L359-L360; 2 source lines), end_user_cache_key (L368-L370; 3 source lines), end_user_restricted_registry_cache_key
-  (L373-L375; 3 source lines), team_membership_auth_cache_key (L378-L380; 3 source lines), team_membership_reservation_cache_key
-  (L383-L390; 7 source lines), get_management_object_ttl (L401-L412; 11 source lines). litellm/proxy/auth/auth_checks.py:
-  _copy_user_api_key_auth_for_cache (L3970-L3978; 9 source lines).
+  async_set_cache first removes model_type from options. It can use async_set_cache_pre_call only
+  with a nonnull key, local_only=false, no options except ttl, and ttl absent/None/int/float (including
+  Python bool). Any other option or nonnumeric TTL uses the ordinary async write. A nonnull pre-call
+  BatchResult means queued: return None without a second write or waiting for its eventual result.
+  No active batch yields None and falls through to direct writing. Memory visibility and deferred
+  Redis delivery follow B125. Sync writes never select this request-pipeline path.
 
+  Single sync/async/pre-call deletes route to one partition and retain the backend result. Batch
+  deletion partitions keys without deduplicating or reordering within each group, invokes BOTH
+  groups concurrently even when empty, waits for both outcomes and raises the first BaseException
+  in key-partition then ordinary-partition order, not completion order. One failure cannot suppress
+  the other invalidation. External cancellation still propagates. Batch writes instead serialize
+  ALL entries first with model_type=None, then await the nonempty key group and only then the
+  nonempty ordinary group. Preserve duplicates and within-group order, forward local_only/options,
+  skip empty groups, and do not roll back an earlier successful partition if a later one fails.
+  A key-group failure prevents the ordinary write; a serialization failure prevents both.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL=60.
+  Keep every shared key literal: user_object_permission_id:{user_id}, object_permission_id:{id},
+  tag:{name}, tag_registry, model_access_group:{name}, model_access_group_registry,
+  spend:model_access_group:{name}, project_id:{id}, spend:project:{id}, end_user_id:{id},
+  end_user_restricted_registry, {team_id}_{user_id} for membership auth and
+  team_membership:{user_id}:{team_id} for reservation. Do not escape delimiters, trim empty IDs or
+  merge the two membership forms; ambiguous concatenations remain compatible. Preserve sentinels
+  __user_no_mcp_permission__, __tag_registry_overflow__, __model_access_group_registry_overflow__,
+  __end_user_restricted_registry_overflow__ and __no_team_membership__, distinct from a cache miss.
+  Implement trivial key construction at callers or through an enum match rather than one-line wrappers.
 
+  get_management_object_ttl returns any nonnull default_in_memory_ttl, including zero or negative;
+  only None/missing uses DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL. That env var is int() at
+  import, default 60; empty/noninteger input stops startup, with no fallback and no positivity clamp.
+  In betterlite-config also support general_settings.user_api_key_cache_ttl=None and
+  user_api_key_cache_max_size=None. B124 creates the gateway cache with memory TTL 60; a configured
+  nonnull user_api_key_cache_ttl is float-converted and updates BOTH memory and Redis defaults.
+  Malformed TTL fails config loading; zero/negative/fractional values are retained, while nonfinite
+  or unrepresentable durations get the native checked-duration error. max_size uses the source
+  positive integer field: None resets 200, positive integer/coercible integral values pass, zero,
+  negative and nonintegral values fail. These settings do not rename the fallback env var or turn
+  it into a YAML key. B124 owns startup installation and database-sourced settings precedence,
+  including its warn-and-ignore invalid DB max-size path; this task supplies the typed cache settings.
 
-  Add the auth_cache operation under B856 Management::auth. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-cache-*
-  seed to B171 helper_case, which already owns this decoder.
+  _copy_user_api_key_auth_for_cache copies the model without revalidating, then clears exactly
+  budget_reservation, budget_throttle_pct, parent_otel_span and request_route. It leaves the original
+  untouched and retains all other fields, including trusted server markers and carried snapshots.
+  The source copy is shallow: do not round-trip JSON and thereby strip trusted fields or change
+  nested data. Native ownership may safely share immutable nested records across the two copies.
 
+  Use the auth_cache helper for key/sentinel/TTL/copy/codec projections and deterministic in-memory
+  typed-read logging; it does not fake a FastAPI route or a Redis server. Native recording-backend tests prove partition ordering and
+  failure behavior against the actual wrapper. decode_cached_auth consumes Redis payload bytes
+  through the B125/B126 JSON boundary and requested typed model, then applies the same miss/logging
+  policy; cap input at 1048576 bytes and depth 64. Create the auth fuzz workspace here with this
+  real decoder target, seed malformed/truncated/scalar/duplicate-field/provenance/limit inputs,
+  and replay its corpus separately from behavior tests. Duplicate fields retain the underlying
+  JSON decoder semantics. No additional database fixture is needed.
 
-  Write betterlite-config::auth_cache::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This task owns the outside-byte boundary auth_cache::decode_cached_auth(&[u8]) -> Result<TypedValue,DecodeError>
-  for Redis auth cache JSON payloads. Production calls this decoder before its typed policy functions;
-  the cargo-fuzz target auth_cache calls that same function. Seed valid, truncated, malformed, duplicate-field
-  and limit-boundary inputs and add auth_cache::tests::replays_the_auth_cache_corpus. Reuse B002 limits
-  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
-  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B733
-  owns crates/betterlite-auth/fuzz; create its manifest with this real decoder target here.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 277 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  277 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 618 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  Create crates/betterlite-auth/fuzz/Cargo.toml and .gitignore exactly once here, with this task’s actual
-  decoder as its first target; no empty untargeted manifest is created earlier. Later betterlite-auth
-  parser tasks depend directly on B733 and only register targets.
+  The cache file has 253 nonblank noncomment lines excluding docstrings; add nine copy lines and
+  exclude the unused three-line flush override. Allow 225 production, 305 tests, 85 helper adapters,
+  65 config, 65 decoder/fuzz and 35 manifests/wiring, 780 within 800. Keep partition routing, typed
+  payloads, key formats and cache-copy logic in separate source files below 300 lines.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_cache.rs
     - crates/betterlite-auth/src/auth_cache/**
     - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth_cache.rs
     - tools/oracle/src/helpers/auth_cache/**
@@ -145,8 +161,6 @@ references:
     why: Own UserApiKeyCache.async_delete_cache_pre_call; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L252-L268
     why: Own UserApiKeyCache.async_delete_cache_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L270-L272
-    why: Own UserApiKeyCache.flush_cache; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L274-L289
     why: Own UserApiKeyCache.async_set_cache_pipeline; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L298-L306
@@ -179,41 +193,65 @@ references:
     why: Own get_management_object_ttl; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3970-L3978
     why: Own _copy_user_api_key_auth_for_cache; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1921-L1926
-    why: DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1921-L1921
+    why: The fallback env is int-parsed at import, default 60; malformed values are fatal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6708-L6728
+    why: Cache settings read sites; startup applies one float TTL to both tiers and validates positive max-size.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2611-L2613
+    why: B124 installs the gateway cache with the 60-second memory default declared at L1888-L1889.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2847-L2855
+    why: Nullable positive integer max-size setting; preserve validation rather than inventing fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L39-L91
+    why: B125 owns serialization, matching-model identity and warning-on-validation-failure behavior.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: separate_key_cache,
-      typed_cache_decode, management_ttl, pipeline_order, key_hash_namespace, missing_versus_corrupt,
-      schema_drift_warning_cache_miss.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: The production decode_cached_auth decoder is used by the service and its fuzz target and rejects
-      malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: 'Literal cases name bare_lower_hex_only, uppercase_prefix_newline_and_length_not_key,
+      hex_management_id_uses_key_partition, permission_link_and_row_keys, tag_keys_and_overflow,
+      access_group_keys_counter_and_overflow, project_keys_and_counter,
+      end_user_keys_registry_and_overflow, membership_auth_and_reservation_keys,
+      no_permission_and_no_membership_sentinels and delimiters_and_empty_ids_not_escaped.
+      TTL/copy cases name management_ttl_only_none_falls_back, copy_clears_exactly_four_fields,
+      copy_original_unchanged, copy_keeps_trusted_markers and copy_preserves_nested_values.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Payload cases name raw_false_zero_empty_retained, typed_none_silent,
+      matching_model_identity_retained, malformed_dict_warning_then_error,
+      scalar_hit_error_without_codec_warning, invalid_entry_not_evicted,
+      codec_nonvalidation_error_propagates, model_dump_same_memory_and_redis,
+      typed_serialization_fails_before_write and resolved_key_exclusions_survive_dump.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Native backend cases name two_memory_partitions_shared_redis, independent_eviction,
+      constructor_defaults_delegated, settings_update_ordinary_then_key,
+      ttl_none_keeps_previous_zero_updates, max_size_none_resets_both,
+      attach_once_without_backfill, local_only_and_options_forwarded,
+      none_key_serializes_before_forwarding, sync_write_never_batches,
+      async_batch_only_numeric_ttl_option, batch_bool_ttl_accepted,
+      queued_write_not_repeated_or_awaited, absent_batch_direct_write,
+      single_delete_partition_and_result, batch_delete_attempts_both_empty_groups,
+      batch_delete_first_partition_error_after_both, batch_delete_cancel_propagates,
+      batch_write_serializes_all_before_mutation, batch_write_key_partition_first,
+      batch_write_preserves_duplicates, batch_write_skips_empty_partition,
+      key_partition_failure_skips_other and later_partition_failure_keeps_key_write.'
+    proof: [behavior-tests]
+  - text: 'Production config cases name fallback_env_default_60, fallback_env_override,
+      fallback_env_bad_or_empty_fails_startup, fallback_env_zero_negative_kept,
+      gateway_memory_ttl_default_60, user_ttl_updates_both_tiers,
+      user_ttl_none_leaves_defaults, user_ttl_zero_negative_fractional,
+      malformed_user_ttl_fails, max_size_default_none_maps_200,
+      max_size_positive_integral_coercion, max_size_zero_negative_fractional_rejected and
+      nonfinite_or_unrepresentable_ttl_rejected. Corpus seeds use the actual general_settings keys.'
+    proof: [config-tests, config-corpus]
+  - text: 'Decoder/native deviation cases name auth_cache_payload_over_byte_limit,
+      auth_cache_payload_over_depth_limit, malformed_bytes_become_typed_miss,
+      duplicate_fields_use_shared_decoder, caller_markers_not_promoted and
+      cache_diagnostics_redact_payload_and_key. Replay uses the production decoder.'
+    proof: [behavior-tests, parser-corpus]
 checks:
   optional:
     - mutants
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_cache::tests::/)
-        - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_cache::/)
+        - test(replays_the_auth_cache_corpus)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/auth_cache.py && uv run --locked --project tools/oracle/litellm
@@ -231,7 +269,7 @@ checks:
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-cache-*")"
-        && grep -rlq "DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL" crates/betterlite-config/fuzz/corpus/config_yaml/auth-cache-*
+        && grep -rlq "user_api_key_cache_ttl" crates/betterlite-config/fuzz/corpus/config_yaml/auth-cache-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: parser-corpus
       why: The named production decoder target, added corpus or replay is missing or fails.
@@ -239,22 +277,25 @@ checks:
         && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/auth_cache)"
         && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_auth_cache_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-cache/separate-key-cache.yaml
-  - tools/oracle/cases/helpers/auth-cache/typed-cache-decode.yaml
+  - tools/oracle/cases/helpers/auth-cache/codec-projections.yaml
   - tools/oracle/cases/helpers/auth-cache/management-ttl.yaml
-  - tools/oracle/cases/helpers/auth-cache/pipeline-order.yaml
   - tools/oracle/cases/helpers/auth-cache/key-hash-namespace.yaml
-  - tools/oracle/cases/helpers/auth-cache/missing-versus-corrupt.yaml
-  - tools/oracle/cases/helpers/auth-cache/schema-drift-warning-cache-miss.yaml
+  - tools/oracle/cases/helpers/auth-cache/key-builders-and-sentinels.yaml
+  - tools/oracle/cases/helpers/auth-cache/shallow-copy.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L27-L29
+  - what: Redis auth payloads over 1048576 bytes or JSON depth 64 become a typed cache miss with an error diagnostic.
+    why: Bound decoding of external cache data; the source wrapper does not impose these byte/depth limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L206
+  - what: Auth-cache config rejects nonfinite or unrepresentable TTLs at startup instead of retaining Python float values.
+    why: Native checked expiry arithmetic cannot represent NaN/infinity; finite zero and negative values still pass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6709-L6718
+  - what: Cache validation diagnostics omit payload values and sensitive key contents while retaining warning/error order and model names.
+    why: Source validation exceptions and arbitrary cache keys can expose credentials; native diagnostics keep secrets redacted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L81-L90
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - UserApiKeyCache.flush_cache has no caller at the pin; do not add an auth flush API or cases for it.
+  - B125 owns CacheCodec and all DualCache/InMemoryCache behavior; B126 owns Redis transport and request pipeline execution.
+  - B124 owns proxy_server startup/DB-setting installation and ConfigGeneralSettings as a whole; this task supplies only the cache settings and operations they consume.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B734 owns _cache_management_object (L2771-L2789), _cache_team_object
@@ -262,7 +303,7 @@ out_of_scope:
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -280,10 +321,10 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
-  - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
-    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
-    _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
+    (L415-L435). B735 owns get_object_permission (L3982-L4034).'
+  - 'litellm/proxy/auth/auth_checks.py: B2318 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
+    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442).
+    B736 owns _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
     (L2494-L2510), get_role_based_models (L2513-L2527), get_role_based_routes (L2530-L2542), _get_fuzzy_user_object
     (L2545-L2584), _backfill_null_user_email (L2587-L2612), get_user_object (L2616-L2760), _user_read_failure
     (L2763-L2768).'
@@ -370,9 +411,10 @@ out_of_scope:
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
 pitfalls:
-  - Key objects have a separate cache namespace from management objects and cannot share response-cache
-    keys.
+  - Both memory partitions share literal Redis keys; adding a key-object Redis prefix would break cross-worker auth sharing.
+  - A failed typed cache read leaves the bad value in place and can log again on the next read.
+  - The auth membership key orders team before user, while the reservation key orders user before team.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

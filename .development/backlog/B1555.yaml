@@ -1,0 +1,8 @@
+id: B1555
+milestone: M3 providers
+title: Project DuckDuckGo instant answers and one-level related topics
+status: todo
+depends_on: [B002, B091, B171]
+file: tasks/B1555-duckduckgo-search.yaml
+covers:
+  - "litellm/llms/duckduckgo/**"

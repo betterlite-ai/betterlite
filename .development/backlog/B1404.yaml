@@ -1,0 +1,9 @@
+id: B1404
+milestone: M3 providers
+title: xAI Responses search tools and usage costs
+status: todo
+depends_on: [B1400, B1402, B508, B1138, B171]
+file: tasks/B1404-xai-responses.yaml
+covers:
+  - "litellm/llms/xai/responses/transformation.py"
+  - "litellm/types/llms/xai.py"

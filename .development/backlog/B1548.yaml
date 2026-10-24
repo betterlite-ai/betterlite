@@ -1,0 +1,8 @@
+id: B1548
+milestone: M3 providers
+title: Render Soniox speaker, language and subtitle token records
+status: todo
+depends_on: [B002, B1122, B1002, B171]
+file: tasks/B1548-soniox-transcript-records.yaml
+covers:
+  - "litellm/llms/soniox/{common_utils.py,audio_transcription/transformation.py}"

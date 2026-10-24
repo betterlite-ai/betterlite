@@ -1,8 +1,9 @@
 id: B736
 milestone: M4 keys, spend and management
-title: User and team membership lookup during auth
+title: User lookup, fuzzy identity matching and role permissions
 status: todo
-depends_on: [B001, B002, B003, B171, B715, B723, B724, B732, B733, B735, B856, B860, B1217, B1226]
+depends_on: [B002, B125, B171, B720, B723, B732, B733, B735, B856, B860, B1217, B2310, B2314, B2315, B2317, B2318]
 file: tasks/B736-auth-user-lookup.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/_types.py"

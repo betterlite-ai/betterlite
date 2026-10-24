@@ -1,0 +1,9 @@
+id: B1432
+milestone: M3 providers
+title: Baseten, Cerebras and Featherless option policies and inherited host aliases
+status: todo
+depends_on: [B002, B503, B668, B2221, B1425, B171]
+file: tasks/B1432-hosted-chat-options.yaml
+covers:
+  - "litellm/llms/{baseten,cerebras,featherless_ai,empower,friendliai,galadriel,github}/**"
+  - "litellm/llms/aiml/chat/transformation.py"

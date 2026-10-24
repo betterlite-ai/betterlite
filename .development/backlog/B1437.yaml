@@ -1,0 +1,9 @@
+id: B1437
+milestone: M3 providers
+title: CometAPI chat streams and embeddings
+status: todo
+depends_on: [B002, B004, B006, B010, B503, B668, B171]
+file: tasks/B1437-cometapi-chat-embedding.yaml
+covers:
+  - "litellm/llms/cometapi/{chat,embed}/**"
+  - "litellm/llms/cometapi/common_utils.py"

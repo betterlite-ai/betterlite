@@ -2,7 +2,7 @@ id: B893
 milestone: M4 keys, spend and management
 title: Persist generated keys and initial budgets
 status: todo
-depends_on: [B002, B199, B722, B725, B732, B770, B818, B819, B856, B860, B881, B1224]
+depends_on: [B002, B192, B199, B732, B770, B819, B856, B860, B881, B1224, B2301, B2304, B2317, B2362]
 file: tasks/B893-key-persistence.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

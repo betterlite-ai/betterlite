@@ -1,59 +1,66 @@
 id: B824
 title: Model access-group create, update and delete routes
 description: >-
-  Expose /access_group/new, list, info, update and delete through ModelAccessGroupStore. Preserve source
-  model selection, name changes, per-deployment updates and administrator checks, distinguishing this
-  model-name grouping API from /v1/access_group resource grants.
+  Build model_group_write around B823's deployment-tag operations. Own create_model_group L574-L712,
+  update_access_group L829-L975 and delete_access_group L983-L1085 in
+  model_access_group_management_endpoints.py. Register POST /access_group/new,
+  PUT /access_group/{access_group}/update and DELETE /access_group/{access_group}/delete at their
+  decorators L569, L824 and L978. Compose B2341's list/info registrations once. These routes have B052
+  authentication but no local administrator check, management wrapper or handle_exception_on_proxy.
+  B832 supplies NewModelGroupRequest/Response, UpdateModelGroupRequest and DeleteModelGroupResponse;
+  both selection lists default to null. There is no rename field and no handler-owned configuration.
 
+  Create logs its requested name and models, then rejects falsey/whitespace-only access_group with
+  HTTPException 400 detail.error="access_group is required and cannot be empty". Keep whitespace in
+  accepted names. Create and update require a nonempty model_names or model_ids list, else 400 with
+  "Either model_names or model_ids must be provided and non-empty". IDs take precedence when both
+  lists are nonempty, while the response echoes both original lists including nulls. Names-only calls
+  B823._missing_models_after_read_through and rejects missing names with 400 "Model(s) not found: <names
+  joined by comma-space>". Preserve order and duplicates. Create does this before its missing-database
+  500 "Database not connected. Cannot create access group."; update checks database first and uses
+  "Database not connected.". Cases create_name_whitespace, selection_defaults_and_id_precedence,
+  missing_names_in_order and create_update_validation_precedence cover each combination.
 
-  Build the production model_group_write module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Create reads the complete group map, returns 409 "Access group '<name>' already exists. Use PUT
+  /access_group/<name>/update to modify it." for an exact duplicate, then tags selected deployments
+  sequentially through B823. Update first checks the group map for exact existence (404 "Access group
+  '<name>' not found"), then validates names, loads ALL database deployments and strips the group
+  sequentially before tagging the requested selection. Config-only deployments are not written.
+  An unreadable unrelated row can stop the stripping loop. models_updated counts tagging results,
+  not stripped rows. No transaction undoes prior stripping/tagging on failure. Cases duplicate_exact_name,
+  update_missing_before_model_validation, update_strip_then_tag, update_count_excludes_removals,
+  unreadable_unrelated_row and partial_tag_failure establish the ordering and surviving rows.
 
+  Delete checks the database, reads the group map and uses the same exact-name 404. It strips all DB
+  deployments first, counts removed pairs, then calls B823._delete_model_access_group_budget_row,
+  retaining the shared BudgetTable row. Only after that does it reload. A budget-delete failure can
+  strand a budget for an already untagged group; do not move deletion ahead of stripping. Return 200
+  {access_group,models_updated,message:"Access group '<name>' deleted successfully"}, not 204.
+  Cases delete_strips_before_budget, delete_shared_budget_survives, delete_budget_failure_keeps_strips
+  and delete_response cover this lifecycle.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_access_group_management_endpoints.py:
-  create_model_group (L574-L712; 111 source lines), list_access_groups (L720-L762; 35 source lines), get_access_group_info
-  (L770-L821; 43 source lines), update_access_group (L829-L975; 121 source lines), delete_access_group
-  (L983-L1085; 82 source lines).
+  Each successful write phase takes B841.live_model_ids_snapshot AFTER database changes, awaits
+  B841.clear_cache even for zero changed rows, then calls B823._raise_http_if_reload_degraded_serving
+  with before/written_models/access_group/still_desired/live_after. Update merges stripped pairs then
+  updated pairs by ID, with updated names winning and first insertion order retained. Creation passes
+  tagged pairs; deletion passes removed pairs. Preserve B823's degraded-serving HTTP error and all
+  committed rows. Log success only after that verdict. Cases snapshot_after_writes, reload_zero_changes,
+  update_verdict_pair_merge and degraded_reload_preserves_writes verify inputs, effects and log order.
 
+  The separate update/delete existence try blocks rethrow HTTPException and wrap other exceptions as
+  500 detail.error="Failed to check access group existence: <exception>" without their own error log.
+  Each main operation try also preserves HTTPException, but logs other exceptions and wraps them as
+  500 "Failed to create access group: <exception>", "Failed to update access group: <exception>" or
+  "Failed to delete access group: <exception>". Failures before these try blocks stay outside that
+  mapping. Cases existence_exception_mapping, operation_exception_mapping and pre_try_failures_escape
+  compare status, detail, type/param/code presence and log behavior. HTTP cases run through B001 on
+  booted proxies; middleware_role_policy covers actual B052 auth rather than an invented handler guard.
 
-  Register these actual HTTP routes and aliases exactly once: POST /access_group/new -> create_model_group;
-  GET /access_group/list -> list_access_groups; GET /access_group/{access_group}/info -> get_access_group_info;
-  PUT /access_group/{access_group}/update -> update_access_group; DELETE /access_group/{access_group}/delete
-  -> delete_access_group. For each route send a typed successful request, an invalid or missing target,
-  and a caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy
-  and betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes.
-  Compare status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
-  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
-  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
-  inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 392 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  392 production, 151 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 608 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  B860-backed row/effect tests select POSTGRES_TEST_URL, with testcontainers only when the variable is
+  absent, and fail on connection errors. Keep implementation files below 300 lines. The three functions
+  own 314 nonblank/noncomment source lines including examples; allow 300 implementation, 350 tests and
+  75 registration lines, 725 within the 750-line gate. Typed request parsing stays with B003/B832;
+  this orchestration introduces neither credentials nor a new byte decoder.
 scope:
   paths:
     - crates/betterlite-server/src/model_group_write.rs
@@ -66,88 +73,48 @@ scope:
     - tools/oracle/cases/management/model-group-write/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L574-L1085
-    why: Pinned implementation and exact ownership boundary for model_group_write.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L574-L712
-    why: Own create_model_group; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L720-L762
-    why: Own list_access_groups; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L770-L821
-    why: Own get_access_group_info; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L829-L975
-    why: Own update_access_group; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L983-L1085
-    why: Own delete_access_group; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L569-L712
+    why: Creation decorator, selection precedence and local exception mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L824-L1085
+    why: Update/delete decorators, sequential stripping and post-write reload verdicts.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: create_model_group,
-      group_list, group_info, update_selected_models, delete_group, duplicate_group, reload_failure.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
+  - text: All named request, response, existence and selection cases match through the three real routes,
+      with B2341 read routes composed only once.
+    proof: [behavior-tests, oracle]
+  - text: The named write-order, reload-input, exception and retained-row cases run on Postgres and fail
+      if an extra transaction, cache call or catch changes the pinned effects.
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_group_write::tests::/)
-        - test(/replays_the_/)'
+      why: Model-group orchestration tests are absent or source ordering changed.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^model_group_write::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/model-group-write/post--access-group-new-success.yaml
-  - tools/oracle/cases/management/model-group-write/post--access-group-new-invalid-target.yaml
-  - tools/oracle/cases/management/model-group-write/post--access-group-new-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-list-success.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-list-invalid-target.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-access-group-info-success.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-access-group-info-invalid-target.yaml
-  - tools/oracle/cases/management/model-group-write/get--access-group-access-group-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-group-write/put--access-group-access-group-update-success.yaml
-  - tools/oracle/cases/management/model-group-write/put--access-group-access-group-update-invalid-target.yaml
-  - tools/oracle/cases/management/model-group-write/put--access-group-access-group-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-group-write/delete--access-group-access-group-delete-success.yaml
-  - tools/oracle/cases/management/model-group-write/delete--access-group-access-group-delete-invalid-target.yaml
-  - tools/oracle/cases/management/model-group-write/delete--access-group-access-group-delete-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-group-write/create-model-group.yaml
-  - tools/oracle/cases/management/model-group-write/group-list.yaml
-  - tools/oracle/cases/management/model-group-write/group-info.yaml
-  - tools/oracle/cases/management/model-group-write/update-selected-models.yaml
-  - tools/oracle/cases/management/model-group-write/delete-group.yaml
-  - tools/oracle/cases/management/model-group-write/duplicate-group.yaml
-  - tools/oracle/cases/management/model-group-write/reload-failure.yaml
+  - tools/oracle/cases/management/model-group-write/create-name-whitespace.yaml
+  - tools/oracle/cases/management/model-group-write/selection-defaults-and-id-precedence.yaml
+  - tools/oracle/cases/management/model-group-write/missing-names-in-order.yaml
+  - tools/oracle/cases/management/model-group-write/create-update-validation-precedence.yaml
+  - tools/oracle/cases/management/model-group-write/duplicate-exact-name.yaml
+  - tools/oracle/cases/management/model-group-write/update-missing-before-model-validation.yaml
+  - tools/oracle/cases/management/model-group-write/update-strip-then-tag.yaml
+  - tools/oracle/cases/management/model-group-write/update-count-excludes-removals.yaml
+  - tools/oracle/cases/management/model-group-write/unreadable-unrelated-row.yaml
+  - tools/oracle/cases/management/model-group-write/partial-tag-failure.yaml
+  - tools/oracle/cases/management/model-group-write/delete-response.yaml
+  - tools/oracle/cases/management/model-group-write/delete-shared-budget-survives.yaml
+  - tools/oracle/cases/management/model-group-write/degraded-reload-preserves-writes.yaml
+  - tools/oracle/cases/management/model-group-write/middleware-role-policy.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B823 owns _http_error
-    (L95-L97), _DeploymentRow.model_id (L102-L102), _DeploymentRow.model_name (L105-L105), _DeploymentRow.model_info
-    (L108-L108), _ModelTableClient.find_many (L112-L112), _ModelTableClient.find_unique (L114-L114), _ModelTableClient.update
-    (L116-L116), _BudgetRow.budget_id (L121-L121), _BudgetRow.max_budget (L124-L124), _BudgetRow.soft_budget
-    (L127-L127), _BudgetRow.budget_duration (L130-L130), _BudgetRow.budget_reset_at (L133-L133), _ModelAccessGroupBudgetRow.access_group_name
-    (L138-L138), _ModelAccessGroupBudgetRow.spend (L141-L141), _ModelAccessGroupBudgetRow.budget_id (L144-L144),
-    _ModelAccessGroupBudgetRow.litellm_budget_table (L147-L147), _ModelAccessGroupBudgetTableClient.find_unique
-    (L151-L153), _ModelAccessGroupBudgetTableClient.upsert (L155-L161), _ModelAccessGroupBudgetTableClient.find_many
-    (L163-L165), _ModelAccessGroupBudgetTableClient.delete (L167-L167), _model_table (L170-L171), _model_access_group_budget_table
-    (L174-L175), _prisma_client_or_500 (L178-L183), _auth_cache (L186-L189), _evict_model_access_group_cache_keys
-    (L192-L205), _model_access_group_budget_row (L208-L213), _model_access_group_budget_rows (L216-L223),
-    _with_budget (L226-L235), _budget_or_none (L238-L248), _budget_response (L251-L256), _delete_model_access_group_budget_row
-    (L259-L273), _raise_404_if_model_access_group_missing (L276-L279), validate_models_exist (L282-L295),
-    _missing_models_after_read_through (L298-L312), add_access_group_to_deployment (L315-L336), _raise_http_if_reload_degraded_serving
-    (L339-L370), _tag_deployment_with_access_group (L373-L393), _readable_model_info_or_raise (L396-L403),
-    _strip_access_group_from_deployment (L406-L425), update_deployments_with_access_group (L428-L467),
-    update_specific_deployments_with_access_group (L470-L493), _find_deployment_or_400 (L496-L503), remove_access_group_from_deployment
-    (L506-L527), get_all_access_groups_from_db (L530-L566).'
-  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B825 owns get_access_group_budget
-    (L1093-L1120), set_access_group_budget (L1128-L1198), delete_access_group_budget (L1206-L1244).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B823 owns the declarations and model-group data/reload-verdict helpers at L65-L566 of
+    model_access_group_management_endpoints.py; B2341 owns list L720-L762 and info L770-L821.
+  - B825 owns budget handlers L1093-L1244; B832 owns API schemas; B841 implements the reload itself.
 pitfalls:
-  - /access_group model-name groups differ from /v1/access_group resource assignments.
+  - Updating a group can remove every old grant before a later invalid model ID fails.
+  - Deletion counts changed deployment rows and leaves the linked shared budget record intact.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

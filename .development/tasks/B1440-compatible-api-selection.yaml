@@ -1,0 +1,114 @@
+id: B1440
+title: Compatible API-family selection and shared embedding dispatch
+description: >-
+  Implement compatible_api_selection in betterlite-models using B1424 registry
+  descriptors and B209 provider identities. Own get_provider_responses_api_config
+  in utils.py L9113–9148 as a pure selection over an injected native-policy result:
+  normalize enum/string provider identity, ask the native selector first, and use a
+  registry descriptor only when no native policy was returned and its supported_endpoints
+  includes /v1/responses. Unknown identities can still reach a descriptor lookup; absence
+  returns None so the existing Responses service decides whether to emulate through
+  chat. This helper never constructs a provider or imports a higher crate.
+
+  Extract only the DeepSeek Messages arm L8979–8984 and JSON Messages tail L9001–9010,
+  CometAPI embedding arm L8828–8829, DeepInfra rerank arm L8882–8883 and AIML/CometAPI
+  image-generation arms L9610–9621 into closed policy identifiers. JSON Messages requires
+  exact /v1/messages endpoint membership and comes after native providers; DeepSeek
+  is native regardless of registry contents. Do not infer either API from a model name
+  or from chat compatibility. Other utility selector branches remain with their owning
+  provider tasks and B157; B2230 already owns chat selection. This extraction supersedes
+  the broad utility inventories without reimplementing the native Responses switch.
+
+  In betterlite-provider::compatible_embedding_call, own main.py's shared openai_like/
+  llamafile/lm_studio embedding branch L6613–6644 and CometAPI branch L7255–7274.
+  For the shared branch resolve base explicit/litellm.api_base/OPENAI_LIKE_API_BASE.
+  Only when api_key is None resolve litellm.api_key, litellm.openai_like_key, then
+  OPENAI_LIKE_API_KEY; an explicit empty key suppresses fallback. A nonempty provided
+  headers map overwrites optional_params.extra_headers; None or {} leaves an existing
+  extra_headers untouched. Execute B1425's embedding handler with the original input,
+  timeout, client and mode. B040 supplies its two self-hosted identities to this shared
+  call contract instead of copying the branch.
+
+  CometAPI embedding resolves key explicit/litellm.cometapi_key/COMETAPI_KEY/litellm.api_key
+  and base explicit/litellm.api_base/COMETAPI_API_BASE/https://api.cometapi.com/v1. Use
+  B010 embedding execution with B1437's configuration and an empty litellm_params map;
+  the dispatch does not pass caller headers. All named globals/env fields default absent.
+  Add compatible_embedding_dispatch_settings loaders exercising these global fields,
+  all four env aliases and None-versus-empty credentials, using existing B002 settings
+  rather than a second environment reader.
+
+  Helper compatible_api_selection calls pinned selectors with fixture native factories
+  and registry descriptors, returning only policy identities. Add fresh seeds asserting
+  call.compatible_api_selection, including a native-over-JSON collision and an unsupported
+  endpoint. Native embedding tests capture requests and injected handler arguments;
+  no helper runs main.py or an HTTP handler. Existing lower decoders handle bytes.
+  The selected utility spans contain 53 nonblank/noncomment lines and the embedding
+  branches about 47; allow 170 implementation, 210 tests, 105 adapters and 100
+  settings/dispatch lines, capped at 650.
+scope:
+  paths:
+    - crates/betterlite-models/src/{lib,compatible_api_selection}.rs
+    - crates/betterlite-models/src/compatible_api_selection/**
+    - crates/betterlite-provider/src/{lib,compatible_embedding_call}.rs
+    - crates/betterlite-provider/src/compatible_embedding_call/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,compatible_embeddings}.rs
+    - crates/betterlite-config/tests/compatible_embedding_dispatch_settings.rs
+    - tools/oracle/src/helpers/{mod,compatible_api_selection}.rs
+    - tools/oracle/helpers/{dispatch,compatible_api_selection}.py
+    - tools/oracle/cases/helpers/compatible-api-selection/**
+    - tools/oracle/fuzz/corpus/helper_case/compatible_api_selection*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9113-L9148
+    why: Native Responses configurations precede JSON endpoint declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8979-L9010
+    why: DeepSeek's Messages arm and the JSON endpoint-membership fallback; intervening providers stay separate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8828-L8829
+    why: CometAPI selects its dedicated embedding configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8882-L8883
+    why: DeepInfra rerank uses inference scores rather than the Cohere default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9610-L9621
+    why: AIML and CometAPI image factories are selected independently from their chat adapters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6613-L6644
+    why: Three compatible embedding identities share a missing-only key fallback and conditional extra_headers insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7255-L7274
+    why: CometAPI embedding resolves its own aliases and invokes the HTTP handler without caller headers.
+dod:
+  - text: API-family selection respects native precedence and exact JSON endpoint declarations.
+    proof: [compatible-selection-tests, compatible-selection-python, oracle]
+  - text: Shared and CometAPI embedding calls preserve credential/header differences and loaded globals.
+    proof: [compatible-selection-tests, compatible-embedding-settings]
+  - text: The selector helper's fresh parsed seeds include both a collision and a missing endpoint.
+    proof: [compatible-selection-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: compatible-selection-tests
+      run: cargo nextest run --locked -p betterlite-models -p betterlite-provider --no-tests=fail -E 'test(/^compatible_api_selection::/) | test(/^compatible_embedding_call::/)'
+      why: Lower policy selection and executable embedding argument projection need separate production coverage.
+    - id: compatible-embedding-settings
+      run: cargo nextest run --locked -p betterlite-config --test compatible_embedding_dispatch_settings --no-tests=fail
+      why: Shared global keys and CometAPI-specific keys have different precedence and empty-value rules.
+    - id: compatible-selection-python
+      run: test -f tools/oracle/helpers/compatible_api_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Native selector callbacks must remain fixture projections, avoiding import-time credential or transport work.
+    - id: compatible-selection-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_api_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_api_selection::/)'
+      why: Parse and assert compatible_api_selection with nonzero native-collision and unsupported-endpoint cases.
+oracle_cases:
+  - tools/oracle/cases/helpers/compatible-api-selection/native-responses-before-json.yaml
+  - tools/oracle/cases/helpers/compatible-api-selection/exact-endpoint-membership.yaml
+  - tools/oracle/cases/helpers/compatible-api-selection/deepseek-messages-native.yaml
+  - tools/oracle/cases/helpers/compatible-api-selection/comet-embedding-deepinfra-rerank.yaml
+  - tools/oracle/cases/helpers/compatible-api-selection/aiml-and-comet-image-factories.yaml
+deviations: []
+out_of_scope:
+  - B038 and B040 bind these selected policies to their existing public routes; this task neither mounts routes nor invokes provider constructors from betterlite-models.
+  - B157 and other provider entries retain all utility selector arms not enumerated above, including _get_python_responses_api_config.
+pitfalls:
+  - An existing native Responses config wins even when the same registry slug declares no Responses endpoint.
+  - Empty caller headers leave a preexisting extra_headers option intact in the shared embedding branch.
+  - CometAPI embedding deliberately passes an empty litellm_params record and omits caller headers.
+budget: {max_changed_lines: 650, max_new_expects: 0}
+review_level: security

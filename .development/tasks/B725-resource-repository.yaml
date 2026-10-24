@@ -1,285 +1,156 @@
 id: B725
 title: Model, permissions, budget and config repositories
 description: >-
-  Implement ModelRepository, BudgetRepository, ObjectPermissionRepository, ConfigRepository and CredentialsRepository
-  over their typed rows. Model/credential writes take injected StoredCipher and never invent plaintext
-  fallback; test with deterministic cipher doubles and assert call direction. Keep literal JSON columns,
-  unblocked/team model filters and nested budget field omission.
+  Implement the live resource repository paths in betterlite-db::resource_repository over B700's base
+  operations and B721/B2310's native rows. B714 supplies db versus writer_db routing. Preserve direct table access for the management callers;
+  do not add convenience methods that only unused Python methods call. No HTTP endpoint or setting
+  loader is owned here. B2303 supplies the actual stored-secret decoder, not a deferred cipher port.
 
+  Own model_repository.py _ProxyModelTableRepository.table_name="litellm_proxymodeltable",
+  ModelRepository.__init__, table, model_class, _decrypt_litellm_params, _to_model and find_all_except.
+  B726's PrismaTableRepository supplies the table and its config-sync wrapper. The live query excludes
+  the supplied model_id and converts all returned rows to an immutable sequence. _to_model returns
+  None for None, uses record.dict when available, decodes string litellm_params and model_info as JSON,
+  and propagates JSON/model-validation failures. A truthy params map decrypts each string through
+  B2303 with exception_type=debug and return_original_value=true; non-string values are unchanged.
+  Thus legacy plaintext and wrong-key/corrupt ciphertext are retained after a debug diagnostic. The
+  constructor's encryption_key does not select the decryption key. Direct .table reads/writes are raw
+  and do not run _to_model or encrypt anything. Model writes in B836 own their encryption before those
+  calls; no production path calls this repository's create_model/update_model convenience methods.
 
-  Build the production resource_repository module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Own BudgetRepository.table, model_class and find_by_id, plus the _BudgetDb/_PrismaClientView row
+  access contracts. find_by_id defaults its key column to budget_id and delegates to B700. Own
+  ObjectPermissionRepository.__init__, table and model_class; use_writer defaults false and selects
+  writer_db only when true. Both expose the exact litellm_budgettable/litellm_objectpermissiontable
+  actions used by their callers; B700 owns CRUD semantics and B2310 owns budget/permission row shapes. Their
+  unused create/update/delete convenience methods do not justify new business validations here.
 
+  Own ConfigRepository.__init__, prisma_client, _config_table, table, get_param and set_param,
+  ConfigParam.__init__, _decoded_json and the _ConfigRow/_ConfigTable protocols. use_writer=false
+  selects db, true selects writer_db. Missing client raises RuntimeError "No DB Connected. See -
+  https://docs.litellm.ai/docs/proxy/virtual_keys" before a query. get_param returns None for a missing
+  row, otherwise JSON-decodes any string param_value and leaves non-string values unchanged. set_param
+  JSON-encodes non-strings but stores strings verbatim, then upserts by param_name, creating name/value
+  or updating only value. It returns the original caller value, not the stored encoding or returned DB
+  row. Consequently storing bare string abc succeeds and returns abc, but a later get raises a JSON
+  decode error; quoted JSON text returns a string on read. No error swallowing or publish hook belongs
+  to these config methods. B120 owns any caller's config publication/reload policy.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/model_repository.py:
-  ModelRepository.__init__ (L29-L31; 3 source lines), ModelRepository.table (L34-L35; 2 source lines),
-  ModelRepository.model_class (L38-L39; 2 source lines), ModelRepository._encrypt_litellm_params (L41-L49;
-  9 source lines), ModelRepository._decrypt_litellm_params (L51-L61; 11 source lines), ModelRepository._to_model
-  (L63-L78; 12 source lines), ModelRepository.find_by_id (L80-L81; 2 source lines), ModelRepository.find_by_name
-  (L83-L86; 4 source lines), ModelRepository.find_all (L88-L91; 4 source lines), ModelRepository.find_unblocked
-  (L93-L96; 4 source lines), ModelRepository.find_all_except (L98-L101; 4 source lines), ModelRepository.find_by_team_id
-  (L103-L111; 8 source lines), ModelRepository.create_model (L113-L140; 26 source lines), ModelRepository.update_model
-  (L142-L164; 22 source lines), ModelRepository.delete_model (L166-L168; 3 source lines), ModelRepository.block_model
-  (L170-L172; 3 source lines), ModelRepository.unblock_model (L174-L176; 3 source lines). litellm/repositories/budget_repository.py:
-  _BudgetDb.litellm_budgettable (L20-L20; 1 source lines), _PrismaClientView.db (L27-L27; 1 source lines),
-  BudgetRepository.table (L34-L36; 3 source lines), BudgetRepository.model_class (L39-L40; 2 source lines),
-  BudgetRepository.find_by_id (L42-L43; 2 source lines), BudgetRepository.create_budget (L45-L79; 34 source
-  lines), BudgetRepository.update_budget (L81-L113; 32 source lines), BudgetRepository.delete_budget (L115-L117;
-  3 source lines). litellm/repositories/object_permission_repository.py: ObjectPermissionRepository.__init__
-  (L18-L20; 3 source lines), ObjectPermissionRepository.table (L23-L25; 3 source lines), ObjectPermissionRepository.model_class
-  (L28-L29; 2 source lines), ObjectPermissionRepository.find_by_id (L31-L34; 4 source lines), ObjectPermissionRepository.create_permission
-  (L36-L75; 39 source lines), ObjectPermissionRepository.update_permission (L77-L117; 40 source lines),
-  ObjectPermissionRepository.delete_permission (L119-L121; 3 source lines). litellm/repositories/config_repository.py:
-  _decoded_json (L13-L15; 3 source lines), _ConfigRow.param_name (L20-L20; 1 source lines), _ConfigRow.param_value
-  (L23-L23; 1 source lines), _ConfigTable.find_unique (L27-L27; 1 source lines), _ConfigTable.find_many
-  (L29-L29; 1 source lines), _ConfigTable.upsert (L31-L31; 1 source lines), _ConfigTable.delete (L33-L33;
-  1 source lines), ConfigParam.__init__ (L39-L41; 3 source lines), ConfigRepository.__init__ (L47-L49;
-  3 source lines), ConfigRepository.prisma_client (L52-L55; 4 source lines), ConfigRepository._config_table
-  (L58-L60; 3 source lines), ConfigRepository.table (L63-L64; 2 source lines), ConfigRepository.get_param
-  (L66-L74; 9 source lines), ConfigRepository.set_param (L76-L86; 11 source lines), ConfigRepository.delete_param
-  (L88-L94; 7 source lines), ConfigRepository.get_all_params (L96-L105; 10 source lines). litellm/repositories/credentials_repository.py:
-  _PrismaCredentialsDb.litellm_credentialstable (L25-L25; 1 source lines), _PrismaClientView.db (L30-L30;
-  1 source lines), CredentialsRepository.__init__ (L36-L37; 2 source lines), CredentialsRepository.prisma_client
-  (L40-L44; 5 source lines), CredentialsRepository.table (L47-L51; 5 source lines), CredentialsRepository._to_model
-  (L54-L64; 11 source lines), CredentialsRepository.find_all (L66-L67; 2 source lines), CredentialsRepository.create
-  (L69-L70; 2 source lines), CredentialsRepository.find_by_name (L72-L74; 3 source lines), CredentialsRepository.update_by_name
-  (L76-L79; 4 source lines), CredentialsRepository.delete_by_name (L81-L82; 2 source lines).
+  Own every CredentialsRepository function and its two table/client view protocols. It reads
+  litellm_credentialstable through B120.wrap_table_actions_for_config_sync; a write completes before
+  publication. B120's production publisher skips absent Redis and warns 'config sync publish for
+  litellm_credentialstable failed: ...' on an ordinary Redis error, preserving the successful write
+  result. An explicitly injected publisher exception can instead propagate after the commit; do
+  not confuse that test seam with the production best-effort publisher. A missing client uses the same
+  RuntimeError above. find_all returns raw rows. create, update_by_name and delete_by_name pass data
+  through verbatim and key operations by credential_name. find_by_name alone uses _to_model: None
+  remains None, B700.record_to_dict supplies fields, credential_name is required, and falsey
+  credential_values/credential_info become {} before B721.CredentialItem validation. These methods
+  never encrypt or decrypt credential values; B061's credential service prepares stored ciphertext.
 
+  Native Postgres tests use POSTGRES_TEST_URL when supplied, otherwise testcontainers, with independent
+  schemas and cleanup. Failure to connect/start fails the test. Compare raw rows to independently
+  initialized pinned fixtures and check write/publication order with actual database mutations.
+  Only _decoded_json's pure conversion enters Management::database operation resource_repository;
+  do not call repository methods from a helper adapter or simulate a database in Python.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  This task's database JSON boundary decode_config_json validates stored config values using a bounded
+  JSON decoder; B2307 supplies the fuzz workspace, not the parser implementation. The
+  resource_config_json fuzz target calls the production entry point.
+  Add malformed JSON, scalar, array, object, duplicate-key, byte-limit and depth-limit seeds. Limit
+  otherwise unbounded JSON input to 1048576 bytes/depth 64, returning the row decode error on excess;
+  native_config_value_limits covers this recorded difference. No configuration setting is introduced.
 
-
-  Add the resource_repository operation under B856 Management::database. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a resource-repository-* seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 393 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  393 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 642 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Caller search leaves 133 nonblank, noncomment function lines plus the model table-name declaration.
+  Budget 170 production, 230 behavior/Postgres tests, 55 pure-helper adapters, 55 decoder/fuzz and
+  40 wiring lines, 550 total within 600. Keep native modules below 300 lines; SQL counts toward the gate.
 scope:
   paths:
     - crates/betterlite-db/src/resource_repository.rs
     - crates/betterlite-db/src/resource_repository/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/resource_repository/fixtures/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/resource_config_json.rs
+    - crates/betterlite-db/fuzz/corpus/resource_config_json/**
     - tools/oracle/src/helpers/resource_repository.rs
-    - tools/oracle/src/helpers/resource_repository/**
     - tools/oracle/helpers/resource_repository.py
-    - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
     - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/resource-repository/**
     - tools/oracle/fuzz/corpus/helper_case/resource-repository-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L1-L176
-    why: Pinned implementation and exact ownership boundary for resource_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L1-L117
-    why: Pinned implementation and exact ownership boundary for resource_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L1-L121
-    why: Pinned implementation and exact ownership boundary for resource_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L1-L105
-    why: Pinned implementation and exact ownership boundary for resource_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L1-L82
-    why: Pinned implementation and exact ownership boundary for resource_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L29-L31
-    why: Own ModelRepository.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L34-L35
-    why: Own ModelRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L38-L39
-    why: Own ModelRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L41-L49
-    why: Own ModelRepository._encrypt_litellm_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L51-L61
-    why: Own ModelRepository._decrypt_litellm_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L63-L78
-    why: Own ModelRepository._to_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L80-L81
-    why: Own ModelRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L83-L86
-    why: Own ModelRepository.find_by_name; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L88-L91
-    why: Own ModelRepository.find_all; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L93-L96
-    why: Own ModelRepository.find_unblocked; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L98-L101
-    why: Own ModelRepository.find_all_except; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L103-L111
-    why: Own ModelRepository.find_by_team_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L113-L140
-    why: Own ModelRepository.create_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L142-L164
-    why: Own ModelRepository.update_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L166-L168
-    why: Own ModelRepository.delete_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L170-L172
-    why: Own ModelRepository.block_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L174-L176
-    why: Own ModelRepository.unblock_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L20-L20
-    why: Own _BudgetDb.litellm_budgettable; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L27-L27
-    why: Own _PrismaClientView.db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L34-L36
-    why: Own BudgetRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L39-L40
-    why: Own BudgetRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L42-L43
-    why: Own BudgetRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L45-L79
-    why: Own BudgetRepository.create_budget; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L81-L113
-    why: Own BudgetRepository.update_budget; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L115-L117
-    why: Own BudgetRepository.delete_budget; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L18-L20
-    why: Own ObjectPermissionRepository.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L23-L25
-    why: Own ObjectPermissionRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L28-L29
-    why: Own ObjectPermissionRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L31-L34
-    why: Own ObjectPermissionRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L36-L75
-    why: Own ObjectPermissionRepository.create_permission; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L77-L117
-    why: Own ObjectPermissionRepository.update_permission; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L119-L121
-    why: Own ObjectPermissionRepository.delete_permission; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
-    why: Own _decoded_json; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L20-L20
-    why: Own _ConfigRow.param_name; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L23-L23
-    why: Own _ConfigRow.param_value; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L27-L27
-    why: Own _ConfigTable.find_unique; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L29-L29
-    why: Own _ConfigTable.find_many; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L31-L31
-    why: Own _ConfigTable.upsert; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L33-L33
-    why: Own _ConfigTable.delete; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L39-L41
-    why: Own ConfigParam.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L47-L49
-    why: Own ConfigRepository.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L52-L55
-    why: Own ConfigRepository.prisma_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L58-L60
-    why: Own ConfigRepository._config_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L63-L64
-    why: Own ConfigRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L66-L74
-    why: Own ConfigRepository.get_param; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L76-L86
-    why: Own ConfigRepository.set_param; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L88-L94
-    why: Own ConfigRepository.delete_param; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L96-L105
-    why: Own ConfigRepository.get_all_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L25-L25
-    why: Own _PrismaCredentialsDb.litellm_credentialstable; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L30-L30
-    why: Own _PrismaClientView.db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L36-L37
-    why: Own CredentialsRepository.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L40-L44
-    why: Own CredentialsRepository.prisma_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L47-L51
-    why: Own CredentialsRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L54-L64
-    why: Own CredentialsRepository._to_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L66-L67
-    why: Own CredentialsRepository.find_all; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L69-L70
-    why: Own CredentialsRepository.create; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L72-L74
-    why: Own CredentialsRepository.find_by_name; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L76-L79
-    why: Own CredentialsRepository.update_by_name; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L81-L82
-    why: Own CredentialsRepository.delete_by_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/model_repository.py#L22-L111
+    why: Live raw-table access, read decryption and excluded-ID lookup; unused convenience queries are excluded below.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/budget_repository.py#L16-L43
+    why: Budget row/table access and the find_by_id call used by key reassignment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/object_permission_repository.py#L15-L28
+    why: Permission table's explicit writer selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L86
+    why: Live config get/set path, JSON strings and upsert fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/credentials_repository.py#L23-L82
+    why: Raw credential storage with publication wrapper and named read conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-L160
+    why: B120 supplies write-then-publish ordering and catches ordinary production Redis failures.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: encrypted_model_roundtrip,
-      cipher_failure_no_write, permission_upsert, budget_partial_update, config_json_string, credential_name_query,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: 'postgres_pinned_rows covers raw_model_table, excluded_model_id, model_json_columns,
+      model_nonstring_params, model_decrypt_valid_plaintext_and_corrupt, constructor_key_not_read_key,
+      budget_id_column, permission_writer_choice, config_writer_choice, config_missing,
+      config_create_update_fields, config_original_return_value, config_verbatim_string,
+      credential_verbatim_writes, credential_raw_list, credential_named_lookup and falsey_credential_maps.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_failure_effects covers missing_client_before_query, invalid_model_json,
+      config_bare_string_read_failure, config_upsert_failure, credential_missing_name,
+      model_raw_write_before_publication, credential_write_before_publication,
+      credential_redis_absent_noop, credential_redis_failure_warns_but_succeeds,
+      injected_publisher_error_after_commit and read_has_no_publication.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'config_json_conversion compares object_array_scalar_null, quoted_string, duplicate_last_value
+      and malformed_json with the pure pinned helper. native_config_value_limits covers bounded failure
+      and the actual decoder replays all resource_config_json fuzz seeds.'
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus, parser-corpus]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_repository::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/resource_repository.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-repository-*")"
-        && grep -rlq "resource_repository" tools/oracle/fuzz/corpus/helper_case/resource-repository-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: A live repository's row conversion or read/write behavior differs from the pin.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_repository::tests::/) - test(replays_the_resource_config_json_corpus)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_repository::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_repository::tests::postgres_failure_effects$/)'
+      why: Raw row or failure-order assertions are absent or fail on real Postgres.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_repository::tests::postgres_pinned_rows$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_repository::tests::postgres_failure_effects$/)'
+    - id: helper-python
+      why: The pure config-value adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/resource_repository.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new resource_repository operation reaches the shared HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/resource-repository-*')" && grep -rlq resource_repository tools/oracle/fuzz/corpus/helper_case/resource-repository-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The config-row decoder lacks its registered target or production replay coverage.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/resource_config_json.rs && grep -q resource_config_json crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/resource_config_json)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_resource_config_json_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/resource-repository/encrypted-model-roundtrip.yaml
-  - tools/oracle/cases/helpers/resource-repository/cipher-failure-no-write.yaml
-  - tools/oracle/cases/helpers/resource-repository/permission-upsert.yaml
-  - tools/oracle/cases/helpers/resource-repository/budget-partial-update.yaml
-  - tools/oracle/cases/helpers/resource-repository/config-json-string.yaml
-  - tools/oracle/cases/helpers/resource-repository/credential-name-query.yaml
-deviations: []
+  - tools/oracle/cases/helpers/resource-repository/config-json-shapes.yaml
+  - tools/oracle/cases/helpers/resource-repository/config-json-invalid.yaml
+deviations:
+  - what: Config-row JSON over 1048576 bytes or depth 64 raises a bounded row-decode error.
+    why: The new outside-byte entry point must satisfy bounded-inputs; the pin has no equivalent bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'model_repository.py: _encrypt_litellm_params, find_by_id, find_by_name, find_all, find_unblocked,
+    find_by_team_id, create_model, update_model, delete_model, block_model and unblock_model have no
+    production caller at the pin; calls among those unused convenience methods do not make them live.'
+  - 'budget_repository.py: create_budget, update_budget and delete_budget have no caller at the pin.'
+  - 'object_permission_repository.py: find_by_id, create_permission, update_permission and
+    delete_permission have no caller at the pin; live callers use table actions.'
+  - 'config_repository.py: delete_param and get_all_params have no caller at the pin.'
+  - B700 owns BaseRepository and record_to_dict; B714 owns reader/writer handle selection; B726 owns PrismaTableRepository including publication wiring.
+  - B2303 owns decryption; B061's credential routes and B836's model writes own encryption before raw storage.
 pitfalls:
-  - A cipher error cannot silently store plaintext credentials.
+  - A credential repository write preserves the caller's bytes and cannot be credited with at-rest encryption.
+  - The model repository's encryption_key constructor argument is not used by read decryption.
+  - set_param accepts a bare string that get_param later rejects as invalid JSON.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

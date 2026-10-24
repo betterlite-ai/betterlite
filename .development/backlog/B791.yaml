@@ -2,7 +2,7 @@ id: B791
 milestone: M4 keys, spend and management
 title: User info and administrator projections
 status: todo
-depends_on: [B001, B002, B003, B052, B171, B722, B723, B724, B732, B742, B790, B800, B813, B856, B860, B865]
+depends_on: [B001, B002, B003, B052, B071, B124, B720, B722, B723, B724, B732, B790, B800, B813, B860, B865, B2314, B2334]
 file: tasks/B791-user-info.yaml
 covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"

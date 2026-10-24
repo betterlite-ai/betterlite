@@ -2,7 +2,7 @@ id: B1075
 milestone: M5 api families
 title: Vector file resolution
 status: todo
-depends_on: [B171, B174, B1020, B1061, B1062, B1016, B1019, B1021, B2400, B732]
+depends_on: [B171, B1017, B1020, B1061, B1062, B1087, B1016, B1021, B002]
 file: tasks/B1075-vector-file-resolution.yaml
 covers:
   - "litellm/proxy/vector_store_files_endpoints/endpoints.py"

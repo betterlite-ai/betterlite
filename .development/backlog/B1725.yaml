@@ -2,7 +2,7 @@ id: B1725
 milestone: M4 keys, spend and management
 title: Calculate request estimates and expose provider budget state
 status: todo
-depends_on: [B002, B003, B052, B068, B125, B189, B198, B204, B724, B726, B732, B844, B860, B865]
+depends_on: [B002, B003, B068, B125, B189, B198, B204, B724, B726, B732, B844, B860, B865]
 file: tasks/B1725-spend-estimates.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

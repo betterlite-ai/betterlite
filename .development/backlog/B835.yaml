@@ -1,8 +1,8 @@
 id: B835
 milestone: M4 keys, spend and management
-title: Persist model update and block state
+title: Patch stored models and report serving reload results
 status: todo
-depends_on: [B001, B003, B052, B061, B171, B368, B725, B732, B734, B820, B832, B833, B834, B837, B841, B856, B860, B1213, B1214]
+depends_on: [B001, B002, B003, B052, B065, B124, B302, B732, B820, B832, B834, B836, B837, B841, B860, B1213]
 file: tasks/B835-model-patch.yaml
 covers:
   - "litellm/proxy/management_endpoints/model_management_endpoints.py"

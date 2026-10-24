@@ -2,7 +2,7 @@ id: B705
 milestone: M4 keys, spend and management
 title: Postgres migrations for identity history
 status: todo
-depends_on: [B171, B700, B704, B856, B860]
+depends_on: [B700, B704, B860]
 file: tasks/B705-schema-identity-history.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"

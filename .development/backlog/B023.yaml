@@ -2,7 +2,7 @@ id: B023
 milestone: M2 routing
 title: Scoped router weights validation and application
 status: todo
-depends_on: [B008, B302, B051, B052, B055, B057, B060, B066, B301, B361, B002]
+depends_on: [B008, B302, B051, B052, B055, B057, B060, B066, B301, B361, B002, B2301]
 file: tasks/B023-router-weights.yaml
 covers:
   - "litellm/proxy/management_endpoints/router_weights.py"

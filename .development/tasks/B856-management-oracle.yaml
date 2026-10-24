@@ -1,24 +1,43 @@
 id: B856
-title: Management oracle namespaces and Postgres test fixture
+title: Management helper namespaces and comparison contracts
 description: >-
-  Extend B171 HelperCall with the closed Management namespace and typed domain operation enums under helpers/management.
-  Keep the existing HelperCase parser and helper_case fuzz target; register a management PostgresProbe
-  operation whose Python side executes SELECT 1 through asyncpg in the isolated fixture supplied by B860.
-  B001 remains the sole HTTP comparator. A helper adapter may call only a referenced MIT helper, never
-  a route function; the Python adapter must not implement an expected algorithm. Reject unknown fields/operations
-  and compare ordered warnings and typed effects. Add asyncpg as a locked dev dependency only if the pinned
-  environment lacks it; never install or import enterprise code.
+  Extend B171's existing HelperCall with a closed Management namespace and the domain dispatch files
+  models, auth, teams, users, keys, jwt and database. Domain
+  operations are added by their task owners; this infrastructure must not depend on those callers.
+  Bootstrap one protocol smoke operation Management::Models::PathEncoding that forwards B171's
+  existing single/multi-segment encoder, without implementing a second encoder. Python invokes the
+  same pinned MIT url_utils functions independently; this case proves namespace dispatch, not model
+  authorization. Reject unknown domains, operations, unknown/duplicate input fields and malformed
+  union tags through the actual HelperCase decoder before starting a child process.
+
+  Preserve B171's bounded case/output/runtime, fresh child, env_clear allowlist, forced local model
+  cost map, one JSON result on stdout and diagnostic stderr. Normal mode invokes native Rust and
+  pinned Python separately; self-check invokes Python twice and must not satisfy the normal comparison
+  test. Compare typed success or exception class/status/type/message/param/code, preserving missing
+  versus null and string versus numeric codes. Keep ordered warning and typed effect sequences; no
+  sorting of effects or blanket ignored error messages. compare.ignore remains explicit JSON pointers
+  with a reason, and unknown pointers fail rather than silently hiding a mismatch.
+
+  Secret-bearing effect fields are compared before diagnostic redaction. A changed credential still
+  fails, but neither expected nor actual secret is printed in stdout/stderr/diff artifacts. Test equal
+  secrets, unequal secrets and reordered effects separately; redacting both to the same placeholder
+  before comparison would hide a mismatch. Domain adapters declare their typed secret fields rather
+  than searching arbitrary JSON strings for credentials. No new database fixture or asyncpg dependency
+  is needed for this dispatch work. Database operations are native Postgres tests or B860 booted HTTP
+  cases; SELECT 1 is not a LiteLLM helper behavior and does not belong in the equality corpus.
 
 
-  B860 owns the Postgres fixture and HttpCase schema/runner extension. This task only extends the existing
-  HelperCase decoder, with a new management seed and the existing replay test; no management_case target
-  or second fixture crate is created.
+  B860 retains all database fixture selection (POSTGRES_TEST_URL, otherwise testcontainers), isolation
+  and HTTP effects. B001 remains the HTTP comparator. This task owns only management protocol records,
+  dispatch and comparisons, with an added management seed in the existing helper_case corpus.
 
 
-  Write helpers::management::tests::{detects_changed_result,rejects_unknown_operation,redacts_secret_effect};
-  comparison must fail for altered effect order and secrets. Estimate 180 protocol/dispatch, 150 tests,
-  100 Python and 70 registration/corpus lines, 500 total. The only decoder is B171 HelperCase; extend
-  its existing helper_case seed/replay, not a new target.
+  Named tests are namespace_native_dispatch, namespace_python_dispatch, detects_changed_result,
+  detects_effect_order, detects_warning_order, exception_null_and_code_types, rejects_unknown_domain,
+  rejects_unknown_operation, rejects_duplicate_fields, rejects_unknown_fields, rejects_unknown_ignore,
+  secret_mismatch_still_fails, redacts_secret_artifacts and self_check_is_not_native. There are no owned
+  LiteLLM functions; budget 180 typed protocol/dispatch, 200 tests, 100 Python and 50 wiring lines,
+  530 within 600. Extend B171's decoder/fuzz target instead of adding management_case.
 scope:
   paths:
     - tools/oracle/Cargo.toml
@@ -27,16 +46,12 @@ scope:
     - tools/oracle/src/helpers/management/**
     - tools/oracle/helpers/dispatch.py
     - tools/oracle/helpers/management/**
-    - tools/oracle/litellm/pyproject.toml
-    - tools/oracle/litellm/uv.lock
     - tools/oracle/fuzz/corpus/helper_case/management-*
     - tools/oracle/cases/helpers/management/**
   lint_tables: false
 references:
-  - url: https://docs.rs/sqlx/latest/sqlx/postgres/index.html
-    why: Isolated Postgres connections and schema/transaction facts.
-  - url: https://docs.rs/testcontainers/latest/testcontainers/
-    why: Test-owned Postgres lifecycle, cancellation and teardown.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L129
+    why: The protocol smoke operation forwards B171's existing pure encoder on both sides.
 dod:
   - text: Typed Management dispatch invokes separate Rust/Python operations and detects altered results,
       effects and secrets.
@@ -63,19 +78,19 @@ checks:
         --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: The extended production HelperCase decoder rejects its new management seed.
-      run: grep -rlq management tools/oracle/fuzz/corpus/helper_case/management-* && cargo nextest run
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/management-*')" && grep -rlq management tools/oracle/fuzz/corpus/helper_case/management-* && cargo nextest run
         --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/management/postgres-probe.yaml
+  - tools/oracle/cases/helpers/management/model-path-reserved-characters.yaml
+  - tools/oracle/cases/helpers/management/model-path-multisegment-unicode.yaml
 deviations: []
 out_of_scope:
   - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - HelperCall remains a closed typed enum, so adding a management operation requires both dispatchers
-    and a new helper_case seed.
-  - Calling a FastAPI endpoint directly bypasses route dependencies and cannot prove an HTTP contract.
+  - Comparing already-redacted effects makes two different credentials appear equal.
+  - A successful Python self-check does not exercise the native management dispatcher.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

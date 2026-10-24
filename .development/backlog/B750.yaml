@@ -2,7 +2,7 @@ id: B750
 milestone: M4 keys, spend and management
 title: Priced and zero-cost model admission
 status: todo
-depends_on: [B001, B002, B003, B013, B171, B302, B732, B747, B752, B856, B860, B882, B886]
+depends_on: [B001, B002, B003, B013, B171, B302, B732, B747, B752, B757, B856, B868, B882, B886]
 file: tasks/B750-auth-pricing.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"

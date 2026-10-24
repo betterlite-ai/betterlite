@@ -162,8 +162,8 @@ out_of_scope:
     _cost_map_entry (L953-L960), _loaded_catalog_entry (L966-L972).'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B834 owns _auto_router_capability_slot
     (L521-L675).'
-  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B835 owns update_db_model (L975-L1085),
-    patch_model (L1093-L1320).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B835 owns patch_model
+    (L1093-L1320); B836 owns update_db_model (L975-L1085) beside its team-write caller.'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B836 owns _add_model_to_db (L1495-L1525),
     _add_team_model_to_db (L1528-L1580), _update_team_model_in_db (L1583-L1669), _get_public_model_name
     (L1672-L1715), _setup_new_team_model_assignment (L1718-L1731), delete_team_models (L1769-L1809), _update_existing_team_model_assignment

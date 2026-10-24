@@ -1,11 +1,56 @@
 id: B861
 title: Shared management input and delegation guards
 description: >-
-  Implement ManagementGuards for finite Decimal spend, budget durations, per-model team limits, required
-  analytics identity, administrator-only pass-through grants and guardrail opt-outs. Preserve the exact
-  truthy-versus-empty checks and metadata move behavior. Omit premium-user checks and retain every non-license
-  validation. Requests without a user_id cannot turn a service-account analytics query into an unfiltered
-  report.
+  Implement the nine ManagementGuards helpers over B732 principals and B859 request records. None of
+  them writes a database row. validate_finite_spend accepts None, zero and negative finite values;
+  NaN/+inf/-inf raise HTTP 400 detail.error 'spend must be a finite number. Received: {value}'. Reject
+  nonfinite input before converting to Decimal; do not accidentally add a nonnegative-spend rule.
+  validate_budget_duration passes None or a string to B2317 budget_duration_error, propagating its
+  exact message as detail.error with caller-supplied status_code (default 400). B2317 owns duration
+  parsing, positive/overflow checks, config and fuzzing; this wrapper adds no parser.
+
+  validate_team_model_max_budget returns immediately for None/empty map. At the pin any nonempty
+  map with premium_user is not True fails 403 before field validation; omit only this paid-tier gate
+  under the README decision, with native_no_license_team_budget proving the deliberate difference.
+  Keep validation order per model: stripped key nonempty; max_budget non-null, finite and >=0;
+  budget_duration present; validate its duration; reject non-null tpm_limit OR rpm_limit even zero.
+  Errors are HTTP 400 detail.error respectively 'model_max_budget keys must be non-empty model names',
+  "model_max_budget[{name!r}].max_budget must be a non-negative finite number. Received: {value}",
+  "model_max_budget[{name!r}] requires a budget_duration, e.g. '1d' or '30d'", the B2317 duration error,
+  and "model_max_budget[{name!r}] tpm_limit/rpm_limit are not enforced on a team; set per-model rate
+  limits on the key instead". Preserve original key spelling in errors, including whitespace.
+
+  require_caller_user_id_for_non_admin rejects ONLY None, including an admin passed directly, with
+  403 detail.error 'Service-account keys cannot query user analytics. Use a user-bound key, or call
+  as a proxy admin.' Empty string returns unchanged; callers own the admin bypass. Passthrough grants
+  permit only exact proxy_admin (not proxy_admin_viewer); default entity='key'. A truthy top-level
+  allowed_passthrough_routes fails before truthy dict metadata.allowed_passthrough_routes. Messages
+  are 'Only proxy admins can set `allowed_passthrough_routes` on a {entity}.' and the same with
+  `metadata.allowed_passthrough_routes`. Empty/null values and non-dict metadata do not trigger it.
+
+  Guardrail opt-out similarly bypasses only proxy_admin. Any truthy top-level flag OR truthy metadata
+  flag requests an exemption, but a stored existing_metadata.disable_global_guardrails is True permits
+  a non-admin to re-send it. Stored 1 or string 'true' is insufficient for that exact-True exception.
+  Otherwise 403 detail.error 'Only proxy admins can set `disable_global_guardrails` on a {entity}.'
+  False/None/empty requests do not opt out and pass, even when clearing an exemption.
+
+  _set_object_metadata_field uses metadata or {}, then assigns even None/falsy values. At the pin a
+  truthy premium field invokes _premium_user_check(field_name) before mutation; omit that licensing
+  call only, testing native_no_license_metadata. _update_metadata_field checks premium truthiness
+  first (the source check omits the feature argument), then moves an existing NON-NULL top-level
+  value into metadata, overwriting the nested value. None stays top-level and does not clear a nested
+  value; false, [], {}, 0 and '' are moved and persisted. Existing non-null malformed metadata can
+  fail assignment after the top-level pop; preserve that partial in-memory mutation, not a copy.
+  _update_metadata_fields visits premium fields first, then ordinary fields in declaration order.
+
+  Iterate premium fields disable_global_guardrails, guardrails, policies, tags, team_member_key_duration,
+  prompts, logging, secret_manager_settings, allowed_passthrough_routes; ordinary fields model_rpm_limit,
+  model_tpm_limit, model_itpm_limit, model_otpm_limit, default_estimated_output_tokens,
+  default_estimated_output_tokens_per_model, mcp_rpm_limit, tag_rpm_limit, rpm_limit_type, tpm_limit_type,
+  enforced_params, temp_budget_increase, temp_budget_expiry, allowed_vector_store_indexes,
+  enforced_batch_output_expires_after, enforced_file_expires_after, throttle_on_budget_exceeded,
+  enable_prompt_caching, end_user_budget_id. Unknown fields remain untouched. These are metadata moves,
+  not secret encryption; the eventual persistence owner must protect any credential-bearing values.
 
 
   Build the production management_guards module in betterlite-server; reuse the typed dependencies listed
@@ -21,8 +66,7 @@ description: >-
   (L639-L661; 16 source lines), _update_metadata_fields (L675-L688; 12 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Compare finite spend/budget amounts through checked Decimal conversion; these guards perform no SQL.
 
 
   Add the management_guards operation under B856 Management::models. Python calls only the owned MIT helper
@@ -32,20 +76,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 195 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  195 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 438 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The nine functions contain 143 nonblank noncomment lines excluding docstrings. Allow 160 production,
+  280 tests, 100 adapters and 30 wiring lines, 570 within 650. Pure parity cases use premium_user=True
+  to reach MIT validation; two complete native test names prove the license deviations outside parity.
 scope:
   paths:
     - crates/betterlite-server/src/management_guards.rs
@@ -62,6 +95,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/management-guards-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5101
+    why: Ordered ordinary and premium metadata field registries consumed by the helpers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L13-L24
     why: Own validate_finite_spend; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L27-L41
@@ -82,6 +117,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L675-L688
     why: Own _update_metadata_fields; preserve caller-visible values and failure ordering.
 dod:
+  - text: native_no_license_team_budget and native_no_license_metadata remove only licensing and retain invalid-limit and caller-permission failures.
+    proof: [behavior-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: nonfinite_spend, invalid_duration,
       anonymous_analytics, passthrough_metadata_denied, guardrail_opt_out_denied, empty_metadata_clear.'
     proof:
@@ -116,10 +153,25 @@ oracle_cases:
   - tools/oracle/cases/helpers/management-guards/passthrough-metadata-denied.yaml
   - tools/oracle/cases/helpers/management-guards/guardrail-opt-out-denied.yaml
   - tools/oracle/cases/helpers/management-guards/empty-metadata-clear.yaml
-deviations: []
+  - tools/oracle/cases/helpers/management-guards/finite-negative-zero-none.yaml
+  - tools/oracle/cases/helpers/management-guards/duration-status-override.yaml
+  - tools/oracle/cases/helpers/management-guards/team-budget-empty-map.yaml
+  - tools/oracle/cases/helpers/management-guards/team-budget-key-cap-duration-order.yaml
+  - tools/oracle/cases/helpers/management-guards/team-budget-zero-rate-limit-rejected.yaml
+  - tools/oracle/cases/helpers/management-guards/user-id-empty-not-none.yaml
+  - tools/oracle/cases/helpers/management-guards/passthrough-top-before-metadata.yaml
+  - tools/oracle/cases/helpers/management-guards/passthrough-falsy-and-viewer.yaml
+  - tools/oracle/cases/helpers/management-guards/guardrail-existing-exact-true.yaml
+  - tools/oracle/cases/helpers/management-guards/guardrail-clear-vs-truthy-request.yaml
+  - tools/oracle/cases/helpers/management-guards/metadata-null-versus-falsy.yaml
+  - tools/oracle/cases/helpers/management-guards/metadata-overwrite-and-field-order.yaml
+  - tools/oracle/cases/helpers/management-guards/metadata-pop-before-malformed-target.yaml
+  - tools/oracle/cases/helpers/management-guards/metadata-unknown-field-retained.yaml
+deviations:
+  - what: Team model budgets and truthy premium metadata fields are available without a license instead of the MIT 403 enterprise-feature error.
+    why: README's no-paid-tier decision; native_no_license_team_budget and native_no_license_metadata retain every duration, finite-value and caller-permission guard.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L77-L123
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
   - 'litellm/proxy/management_endpoints/common_utils.py: B862 owns _prisma_value (L488-L489), member_budget_patch
     (L492-L501), _is_set_budget_value (L504-L509), _has_meaningful_budget_limit (L512-L515), _upsert_budget_and_membership
@@ -133,8 +185,10 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve the exact truthy-versus-empty checks and metadata move behavior.
+  - Negative finite spend passes, while a negative team max_budget fails.
+  - Clearing a metadata flag requires a falsy non-null value; null leaves it unmoved.
+  - An existing integer 1 does not grant the guardrail exemption allowed by literal True.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

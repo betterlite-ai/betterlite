@@ -2,7 +2,7 @@ id: B784
 milestone: M4 keys, spend and management
 title: Key lifecycle audit and secret-manager events
 status: todo
-depends_on: [B003, B012, B171, B732, B856, B898]
+depends_on: [B003, B171, B720, B732, B770, B856, B898, B2330]
 file: tasks/B784-key-events.yaml
 covers:
   - "litellm/proxy/hooks/key_management_event_hooks.py"

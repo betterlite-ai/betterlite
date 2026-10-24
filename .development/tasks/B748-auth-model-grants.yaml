@@ -1,10 +1,36 @@
 id: B748
-title: Combine key, team, user and organization model grants
+title: Agent model ceilings and fallback authorization
 description: >-
-  Implement agent model restrictions and the RouterFallbackAccessCheck adapter over entity model grants.
-  Define AgentRegistry::lookup(AgentId)->Result<AgentPolicy,AuthError> here; B141 implements it. Take
-  the virtual-key token exclusively from authenticated AuthContext, never caller request metadata. B310
-  invokes the fallback adapter for the resolved target.
+  Enforce agent ceilings and invoke B886's resolved-model policy before router fallbacks. For a falsey
+  model, missing token or falsey agent_id, the ceiling check returns True without agent lookup. Use
+  managed_agent_policy first; a managed policy resolves all managed ceilings and never calls the
+  unmanaged resolver. Otherwise a None unmanaged ceiling means no restriction. Resolve team aliases
+  through B747 once, then intersect every ceiling in order. Empty ceiling.models explicitly denies
+  with 403 agent_model_access_denied, param model, code 403 and the safe model-access message; keep
+  the internal diagnostic 'agent <id> access groups grant no models' separate. Nonempty ceilings
+  pass sorted model names, object_type=agent, team_id and B747 key aliases to _can_object_call_model.
+
+  Caller restrictions skip falsey model/missing token or absent agent_caller_auth. Load the caller
+  team first. When present, run B886 can_team_access_model before B887 member-model scope with the
+  caller auth, forwarding key aliases from the original agent token, then return without loading a
+  user. Otherwise load caller user and run B886 can_user_call_model if present. Loader/policy errors
+  propagate; no broad fallback silently widens the caller's model grant.
+
+  Own an AgentAccessSource port with managed policy, managed/unmanaged ceilings, caller auth and
+  caller team/user reads corresponding to those six MIT collaborators in B141's agent auth module.
+  B141 installs its implementation when agent routes are composed; B732 supplies it to these checks.
+  A configured agent without that service is an initialization error, not an empty ceiling. Native
+  recording-port tests prove lookup order; actual agent registry storage remains B141's responsibility.
+
+  general_settings.enforce_fallback_model_access defaults false. Disabled enforcement returns True
+  without extracting a token; enabled internal requests with no auth context also return True.
+  Source extracts user_api_key_auth from metadata first, then litellm_metadata, skipping invalid
+  Pydantic shapes. betterlite retains that projection only in its source-comparison adapter and uses
+  authenticated AuthContext in production, as declared below. With a token, call B886
+  can_key_call_resolved_model with llm_model_list=None. A ProxyException returns False silently;
+  any other error WARNs 'Skipping fallback to model=...: authorization lookup failed' and returns
+  False without replacing the original provider error. A completed check returns True. B310 consumes
+  this predicate; do not import the router fallback orchestrator back into authentication.
 
 
   Build the production auth_model_grants module in betterlite-auth; reuse the typed dependencies listed
@@ -31,44 +57,31 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Agent chat requests use B732's installed AgentAccessSource and compare the safe 403 envelope while
+  retaining private diagnostics internally. Fallback cases assert a boolean and ordered lookup/log
+  effects; a refused fallback must not overwrite the original provider failure.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 fixtures use POSTGRES_TEST_URL or testcontainers with agent callers having a narrower team
+  grant than the agent itself; a broad agent grant must not erase that caller ceiling.
 
 
-  Write betterlite-config::auth_model_grants::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B002 loader tests fallback_access_default_false, fallback_access_enabled and invalid_fallback_bool
+  assert the actual boolean conversion/rejection, then call production admission. There is no env
+  precedence or invalid-value fallback. Seed the nested general_settings key. The Python operation
+  injects is_enforced instead of calling _enforced_by_general_settings with proxy_server globals.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  The source comparison adapter alone decodes legacy metadata auth shapes; production consumes the
+  authenticated context and typed ceilings. It must never grant access from client-supplied metadata.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 123 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  123 production, 136 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 439 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: 123 source lines; allow 170 production/port, 255 tests, 80 adapters, 65 wiring and 50 config,
+  620 within 700. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_fallback_authorization_obtains_the_token_from_authcontext_rather_than.
+  Native-only deviation tests in this production module: fallback_uses_auth_context and forged_metadata_cannot_grant.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -107,12 +120,8 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4546-L4640
     why: Pinned implementation and exact ownership boundary for auth_model_grants.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4683-L5297
-    why: Pinned implementation and exact ownership boundary for auth_model_grants.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_model_access.py#L1-L90
     why: Pinned implementation and exact ownership boundary for auth_model_grants.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3783-L3786
-    why: LiteLLM_ProjectTableCachedObj request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4546-L4585
     why: Own _check_agent_access_group_model_access; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4594-L4640
@@ -130,10 +139,20 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: fallback_target_denied,
-      agent_caller_restriction.'
+  - text: 'Agent cases: missing_model_token_agent_skips, managed_beats_unmanaged,
+      unmanaged_none_unrestricted, empty_ceiling_denies_403, all_ceilings_intersect,
+      team_alias_before_ceiling, sorted_models_and_key_aliases, caller_absent_skips,
+      caller_team_before_membership, caller_team_skips_user, caller_user_fallback,
+      missing_caller_user_skips and caller_lookup_error_propagates. Compare named helper rows
+      and the real HTTP denial envelope, keeping internal messages out of responses.'
     proof:
       - behavior-tests
+  - text: 'Fallback cases: disabled_skips_token, enabled_without_token_allows,
+      metadata_before_litellm_metadata, invalid_metadata_tries_second,
+      resolved_policy_without_model_list, proxy_denial_silent_false,
+      lookup_failure_warns_false and fallback_success_true. Native cases
+      fallback_uses_auth_context and forged_metadata_cannot_grant exercise the deliberate identity source.'
+    proof: [behavior-tests, helper-python, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -150,7 +169,7 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_fallback_authorization_obtains_the_token_from_authcontext_rather_than.'
+  - text: 'Native fallback_uses_auth_context and forged_metadata_cannot_grant prevent caller metadata from changing the authenticated token.'
     proof:
       - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
@@ -164,7 +183,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_model_grants::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_model_grants::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -192,6 +211,8 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/auth-model-grants/fallback-target-denied.yaml
   - tools/oracle/cases/helpers/auth-model-grants/agent-caller-restriction.yaml
+  - tools/oracle/cases/helpers/auth-model-grants/ceiling-intersection.yaml
+  - tools/oracle/cases/helpers/auth-model-grants/fallback-failure-policy.yaml
   - tools/oracle/cases/auth/auth-model-grants/fallback-target-denied.yaml
   - tools/oracle/cases/auth/auth-model-grants/agent-caller-restriction.yaml
 deviations:
@@ -199,8 +220,6 @@ deviations:
     why: Caller metadata cannot supply the authentication identity.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_model_access.py#L27-L68
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -320,6 +339,6 @@ pitfalls:
     run.
   - Agent registry and managed identity are B141 contracts, not B142.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

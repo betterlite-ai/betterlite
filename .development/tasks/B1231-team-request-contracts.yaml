@@ -1,11 +1,77 @@
 id: B1231
 title: Team management request and response contracts
 description: >-
-  Define the complete typed team/member request and response wire contracts, including field declarations,
-  absent/null patch states, one-identifier validation, permission operations, member budget windows and
-  response paging. decode_team_request(&[u8]) calls serde on the production closed request enum and preserves
-  source validation errors. B801 owns metadata-validator registry and policy integration; callers that
-  decode these requests depend directly on this contract part, avoiding a dependency on route implementations.
+  Define typed team/member wire contracts and production decode_team_request, preserving absent, null,
+  empty and zero values separately. B859 supplies TeamBase, Member and team/membership/deleted rows;
+  B2310 supplies object permissions and B2317 budget_duration_error. B801 owns metadata-validator registry
+  and route integration. There are no DB writes, secret encryption or permission checks in these models.
+
+
+  NewTeamRequest inherits B859 TeamBase defaults and makes whitespace-only team_id None before validation;
+  nonblank IDs keep their whitespace. Its added fields all default None: router_settings, model_aliases,
+  model_max_budget, tags, guardrails, policies, prompts, object_permission, allowed_passthrough_routes,
+  disable_global_guardrails, secret_manager_settings, model_rpm_limit, rpm_limit_type, tpm_limit_type,
+  model_tpm_limit, default_estimated_output_tokens, default_estimated_output_tokens_per_model, mcp_rpm_limit,
+  team_member_budget, team_member_rpm_limit, team_member_tpm_limit, team_member_key_duration,
+  team_member_budget_duration, allowed_vector_store_indexes, enforced_batch_output_expires_after and
+  enforced_file_expires_after. rpm/tpm limit types accept only guaranteed_throughput/best_effort_throughput;
+  estimated output tokens and per-model values must be positive integers. Router settings are dictionaries
+  checked by B008 validate_router_settings_dict, including nested weights. Other unvalidated dictionaries
+  and duration strings must not acquire new policy checks here. model_max_budget uses BudgetConfig aliases.
+
+
+  UpdateTeamRequest requires team_id and does not apply the create-only blank-ID normalization. Every other
+  declared field defaults None: team_alias, organization_id, metadata, tpm_limit, rpm_limit, tpd_limit,
+  max_budget, soft_budget, models, blocked, budget_duration, tags, model_aliases, guardrails, policies,
+  object_permission, disable_global_guardrails, team_member_budget, team_member_budget_duration,
+  team_member_rpm_limit, team_member_tpm_limit, team_member_key_duration, allowed_passthrough_routes,
+  secret_manager_settings, prompts, model_rpm_limit, model_tpm_limit, default_estimated_output_tokens,
+  default_estimated_output_tokens_per_model, mcp_rpm_limit, allowed_vector_store_indexes,
+  enforced_batch_output_expires_after, enforced_file_expires_after, router_settings, access_group_ids,
+  budget_limits, default_team_member_models and model_max_budget. Preserve fields-set tracking for
+  exclude_unset versus exclude_none; reuse the positive-token, router and nested budget/permission types.
+  Also own PatchTeamRequest L2284-L2293: inherit UpdateTeamRequest and override only team_id to nullable
+  with default None. B2370 checks a supplied ID against the path; this decoder does not infer the path ID.
+
+
+  Permission get/update requests require team_id; update also requires team_member_permissions. The get
+  response requires team_id/all_available_permissions and defaults nullable team_member_permissions to [].
+  Bulk permissions require permissions as KeyManagementRoutes values, with team_ids=None and
+  apply_to_all_teams=false. Its docstring says mutually exclusive, but there is no model validator enforcing
+  that selection; route policy owns it. Response requires message/teams_updated and defaults
+  permissions_appended=None. TeamIdSearchMatch accepts exactly exact/prefix. TeamListItem adds
+  members_count=0, keys_count=0 and nullable access_group_models/access_group_mcp_server_ids/
+  access_group_agent_ids=None. TeamListResponse requires teams (enriched/live/deleted row union), total,
+  page, page_size and total_pages; it does not impose positive pagination or compute those values.
+
+
+  BulkTeamMemberAddRequest requires team_id, defaults members/max_budget_in_team=None and nullable
+  all_users=false; this model does not require exactly one selection. Each result requires success, with
+  user_id/user_email/error/updated_user/updated_team_membership=None. Its response requires team_id, results,
+  total_requested, successful_additions and failed_additions, with updated_team=None. TeamMemberRef inherits
+  the missing-both identity error Either user id or user email must be provided; its own validator rejects
+  both non-null IDs with Each member must be identified by exactly one of user_id or user_email. Empty
+  strings count as identifiers. Extra fields are forbidden on refs, member budget patches, both bulk
+  delete/update bodies and metadata field declarations; other owned BaseModel declarations ignore extras.
+
+
+  Bulk member delete/update bodies require members tuples of length 1..500 inclusive, preserve duplicates
+  and order, and use constants MAX_BULK_TEAM_MEMBER_DELETES/MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES=500.
+  TeamMemberBudgetPatch adds max_budget_in_team/tpm_limit/rpm_limit/budget_duration/allowed_models=None;
+  only budget_duration calls B2317 persistability validation. Missing limits, explicit null, zero and
+  allowed_models=[] remain distinguishable; no positivity rule exists for these numeric limits.
+  Delete results require success and default user_id/user_email/error=None. Budget-update results also
+  default budget_id/max_budget/max_budget_source/tpm_limit/rpm_limit/budget_duration/allowed_models=None,
+  with source restricted to member/team_default. Both responses are ResourceResponse {data:[...]} without
+  pagination. TeamMemberInfoResponse extends membership with role/user_email/team_alias=None.
+
+
+  TeamMetadataFieldSchema requires a nonempty key (whitespace counts), label=None and no extra fields;
+  TeamMetadataSchemaResponse requires a fields tuple, including empty, rather than supplying a default.
+  TeamUserSpendRow requires team_id/user_id, defaults team_alias/user_email/user_alias=None, spend=0.0 and
+  prompt_tokens/completion_tokens/total_tokens/api_requests/successful_requests/failed_requests=0.
+  TeamUserSpendResponse requires start_date/end_date strings and results tuple; dates are not parsed here.
+  Preserve response arrays and nullable fields exactly, with checked Decimal conversions for money.
 
 
   Build the production team_request_contracts module in betterlite-server; reuse the typed dependencies
@@ -15,7 +81,7 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/types/proxy/management_endpoints/team_endpoints.py:
   team_request_contracts (L1-L255; 174 source lines). litellm/proxy/_types.py: NewTeamRequest (L2164-L2210;
-  44 source lines), UpdateTeamRequest (L2219-L2281; 61 source lines).
+  44 source lines), UpdateTeamRequest (L2219-L2281; 61 source lines), PatchTeamRequest (L2284-L2293; 2 source lines).
 
 
   Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
@@ -44,13 +110,13 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 279 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  279 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 564 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 281 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  281 production, 300 contract tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 721 changed lines estimated within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: request_byte_limit and request_json_depth_limit.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -78,9 +144,19 @@ references:
     why: Own NewTeamRequest; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2219-L2281
     why: Own UpdateTeamRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2284-L2293
+    why: Own the small PatchTeamRequest subtype used by B2370; team_id alone becomes optional.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_create_fields,
-      team_patch_null, member_one_identifier, member_permission_fields, budget_duration_validation.'
+  - text: 'Named field-table cases cover every declaration/default above through team_create_all_fields,
+      create_blank_id_only, team_update_all_fields, patch_optional_team_id, update_absent_null_empty_zero, positive_output_estimates,
+      throughput_enum_values, router_weights_validation, budget_config_aliases, permission_request_defaults,
+      permission_selection_left_to_route, permission_response_fields, team_id_search_modes,
+      list_live_deleted_enriched_union, list_count_defaults, bulk_add_defaults_and_no_selection_validator,
+      bulk_add_response_counts, member_identity_missing_both_and_present_both, empty_identifier_accepted,
+      forbidden_vs_ignored_extra_fields, bulk_members_one_and_five_hundred, bulk_members_empty_and_over_limit,
+      duplicates_and_order_retained, member_budget_patch_presence, member_budget_duration_errors,
+      budget_source_enum_and_data_envelope, membership_info_optional_fields, metadata_key_and_required_fields,
+      spend_row_zero_defaults and spend_response_unparsed_dates.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -94,7 +170,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: 'Native request_byte_limit and request_json_depth_limit assert typed failures above the declared bounds.'
     proof:
       - behavior-tests
 checks:
@@ -127,6 +203,16 @@ oracle_cases:
   - tools/oracle/cases/helpers/team-request-contracts/member-one-identifier.yaml
   - tools/oracle/cases/helpers/team-request-contracts/member-permission-fields.yaml
   - tools/oracle/cases/helpers/team-request-contracts/budget-duration-validation.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/create-versus-update-blank-id.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/positive-estimates-and-throughput-types.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/router-weights-and-budget-aliases.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/permission-selection-and-defaults.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/team-list-response-unions.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/bulk-add-selection-and-results.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/bulk-member-bounds-and-extra-fields.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/budget-patch-fields-and-response.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/member-info-and-metadata-schema.yaml
+  - tools/oracle/cases/helpers/team-request-contracts/team-user-spend-defaults.yaml
 deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
@@ -134,8 +220,8 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B859 owns inherited TeamBase/Member/team rows, B2310 object permissions and B2317 duration persistability.
+  - B008 owns validate_router_settings_dict; B1665 owns ResourceResponse, so these contracts never depend on B067's routes. B124 retains MemberDeleteRequest's base validator.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
@@ -189,9 +275,10 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - decode_team_request(&[u8]) calls serde on the production closed request enum and preserves source
-    validation errors.
+  - Only NewTeamRequest converts whitespace-only team_id to None; the update request retains it.
+  - Bulk permission selection exclusivity is documentation, not a validator on this request model.
+  - TeamMemberBudgetPatch accepts zero limits and distinguishes an omitted field from explicit null.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

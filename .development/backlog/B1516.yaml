@@ -1,0 +1,9 @@
+id: B1516
+milestone: M3 providers
+title: Authenticate Copilot embeddings and pin Messages to the session endpoint
+status: todo
+depends_on: [B006, B668, B960, B961, B962, B1512, B1513, B1514, B249, B171]
+file: tasks/B1516-copilot-embedding-messages.yaml
+covers:
+  - "litellm/llms/github_copilot/embedding/**"
+  - "litellm/llms/github_copilot/messages/**"

@@ -1,0 +1,9 @@
+id: B1410
+milestone: M3 providers
+title: Voxtral speech, transcription and Mistral resource credentials
+status: todo
+depends_on: [B002, B1408, B514, B515, B1122, B171]
+file: tasks/B1410-mistral-audio.yaml
+covers:
+  - "litellm/llms/mistral/common_utils.py"
+  - "litellm/llms/mistral/{audio_speech,audio_transcription}/**"

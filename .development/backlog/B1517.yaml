@@ -1,0 +1,11 @@
+id: B1517
+milestone: M3 providers
+title: Map Black Forest Labs image generation and validate polling hosts
+status: todo
+depends_on: [B002, B997, B184, B171]
+file: tasks/B1517-bfl-generation-format.yaml
+covers:
+  - "litellm/llms/black_forest_labs/common_utils.py"
+  - "litellm/llms/black_forest_labs/__init__.py"
+  - "litellm/llms/black_forest_labs/image_generation/{transformation,__init__}.py"
+  - "litellm/llms/black_forest_labs/image_edit/__init__.py"

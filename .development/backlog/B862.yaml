@@ -2,7 +2,7 @@ id: B862
 milestone: M4 keys, spend and management
 title: Membership budget merge-patch persistence
 status: todo
-depends_on: [B199, B700, B714, B720, B732, B829, B856, B859, B860]
+depends_on: [B124, B171, B720, B725, B732, B829, B856, B859, B860, B2317]
 file: tasks/B862-member-budget-patch.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_utils.py"

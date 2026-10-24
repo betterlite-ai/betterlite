@@ -2,7 +2,7 @@ id: B757
 milestone: M4 keys, spend and management
 title: Authentication error envelopes and sanitized diagnostics
 status: todo
-depends_on: [B001, B002, B003, B012, B171, B187, B715, B732, B741, B744, B856, B860, B872, B1217]
+depends_on: [B001, B002, B003, B012, B110, B171, B187, B206, B732, B741, B744, B856, B860, B872, B1100, B1102, B1217, B2327]
 file: tasks/B757-auth-errors.yaml
 covers:
   - "litellm/proxy/auth/auth_exception_handler.py"

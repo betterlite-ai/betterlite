@@ -1,0 +1,118 @@
+id: B2325
+title: Budget throttling, window starts and carried snapshots
+description: >-
+  Move the small budget primitives needed by B751/B752 below the B071 reservation umbrella. Own all
+  budget_throttle.py functions L19-L56, budget_reservation.py _coerce_window L894-L907,
+  get_budget_window_start L1268-L1283 and _coerce_datetime L1286-L1296, and all carried_budget_state.py
+  functions L18-L59. Build betterlite-auth::budget_primitives using B199 durations and B2313 snapshots.
+
+  litellm_settings.budget_exceeded_throttle_percentage defaults None. Accept only int/float excluding
+  bool and only 0<pct<=1; invalid, zero, negative, NaN or infinity returns None without warning.
+  should_throttle requires metadata.throttle_on_budget_exceeded exactly true and at least one nonnull
+  tpm/rpm limit, even zero or negative, then a valid percentage. throttled_limit leaves the input
+  unchanged for absent limit/pct; otherwise max(1,floor(limit*pct)), never repeated compounding.
+  B002 tests throttle_default_none, valid_fraction_and_one, invalid_type_bool_and_nonfinite_disabled
+  and opted_in_with_zero_limit exercise the real loader and consumer. No license branch exists.
+
+  Window coercion accepts mappings unchanged, JSON strings only when decoding yields a mapping,
+  otherwise empty; model_dump outputs are accepted only as mappings and a raising model_dump propagates.
+  Missing budget_duration returns None. Parse str(duration) through B199; any duration failure returns
+  None silently. Datetime input is retained; strings replace every Z with +00:00 then fromisoformat,
+  malformed/other values become None. A missing/invalid reset_at uses UTC now minus duration; naive
+  reset timestamps are UTC, aware timestamps retain their offset before subtraction. No positive-
+  duration guard is added. Decode JSON through decode_budget_window(&[u8]), used by production and
+  the budget_window fuzz target; malformed/scalar input returns an empty mapping as source does.
+  New limits of 1048576 bytes and depth 64 likewise return empty, with no panic or log, as a deviation.
+
+  Carrying a nonnull team assigns reset/max snapshot and team_model_max_budget; a nonnull user assigns
+  reset/max/user_alias snapshot. Missing objects leave earlier values untouched. Organization carry
+  always assigns alias and spend/max snapshot, using null max without a relation. Metadata visits team,
+  user, org snapshots in order, skips None, merges metadata_entries with later keys winning, and returns
+  an immutable map. It does not read spend, reserve, write database rows or encrypt anything.
+
+  B856 Management::auth budget_primitives adapters call the real MIT functions with clock/settings
+  injected and the Rust production module; compare outputs, mutation and exceptions. Add a B171
+  helper_case seed and fuzz malformed/duplicate/limit-boundary window JSON. Keep Rust files below 300
+  lines. The 95 nonblank non-comment lines excluding docstrings allow 160 production, 230 tests,
+  75 adapters, 65 config, 55 fuzz
+  and 35 wiring, 620 within a 675-line gate.
+scope:
+  paths:
+    - crates/betterlite-auth/src/budget_primitives.rs
+    - crates/betterlite-auth/src/budget_primitives/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/budget_window.rs
+    - crates/betterlite-auth/fuzz/corpus/budget_window/**
+    - crates/betterlite-config/src/budget_primitives.rs
+    - crates/betterlite-config/src/budget_primitives/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/budget-primitives-*
+    - tools/oracle/src/helpers/budget_primitives.rs
+    - tools/oracle/helpers/budget_primitives.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/budget-primitives/**
+    - tools/oracle/fuzz/corpus/helper_case/budget-primitives-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/budget_throttle.py#L19-L56
+    why: Percentage read, strict opt-in and flooring semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L907
+    why: Mapping/JSON/model window coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1268-L1296
+    why: Duration, timestamp and missing-reset fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/carried_budget_state.py#L18-L59
+    why: Snapshot mutation and ordered metadata projection.
+dod:
+  - text: 'Named cases: throttle_percentage_type_range_and_nonfinite, exact_opt_in_and_nonnull_limit,
+      throttle_floor_minimum_one_and_unset, window_mapping_json_scalar_dump_and_raising_dump,
+      duration_absent_invalid_and_string_coercion, reset_datetime_z_naive_offset_invalid,
+      missing_reset_uses_injected_now, snapshots_assign_only_present_objects,
+      organization_missing_budget_still_carries_alias_spend, metadata_snapshot_order_and_immutability,
+      native_window_limits_return_empty_mapping.'
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Loader and production decoder use new seeds and the window fuzz target replays its corpus.
+    proof: [config-tests, config-corpus, parser-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Budget primitive semantics or mutation differs from source.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_primitives::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: The throttle setting does not reach production policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^budget_primitives::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: The actual throttle key lacks a new loader seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/budget-primitives-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The source adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/budget_primitives.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The helper operation lacks a new shared decoder seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/budget-primitives-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The window boundary lacks its fuzz target or corpus replay.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/budget_window.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/budget_window)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_budget_window_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-primitives/throttle-type-and-boundaries.yaml
+  - tools/oracle/cases/helpers/budget-primitives/window-shapes-and-clock.yaml
+  - tools/oracle/cases/helpers/budget-primitives/carried-snapshots.yaml
+deviations:
+  - what: Window JSON above 1048576 bytes or depth 64 takes the same empty-window fallback as malformed JSON.
+    why: Bound a formerly unbounded decoder; native_window_limits_return_empty_mapping proves no budget-window panic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L907
+out_of_scope:
+  - B071 retains all reservation operations and other functions in budget_reservation.py.
+  - B2313 owns snapshot types/metadata_entries, B199 durations and B751/B752 admission callers.
+pitfalls:
+  - An opted-in zero limit qualifies for throttling and becomes at least 1 after scaling.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

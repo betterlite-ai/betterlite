@@ -12,18 +12,44 @@ description: >-
   Own main in migrations/run.py and litellm/proxy/prisma_migration.py only as the replacement native executable/exit
   boundary. No Prisma generate, Python, Node or subprocess runs in production. Parse --config and the
   explicit operation name; configuration resolution remains B002/B710. Define DbAdminBackend::run(DbAdminCommand,ResolvedConfig)->Future<Result<DbAdminOutcome,DbAdminError>>;
-  consumers register concrete native services and an unregistered operation fails explicitly. B051 migration
+  consumers register concrete native services and an unregistered operation fails explicitly. Native migration
   completion returns success 0, exhausted retries/index-job failure 1, or unrecoverable migration error
-  2. Help and invalid arguments are tested independently of a live database. B121 alone owns the proxy
+  2 as already chosen by B051. That last value matches proxy_cli's RuntimeError handling, not migrations/run.py,
+  whose uncaught exception exits 1; record the difference below. Help exits 0; unknown operations and malformed
+  argv use clap's usage error exit 2 without loading config or contacting a DB. B121 alone owns the proxy
   --skip_server_startup compatibility flag and forwards to migrate; this executable does not redefine
   the proxy CLI.
 
 
-  Use clap for argv decoding and the existing production config loader; add no handwritten byte parser
-  or dummy fuzz target. Tests live at command_shell::tests::{help_lists_registered_operations,unknown_operation_fails,unregistered_backend_fails,typed_exit_codes,config_path_forwarded}.
-  Exercise the actual clap command and dispatcher with typed injected backends. SQL effects and real Postgres
-  tests stay with the operation owners. Estimate 220 package/dispatch code, 180 CLI behavior tests and
-  30 manifest/config wiring lines, 430 within a 500-line gate.
+  Preserve migrations/run.py's preflight sequence: B710 resolves DatabaseURLSettings and applies the URL
+  before any backend call, keeping an operator-supplied DATABASE_URL. If the resolved URL is absent/empty,
+  log ERROR DATABASE_URL is not set and could not be assembled from the DATABASE_* env vars — cannot run
+  migrations, and exit 1. B710 owns DATABASE_*/IAM_TOKEN_DB_AUTH assembly and DIRECT_URL selection; never
+  print credentials in the diagnostic. Resolve USE_V2_MIGRATION_RESOLVER with string default true and
+  USE_PRISMA_DB_PUSH with missing default None/false through B2307's extras str_to_bool: case-insensitive
+  true/1/t/y/yes enable, whitespace is not stripped and every other spelling is false. Forward use_migrate
+  as the inverse of push and use_v2_resolver unchanged. Log the chosen flags before starting; on false job
+  result log Migration job failed after retries and exit 1; on completion log success and exit 0. Wait for
+  B051's index build before reporting success. URL resolution and config errors stop before dispatch.
+
+
+  prisma_migration.py first invokes run_server with exactly --skip_server_startup and standalone_mode=False;
+  migration failure stops before client generation. After success it runs prisma generate, logs stdout,
+  and logs a warning with status/stderr on nonzero generate, still returning 0. The native executable omits
+  that entire generation phase and its logs, since it uses no generated Prisma client. Its package/argv
+  interface is new; do not imply migrations/run.py originally parsed --config or a subcommand.
+
+
+  Use clap for argv decoding and B002 for config; add no parallel parser or dummy fuzz target. Tests in
+  command_shell::tests exercise help_lists_registered_operations, unknown_operation_fails,
+  malformed_argv_exits_two_before_config, unregistered_backend_fails, config_path_forwarded,
+  pinned_url_not_replaced, missing_url_exits_one_before_backend, url_resolution_error_stops_dispatch,
+  migration_flags_defaults, migration_flags_case_and_whitespace, push_inverts_use_migrate,
+  start_log_precedes_backend, retry_and_index_failure_exit_one, success_after_indexes_exit_zero,
+  unrecoverable_native_exit_two and native_omits_client_generation. Config tests must use the real loader
+  and environment resolver, not prebuilt flag values. SQL effects and POSTGRES_TEST_URL/testcontainers tests
+  remain with operation owners. The two owned main ranges contain 36 nonblank executable lines;
+  allow 220 native package/dispatch lines, 240 CLI tests and 30 wiring lines, 490 within a 525-line gate.
 scope:
   paths:
     - Cargo.toml
@@ -51,6 +77,9 @@ dod:
       Python.
     proof:
       - command-tests
+  - text: URL preflight, exact environment flag parsing and ordered diagnostics are exercised through the production configuration path.
+    proof:
+      - command-tests
 checks:
   optional: []
   commands:
@@ -60,19 +89,23 @@ checks:
         - test(/replays_the_/)'
 oracle_cases: []
 deviations:
-  - what: betterlite-db-admin migrate replaces Python/Prisma migration entrypoints and omits client generation.
-    why: Architect-decided native SQL execution; existing rows and migration behavior are tested by B051/B716/B873.
+  - what: betterlite-db-admin migrate adds an explicit native command and --config interface, omitting prisma generate and its stdout/nonzero warning.
+    why: Native SQL execution needs no generated client; B051/B716/B873 verify database behavior and native_omits_client_generation checks the process boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
+  - what: Unrecoverable migration errors exit 2; the migrations/run.py entrypoint instead lets the exception escape and exits 1.
+    why: Retain B051's chosen shared native outcome matching proxy_cli's skip-server path; unrecoverable_native_exit_two makes the distinction explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
 out_of_scope:
   - B051 owns native migration startup/index-job assembly; B716/B873 own deploy/recovery SQL.
   - B852, B853 and B874 own their SQL/CSV operations and real database tests.
   - B121 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
+  - B2307 owns extras str_to_bool; B051 owns migration retries, index-job waiting and registered service execution.
 pitfalls:
   - The admin package cannot depend on betterlite-server under the server crate boundary rule.
   - A migration job waits for its indexes before success, while the serving proxy schedules them in the
     background.
   - An unregistered command must fail explicitly instead of reporting a successful no-op.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: security

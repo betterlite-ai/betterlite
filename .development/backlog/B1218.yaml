@@ -2,7 +2,7 @@ id: B1218
 milestone: M4 keys, spend and management
 title: Bounded restricted end-user registry cache
 status: todo
-depends_on: [B002, B700, B715, B732, B733, B735, B856]
+depends_on: [B002, B171, B726, B733, B856, B860, B2315]
 file: tasks/B1218-end-user-registry.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"

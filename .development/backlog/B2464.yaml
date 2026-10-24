@@ -2,7 +2,7 @@ id: B2464
 milestone: M5 API families
 title: File provider config and timeout selection
 status: todo
-depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B036, B050]
+depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B1407, B1411, B050]
 file: tasks/B2464-file-provider-selection.yaml
 covers:
   - "litellm/utils.py"

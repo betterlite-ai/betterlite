@@ -2,7 +2,7 @@ id: B745
 milestone: M4 keys, spend and management
 title: Per-model and caller rate-limit inputs
 status: todo
-depends_on: [B001, B003, B171, B302, B732, B856, B860]
+depends_on: [B002, B171, B302, B732, B856]
 file: tasks/B745-auth-limit-inputs.yaml
 covers:
   - "litellm/proxy/auth/auth_utils.py"

@@ -1,10 +1,39 @@
 id: B852
 title: Offline spend backfill operations
 description: >-
-  Expose explicit offline SQL backfills through tools/betterlite-db-admin. Preserve source active/archived-key
-  lifetime spend floors, resetting-key historical reconstruction and daily-tool aggregation, with transactional
-  execution and typed result counts. No backfill runs automatically on gateway startup; the operator selects
-  a named operation.
+  Add three opt-in operations to B1232's native database-admin dispatcher: daily-tool-spend with a
+  required typed cutover timestamp, key-total-spend and key-total-spend-from-logs. Own all executable
+  SQL in the three cited files, using B700's primary Postgres connection and B701 schema. No startup
+  backfill or replication read occurs. Use separate statements in source order, without a transaction
+  around a whole script. SQL statement atomicity does not make the active/archived update pair atomic.
+
+  daily-tool-spend first sets session time zone UTC on its dedicated connection, then inserts into
+  LiteLLM_DailyToolSpend. Join SpendLogToolIndex to SpendLogs by request_id, filter index.start_time
+  strictly before cutover, group by its UTC YYYY-MM-DD and tool_name, sum spend and total_tokens with
+  COALESCE zero, count joined rows, and set created_at/updated_at to now(). Existing (date,tool_name)
+  buckets are skipped wholesale by ON CONFLICT DO NOTHING, never merged. The same request's full
+  spend is attributed to each indexed tool, including historical declared-but-unused tools; retention
+  gaps remain gaps. No invocation validation is added. Require cutover explicitly, not the example
+  2026-07-25 timestamp. Let Postgres parse a bound typed timestamp; never interpolate SQL or psql syntax.
+
+  key-total-spend updates active VerificationToken first, then DeletedVerificationToken, setting
+  total_spend=spend only where total_spend<spend. No budget filter, spend-log scan or updated_at write
+  exists. Equal/higher/null-comparison rows stay untouched. A second update failure leaves the first
+  committed; retry skips corrected rows. The logs operation is an optional follow-up, not an implicit
+  invocation of the floor operation. It selects resetting keys whose own budget_duration IS NOT NULL
+  (including empty text) OR linked BudgetTable.budget_duration IS NOT NULL. Join logs where api_key
+  equals stored token OR its second SHA256 UTF8 digest encoded lowercase hex; this IN test does not
+  double-count a log satisfying both. SUM spend, no COALESCE, and only raise total_spend below the sum.
+  A missing history, null sum, lower sum or nonresetting key leaves the row alone.
+
+  Update active keys before archived keys. For archived rows first SELECT DISTINCT eligible tokens,
+  then join/sum logs once per token; update every resetting archived lifetime of that token, but leave
+  its nonresetting archived rows untouched. The same history covers all lifetimes. Do not isolate
+  history by deletion dates or combine active and archive updates in one transaction. Advise operators
+  in command help that the floor operation comes first, retention limits reconstruction and queued
+  spend logs require paused traffic for complete history. These are operator caveats, not new runtime
+  warnings or automatic traffic controls. Surface SQL errors through B1232's failure outcome without
+  retrying a partially executed script invisibly.
 
 
   Build the production spend_backfills module in betterlite-db; reuse the typed dependencies listed in
@@ -12,36 +41,22 @@ description: >-
   tests.rs files.
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Keep aggregation in the pinned SQL column types; typed service amounts use checked Decimal conversion.
 
 
   Also write tools/betterlite-db-admin::spend_backfills::tests::dispatches_native_operation and rejects_bad_arguments;
   the admin command check must fail without these real CLI dispatch tests.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Run each backfill against real B860 Postgres schemas using POSTGRES_TEST_URL when present and
+  testcontainers otherwise; an unreachable configured service fails. Compare independently seeded
+  source-script results, including committed active rows after an archived-row failure. Clean every
+  test schema rather than sharing the spend tables between cases.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 170 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  170 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 354 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Source SQL counts are 15 daily-tool, 6 floor and 37 log-rebuild nonblank noncomment lines, 58 total.
+  Budget 110 SQL/service, 280 Postgres tests and 75 CLI/wiring lines, 465 within 525. B1232's clap and
+  typed timestamp parsing handle argv; no new handwritten parser or helper oracle is needed.
 
 
   B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
@@ -70,10 +85,15 @@ references:
     why: Pinned implementation and exact ownership boundary for spend_backfills.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: lifetime_at_least_current,
-      already_correct_noop, archived_key, resetting_key_history, daily_tool_aggregation, rollback_on_error,
+      already_correct_noop, archived_key, resetting_key_history, daily_tool_aggregation, statement_failure,
       postgres_pinned_rows, postgres_failure_effects.'
     proof:
       - behavior-tests
+  - text: 'Postgres named cases cutover_strict_utc, index_time_not_log_time, null_sums_zero, full_spend_per_tool,
+      bucket_conflict_skips_all, floor_no_budget_filter, floor_null_unchanged, active_commits_before_archive,
+      own_or_linked_reset, empty_duration_is_reset, token_or_double_hash, archive_distinct_tokens,
+      mixed_archive_lifetimes, shorter_history_never_lowers and logs_second_write_failure match the scripts.'
+    proof: [behavior-tests, postgres-tests]
   - text: The offline admin command invokes the native operation and preserves its exit/error contract.
     proof:
       - admin-tests
@@ -99,12 +119,13 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B1232 owns command parsing and exit/outcome rendering; B700 owns connection acquisition and B701 the source table types.
+  - Retention and live spend writers are B070; this task never calls them or infers missing history.
 pitfalls:
-  - Lifetime backfill never lowers spend below the source current-spend floor.
+  - A conflicting daily bucket discards its entire backfill aggregate, even if the live writer recorded only part of that day.
+  - Archived token duplicates must be collapsed before joining logs, or lifetime spend is multiplied.
+  - The historical operation alone does not enforce total_spend >= spend; the floor script is a separate operator action.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: security

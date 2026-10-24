@@ -2,9 +2,9 @@ id: B037
 milestone: M3 providers
 title: Cohere, Voyage, Jina and Infinity
 status: todo
-depends_on: [B010, B011, B182, B186, B183, B2230]
-file: null
+depends_on: [B002, B004, B006, B010, B104, B171, B174, B186, B211, B678, B1013, B2230, B1414, B1415, B1416, B1417, B1418, B1419, B1420, B1421, B1422, B1423]
+file: tasks/B037-embedding-rerank-providers.yaml
 covers:
-  - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
-  - "litellm/types/llms/{cohere,rerank}.py"
+  - "litellm/types/llms/rerank.py"
   - "litellm/main.py"
+  - "litellm/utils.py"

@@ -1,9 +1,41 @@
 id: B057
 title: Team callback persistence and logging controls
 description: >-
-  Implement team callback add/delete/get and disable_logging with B189/B246 callback validation and typed
-  callback configurations. Preserve secret redaction, team admin policy, audit event projection and update
-  cache refresh. Credentials use B061 encryption at rest; callback execution remains the logging pipeline.
+  Implement team callback add/delete with B1210 validation/audit helpers, B246 credential-family checks,
+  B2304 encrypt_callback_vars/decrypt_callback_vars and B1231 contracts. B1211 owns get/disable_logging.
+  Both routes first require a database (500, the CommonProxyErrors db_not_connected_error detail), then
+  B124's unique team read. Missing teams use B1210's anti-enumeration helper: proxy admins see add400
+  or delete404 with Team id = <id> does not exist.; all other callers see403 You do not have access to
+  this team. B800 TeamAccess allows proxy admin or this team's org/team admin; denial precedes callback
+  validation and credential decryption. No unrelated ordinary-user write is allowed.
+
+
+  Add validates callback name/vars through B1210, normalizes missing/non-list metadata.logging to [],
+  decrypts stored variables for comparison, checks conflicting span scopes, then for non-proxy-admins
+  checks cross-entry credential-family ownership. Family errors are HTTP400 plain detail; span errors
+  use the callback_config_error detail.error shape. Duplicate exact (callback_name, callback_type) pairs
+  return400 bad_request_error, param callback_name and the message naming callback, team and event;
+  other event types may coexist. Deep-copy before_metadata, append the typed callback dump, assign
+  logging, run encrypt_callback_vars over the whole metadata, JSON-serialize, then B724 updates metadata
+  including object_permission. A missing update result is400 with the different-team-id message.
+  Await B801 cache refresh, then B1210 audit projection with litellm-changed-by, then return
+  status=success and the updated row. Preserve encrypted-at-rest callback values in that row.
+
+
+  Delete treats non-list logging as empty; remove every dict entry with an exact callback_name across
+  event types, retaining malformed nondict entries and unrelated metadata. No match, including legacy
+  callback_settings-only metadata, returns404 callback_name = <name> is not registered for team_id =
+  <id>. Encrypt surviving metadata before JSON serialization/update with object_permission included.
+  Missing update result returns404 with Error removing team callback. Cache refresh precedes audit,
+  which precedes B1210 resolution of surviving success/failure callbacks. Return status success, message
+  Callback <name> removed for team <id>, and team_id plus arrays (empty for absent callback lists).
+  Neither route is transactional: update remains committed when refresh/audit/resolution fails.
+
+
+  Each route's own except blocks preserve HTTPException and ProxyException unchanged. Add's other
+  errors log an exception; delete logs ERROR plus DEBUG traceback. Both wrap others as500
+  internal_server_error, message Internal Server Error, <error>, param error.param or string None.
+  B865 wraps these source-decorated routes for management effects. There is no license check here.
 
 
   Build the production team_callbacks module in betterlite-server; reuse the typed dependencies listed
@@ -17,33 +49,24 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: POST /team/{team_id:path}/callback -> add_team_callbacks;
   DELETE /team/{team_id:path}/callback/{callback_name} -> delete_team_callback. For each route send a
-  typed successful request, an invalid or missing target, and a caller lacking that route permission through
-  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
-  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  successful request, the exact missing-team/duplicate/missing-callback branches and scoped denial through
+  B001 HttpCase. Compare full response and error envelopes; inspect encrypted metadata, cache and audit
+  ordering, including failed post-write effects. litellm-changed-by is request attribution, not a response header.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Use POSTGRES_TEST_URL with testcontainers fallback. Seed hashed virtual keys and explicit
+  owner/team/org roles; no enterprise package or import is present.
   Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B1231 decodes AddTeamCallback; the route only mutates its typed metadata. Compare add/delete against
+  the MIT server with fixture callback credentials and assert ciphertext in Postgres after either write.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 239 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  239 production, 136 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 440 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: 239 production, 310 table-driven Postgres/HTTP tests and 100 route wiring lines, 649 within
+  a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -72,10 +95,19 @@ references:
     why: Own add_team_callbacks; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L442-L577
     why: Own delete_team_callback; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L560-L577
+    why: Route-owned preservation of HTTP/Proxy errors and catch-all 500 mapping.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: add_callback, remove_callback.'
+  - text: 'Named cases: no_database_500_both_routes, unknown_team_admin_add400_delete404,
+      unknown_team_nonadmin_indistinguishable403, same_team_org_and_team_admin_allowed,
+      unrelated_caller_denied_before_decrypt, validation_before_scope_before_family,
+      proxy_admin_family_exemption_not_span_exemption, exact_pair_duplicate_error_fields,
+      different_event_same_callback_allowed, add_encrypts_before_write_and_includes_permission,
+      add_missing_update_row400, cache_then_audit_with_changed_by, postwrite_failure_keeps_row,
+      delete_all_matching_events_preserves_other_entries, legacy_shape_missing_callback404,
+      delete_encrypts_remaining_values, delete_missing_update_row404,
+      delete_surviving_arrays_and_message, http_proxy_errors_preserved_without_error_log,
+      add_exception_delete_error_debug_catchall500.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -91,18 +123,15 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_callbacks::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-success.yaml
-  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-invalid-target.yaml
-  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-success.yaml
-  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-invalid-target.yaml
-  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-unauthorized-caller.yaml
   - tools/oracle/cases/management/team-callbacks/add-callback.yaml
   - tools/oracle/cases/management/team-callbacks/remove-callback.yaml
+  - tools/oracle/cases/management/team-callbacks/missing-team-anti-enumeration.yaml
+  - tools/oracle/cases/management/team-callbacks/duplicate-pair-and-missing-callback.yaml
+  - tools/oracle/cases/management/team-callbacks/team-and-org-admin-scope.yaml
+  - tools/oracle/cases/management/team-callbacks/postwrite-failure-keeps-metadata.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns callback-variable encryption; use its real production cipher before every metadata write.
   - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1210 owns _callback_config_error
     (L59-L60), _validate_team_callback (L63-L66), _redact_callback_secrets (L69-L92), _mask_sensitive_callback_vars
     (L95-L118), _resolve_team_callbacks (L121-L161), _log_audit_task_exception (L164-L176), _emit_team_callback_audit_log
@@ -111,8 +140,8 @@ out_of_scope:
     get_team_callbacks (L725-L815).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve secret redaction, team admin policy, audit event projection and update cache refresh.
+  - Deleting one callback name removes every event variant while retaining malformed unrelated logging entries.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

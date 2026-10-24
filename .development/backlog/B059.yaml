@@ -2,7 +2,7 @@ id: B059
 milestone: M4 keys, spend and management
 title: Customer info, list and daily activity
 status: todo
-depends_on: [B001, B003, B052, B171, B700, B729, B732, B742, B829, B830, B831, B856, B860]
+depends_on: [B001, B003, B052, B074, B124, B700, B726, B732, B830, B860]
 file: tasks/B059-customer-read.yaml
 covers:
   - "litellm/proxy/management_endpoints/customer_endpoints.py"

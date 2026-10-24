@@ -1,0 +1,119 @@
+id: B1425
+title: OpenAI-like response cleanup, embedding transport and model discovery
+description: >-
+  Add compatible_wire, compatible_embedding and compatible_models modules to
+  betterlite-openai for OpenAILikeBase/Error, OpenAILikeChatConfig, the embedding handler
+  and model_info.py. Base validation fails 400 only when both key and headers are None,
+  and independently for a None base; empty values are accepted. Create Content-Type JSON
+  only when headers are None, add Authorization only when a non-None key lacks that exact
+  case-sensitive header, and append /chat/completions or /embeddings unless custom_endpoint
+  is truthy. The error carries a synthetic POST https://www.litellm.ai request.
+
+  OpenAILikeChatConfig resolves OPENAI_LIKE_API_BASE and OPENAI_LIKE_API_KEY after truthy
+  explicit values, with an empty-string key fallback. Its mapper calls B668's parent
+  options and normally replaces max_completion_tokens with max_tokens; preserve the
+  false replacement flag. Reply parsing logs decoded JSON with an empty logging API key,
+  then changes only null top-level usage members ending _tokens to zero. In json_mode,
+  exactly one tool call becomes content from truthy arguments or empty string and
+  tool_calls=null; zero/multiple tools stay intact. Construct B004's response after
+  cleanup, prefix model with provider/ when provider is non-None, including an empty
+  provider string, and set hidden model from non-None base_model. Ordinary transform_response
+  passes neither prefix nor hidden model. Add openai_like_settings loader tests for both
+  environment keys and explicit/empty/absent resolution.
+
+  Embedding execution filters options whose value is None or the empty string, overlays
+  model/input and logs pre_call with complete body and base. Preserve false and zero.
+  Use B173 transport, B006 response construction and B249 hooks. Async mode selects the
+  OpenAI client with timeout, calls raise_for_status, converts timeout to 408 and other
+  transport/JSON failures to 500; HTTP errors retain their status. It logs a failure in
+  the outer catch, even after a successful post_call when response construction fails.
+  Sync mode omits that outer failure log. Test these mode differences through plans and
+  fixture transports; B158 owns blocking wrappers.
+
+  Model discovery calls B668's path-overlap join for /v1/models, with no redirects,
+  five-second timeout and a 2 MiB response cap. Cache key is upstream_model_info: plus
+  SHA256 of Python JSON for (url, sorted header items), isolating credentials. Inject a
+  typed ModelListCache and clock; caller cache storage stays outside this module.
+  Cache successful lists for 300 seconds, failed fetch/status/parse as an empty list for
+  60 seconds with a debug diagnostic. Return the first exact model id's limits. Accept
+  only positive non-bool integers; context prefers max_model_len over context_length,
+  input/output prefer explicit limits then context and clamp to context when both exist.
+  Export refresh concurrency 8 and the exact discovery provider set for B845's consumer.
+
+  Implement decode_compatible_chat_reply and decode_compatible_model_list on bounded
+  upstream bytes; compatible_reply fuzzing selects either entry, while embeddings reuse
+  B006. Helpers compatible_reply_policy and compatible_model_limits compare pure source
+  projections; transport/cache ordering is covered by native tests, not proxy helpers.
+  New seeds assert both call tags. Owned source count is 392 lines (44+138+136+74), with
+  repeated Python signatures collapsing into typed plans. Budget 300 implementation,
+  220 tests, 140 adapters and 120 settings/fuzz/wiring lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,compatible_wire,compatible_embedding,compatible_models}.rs
+    - crates/betterlite-openai/src/{compatible_wire,compatible_embedding,compatible_models}/**
+    - crates/betterlite-openai/Cargo.toml
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/compatible_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/compatible_reply/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,openai_like}.rs
+    - crates/betterlite-config/tests/openai_like_settings.rs
+    - Cargo.lock
+    - tools/oracle/src/helpers/{mod,compatible_reply_policy,compatible_model_limits}.rs
+    - tools/oracle/helpers/{dispatch,compatible_reply_policy,compatible_model_limits}.py
+    - tools/oracle/cases/helpers/{compatible-reply-policy,compatible-model-limits}/**
+    - tools/oracle/fuzz/corpus/helper_case/{compatible_reply_policy,compatible_model_limits}*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/common_utils.py#L1-L54
+    why: Missing-versus-empty auth/base checks and unconditional endpoint suffixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/transformation.py#L25-L169
+    why: Null-token cleanup and single-tool json_mode response mutation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/embedding/handler.py#L21-L162
+    why: Mode-specific error logging and response construction after success hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/model_info.py#L15-L92
+    why: Credential-sensitive cache identity, bounded optional discovery and token-limit precedence.
+dod:
+  - text: Compatible response cleanup preserves tool cardinality, usage null handling and model-prefix rules.
+    proof: [compatible-primitive-tests, compatible-helpers-python, oracle]
+  - text: Embedding sends preserve explicit headers, option filtering, timeout mapping and mode-specific hooks.
+    proof: [compatible-primitive-tests, openai-like-settings, compatible-helpers-python, oracle]
+  - text: Model discovery caches by credentials with separate success/failure TTLs and returns clamped positive limits.
+    proof: [compatible-primitive-tests, compatible-helpers-python, oracle]
+  - text: Both upstream decoders and helper tags have newly added replay inputs.
+    proof: [compatible-reply-corpus, compatible-helper-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: compatible-primitive-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E '(test(/^compatible_wire::/) | test(/^compatible_embedding::/) | test(/^compatible_models::/)) - test(replays_the_compatible_reply_corpus)'
+      why: Three distinct production modules need behavior tests beyond shared parser replay.
+    - id: openai-like-settings
+      run: cargo nextest run --locked -p betterlite-config --test openai_like_settings --no-tests=fail
+      why: Generic compatible deployments must load both environment fields with their actual fallback values.
+    - id: compatible-helpers-python
+      run: test -f tools/oracle/helpers/compatible_reply_policy.py && test -f tools/oracle/helpers/compatible_model_limits.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source cleanup and model-card projections must be called independently by the oracle.
+    - id: compatible-reply-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/compatible_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/compatible_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_compatible_reply_corpus)'
+      why: The tagged fuzz target must exercise both chat and model-list byte entry points.
+    - id: compatible-helper-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_reply_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_model_limits*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_reply_policy::/) | test(/^helpers::compatible_model_limits::/)'
+      why: Each adapter test asserts its own tag over a nonempty newly added seed set.
+oracle_cases:
+  - tools/oracle/cases/helpers/compatible-reply-policy/missing-empty-headers-and-base.yaml
+  - tools/oracle/cases/helpers/compatible-reply-policy/null-token-and-single-tool.yaml
+  - tools/oracle/cases/helpers/compatible-reply-policy/provider-prefix-and-hidden-model.yaml
+  - tools/oracle/cases/helpers/compatible-reply-policy/embedding-option-filter.yaml
+  - tools/oracle/cases/helpers/compatible-model-limits/positive-nonbool-and-clamp.yaml
+  - tools/oracle/cases/helpers/compatible-model-limits/first-id-and-empty-list.yaml
+deviations: []
+out_of_scope:
+  - B1428 owns OpenAILikeChatHandler and B1426 descriptor-generated configs; B845 owns refresh scheduling and deployment-generation checks around the model discovery service.
+  - Existing cache infrastructure provides the injected ModelListCache implementation; this task does not add a general-purpose cache or a background scheduler.
+pitfalls:
+  - An empty headers map bypasses the missing-key check without adding Content-Type.
+  - json_mode converts any single tool call, without requiring its function name to be json_tool_call.
+  - Changing credentials must change the discovery cache key even when the endpoint URL is identical.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

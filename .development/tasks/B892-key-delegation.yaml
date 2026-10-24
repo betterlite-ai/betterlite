@@ -1,10 +1,33 @@
 id: B892
 title: Key route and budget delegation ceilings
 description: >-
-  Validate ownership transfers, allowed_routes preset transitions, permission grants and parent budget
-  ceilings before any key mutation. Preserve safe narrowing transitions and reject scope escalation; metadata
-  does not grant the caller authority. This service takes stored caller/team snapshots and stays below
-  key creation/update.
+  Validate delegation before key writes, without querying teams or changing rows. Only PROXY_ADMIN
+  bypasses ownership restrictions. Missing data or an omitted user_id is unchanged; an explicitly
+  null/empty user_id raises HTTP 403 'Non-admin users cannot remove the user_id from a key.' A changed
+  nonempty id raises 403 naming old/new users, and the same id passes. Preserve model_fields_set
+  independently of the value; a default None is not an explicit null.
+
+  Route creation checks return for omitted falsey allowed_routes, then for proxy admin. With
+  allow_safe_presets True, a truthy list entirely made of llm_api_routes and info_routes passes;
+  otherwise reject with HTTP 403 detail.error telling the caller to use key_type. Explicit null
+  or [] therefore requires admin in the raw-request flow. Own the two local preset constants at
+  L870 and L962 as well as the functions. Update transitions compare sets on BOTH sides, converting
+  None/[] to empty (full access). Any nonpreset on either side is unsafe. Existing exactly
+  {info_routes} may only remain that set; all other safe-preset combinations, including transitions
+  to empty, pass. Duplicates/order do not matter. If unsafe, call the raw permission check using
+  model_fields_set: an omitted falsey incoming field can still pass that check. Do not describe
+  every passing transition as narrowing or reject this source omission behavior.
+
+  Permissions require admin whenever the field is explicitly present, including null and {}, or
+  when an omitted field nevertheless holds a truthy value. Otherwise return. The error is HTTP
+  403 detail.error 'Only proxy admins can set `permissions`.' Budget windows skip None/empty;
+  first reject any nonfinite maximum with HTTP 400 detail.error identifying the first offending
+  amount, even for admin/UI sessions. Then admins and is_ui_session_team_key bypass ceilings.
+  Other CLI session callers without a team get HTTP 400 explaining budget_limits requires team_id.
+  A None ceiling is unlimited; otherwise reject the first max_budget > ceiling with HTTP 400
+  naming both amounts. Equality, zero and negative finite amounts pass this helper. Row/request
+  validation may reject them elsewhere. Preserve failure precedence and raw HTTP detail shapes;
+  B775/B895 and other route owners apply their own error envelopes.
 
 
   Build the production key_delegation module in betterlite-server; reuse the typed dependencies listed
@@ -19,10 +42,6 @@ description: >-
   (L1023-L1071; 48 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Add the key_delegation operation under B856 Management::keys. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
@@ -30,19 +49,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 175 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  175 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 412 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  Sizing: the ranges contain 175 lines before docstring exclusion plus two preset declarations;
+  allow 170 production, 260 behavior tests, 65 helper adapters and 30 wiring, 525 within 600.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -73,10 +82,20 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1023-L1071
     why: Own _check_budget_limits_delegation_ceiling; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: ownership_transfer_denied,
-      route_escalation_denied, budget_ceiling, safe_preset_narrowing.'
+  - text: 'Cases ownership_admin_bypass, ownership_data_missing_or_field_omitted,
+      ownership_null_and_empty_denied, ownership_same_id_allowed, ownership_changed_id_denied,
+      routes_omitted_falsey, routes_explicit_null_or_empty_denied, routes_admin_bypass,
+      routes_derived_safe_presets, routes_custom_or_mixed_denied, preset_transition_matrix,
+      preset_duplicates_order_ignored, unsafe_transition_omitted_falsey_passthrough,
+      permissions_presence_and_truthiness, permissions_admin_bypass, budget_empty_skips,
+      nonfinite_before_admin_or_ui, budget_admin_ui_exemption, cli_personal_window_denied,
+      no_ceiling_unlimited, ceiling_below_equal_above and first_offending_window preserve every
+      denial status, detail.error versus string shape and failure order.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -107,8 +126,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-delegation/safe-preset-narrowing.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B770/B732 provide request presence and principal types. No role lookup, route matching,
+    team administration, stored-secret operation or SQL is called by these six checks.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -202,9 +221,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve safe narrowing transitions and reject scope escalation; metadata does not grant the caller
-    authority.
+  - A safe-preset transition can widen to full access; only an existing info_routes-only set is sticky.
+  - Finiteness is checked before admin and UI exemptions, but finite negative windows are not rejected here.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

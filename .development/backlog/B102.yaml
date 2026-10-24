@@ -2,7 +2,7 @@ id: B102
 milestone: M5 api families
 title: Pass-through endpoint framework and its config API
 status: todo
-depends_on: [B052, B009]
+depends_on: [B052, B009, B2302]
 file: null
 covers:
   - "litellm/proxy/pass_through_endpoints/*.*"

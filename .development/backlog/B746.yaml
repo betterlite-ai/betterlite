@@ -2,7 +2,7 @@ id: B746
 milestone: M4 keys, spend and management
 title: Resolve requested models before authorization
 status: todo
-depends_on: [B001, B002, B003, B171, B302, B732, B856, B860, B1016, B1019]
+depends_on: [B001, B003, B171, B302, B732, B856, B1016, B1019, B2324]
 file: tasks/B746-auth-request-models.yaml
 covers:
   - "litellm/proxy/auth/auth_utils.py"

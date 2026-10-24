@@ -1,15 +1,35 @@
 id: B737
-title: Team, organization and access-group auth lookup
+title: Team and access-group auth lookup
 description: >-
-  Implement TeamLookup, OrganizationLookup and ProjectLookup, including by-alias lookup and last-known
-  organization behavior. Preserve source missing-table/not-found distinctions and cache provenance rather
-  than interpreting all DB failures as an absent tenant.
+  Implement team ID, team alias and access-group reads in auth_team_lookup. Organization and project
+  lookups remain B879's. Reject a missing DB before attempting even a warm cache. Team ID reads use
+  team_id:<id>, B724 TeamRepository with B735 grant relations, B736's DB-read throttle and B734 cache
+  writes. check_db_only skips the cache and selects the writer; check_cache_only misses are HTTP 404
+  with detail.error, but check_db_only takes precedence when both flags are true. A successful DB
+  answer without a row raises the distinct TeamNotFoundError, also 404; throttled reads, repository
+  failures and cache-write failures become ordinary HTTP 404 with the create-via-/team/new detail.
+  Do not erase this exception-class distinction before B757 translates it at the HTTP boundary.
+
+  Load an absent object_permission through B735 only when object_permission_id is truthy. A normal
+  read logs the failure at DEBUG and keeps the team; a writer read propagates it into the outer 404.
+  Cache the team before updating last_db_access_time; a failed cache write must not advance that time.
+  An alias lookup uses team_alias:<alias>, find_many with grant relations, 404 for no matches and
+  400 for multiple matches (suggest team_id_jwt_field). Permission enrichment failures are DEBUG
+  and ignored. Cache alias first, then team_id, both with DEFAULT_IN_MEMORY_TTL; a failure of the
+  second write leaves the first. Other alias errors log an exception and become 500 detail.error.
+
+  Access-group reads use access_group_id:<id> and B726 AccessGroupRepository. check_db_only bypasses
+  cache and uses the writer. An absent row is always 404 detail.error; an infrastructure or cache-write
+  failure logs ERROR and is 503 with string detail 'Access group policy is unavailable' on the writer,
+  otherwise 404 detail.error. Preserve existing HTTPException values. B734 owns access-group cache TTL.
 
 
   Injected port instead of a reverse dependency on B804: TeamProvisioner::create(TeamSeed)->Result<TeamRow,AuthError>;
   B804 implements management-equivalent provisioning, B053 registers it, and uninstalled team_id_upsert
-  fails startup. A configured but unregistered implementation is a named startup error, never a success
-  stub.
+  fails startup. The port receives only team_id and a PROXY_ADMIN principal, matching new_team's
+  synthetic HTTP request; B804 owns all creation writes and their order. The helper oracle replaces
+  this collaborator with a recording callable and never invokes the FastAPI handler. Test the real
+  provisioner in B804's HTTP suite. No secret is stored by this lookup.
 
 
   Build the production auth_team_lookup module in betterlite-auth; reuse the typed dependencies listed
@@ -24,7 +44,9 @@ description: >-
   58 source lines), get_team_object_by_alias (L3420-L3526; 88 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_IN_MEMORY_TTL=5.
+  Consume B735's DEFAULT_IN_MEMORY_TTL integer environment setting (default 5 seconds); its import-time
+  int conversion rejects nonintegers, with no fallback. It controls both alias cache writes and the
+  DB-read throttle through db_cache_expiry. B735 owns loader acceptance; this task tests consumption.
 
 
   Add the auth_team_lookup operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -34,26 +56,16 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::auth_team_lookup::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Run repository integration cases against POSTGRES_TEST_URL, falling back to testcontainers when it
+  is unset. Read-only helper fixtures record cache keys, write order, writer selection and diagnostics.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Team/access-group inputs are typed IDs and rows. Missing provisioning remains a failed configured
+  dependency; it must never be replaced by an enterprise-only creation hook or a fabricated team.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 291 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  291 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 578 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 291 nonblank, noncomment pinned source lines; allow 270 production, 300 behavior/Postgres
+  tests, 90 helper adapters and 40 wiring lines, 700 changed lines within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -69,22 +81,8 @@ scope:
     - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-team-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/auth-team-lookup-*
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/auth_team_lookup.rs
-    - crates/betterlite-config/src/auth_team_lookup/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-team-lookup-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3136-L3316
-    why: Pinned implementation and exact ownership boundary for auth_team_lookup.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3349-L3614
-    why: Pinned implementation and exact ownership boundary for auth_team_lookup.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4107-L4234
-    why: Pinned implementation and exact ownership boundary for auth_team_lookup.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6238-L6283
-    why: Pinned implementation and exact ownership boundary for auth_team_lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3136-L3140
     why: Own TeamNotFoundError.__init__; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3144-L3165
@@ -100,10 +98,13 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3420-L3526
     why: Own get_team_object_by_alias; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L498-L503
-    why: DEFAULT_IN_MEMORY_TTL default and read site.
+    why: DEFAULT_IN_MEMORY_TTL int environment default; consumption is at auth_checks.py L396 and L3506-L3514.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_by_id, team_by_alias,
-      missing_team, cache_disabled.'
+  - text: 'Team cases: db_required_before_cache, team_cache_hit, cache_only_miss_404,
+      writer_beats_cache_only, grant_relations_loaded, missing_team_distinct_404, throttle_miss_404,
+      team_read_failure_404, optional_permission_debug_drop, writer_permission_failure_404,
+      team_cache_before_access_time, cache_failure_keeps_access_time, upsert_admin_seed,
+      upsert_failure_404 and ttl_override_consumed. Each is also a named row in team-id.yaml.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -112,14 +113,14 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Alias and access-group cases: alias_cache_hit, alias_missing_404, alias_duplicate_400,
+      alias_permission_debug_drop, alias_then_id_cache, alias_second_write_failure_500,
+      alias_read_failure_500, access_cache_hit, access_writer_skips_cache, access_missing_404,
+      access_read_failure_404, access_writer_failure_503 and access_http_error_preserved.
+      Run the matching named helper rows and the Postgres relation projection test.'
+    proof: [behavior-tests, oracle, helper-python]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -135,24 +136,12 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-team-lookup-*")"
         && grep -rlq "auth_team_lookup" tools/oracle/fuzz/corpus/helper_case/auth-team-lookup-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_team_lookup::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-team-lookup-*")"
-        && grep -rlq "DEFAULT_IN_MEMORY_TTL" crates/betterlite-config/fuzz/corpus/config_yaml/auth-team-lookup-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-team-lookup/team-by-id.yaml
-  - tools/oracle/cases/helpers/auth-team-lookup/team-by-alias.yaml
-  - tools/oracle/cases/helpers/auth-team-lookup/missing-team.yaml
-  - tools/oracle/cases/helpers/auth-team-lookup/cache-disabled.yaml
+  - tools/oracle/cases/helpers/auth-team-lookup/team-id.yaml
+  - tools/oracle/cases/helpers/auth-team-lookup/alias-cache-order.yaml
+  - tools/oracle/cases/helpers/auth-team-lookup/access-writer-errors.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -268,8 +257,9 @@ out_of_scope:
     the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - An alias lookup must preserve not-found versus database-unavailable provenance.
+  - check_db_only does not bypass _should_check_db; a recent DB read can still produce the ordinary team 404.
+  - Alias cache writes do not use _cache_team_object, so their TTL is DEFAULT_IN_MEMORY_TTL rather than the team-cache policy.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

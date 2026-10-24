@@ -2,7 +2,7 @@ id: B032
 milestone: M3 providers
 title: Vertex AI partner models, Gemma and Model Garden
 status: todo
-depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B036, B038, B081, B004, B005, B171]
+depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B1412, B038, B081, B004, B005, B171]
 file: tasks/B032-vertex-partner-provider.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_ai_partner_models/{__init__,main}.py"

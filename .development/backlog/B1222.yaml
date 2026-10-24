@@ -2,7 +2,7 @@ id: B1222
 milestone: M4 keys, spend and management
 title: Bulk user management HTTP routes
 status: todo
-depends_on: [B001, B003, B052, B732, B793, B794, B856, B860, B865]
+depends_on: [B001, B003, B007, B052, B732, B793, B794, B860, B865, B1665]
 file: tasks/B1222-bulk-user-routes.yaml
 covers:
   - "litellm/proxy/management_endpoints/management_v1/users.py"

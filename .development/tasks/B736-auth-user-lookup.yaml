@@ -1,84 +1,118 @@
 id: B736
-title: User and team membership lookup during auth
+title: User lookup, fuzzy identity matching and role permissions
 description: >-
-  Implement UserLookup and MembershipLookup over identity repositories and AuthCache. Include fuzzy email/SSO
-  lookup, null-email backfill, role-based routes/models, DB access cadence and missing-user public error
-  conversion. Entitlement reads use the caller-supplied clock and bounded lookup policy; no management
-  endpoint is called.
+  Implement UserLookup in betterlite-auth::auth_user_lookup over B723 UserRepository, B733 AuthCache
+  and B2315's deadline-bound user reads. Compose its public lookup services with B2318 MembershipLookup;
+  the latter owns all membership loads and their shared-task lifetime. This task owns auth_checks.py
+  L395-L396 and L2473-L2768, plus _types.py L5173-L5190 role permission contracts. It is a lookup
+  service, not an independently registered authentication stage or HTTP route.
 
+  get_user_object returns None for a None user_id before any cache/DB work; an empty ID is still a
+  lookup. check_db_only defaults to None and otherwise follows its boolean value. Unless true, read
+  the typed user cache under the exact requested ID. A hit runs null-email backfill and returns.
+  These cache/backfill failures, and the subsequent No db connected error when a DB is needed,
+  occur outside the catch block: do not log them as budget lookup failures or wrap them as missing
+  users. A cache hit needs no DB unless email backfill can run.
 
-  Build the production auth_user_lookup module in betterlite-auth; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Keep the injected 100-entry last_db_access_time index with B125 LimitedSizeOrderedDict semantics.
+  Keys are user_id:{requested_id}. _should_check_db samples the clock on every call, returns true
+  for an absent entry or any stored non-None value, and suppresses only a stored None until elapsed
+  time is >= db_cache_expiry. db_cache_expiry uses B735's DEFAULT_IN_MEMORY_TTL integer env setting,
+  default 5 seconds; malformed/empty values fail startup, zero or negative expire immediately.
+  Backward clock movement keeps a negative suppressed. Reading does not refresh the timestamp.
+  Updates store (value,new_time); at capacity the source evicts the oldest entry even when updating
+  an existing key. Positive values never suppress reads after the main cache misses.
 
+  check_db_only=true bypasses both caches and forces the primary find_unique(user_id) to the writer,
+  including organization_memberships. Otherwise cadence decides whether to make that bounded read.
+  A primary miss calls fuzzy lookup: first exact sso_user_id when non-None, then case-insensitive
+  user_email find_first when non-None. Empty strings are used, no trimming or uniqueness check is
+  added, and the email query has no ordering. Fuzzy lookup uses normal repository routing even on
+  a check_db_only request. It does not retry user_id with the SSO value or create users itself.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_checks.py:
-  _membership_from_cached_payload (L2328-L2336; 9 source lines), _fetch_team_membership_from_db (L2340-L2367;
-  28 source lines), _load_team_membership_on_cache_miss (L2370-L2391; 21 source lines), get_team_membership
-  (L2394-L2442; 41 source lines), _should_check_db (L2473-L2484; 11 source lines), _update_last_db_access_time
-  (L2487-L2488; 2 source lines), _get_role_based_permissions (L2494-L2510; 15 source lines), get_role_based_models
-  (L2513-L2527; 13 source lines), get_role_based_routes (L2530-L2542; 12 source lines), _get_fuzzy_user_object
-  (L2545-L2584; 32 source lines), _backfill_null_user_email (L2587-L2612; 25 source lines), get_user_object
-  (L2616-L2760; 126 source lines), _user_read_failure (L2763-L2768; 6 source lines).
+  A fuzzy email match with a non-None SSO ID schedules an update of that row's canonical user_id
+  to the supplied sso_user_id. This overwrites an existing SSO ID without a compare-and-set and
+  does not wait before returning. Track and drain this work through the injected server task owner;
+  observe a failure without failing the completed lookup or exposing credentials. B2315 bounds
+  reads only; normal repository write timeout applies to this update.
 
+  If no response remains, user_id_upsert=false records a negative cadence entry only after a real
+  attempted lookup, then raises B732 UserNotFoundError unchanged. A suppressed miss does not extend
+  the negative window. user_id_upsert=true instead creates a user even if cadence skipped the read.
+  Read litellm_settings.default_internal_user_params, default None, with source falsey-to-empty
+  normalization. Omit only teams and available_teams from scalar defaults. Merge requested user_id,
+  optional non-None user_email, then those defaults: defaults can override both identity fields,
+  including an explicit null. Do not silently turn this into a safe-fields-only or caller-wins merge.
+  Other fields use B720's user schema and repository create validation, including its errors.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.role_permissions=None;
-  litellm_settings.default_internal_user_params=None; role_permissions=None.
+  A non-None budget_duration with absent/null budget_reset_at is calculated by B2317 before create;
+  a supplied reset time stays unchanged. Create includes organization_memberships, then call the
+  DefaultTeamEnrollment port this task defines with the ORIGINAL requested ID/email and a B2314
+  UserAPIKeyAuth having user_role=proxy_admin. The port stands for the source's
+  check_if_default_team_set and add_new_user_to_default_team pair: B1226 implements it over the real
+  team membership service and B056 installs it, so this lookup never depends on management writes.
+  UserLookup takes the port in its constructor; NoDefaultTeams enrolls nobody and is the value used
+  until B056 installs the real one, while tests here use a recording port. An error the port returns
+  goes through this block's failure classification like any other create-path error, and the created
+  row stays. Never replace enrollment with a direct array patch. No SSO ID is implicitly added to the
+  create payload. There is no outer transaction over these steps.
 
+  For a nonempty organization_memberships sequence, drop None entries and validate each remaining
+  model_dump with B2310's membership model; preserve order and duplicates. None/empty sequences are
+  left for B720's user model validation. Validate the whole response, run null-email backfill, take
+  its model dump, write the typed user under the REQUESTED cache key with management TTL, then store
+  that positive dump and a fresh timestamp in the cadence index. A canonical fuzzy ID can differ
+  from this cache key. A failed cache write leaves prior user/team/backfill/SSO effects intact and
+  does not publish a new positive cadence entry.
 
-  Add the auth_user_lookup operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-user-lookup-*
-  seed to B171 helper_case, which already owns this decoder.
+  Null-email backfill is skipped if the supplied email is None, stored email is non-None (including
+  empty string), or DB is absent. Otherwise B723 performs its user_email IS NULL conditional write,
+  then find_by_id using normal routing. A missing reread returns the original object. A returned
+  row supplies ONLY the copied user_email, including a competing writer's value or replica-lagged
+  null; do not assume the input email won. Write that shallow-copied user under its canonical ID
+  with management TTL and return it. On a DB lookup this may precede a second cache write under
+  the requested ID. Backfill performs no broad user overwrite.
 
+  Inside the DB/upsert block, UserNotFoundError is rethrown without logging. Every other ordinary
+  exception goes to B2315 _log_budget_lookup_failure("user",error). B1217's database-unavailable
+  classification returns that same error unchanged; other errors become the source ValueError
+  category explaining missing user and /user/new, with a typed retained cause and native wording.
+  Cancellation propagates without being relabeled. This layer invents no HTTP status, type, param
+  or code; B052/B765/B871 and management callers translate these distinguishable failures.
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  general_settings.role_permissions defaults to None. RBAC_ROLES accepts only proxy_admin, team
+  and internal_user; OIDCPermissions has models=None and routes=None, and RoleBasedPermissions
+  requires role and forbids extra fields. Validate the ENTIRE configured list before selecting
+  the first matching role. Duplicate roles and duplicate/empty string model/route entries remain
+  in order; an earlier matching None or [] wins over later entries. No configured list or no match
+  returns None. A bad later entry still fails even if an earlier one would match. The models/routes
+  accessors share this selection; they do not expand route groups or check the model catalog.
 
+  Both settings load through B002, including os.environ/ references; neither has a dedicated env
+  variable. Keep type/unknown-field validation failures, not invalid_value_fallback. B1226 later adds
+  the teams portion of default_internal_user_params to the config record defined here; this task
+  only reads the scalar fields and leaves teams and available_teams out of the create payload. B002's unknown-config rejection still applies. Config parsing uses B002's existing decoder.
+  Startup already validates role_permissions at proxy_server.py L6874-L6876. For dictionary user
+  defaults, L6444-L6455 converts a non-None max_budget with float(), retains the other fields and
+  emits a redacted DEBUG setting diagnostic. Accept finite numeric strings and source boolean
+  zero/one through checked Decimal conversion; invalid text fails startup. Do not stringify or
+  log the entire defaults record. Source falsey non-mapping defaults act empty during upsert;
+  truthy non-mappings fail when the mapping operation is attempted. Native config rejects the
+  latter at startup with the field name, as recorded below.
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::auth_user_lookup::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 341 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  341 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 672 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Server wiring tests live under betterlite-server::auth::auth_user_lookup::tests: stage_is_registered
-  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  Pure auth_user_lookup oracle cases call source cadence, role selection and error classification
+  functions with controlled state/time. They never invoke asynchronous lookups through proxy globals.
+  Native cache-port tests assert the effect trace; Postgres tests use B860 POSTGRES_TEST_URL, else
+  testcontainers only when absent. Broken supplied URLs fail. Compare actual case-insensitive lookup,
+  null-only update and create rows against independent pinned fixtures, including partial failures.
+  B2318's separate task frees this one to budget 235 production, 350 tests, 90 adapters, 55 config
+  and 45 wiring lines, 775 within 800, for 233 owned nonblank noncomment lines excluding docstrings.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_user_lookup.rs
     - crates/betterlite-auth/src/auth_user_lookup/**
     - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth_user_lookup.rs
     - tools/oracle/src/helpers/auth_user_lookup/**
@@ -88,32 +122,20 @@ scope:
     - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-user-lookup/**
     - tools/oracle/fuzz/corpus/helper_case/auth-user-lookup-*
-    - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/auth/auth-user-lookup/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/auth_user_lookup.rs
     - crates/betterlite-config/src/auth_user_lookup/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-user-lookup-*
-    - crates/betterlite-server/src/auth/auth_user_lookup.rs
-    - crates/betterlite-server/src/auth/auth_user_lookup/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2328-L2442
-    why: Pinned implementation and exact ownership boundary for auth_user_lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L395-L396
+    why: The 100-entry cadence index and DEFAULT_IN_MEMORY_TTL read used by negative user lookups.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2473-L2768
     why: Pinned implementation and exact ownership boundary for auth_user_lookup.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2328-L2336
-    why: Own _membership_from_cached_payload; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2340-L2367
-    why: Own _fetch_team_membership_from_db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2370-L2391
-    why: Own _load_team_membership_on_cache_miss; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2394-L2442
-    why: Own get_team_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5173-L5190
+    why: Lower the three RBAC roles and nullable model/route permission contracts from B124.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2473-L2484
     why: Own _should_check_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2487-L2488
@@ -135,45 +157,61 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2502-L2507
     why: general_settings.role_permissions default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
-    why: litellm_settings.default_internal_user_params default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1-L6
-    why: role_permissions default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
-    why: Auth exceptions become public HTTP type, param and code.
+    why: User defaults start at None; the actual read and scalar merge are auth_checks.py L2679-L2697.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6444-L6455
+    why: Dictionary max_budget conversion and redacted setting diagnostic during B124 config installation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6874-L6876
+    why: Config startup validates every role permission entry with the same adapter.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: cache_hit, email_backfill,
-      fuzzy_user, membership_json_cache, missing_user, read_failure, role_based_routes.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
-    proof:
-      - stage-wiring-tests
-      - behavior-tests
+  - text: 'Cadence and role cases name absent_cadence_reads, positive_cadence_always_reads,
+      negative_before_and_at_expiry, backward_clock_keeps_negative, read_does_not_refresh,
+      zero_negative_ttl_expired, capacity_update_evicts_oldest, update_samples_clock,
+      role_defaults_none, three_role_values_only, first_match_including_none_or_empty,
+      whole_list_validated_before_match, role_extras_rejected, role_no_match,
+      permission_order_duplicates_and_empty_strings and models_routes_select_independently.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Cache and read tests name none_id_skips_lookup, empty_id_lookup,
+      typed_hit_without_database, hit_backfill_error_outside_catch,
+      cache_error_outside_catch, missing_db_outside_catch, db_only_skips_cache_and_cadence,
+      primary_writer_only_when_requested, fuzzy_still_normal_routing,
+      suppressed_miss_skips_primary_and_fuzzy, negative_not_extended,
+      actual_absence_populates_negative and no_negative_on_read_failure.'
+    proof: [behavior-tests]
+  - text: 'Fuzzy/backfill database cases name sso_before_email, email_case_insensitive_first,
+      empty_fuzzy_values_preserved, sso_update_overwrites_in_background,
+      fuzzy_never_creates_user, backfill_only_null_email, backfill_skip_without_input_or_db,
+      backfill_empty_input_allowed, backfill_missing_reread_keeps_original,
+      backfill_uses_reread_email_only, canonical_then_requested_cache_keys,
+      background_failure_does_not_fail_lookup and background_task_drained.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Creation/effect cases name scalar_defaults_override_id_and_email,
+      team_fields_not_user_columns, absent_sso_not_added_to_create,
+      missing_reset_computed_before_create, explicit_reset_preserved,
+      create_before_default_enrollment, original_identity_and_admin_enrollment,
+      enrollment_port_error_keeps_created_user, null_memberships_filtered_in_order,
+      row_validation_before_cache, cache_before_positive_cadence,
+      cache_failure_keeps_committed_user and upsert_after_suppressed_miss.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Error cases name not_found_rethrown_without_log, unavailable_identity_preserved,
+      other_read_error_keeps_cause, user_new_guidance, budget_failure_logged_once,
+      inside_backfill_failure_wrapped and cancellation_not_wrapped. The pure classifier oracle
+      compares exception categories; asynchronous failure ordering is tested through native ports.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Production config cases name loads_role_permissions, loads_scalar_user_defaults,
+      omitted_user_settings_defaults, settings_env_references, malformed_role_stops_startup,
+      falsey_defaults_empty, defaults_numeric_budget_conversion, invalid_budget_stops_startup,
+      nonmapping_defaults_named_error, nonfinite_budget_named_error and defaults_debug_redacted.'
+    proof: [config-tests, config-corpus]
 checks:
   optional:
     - mutants
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_user_lookup::tests::/)
-        - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_user_lookup::/) - test(/^auth_user_lookup::postgres::/)'
+    - id: postgres-tests
+      why: Fuzzy lookup, null-only backfill and partial user creation must run on actual Postgres rows.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_user_lookup::postgres::/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/auth_user_lookup.py && uv run --locked --project tools/oracle/litellm
@@ -193,29 +231,23 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-user-lookup-*")"
         && grep -rlq "role_permissions" crates/betterlite-config/fuzz/corpus/config_yaml/auth-user-lookup-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-    - id: stage-wiring-tests
-      why: The server does not register this production auth stage or discards its failure.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_user_lookup::tests::/)
-        - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-user-lookup/cache-hit.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/email-backfill.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/fuzzy-user.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/membership-json-cache.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/missing-user.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/read-failure.yaml
-  - tools/oracle/cases/helpers/auth-user-lookup/role-based-routes.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/cache-hit.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/email-backfill.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/fuzzy-user.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/membership-json-cache.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/missing-user.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/read-failure.yaml
-  - tools/oracle/cases/auth/auth-user-lookup/role-based-routes.yaml
-deviations: []
+  - tools/oracle/cases/helpers/auth-user-lookup/cadence-boundaries.yaml
+  - tools/oracle/cases/helpers/auth-user-lookup/cadence-capacity.yaml
+  - tools/oracle/cases/helpers/auth-user-lookup/role-selection.yaml
+  - tools/oracle/cases/helpers/auth-user-lookup/role-validation.yaml
+  - tools/oracle/cases/helpers/auth-user-lookup/read-error-classification.yaml
+deviations:
+  - what: Truthy non-mapping default_internal_user_params and non-finite or unrepresentable max_budget fail startup with the setting name instead of reaching a later Python mapping or database failure.
+    why: Config is typed and money is Decimal; falsey-to-empty defaults and finite numeric conversions retain source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2679-L2697
+  - what: A failed background SSO-ID write produces a redacted operation diagnostic and is drained at shutdown instead of an unhandled detached-task exception report.
+    why: The async lifetime and secret-handling rules require an owned task; request success and write ordering stay unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2576-L2582
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2318 owns _TeamMembershipCacheMiss and the four membership functions at L2328-L2442; B734 owns their shared inflight index.
+  - B1226 owns check_if_default_team_set and add_new_user_to_default_team behind this task's DefaultTeamEnrollment port, and B056 installs that implementation; this task has no dependency on either.
+  - B124 owns the remaining proxy _types.py contracts except the lower model/type owners enumerated in B858, B859, B2310, B2313 and B2314; this task owns only L5173-L5190.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -224,7 +256,7 @@ out_of_scope:
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -242,7 +274,7 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
+    (L415-L435). B735 owns get_object_permission (L3982-L4034).'
   - 'litellm/proxy/auth/auth_checks.py: B737 owns TeamNotFoundError.__init__ (L3136-L3140), _get_team_db_check
     (L3144-L3165), _get_team_object_from_user_api_key_cache (L3172-L3241), _get_team_object_from_cache
     (L3244-L3254), get_team_object (L3257-L3316), get_access_object (L3349-L3416), get_team_object_by_alias
@@ -327,8 +359,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A fuzzy email match must resolve to the canonical stored user_id before membership checks.
+  - check_db_only forces the primary user read to the writer but does not change fuzzy fallback routing.
+  - Default user_id can change the created row while default-team enrollment still receives the originally requested ID.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

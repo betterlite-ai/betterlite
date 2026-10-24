@@ -1,10 +1,47 @@
 id: B854
 title: Refresh short-lived database credentials
 description: >-
-  Implement DatabaseRefreshLoop over PoolGeneration and DatabaseTokenAuth. Preserve token endpoint extraction,
-  expiry calculation, 180-second buffer, 600-second unparseable-expiry fallback and 30-second minimum
-  sleep, with bounded jitter and injected time. Refresh failure retains the live pool and retries with
-  source warning behavior; shutdown cancels and joins the loop.
+  Implement DatabaseRefreshLoop over B713 PoolGeneration and B712 DatabaseTokenAuth. Parse an encoded
+  URL BEFORE decoding only its password, preserving embedded token '?' delimiters; missing/empty
+  password, None or any URL parse error yields None silently. Do not require a Postgres scheme in
+  this extraction helper. B712 parses expiry only when both token and auth exist. Read the selected
+  credential snapshot (writer DATABASE_URL by default, reader DATABASE_URL_READ_REPLICA when supplied).
+  Scheduling constants are 180 seconds buffer, 600 fallback and 30 minimum sleep; none is configurable.
+  Unparseable expiry logs debug 'Could not parse token expiration, using fallback interval of %ss'
+  and returns 600. Otherwise max(30,expiry minus 180 minus UTC now). There is NO jitter. is_token_expired
+  returns true immediately for missing URL, or logs debug 'Could not parse token expiration, treating
+  as expired' for unparseable expiry; a valid token is expired only when now > expiry, not at equality.
+  _token_refresh_not_needed is true only with more than 180 seconds remaining; equality must refresh.
+
+  Minting returns None when auth is disabled. Prefer the explicit IAMEndpoint (reader) without reading
+  writer endpoint env fields. Otherwise require truthy DATABASE_HOST, DATABASE_USER, DATABASE_NAME
+  in that order and raise RuntimeError 'Cannot mint a database token: {comma-separated missing names}
+  unset. Set them so the connection URL can be reassembled around a freshly minted token.'
+  DATABASE_PORT defaults string '5432' only when absent; empty/non-numeric values are passed to B712,
+  not replaced or parsed at import. DATABASE_SCHEMA defaults None. Build B712's URL with a new token,
+  then B2307 add_missing_query_params using token_refresh_params_from_url of the old URL. Preserve
+  its exact refresh allowlist and existing new-URL values; publish the selected URL before replacement.
+  No credential is persisted in Postgres and logs must not include its value.
+
+  Starting with token auth disabled logs debug and creates no task; any existing task handle logs
+  'Token refresh task already running' and is retained even if done. A new task logs Started with
+  B713's optional prefix and B712's label. Each loop logs its 180-second buffer, scheduled seconds
+  rounded to zero decimal places and minutes to one, sleeps, logs Proactively refreshing, then calls
+  safe refresh. Ordinary errors log error 'Error in {label} refresh loop: {error}. Retrying in 600s...'
+  and sleep 600; cancellation during normal work logs loop cancelled, cancellation during error sleep
+  exits silently. No warn-level message is generated here. Stop without a handle is a no-op; otherwise
+  cancel and await, swallow cancellation, clear the handle and log Stopped. Other task errors propagate.
+
+  Hold B713's shared reconnection lock around the second freshness check, mint and replacement. A
+  fresh token logs debug and skips minting. Snapshot the previous URL, mint/publish, then call B713's
+  connect-before-swap replacement. On failure OR cancellation restore the exact prior URL (remove
+  the value when absent) and rethrow; the candidate-connection failure keeps the old pool, but a
+  callback failure AFTER B713 publication leaves the new generation live while restoring the URL.
+  Do not promise rollback of the pool in that case. Success sets last_refresh_time only after the
+  replacement returns and logs refreshed successfully. A falsey minted URL logs Failed to generate
+  new token, changes no timestamp and returns normally, so the loop uses its normal next schedule.
+  Install these functions into B713's injected refresh-trigger port; never make B713 depend on this
+  higher lifecycle task. Test competing triggers with barriers and injected UTC time.
 
 
   Build the production database_refresh_loop module in betterlite-db; reuse the typed dependencies listed
@@ -26,41 +63,42 @@ description: >-
   DATABASE_USER=None; DATABASE_NAME=None; DATABASE_PORT=DEFAULT_POSTGRES_PORT; DATABASE_SCHEMA=None.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Refresh integration uses B860 Postgres through POSTGRES_TEST_URL, falling back to testcontainers
+  only if unset. Connection failure must fail. Test old/new pool reachability and snapshot restoration
+  with real connections and injected token minting; no AWS credential or database-row mutation is needed.
 
 
-  Write betterlite-config::database_refresh_loop::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests loads_writer_endpoint, explicit_reader_endpoint_wins, endpoint_missing_fields_order,
+  absent_port_5432 and empty_port_not_default call B002's real loader and consume its snapshot.
+  Do not add an invalid_value_fallback: missing required values raise at mint time, and port is a
+  string passed through. Reuse B710's endpoint schema without adding another env binding.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Expose extract_refresh_password(&str) through B2307 URL primitives and fuzz the production function
+  in the existing DB workspace with encoded delimiters, percent escapes, empty passwords, bracket
+  errors and Unicode. Register only extraction/expiry-clock arithmetic as pure B856 database helper
+  cases; Python calls actual methods on a minimal wrapper with fixed clock/auth descriptor. Minting,
+  environment/snapshot changes, locks and loops use native tests, not helper cases.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 232 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  232 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 466 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The eleven methods contain 176 nonblank noncomment lines excluding docstrings, plus three constants.
+  Allow 200 production, 300 lifecycle/Postgres tests, 80 adapters, 50 config, 60 fuzz and 35 wiring
+  lines, 725 within 800. B712 owns token claim parsing; B713 owns pool publication/draining.
 scope:
   paths:
     - crates/betterlite-db/src/database_refresh_loop.rs
     - crates/betterlite-db/src/database_refresh_loop/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/refresh_password.rs
+    - crates/betterlite-db/fuzz/corpus/refresh_password/**
+    - tools/oracle/src/helpers/database_refresh_loop.rs
+    - tools/oracle/helpers/database_refresh_loop.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/database-refresh-loop/**
+    - tools/oracle/fuzz/corpus/helper_case/database-refresh-loop-*
     - crates/betterlite-db/src/database_refresh_loop/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
@@ -70,6 +108,8 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L154-L165
+    why: Fixed 180-second buffer, 600-second fallback and 30-second minimum sleep constants.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L349-L476
     why: Pinned implementation and exact ownership boundary for database_refresh_loop.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L646-L806
@@ -108,6 +148,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L475-L480
     why: DATABASE_SCHEMA default and read site.
 dod:
+  - text: 'Named lifecycle cases disabled_start, duplicate_handle_start, loop_log_levels,
+      fixed_schedule_no_jitter, error_sleep_600, cancel_normal_vs_error_sleep, stop_clears_handle,
+      lock_rechecks_freshness, mint_failure_no_publish, falsey_mint_no_timestamp,
+      candidate_failure_restores_url, cancel_restores_absent_url, callback_error_after_swap,
+      success_sets_timestamp and writer_reader_isolation cover effects in order.'
+    proof: [behavior-tests, postgres-tests]
+  - text: Pure extraction and schedule cases use the pinned methods and both new corpora replay production decoders.
+    proof: [oracle, helper-python, parser-corpus, helper-case-corpus]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: expiry_buffer, unknown_expiry_fallback,
       cached_token_minimum_sleep, refresh_failure_keeps_pool, reader_token_refresh, shutdown_joins, postgres_pinned_rows,
       postgres_failure_effects.'
@@ -125,6 +173,15 @@ checks:
   optional:
     - mutants
   commands:
+    - id: helper-python
+      why: Clock/extraction comparisons must import the pinned functions.
+      run: test -f tools/oracle/helpers/database_refresh_loop.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: parser-corpus
+      why: Password extraction must replay added malformed URL seeds through production code.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/refresh_password)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_refresh_password_corpus)'
+    - id: helper-case-corpus
+      why: The new operation must pass the shared HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/database-refresh-loop-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_refresh_loop::tests::/)
@@ -142,11 +199,20 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*")"
         && grep -rlq "DATABASE_HOST" crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases: []
-deviations: []
+oracle_cases:
+  - tools/oracle/cases/helpers/database-refresh-loop/password-parse-before-unquote.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/missing-empty-malformed-password.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/disabled-auth-expiry.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/expiry-fallback-600.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/buffer-floor-exact-boundaries.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/expired-strictly-after.yaml
+  - tools/oracle/cases/helpers/database-refresh-loop/fresh-strictly-over-buffer.yaml
+deviations:
+  - what: Rotated writer/reader credentials update an owned runtime snapshot rather than process environment variables.
+    why: Native pool ownership follows B713 and the decided typed configuration design; replacement failure restores that snapshot with the same timing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L432-L450
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B712 owns token minting/claim parsing; B710 owns endpoint config types; B2307 owns URL query policies and shared URL syntax parsing.
   - 'litellm/proxy/db/prisma_client.py: B051 owns PrismaManager._apply_replica_identity_full_if_requested
     (L883-L895), PrismaManager._raise_if_partitioned_spend_logs (L898-L911), PrismaManager.setup_database
     (L914-L985), PrismaManager.build_request_log_indexes (L988-L997), PrismaManager.start_request_log_index_build
@@ -174,10 +240,11 @@ out_of_scope:
     has no equivalent process in native SQLx; owned pool tasks replace it.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
     has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A failed short-lived token refresh retains the still-live pool generation.
+  - Expiry equality is not expired, but exactly 180 seconds of runway is already eligible for refresh.
+  - A replacement callback can fail after publication; restoring credentials then does not restore the old pool.
+  - There is no random jitter and no warn-level fallback in this loop.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

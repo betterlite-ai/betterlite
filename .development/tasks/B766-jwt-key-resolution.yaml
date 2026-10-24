@@ -3,7 +3,7 @@ title: Resolve verified JWT claims to virtual keys
 description: >-
   Implement JwtKeyResolution for issuer-scoped claim mapping and pending auto-registration. Resolve only
   already verified claims; auto-registration runs after JWT permission/email/custom validation and persists
-  key plus mapping transactionally through KeyRepository. Keep configured failure action, legacy issuer
+  the key first and the mapping second, without a transaction. Keep configured failure action, legacy issuer
   handling and fallback-team-mapping behavior as typed alternatives.
 
 
@@ -17,10 +17,45 @@ description: >-
   33 source lines), _resolve_jwt_to_virtual_key (L1121-L1307; 145 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.virtual_key_mapping_cache_ttl=300.
+  Read litellm_jwtauth.virtual_key_mapping_cache_ttl=300, virtual_key_claim_field=None and
+  unregistered_jwt_client_behavior='fallback_team_mapping', including B869's issuer-specific
+  overrides and jwt_client_id_field compatibility alias. B213 owns get_nested_value; B738 owns
+  mapping lookup/cache keys; B733/B734 own cache reads/writes; B753 owns _raw_cache; B870 owns
+  IdentityStore.resolve/key_from_principal; B893 owns generate_key_helper_fn; B2314 owns hash_token.
+  Own _PendingAutoRegister's four fields (L923-L939) and the '__JWT_PROXY_ADMIN__' constant (L914)
+  alongside these callers. The upstream function's race-safety docstring is not a transaction.
+
+  disabled_claim_mapping returns None; issuer_nonstring_global uses only a string normalized issuer;
+  nested_claim_stringified preserves str(claim_value), including empty/false/numeric values.
+  missing_claim_fallback returns None without cache writes; missing_claim_reject and
+  missing_claim_auto_register are HTTP 403. admin_sentinel_auto_register returns None to rerun
+  policy; admin_sentinel_policy_changed ignores the old sentinel and looks up again.
+  cached_miss_reject is 403; cached_miss_fallback returns None; cached_miss_auto_register evicts
+  '__NO_MAPPING__' before returning pending identity, with HTTP 500 on both cached and fresh
+  no-DB paths. fresh_reject caches the miss before 403; fresh_fallback caches it before None;
+  fresh_pending does not cache a miss. Cache failures propagate; no warning/fallback is invented.
+
+  issuer_scoped_mapping wins over global_mapping; global_cache_hit accepts only strings other than
+  '__NO_MAPPING__'. global_row_cached_separately never stores a global result under an issuer key.
+  inactive_mapping follows B738's is_active filtering; mapped_key_resolution uses B870 and never
+  bypasses a missing/revoked key. B757 translates these HTTP failures into auth_error, param 'None',
+  code equal to status string; a missing mapping is distinct from B870's token_not_found_in_db.
+
+  auto_register_after_policy passes table_name='key', request_type='key', llm_router=None and
+  validated team/user/org/agent IDs to B893, with metadata auto_registered=true, jwt_claim_field and
+  jwt_claim_value. Hash the returned plaintext token before inserting the mapping. Store issuer
+  None as '', created_by=updated_by='auto_register', then cache the hash for the configured TTL,
+  then resolve identity and set org_id/end_user_id/api_key=token on a non-null result.
+  registration_race recognizes case-insensitive 'unique' or 'p2002', deletes its orphan key,
+  fetches the winner and continues. orphan_delete_warns retains the orphan when deletion fails;
+  winner_disappeared is 503 without caching a miss. mapping_insert_failed leaves the already
+  created key on any other failure; cache_write_failed leaves both rows. These are distinct
+  Postgres failure cases, with POSTGRES_TEST_URL and testcontainers fallback.
 
 
-  Add the jwt_key_resolution operation under B856 Management::jwt. Python calls only the owned MIT helper
+  Add the jwt_key_resolution operation under B856 Management::jwt for typed lookup/cache policy only.
+  Auto-registration calls B893's server-state-dependent creation service and is tested through
+  the real HTTP flow and Postgres, never by calling a handler in a helper adapter. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
   warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-key-resolution-*
@@ -49,7 +84,8 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::jwt_key_resolution::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::jwt_key_resolution::tests::loads_settings, defaults_and_precedence,
+  issuer_override, legacy_claim_alias and invalid_behavior_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -67,8 +103,9 @@ description: >-
 
 
   Sizing: 290 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  290 production, 157 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 627 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  300 production including the pending result, 300 behavior/Postgres tests, 65 helper adapters,
+  65 route/manifests/wiring, 0 decoder/fuzz and 50 config lines: 780 lines within an 800-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -115,8 +152,12 @@ references:
     why: Own _lookup_jwt_mapping_token_hash; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1121-L1307
     why: Own _resolve_jwt_to_virtual_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
-    why: litellm_jwtauth.virtual_key_mapping_cache_ttl default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1058-L1062
+    why: Cache TTL is consumed after the mapping write and before identity resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5442-L5461
+    why: Global claim, cache TTL and no-match policy defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L914-L939
+    why: Own admin sentinel and pending registration fields; the auth-disabled hint stays with B052.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
@@ -125,6 +166,13 @@ dod:
       managed_agent_mapping_denied, postgres_pinned_rows, postgres_failure_effects.'
     proof:
       - behavior-tests
+  - text: The named sentinel, issuer-cache, missing-claim and partial-write cases in the description
+      each assert their own result and ordered effects, including orphan cleanup warnings and 503 races.
+    proof:
+      - behavior-tests
+      - postgres-tests
+      - oracle
+      - helper-python
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -189,9 +237,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/jwt-key-resolution/inactive-mapping.yaml
   - tools/oracle/cases/helpers/jwt-key-resolution/missing-claim.yaml
   - tools/oracle/cases/helpers/jwt-key-resolution/fallback-team-mapping.yaml
-  - tools/oracle/cases/helpers/jwt-key-resolution/auto-register-after-policy.yaml
-  - tools/oracle/cases/helpers/jwt-key-resolution/registration-race.yaml
-  - tools/oracle/cases/helpers/jwt-key-resolution/managed-agent-mapping-denied.yaml
+  - tools/oracle/cases/helpers/jwt-key-resolution/sentinel-policy-matrix.yaml
+  - tools/oracle/cases/helpers/jwt-key-resolution/global-cache-tier.yaml
+  - tools/oracle/cases/helpers/jwt-key-resolution/claim-normalization.yaml
   - tools/oracle/cases/auth/jwt-key-resolution/issuer-scoped-mapping.yaml
   - tools/oracle/cases/auth/jwt-key-resolution/inactive-mapping.yaml
   - tools/oracle/cases/auth/jwt-key-resolution/missing-claim.yaml
@@ -199,10 +247,13 @@ oracle_cases:
   - tools/oracle/cases/auth/jwt-key-resolution/auto-register-after-policy.yaml
   - tools/oracle/cases/auth/jwt-key-resolution/registration-race.yaml
   - tools/oracle/cases/auth/jwt-key-resolution/managed-agent-mapping-denied.yaml
+  - tools/oracle/cases/auth/jwt-key-resolution/missing-db-auto-register.yaml
+  - tools/oracle/cases/auth/jwt-key-resolution/winner-disappeared.yaml
+  - tools/oracle/cases/auth/jwt-key-resolution/registration-write-order.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B053/B877 enforce JWT policy before the caller submits pending registration; this leaf consumes
+    the validated identity and does not call its own authentication parent.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -247,8 +298,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Auto-registration runs after JWT permission and custom validation, never before them.
+  - A failed orphan deletion is only warned about; rolling back the winner or silently returning team auth changes the race contract.
+  - Global mapping hits must stay under the issuer-less cache key or another issuer can retain stale authorization.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

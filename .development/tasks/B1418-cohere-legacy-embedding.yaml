@@ -1,0 +1,88 @@
+id: B1418
+title: Legacy Cohere embedding execution for signed endpoints
+description: >-
+  Implement cohere_legacy_embedding for the legacy embed handler and reachable v1
+  transformation methods. Its users include Bedrock's signed invoke path and SageMaker's
+  Cohere reply projection. Reuse B1417's input classification and usage arithmetic,
+  exposing populate_embedding_response on an already decoded record so callers which
+  have logged the response do not log it again. Unlike v2, this version accepts flat
+  embeddings or grouped embeddings, detects grouping either from a dictionary or
+  response_type=embeddings_by_type, and includes type on grouped rows. Group indices
+  restart; flat rows omit type. It has no redundant tokenizer pass before usage.
+
+  Header defaults are Request-Source=unspecified:litellm, accept/content-type JSON and
+  Bearer only for a truthy key. Add each only when no case-insensitive equivalent is
+  present, retaining the original header spelling and value; this protects AWS signed
+  requests. Choose truthy complete_api_base or https://api.cohere.ai/v1/embed and use
+  a supplied truthy data object unchanged, otherwise build it from model/input/options.
+  Async execution logs pre_call with body, headers and api_base, selects the Cohere
+  client with caller timeout, sends json.dumps(data), and logs HTTP-status or transport
+  failure before rethrowing it unchanged. Sync-mode planning retains its narrower
+  pre_call body-only metadata and concurrency-one client fallback. Represent both SDK
+  modes in a typed plan; B158 supplies the blocking facade over native async execution.
+
+  decode_cohere_legacy_embedding parses the reply before post_call and then invokes
+  populate_embedding_response. Malformed JSON therefore emits no success post_call.
+  The lower parsed-record function is pure; only the HTTP-byte entry adds fuzz target
+  cohere_legacy_embedding. Helper cohere_legacy_embed covers headers, payload selection,
+  grouped/flat results and hook order with a pinned fixture transport. Add transport tests
+  for timeout selection, failure logging and cancellation through B173. New HelperCase
+  seeds carry call.cohere_legacy_embed and must be checked by the adapter's parser tests.
+  The two source files contain 296 nonblank/noncomment lines before excluding the unused
+  methods and error class below; allow 280 production, 205 tests, 135 adapters and 90
+  decoder/wiring lines, maximum 750. This layer consumes resolved keys and URLs only.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,cohere_legacy_embedding}.rs
+    - crates/betterlite-openai/src/cohere_legacy_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cohere_legacy_embedding.rs
+    - crates/betterlite-openai/fuzz/corpus/cohere_legacy_embedding/**
+    - tools/oracle/src/helpers/{mod,cohere_legacy_embed}.rs
+    - tools/oracle/helpers/{dispatch,cohere_legacy_embed}.py
+    - tools/oracle/cases/helpers/cohere-legacy-embed/**
+    - tools/oracle/fuzz/corpus/helper_case/cohere_legacy_embed*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/handler.py#L26-L180
+    why: Case-insensitive header preservation, complete endpoint and mode-specific hook records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L46-L180
+    why: Legacy grouped-vector type labels and separately reusable response population.
+dod:
+  - text: Signed headers survive defaults and execution preserves data selection and failure-hook order.
+    proof: [cohere-legacy-tests, cohere-legacy-python, oracle]
+  - text: Legacy replies retain grouped type labels without double logging or v2's extra tokenization pass.
+    proof: [cohere-legacy-tests, cohere-legacy-python, oracle]
+  - text: Legacy embedding wire and helper variants have new replayable corpus entries.
+    proof: [cohere-legacy-corpus, cohere-legacy-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-legacy-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cohere_legacy_embedding::/) - test(replays_the_cohere_legacy_embedding_corpus)'
+      why: Signed-header preservation and hook order must exercise the execution service.
+    - id: cohere-legacy-python
+      run: test -f tools/oracle/helpers/cohere_legacy_embed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The oracle transport records actual handler calls without importing a proxy route.
+    - id: cohere-legacy-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_legacy_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_legacy_embedding)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_legacy_embedding_corpus)'
+      why: Flat and grouped legacy responses must both enter the new byte decoder.
+    - id: cohere-legacy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_legacy_embed*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_legacy_embed::/)'
+      why: The adapter requires at least one seed and asserts the legacy operation tag.
+oracle_cases:
+  - tools/oracle/cases/helpers/cohere-legacy-embed/signed-header-casing.yaml
+  - tools/oracle/cases/helpers/cohere-legacy-embed/empty-versus-supplied-data.yaml
+  - tools/oracle/cases/helpers/cohere-legacy-embed/flat-and-grouped-types.yaml
+  - tools/oracle/cases/helpers/cohere-legacy-embed/parse-before-post-call.yaml
+  - tools/oracle/cases/helpers/cohere-legacy-embed/http-failure-logging.yaml
+deviations: []
+out_of_scope:
+  - v1_transformation.CohereEmbeddingConfig.get_supported_openai_params, map_openai_params and _is_v3_model have no caller at the pin; handler.CohereError likewise has no caller.
+  - B631 owns Bedrock embedding invocation and signing composition; the SageMaker provider task owns its input fallback before calling populate_embedding_response.
+pitfalls:
+  - Adding content-type alongside Content-Type can invalidate the caller's AWS signature.
+  - An explicitly supplied empty data dictionary triggers request construction because selection uses truthiness.
+  - The reusable populated-record entry must not emit another post_call for SageMaker.
+budget: {max_changed_lines: 750, max_new_expects: 0}
+review_level: security

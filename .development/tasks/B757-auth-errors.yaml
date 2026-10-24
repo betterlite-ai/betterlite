@@ -12,6 +12,53 @@ description: >-
   outage identity is not an administrator and still passes route policy.
 
 
+  Preserve conversion order. BudgetExceededError uses its message, budget_exceeded, null param and
+  status_code (normally the global default 422; 429 only if the attribute is absent). ModelAccessDenied
+  HTTP errors retain the private internal_message while exposing str(detail), auth_error, string None
+  param and their status. Other HTTP errors preserve detail, param if present else string None, and
+  status; ProxyException is unchanged. B872 classifies database-unavailable errors into its 503; every
+  other exception becomes 401 auth_error, Authentication Error, followed by str(error), and the same
+  param fallback. Preserve B732 ProxyException wire normalization and headers, not an invented mapper.
+
+
+  Outage bypass requires both B872's enabled setting and a connection-error classification. First emit
+  DB service_failure_hook(get_key_object, duration=0.0), then WARN, then return the synthetic identity
+  with request_route unchanged. Other database failures do not bypass. It does not execute the normal
+  auth failure hook or seed the trace on this branch. Otherwise B744 extracts the request IP and this
+  task reads user-agent only if scope has headers. litellm_metadata wins by key presence over metadata;
+  use a mapping or empty base, and fill only falsey requester_ip_address/user_agent from truthy values.
+  Return the original request-data object when nothing is stamped; otherwise shallow-copy it and its
+  selected metadata. There is no mutation of the original payload.
+
+
+  Log before seeding identity or invoking callbacks, so callback failure cannot erase the diagnostic.
+  B744's invalid-key provenance plus log_client_error_tracebacks=false selects stdout WARNING; all
+  others use ERROR. Include a traceback only when enabled or B206 says this is not an expected client
+  error. Optional identity suffix lists nonempty key_alias, user_id, user_email, team_id, team_alias in
+  that order, escaping every nonprintable character via unicode_escape; absent identity or disabled
+  log_auth_failure_key_identity yields no suffix. Both switches default false. Copy resolved identity,
+  set parent span, normalize route through B741, retain an existing api_key or use B732's hashed form
+  of the supplied key, then B110 seeds the span with the body model. Budget errors lacking llm_provider
+  call B2327's rate-limit provider resolver with the string model or null before the failure hook.
+
+
+  The injected B012 hook receives client context, original exception, copied identity, auth_error and
+  route. A nonnull transformed exception replaces the original; a raising hook propagates. Convert the
+  resulting exception and preserve the original invalid-key marker. If the earlier log was quiet but
+  the final code string is not 401, add an ERROR log. Raise the final exception. The separate malformed
+  body logging helper instead catches every callback failure, logs an exception and leaves the caller's
+  original 400 intact; it supplies empty request_data and bad_request_error to that hook.
+
+
+  received_at returns an existing nonnull state value, otherwise UTC now; state-assignment errors are
+  silently ignored. Span setup first stamps time, then skips absent logger or an existing span. B110
+  creates the span with received-at and B1100 headers; only legacy non-v2 logging with the setter adds
+  B741 path/template attributes. Body parsing detects B1100 opaque audio, caches an empty parsed body
+  and returns it without reading bytes. Otherwise catch only ProxyException from B1100 reading and
+  return empty body plus that deferred error; successful parsing receives B1102 path parameters.
+  Path-population errors occur outside that catch. No database writes or secret storage occur here.
+
+
   Build the production auth_errors module in betterlite-auth; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.
@@ -28,7 +75,7 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.log_auth_failure_key_identity=False;
-  litellm_settings.log_client_error_tracebacks=False; general_settings.use_x_forwarded_for=None; use_x_forwarded_for=None.
+  litellm_settings.log_client_error_tracebacks=False; general_settings.use_x_forwarded_for=None.
 
 
   general_settings.allow_requests_on_db_unavailable=false; on a classified DB connection error true creates
@@ -44,40 +91,30 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  B732 error integration on POST /v1/chat/completions compares each exception category's exact
+  status/type/message/param/code and headers. Script callback transformation/failure separately from
+  the early outage return; capture log level, traceback decision and identity seeding order.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Database outage cases use B860 on POSTGRES_TEST_URL or testcontainers and distinguish transport
+  failure from missing rows and policy errors. The synthetic outage identity cannot acquire admin grants.
 
 
-  Write betterlite-config::auth_errors::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_errors::tests::log_switches_default_false,
+  identity_and_traceback_switches_consumed, forwarded_for_requires_exact_true,
+  outage_default_false_and_enabled and invalid_boolean_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B1100 owns body decoding; this task only defers its ProxyException and controls diagnostic timing.
+  Parser failures and callback failures must not expose the credential or request-body contents.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 250 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  250 production, 154 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 584 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: allow 250 production, 300 table-driven tests, 80 helper adapters, 90 wiring and 60 config
+  lines, 780 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -147,14 +184,25 @@ references:
     why: litellm_settings.log_client_error_tracebacks default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L185-L190
     why: general_settings.use_x_forwarded_for default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L1-L6
-    why: use_x_forwarded_for default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L111-L123
+    why: Actual log_auth_failure_key_identity read and escaping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L192-L207
+    why: Actual traceback switch read and severity/sink choice.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: invalid_key_401, db_outage_503,
-      malformed_json_timing, model_denial_403, escaped_user_agent, secret_free_log, db_outage_enabled_internal_user,
-      db_outage_disabled_error.'
+  - text: 'Named cases: conversion_order_budget_default_422_and_absent_status_429,
+      model_denial_public_and_private_messages, http_detail_param_and_status,
+      proxy_exception_unchanged, database_service_unavailable_503, ordinary_error_401_prefix,
+      outage_connection_only_service_hook_then_warning_then_restricted_identity,
+      outage_disabled_no_bypass, client_context_key_presence_falsey_fields_and_copy,
+      missing_scope_headers_no_user_agent, log_before_raising_callback,
+      invalid_key_warning_stdout_and_traceback_matrix, identity_suffix_order_and_unicode_escaping,
+      identity_copy_api_key_route_and_model_seed, budget_missing_provider_resolved_before_hook,
+      transformed_exception_marker_and_non401_error_escalation, normal_hook_error_propagates,
+      received_at_idempotent_and_assignment_failure, span_absent_existing_legacy_and_v2,
+      opaque_audio_empty_cache_without_read, proxy_parse_error_deferred_other_errors_escape,
+      path_population_error_not_deferred, malformed_body_hook_failure_preserves_original_400.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -228,8 +276,8 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-errors/db-outage-disabled-error.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B012 implements the failure hook port. B187 owns telemetry creation and identity stamping;
+    B1100/B1102 own request decoding and path enrichment. No credentials are persisted here.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -275,6 +323,6 @@ out_of_scope:
 pitfalls:
   - An enabled DB-outage fallback uses sentinel __db_unavailable_fallback__, never the proxy-admin role.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

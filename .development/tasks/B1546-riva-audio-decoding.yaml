@@ -1,0 +1,102 @@
+id: B1546
+title: Decode and resample supplied audio for Riva PCM streaming
+description: >-
+  Implement api::riva::audio for audio_utils.py through B165's owned embedded-library bridge,
+  reusing NumPy/soundfile/audioread and optional soxr/scipy. Compare these existing libraries with
+  symphonia before coding; preserving source backend selection and PCM bytes favors the existing
+  libraries. Rust coordinates typed operations over opaque SDK array handles, never imports LiteLLM
+  at runtime and never introduces Rust floating-point samples or handwritten codecs. Return
+  ResampledAudio with PCM bytes, integer sample rate/channels and Decimal duration from sample count.
+  FloatArray protocol properties/methods describe that adapter surface, not new public Python classes.
+
+  decode_riva_audio accepts supplied file bytes. Missing NumPy yields the source Riva 500 install
+  hint. Try soundfile.read with float32/always_2d=false; any import/decode error proceeds to audioread.
+  Missing audioread yields the detailed 400 conversion hint. Its backend requires a private temporary
+  .audio path: write the input, collect native int16 buffers, reject no samples, normalize by 32768
+  and reshape multichannel data; remove staging in finally, ignoring unlink failure. Do not invoke
+  ffmpeg yourself or fetch file URLs. Errors from audioread become the pinned 400 decode error.
+
+  Average multiple channels, select channel zero for a one-channel matrix, then flatten float32
+  through the library. Resampling tries soxr, then scipy.signal.resample_poly with GCD factors, then
+  the NumPy linear fallback; only ImportError advances that chain, not a runtime resampling error.
+  Equal rates or zero samples skip resampling. Linear fallback rounds target length half-even,
+  preserves samples when target length is at most one, and otherwise uses endpoint-inclusive indices
+  and float32 fractional interpolation. Clip to [-1,1], multiply by 32767 and convert little-endian
+  int16; duration is output samples/16000 and channels=1. Preserve this asymmetric negative peak.
+
+  Bound supplied and decoded PCM buffers to 64 MiB, checking metadata/stream accumulation before
+  allocation where the library permits and rejecting overflow through the deviation below. Use
+  B165 tracked blocking work and owned temporary files. Add riva_audio fuzzing of decode_riva_audio
+  with short malformed containers and small real WAV/FLAC/stereo inputs, plus corpus replay. Enable
+  the pin's stt-nvidia-riva extras in the oracle lock and expose that environment to bridge tests;
+  tests must exercise real decoding as well as scripted backend failures. call.riva_audio compares
+  stereo_downmix, negative_peak, same_rate, linear_short_output, backend_order, decode_failure and
+  temporary_cleanup with pinned audio functions. The 181 source lines allow 240 bridge code, 220
+  tests and 160 oracle/fuzz lines, maximum 750 excluding no generated source.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/riva.rs
+    - crates/betterlite-core/src/api/riva/audio.rs
+    - crates/betterlite-core/src/api/riva/audio/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/riva_audio.rs
+    - crates/betterlite-core/fuzz/corpus/riva_audio/**
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/riva_audio.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/riva_audio.py
+    - tools/oracle/cases/helpers/riva-audio/**
+    - tools/oracle/fixtures/riva-audio/**
+    - tools/oracle/fuzz/corpus/helper_case/riva_audio*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L28-L239
+    why: Decoder fallback, array operations, temporary-file cleanup and resampling order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L146-L153
+    why: Optional Riva dependency set used for reproducible decoder tests.
+  - url: https://python-soundfile.readthedocs.io/en/0.13.1/
+    why: Existing decoder supports in-memory input and explicit sample dtype/channel shape.
+  - url: https://docs.rs/symphonia/latest/symphonia/
+    why: Native decoder alternative whose backend and resampling behavior differ from the pinned pipeline.
+dod:
+  - text: Audio decode/resampling preserves source backend fallbacks and exact 16 kHz mono PCM output on deterministic fixtures.
+    proof: [riva-audio-tests, oracle, riva-audio-python]
+  - text: Malformed or oversized audio fails with typed errors and temporary staging is reclaimed.
+    proof: [riva-audio-tests, riva-audio-corpus]
+checks:
+  optional: []
+  commands:
+    - id: riva-audio-tests
+      why: real PCM conversion, bounds or backend failure behavior is absent
+      run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::riva::audio::/) - test(replays_the_riva_audio_corpus)'
+    - id: riva-audio-corpus
+      why: the audio boundary has no newly added malformed-container corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/riva_audio)" && uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_riva_audio_corpus)'
+    - id: riva-audio-python
+      why: decoded PCM bytes are not checked against the source numerical pipeline
+      run: grep -qE '^[[:space:]]+riva_audio:' tools/oracle/fuzz/corpus/helper_case/riva_audio* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/riva_audio.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/riva-audio/stereo-downmix.yaml
+  - tools/oracle/cases/helpers/riva-audio/negative-peak.yaml
+  - tools/oracle/cases/helpers/riva-audio/same-rate.yaml
+  - tools/oracle/cases/helpers/riva-audio/linear-short-output.yaml
+  - tools/oracle/cases/helpers/riva-audio/backend-order.yaml
+  - tools/oracle/cases/helpers/riva-audio/decode-failure.yaml
+  - tools/oracle/cases/helpers/riva-audio/temporary-cleanup.yaml
+deviations:
+  - what: Supplied or decoded PCM buffers exceeding 64 MiB fail with HTTP 413, type invalid_request_error, param file and code audio_too_large.
+    why: The source fully buffers both forms without a cap; bounded input handling requires an explicit memory limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L67-L178
+out_of_scope:
+  - B1547 owns Riva gRPC requests; this module ends at PCM output and never opens a provider connection.
+pitfalls:
+  - Negative full scale becomes -32767 because the final conversion multiplies by 32767 rather than 32768.
+  - A soxr runtime error propagates instead of selecting scipy or linear interpolation.
+  - The audioread temporary file must be removed on both decode errors and successful conversion.
+review_level: standard
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

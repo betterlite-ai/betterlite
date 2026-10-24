@@ -1,0 +1,114 @@
+id: B2302
+title: Shared pass-through registry lookup and root-path normalization
+description: >-
+  Build the concrete, ordered PassThroughRegistry read service used by authentication before B102 can
+  install pass-through handlers. Own InitPassThroughEndpointHelpers._route_for_registry_lookup,
+  is_registered_pass_through_route and get_registered_pass_through_route (L3155-L3237), plus
+  utils.get_server_root_path and normalize_route_for_root_path (L8349-L8366). B102 writes the registry
+  snapshot; B883 reads the same implementation and no longer waits on an injected future policy.
+  Store typed registration metadata and preserve insertion order. Registration, removal and HTTP
+  dispatch remain B102; this task provides the shared snapshot construction/read API they consume.
+
+  SERVER_ROOT_PATH defaults to the empty string, despite get_server_root_path's docstring saying /.
+  Empty and / leave the route unchanged. Other roots strip only when the path starts with root plus
+  /, preserving the slash after the root; the exact root or an unrelated prefix returns None. Do not
+  trim trailing slashes from the configured root. Registry lookup falls back to the original route
+  when normalization returns None, allowing callers to pass an already stripped path.
+
+  is_registered_pass_through_route first compares a successfully normalized path with each of B868's
+  mapped_pass_through_routes using startswith, without a slash boundary. It then scans registration
+  keys in order, splitting at most three colons into endpoint ID, type, path and optional methods.
+  Ignore fewer than three components and unknown types. exact requires equality; subpath permits
+  equality or a prefix ending with registered_path + /. This predicate ignores HTTP methods and
+  returns false after an unsuccessful scan. Built-in mapped prefixes are only a predicate match;
+  get_registered_pass_through_route does not invent metadata for them.
+
+  get_registered_pass_through_route uses the same exact/subpath match and returns the first eligible
+  metadata record. Prefer a nonempty list in metadata.methods; otherwise use the fourth key component
+  split on commas when present. A missing fourth component leaves an unrestricted method list;
+  an empty fourth component becomes [""], which does not authorize GET. None method bypasses filtering;
+  an empty list also permits any method, otherwise compare the supplied method exactly, without case
+  folding. A path match with the wrong method continues scanning later entries. Preserve auth's
+  absent/false/true distinction for B883; the lookup itself does not enforce auth or parse wildcard
+  route groups. It makes no DB or network call and has no warning/fallback logging.
+
+  Expose Management::auth operation pass_through_registry_lookup for these pure snapshot queries.
+  The Python adapter invokes the pinned static methods with a restored registry/root environment and
+  Rust invokes production code. Compare selected registration identity and metadata, not a guessed
+  route classification. Config tests root_default_empty, root_slash, root_prefix and root_trailing_slash
+  call B002's loader. Paths and method strings arrive from B003's HTTP decoder; registration keys are
+  internal state produced from B102's typed records, so this adds no outside-byte decoder or fuzz target.
+
+  The five functions contain 75 nonblank, noncomment source lines including docstrings. Budget 110
+  implementation, 180 tests, 75 adapters, 45 config and 35 wiring lines, 445 total within 500.
+scope:
+  paths:
+    - crates/betterlite-auth/src/pass_through_registry.rs
+    - crates/betterlite-auth/src/pass_through_registry/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-config/src/pass_through_registry.rs
+    - crates/betterlite-config/src/pass_through_registry/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/pass-through-registry-*
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/src/helpers/pass_through_registry.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/helpers/pass_through_registry.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/pass-through-registry/**
+    - tools/oracle/fuzz/corpus/helper_case/pass-through-registry-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3155-L3237
+    why: Own the three registry query helpers, including legacy key and metadata-method precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8349-L8366
+    why: Own the real SERVER_ROOT_PATH read and prefix normalization.
+dod:
+  - text: 'registry_lookup cases cover mapped_prefix_without_boundary, mapped_has_no_metadata,
+      exact_match, subpath_self, subpath_child, subpath_sibling_denied, unknown_type,
+      malformed_registry_key, old_key_unrestricted, metadata_methods_win, key_methods_fallback,
+      empty_key_methods_not_get, absent_method_bypass, method_case_sensitive,
+      later_matching_method, first_registration_wins and auth_metadata_preserved.'
+    proof: [behavior-tests, oracle, helper-python, helper-corpus]
+  - text: 'root_normalization covers empty_root, slash_root, prefixed_path, already_stripped_lookup,
+      exact_root_not_under_root, similar_prefix_not_stripped and trailing_root_slash_literal;
+      production loader tests prove SERVER_ROOT_PATH defaults and explicit values.'
+    proof: [behavior-tests, config-tests, config-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Registry order, method choice or root normalization is absent or incorrect.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^pass_through_registry::tests::/)'
+    - id: config-tests
+      why: The actual config loader does not supply the root path consumed by the lookup.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^pass_through_registry::tests::/)'
+    - id: config-corpus
+      why: The new root-path seed is absent or fails the shared production decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/pass-through-registry-*')" && grep -rlq SERVER_ROOT_PATH crates/betterlite-config/fuzz/corpus/config_yaml/pass-through-registry-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The independent registry adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/pass_through_registry.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: No newly added registry operation reaches the shared HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/pass-through-registry-*')" && grep -rlq pass_through_registry_lookup tools/oracle/fuzz/corpus/helper_case/pass-through-registry-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/pass-through-registry/root-path.yaml
+  - tools/oracle/cases/helpers/pass-through-registry/mapped-and-registered.yaml
+  - tools/oracle/cases/helpers/pass-through-registry/method-and-order.yaml
+deviations: []
+out_of_scope:
+  - B102 owns all other pass_through_endpoints.py functions and installs the registered HTTP handlers.
+  - B124 owns other utils.py functions except the explicitly assigned database/auth helpers; its root
+    path callers consume this task's normalization rather than owning another implementation.
+  - B883 owns route-grant enforcement and the auth=true decision after metadata lookup.
+pitfalls:
+  - A mapped prefix can match without a slash boundary while registered subpaths require that boundary.
+  - An old three-component registry key permits any method, but a four-component key ending in a colon does not.
+  - The first eligible registry entry wins; sorting entries can change which auth metadata is selected.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

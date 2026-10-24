@@ -2,7 +2,7 @@ id: B043
 milestone: M3 providers
 title: Regional hosts and other native APIs
 status: todo
-depends_on: [B010, B011, B186]
+depends_on: [B010, B011, B186, B1430]
 file: null
 covers:
   - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"

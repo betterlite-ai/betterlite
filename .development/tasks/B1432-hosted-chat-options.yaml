@@ -1,0 +1,105 @@
+id: B1432
+title: Baseten, Cerebras and Featherless option policies and inherited host aliases
+description: >-
+  Add hosted_chat_options in betterlite-openai for the three explicit option maps and
+  their captured constructor defaults, using B668's per-config snapshot instead of
+  Python class mutation. Constructor fields start None and only supplied non-None
+  values replace the snapshot. Baseten accepts max_tokens, max_completion_tokens,
+  response_format, seed, stop, stream, temperature, top_p, tool_choice, tools, user,
+  presence_penalty, frequency_penalty and stream_options. Cerebras omits the two
+  penalties and stream_options, adds max_retries and extra_headers, and includes
+  reasoning_effort only when B2221 says that cerebras model supports it. Both maps
+  process input order, rename max_completion_tokens to max_tokens even when null,
+  copy other supported values including null, and silently omit unknown fields.
+
+  Featherless advertises stream, frequency_penalty, function_call, functions,
+  logit_bias, both token limits, n, presence_penalty, stop, temperature and top_p.
+  Nevertheless its mapper accepts tool_choice=auto or none. Every tools value and
+  other tool_choice raises UnsupportedParamsError 400 unless the argument or loaded
+  litellm.drop_params is exactly true, in which case omit it without a warning.
+  Other supported nulls are omitted except renamed max_completion_tokens. Resolve
+  Featherless identity as explicit/FEATHERLESS_AI_API_BASE/FEATHERLESS_API_BASE/
+  https://api.featherless.ai/v1 and explicit/FEATHERLESS_AI_API_KEY/FEATHERLESS_API_KEY.
+  Validation requires a truthy supplied resolved key and overwrites Authorization
+  and Content-Type. All env aliases default absent; drop_params defaults false.
+
+  Implement Baseten's is_dedicated_deployment and get_api_base_for_model as lower
+  betterlite-models::baseten_endpoint functions usable by B210. Remove all baseten/
+  occurrences, then match exactly eight ASCII alphanumerics. A match yields
+  https://model-{id}.api.baseten.co/environments/production/sync/v1; otherwise return
+  https://inference.baseten.co/v1. Keep the predicate separate from the provider
+  resolver's api_base precedence. AIML's small chat subclass uses B503 with identity
+  explicit/AIML_API_BASE/https://api.aimlapi.com/v1 and explicit/AIML_API_KEY; it does
+  not read AIMLAPI_KEY. Empower, Friendliai, Galadriel and Github are distinct typed
+  aliases of B1425's entire compatible chat policy, with no extra option logic.
+
+  Add hosted_chat_settings loader cases for Featherless aliases, global drop_params
+  and AIML chat's rejected image-only alias. Helper hosted_chat_options exercises
+  capability projections, ordered options, constructor snapshots and Baseten model
+  classification through the pinned classes. New call.hosted_chat_options seeds
+  include at least one capability-dependent case and one Featherless rejection.
+  There is no byte parser in this slice. Source count is 330 nonblank/noncomment
+  lines before removing Baseten's seven-line unused identity method; allocate 250
+  production, 210 tests, 135 adapters and 90 configuration/export lines, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,hosted_chat_options}.rs
+    - crates/betterlite-openai/src/hosted_chat_options/**
+    - crates/betterlite-models/src/{lib,baseten_endpoint}.rs
+    - crates/betterlite-models/src/baseten_endpoint/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,hosted_chat}.rs
+    - crates/betterlite-config/tests/hosted_chat_settings.rs
+    - tools/oracle/src/helpers/{mod,hosted_chat_options}.rs
+    - tools/oracle/helpers/{dispatch,hosted_chat_options}.py
+    - tools/oracle/cases/helpers/hosted-chat-options/**
+    - tools/oracle/fuzz/corpus/helper_case/hosted_chat_options*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/baseten/chat.py#L6-L120
+    why: Baseten's option map and model-id test distinguish dedicated endpoints from inference hosting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cerebras/chat.py#L12-L94
+    why: Cerebras adds reasoning_effort from model capabilities rather than constructor presence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L8-L129
+    why: Featherless tool rejection differs from both its advertised list and legacy function support.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/chat/transformation.py#L1-L20
+    why: AIML chat uses only the primary key alias and a versioned default base.
+dod:
+  - text: Token-limit ordering, Cerebras capability filtering and Featherless tool failures match their source maps.
+    proof: [host-options-tests, host-options-python, oracle]
+  - text: Dedicated Baseten routing and inherited aliases reuse the intended lower policies.
+    proof: [host-options-tests, host-options-python, oracle]
+  - text: Loaded credentials and drop settings drive real policy cases and fresh helper seeds.
+    proof: [host-options-settings, host-options-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: host-options-tests
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-models --no-tests=fail -E 'test(/^hosted_chat_options::/) | test(/^baseten_endpoint::/)'
+      why: Endpoint classification and executable option mapping live in different layers.
+    - id: host-options-settings
+      run: cargo nextest run --locked -p betterlite-config --test hosted_chat_settings --no-tests=fail
+      why: The Featherless two-name aliases and AIML chat-only fallback must use loaded values.
+    - id: host-options-python
+      run: test -f tools/oracle/helpers/hosted_chat_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Isolate class defaults between source invocations so one case cannot alter later capabilities.
+    - id: host-options-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/hosted_chat_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::hosted_chat_options::/)'
+      why: The new operation must parse fixtures for both a positive capability and a mapped failure.
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-chat-options/baseten-eight-character-id.yaml
+  - tools/oracle/cases/helpers/hosted-chat-options/token-limit-insertion-order.yaml
+  - tools/oracle/cases/helpers/hosted-chat-options/cerebras-reasoning-capability.yaml
+  - tools/oracle/cases/helpers/hosted-chat-options/featherless-legacy-functions-and-tools.yaml
+  - tools/oracle/cases/helpers/hosted-chat-options/featherless-null-token-and-drop.yaml
+  - tools/oracle/cases/helpers/hosted-chat-options/aiml-chat-key-and-inherited-aliases.yaml
+deviations: []
+out_of_scope:
+  - BasetenConfig._get_openai_compatible_provider_info has no caller at the pin; do not expose its literal BASETEN_API_KEY fallback as live behavior.
+  - B210 retains provider resolver defaults and explicit-base precedence; B038 owns executable selection for these host policies.
+pitfalls:
+  - Featherless still forwards legacy functions even though it rejects tools unless dropping is enabled.
+  - Baseten removes every baseten/ occurrence before checking the eight-character deployment id.
+  - Cerebras copies a supported null option while Featherless discards the same null except for max_completion_tokens.
+budget: {max_changed_lines: 750, max_new_expects: 0}
+review_level: security

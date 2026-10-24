@@ -2,12 +2,42 @@ id: B753
 title: Per-model auth budget checks and fallback selection
 description: >-
   Implement ModelBudgetAdmission with typed limiter/spend ports for key, user, team and end-user limits,
-  coordinated global spend lookup, and the WebSocket authentication adapter. Caller context and resolved
+  coordinated global spend lookup. Caller context and resolved
   fallback target are preserved across a budget fallback; no budget reservation or spend mutation occurs
   in this helper.
 
 
-  Build the production auth_model_budgets module in betterlite-auth; reuse the typed dependencies listed
+  User budget lookup skips null user/database, calls B736 with user_id_upsert=false and returns the
+  row's model_max_budget; every read error logs DEBUG and returns null. User enforcement skips null
+  user IDs and missing/nonmapping/empty budgets. Team enforcement skips null team IDs or falsey team
+  budgets; pass the key budget map unchanged so the limiter can implement overrides. Both visit every
+  input model in order, including duplicates, ignore the limiter's boolean return and propagate errors.
+  The three limiter protocols owned here are the dependency boundary; B071 installs their implementation.
+
+
+  A key check catches only BudgetExceededError. Nested-model requests whose top-level model differs
+  immediately rethrow it. Ask the limiter once for a fallback; null rethrows. Authorize that target via
+  B886 then, only for a nonempty team model list, B747 with team aliases, key aliases and team ID.
+  ProxyException from either authorization rethrows the original budget error; other exceptions escape.
+  Only after authorization mutate request_data.model, B1100 parsed-body cache, request JSON cache,
+  serialized body, then an existing dict path_params.model. Missing path keys are not created. Keep
+  these effects ordered; serialization failure can follow earlier body mutations. False limiter returns
+  without an exception neither select a fallback nor deny.
+
+
+  Applying end-user budget fields copies nonnull tpm/rpm/tpd/max/model_max_budget, including zero and
+  empty maps, then logs DEBUG. Updating the token always assigns end_user_id, even null, but only
+  nonnull tpm/rpm/tpd/allowed_model_region/model_max_budget overwrite custom-auth values. It does not
+  copy end_user_max_budget. Global spend requires max_budget > 0 and a database. Use the shared cache
+  coordinator with prefix [GLOBAL SPEND], cache key default_user_id:spend and B715 bounded lookup
+  named proxy_budget of B723 UserRepository user_id=litellm-proxy-budget. Return float spend or null.
+  Cache/coordinator failures propagate; null does not schedule an alert, but any known spend including
+  zero schedules proxy_budget with the caller-supplied admin name, token, ceiling and PROXY event group.
+  B116 owns alert delivery. This task never reserves spend or writes a database row.
+
+
+  B125 owns the cache_coordinator invoked by global-spend singleflight; B126 Redis transport is not
+  called directly by this slice. Build the production auth_model_budgets module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
 
@@ -25,8 +55,8 @@ description: >-
   30 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Model-budget limiters retain their own numeric contracts; this task forwards limits and spend
+  without recomputing costs or normalizing an unknown spend to zero.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.max_budget=0.0.
@@ -39,40 +69,28 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Booted chat cases prove the fallback changes the provider-bound model and all request snapshots;
+  inaccessible fallback models must preserve the original budget exception and avoid dispatch.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Use B860/Postgres through POSTGRES_TEST_URL or testcontainers for global spend and optional user
+  budget reads, distinguishing known zero from an unavailable aggregate.
 
 
-  Write betterlite-config::auth_model_budgets::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_model_budgets::tests::max_budget_default_zero,
+  positive_budget_enables_read, zero_negative_and_nan_skip_read and invalid_budget_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B1100 owns body serialization/decoding. Compare mutation order under an injected serialization
+  failure because this stage does not roll back the already changed parsed model.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 239 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  239 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 567 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 239 owned source lines; allow 239 production, 260 behavior/Postgres tests, 80 helper adapters,
+  90 route/manifests/wiring and 50 config lines, 719 changed lines within a 775-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -151,12 +169,19 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L760-L790
     why: Own get_global_proxy_spend; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L408-L413
-    why: litellm_settings.max_budget default and read site.
+    why: max_budget default; the actual read is user_api_key_auth.py L769.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_model_budget_fallback,
-      user_model_budget, team_model_budget, end_user_limits, websocket_model, global_spend_singleflight.'
+  - text: 'Named cases: user_lookup_skip_no_upsert_and_debug_failure, user_empty_budget_skips,
+      user_and_team_models_ordered_duplicates, team_key_override_map_passthrough,
+      limiter_false_return_is_not_denial, only_budget_errors_attempt_fallback,
+      nested_model_cannot_rewrite, absent_fallback_preserves_error, fallback_key_then_team_auth,
+      fallback_proxy_exception_preserves_budget_error, fallback_other_exception_propagates,
+      fallback_rewrites_all_body_views_then_existing_path, serialization_failure_keeps_prior_mutations,
+      end_user_nonnull_fields_and_debug, token_end_user_null_id_preserves_nonnull_custom_limits,
+      token_update_does_not_copy_max_budget, global_spend_singleflight, global_spend_exact_keys_and_bound,
+      global_missing_row_no_alert, global_zero_spend_alert_payload, global_load_error_releases_waiters.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -216,18 +241,18 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-model-budgets/user-model-budget.yaml
   - tools/oracle/cases/helpers/auth-model-budgets/team-model-budget.yaml
   - tools/oracle/cases/helpers/auth-model-budgets/end-user-limits.yaml
-  - tools/oracle/cases/helpers/auth-model-budgets/websocket-model.yaml
+  - tools/oracle/cases/helpers/auth-model-budgets/fallback-denial-preserves-original-error.yaml
   - tools/oracle/cases/helpers/auth-model-budgets/global-spend-singleflight.yaml
   - tools/oracle/cases/auth/auth-model-budgets/key-model-budget-fallback.yaml
   - tools/oracle/cases/auth/auth-model-budgets/user-model-budget.yaml
   - tools/oracle/cases/auth/auth-model-budgets/team-model-budget.yaml
   - tools/oracle/cases/auth/auth-model-budgets/end-user-limits.yaml
-  - tools/oracle/cases/auth/auth-model-budgets/websocket-model.yaml
+  - tools/oracle/cases/auth/auth-model-budgets/fallback-body-and-path.yaml
   - tools/oracle/cases/auth/auth-model-budgets/global-spend-singleflight.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B052 owns the WebSocket adapter. B071 supplies the limiter implementations through the protocols
+    owned here; their counter queries and fallback selection algorithm are not duplicated.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -266,8 +291,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A budget fallback must reauthorize its resolved target while preserving caller identity.
+  - The limiter protocols return booleans, but this caller enforces exceptions, not false returns.
+  - Updating the token deliberately omits end_user_max_budget despite the preceding parameter builder setting it.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

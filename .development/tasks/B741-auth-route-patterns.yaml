@@ -1,10 +1,38 @@
 id: B741
 title: Canonical route and allowlist matching
 description: >-
-  Implement canonical RouteIdentity, root-path stripping and public-route selection over RouteMatch. Remove
-  a configured root only on complete path segments; retain route templates and alias normalization before
-  auth decisions. Public routes configured in general_settings.public_routes are enabled without premium_user.
-  B207 owns route-to-call-type metadata and separate table parts own LiteLLMRoutes constants.
+  Resolve auth paths from the server's dispatched request path, never a Host-reconstructed URL.
+  get_request_route uses scope.path, falling back to request.url.path, and prefers app_root_path over
+  root_path. Strip trailing slashes from the root, then remove it only on a whole-segment match;
+  an exact root becomes '/'. Bare '/' roots and sibling prefixes leave the path intact. A malformed
+  scope falls back to the URL path; exceptions log DEBUG before that fallback. Route-template
+  lookup returns only a nonempty string scope.route.path, otherwise None, logging DEBUG on errors.
+
+  normalize_request_route is a separate metrics projection, not authorization alias expansion.
+  Preserve its first-changing-pattern order and 256-entry memoization. For /v1 and /openai/v1,
+  normalize responses (item, input_items, cancel), threads (item, runs, run, steps, step, cancel,
+  submit_tool_outputs, messages, message), vector_stores (item, files, file, file_batches, batch),
+  assistants (item), files (item, content), batches (item, cancel), fine_tuning/jobs (item, events,
+  cancel, checkpoints) and models (item). The placeholders are response_id, thread_id, run_id,
+  step_id, message_id, vector_store_id, file_id, batch_id, assistant_id, fine_tuning_job_id and model.
+  Only responses additionally normalizes the unversioned /responses prefix. Anchored patterns leave
+  trailing slashes, unknown suffixes, empty IDs and unmatched paths untouched; already-normalized
+  templates may continue to a later pattern when the replacement did not change the string.
+
+  general_settings.public_routes defaults to an empty list when absent. Source checks premium_user
+  is True before settings, exact string membership before wildcard matching, then False.
+  Exceptions in configured route iteration log ERROR and return False. No LiteLLMRoutes group-name
+  expansion occurs here. betterlite intentionally enables these exact/wildcard entries without a
+  license and omits the premium gate. Test those successes natively; equality cases use the actual
+  MIT fallback through HTTP, not a helper that imports proxy_server globals.
+
+  Move route_checks.py RouteChecks.route_matches_wildcard_pattern L558-L584 here, below the other
+  route classifiers: a trailing '*' removes exactly one final character and checks startswith;
+  otherwise require exact equality. '*' matches every route, '/x/**' means the literal '/x/*' prefix,
+  embedded stars are literals and matching is case-sensitive. Named cases wildcard_empty_prefix,
+  wildcard_one_terminal_star, embedded_star_literal and wildcard_case_sensitive compare this pure
+  helper. This removes the B741/B882 function cycle; B882's assistants classifier consumes this task's
+  get_request_route, while public-route matching no longer calls back into B882.
 
 
   Build the production auth_route_patterns module in betterlite-auth; reuse the typed dependencies listed
@@ -18,12 +46,8 @@ description: >-
   94 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.public_routes=[];
-  public_routes=[].
-
-
-  general_settings.public_routes defaults absent; SERVER_ROOT_PATH and SERVER_ROOT_PATHS default absent
-  and feed whole-segment stripping (proxy/utils.py:8349-8356).
+  This module does not read SERVER_ROOT_PATH or SERVER_ROOT_PATHS. B003 supplies the effective request
+  scope; this task consumes that scope, including app_root_path. There is no top-level public_routes key.
 
 
   Add the auth_route_patterns operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -33,40 +57,25 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Boot the B732 server for public-route behavior: missing credentials pass only an enabled public
+  path, while root-prefix siblings still require auth. Keep normalization checks in the pure helper.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Route path/template/normalization cases need only request scopes, not database rows. Public-route
+  integration uses the booted server because its settings and premium gate are module globals.
 
 
-  Write betterlite-config::auth_route_patterns::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests absent_public_routes and public_routes_list_loaded exercise the B002 loader and the
+  production matcher with exact paths and '/api/*'. Test a malformed typed settings input at the
+  matcher boundary for its ERROR-and-False behavior; do not invent a numeric fallback or env variable.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B003 has already decoded route strings. Public-route license removal is the only native difference
+  here and is tested separately from equal scope/template/normalization results.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 174 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  174 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 502 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 174 nonblank, noncomment pinned source lines; allow 175 implementation, 260 case tables/tests,
+  80 adapters, 60 wiring and 50 config lines, 625 within 700. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -107,6 +116,8 @@ scope:
     - crates/betterlite-server/src/auth/auth_route_patterns/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
+    why: Pure terminal-star matching moved below route classification.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L621-L837
     why: Pinned implementation and exact ownership boundary for auth_route_patterns.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L385-L652
@@ -127,20 +138,27 @@ references:
     why: Own get_request_route_template; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L726-L837
     why: Own normalize_request_route; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8349-L8356
-    why: Root-path environment inputs.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L651-L656
     why: general_settings.public_routes default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1-L6
-    why: public_routes default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: public_routes_enabled,
-      public_routes_no_license, configured_public_routes_without_license, query_not_route, root_whole_segment,
-      sibling_root_kept.'
+  - text: The four terminal-star cases call the shared matcher now owned here, without a route-classifier back edge.
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Path cases: scope_path_beats_host_url, missing_scope_path_fallback, app_root_wins,
+      root_trailing_slashes, root_exact_becomes_slash, root_whole_segment, sibling_root_kept,
+      root_slash_kept, malformed_scope_fallback, path_exception_debug_fallback,
+      nonempty_route_template, absent_empty_nonstring_template and template_exception_debug_none.
+      Helper rows cover synthetic scope inputs; HTTP malformed-host and prefixed-path cases use real dispatch.'
     proof:
       - behavior-tests
+  - text: 'Every listed normalization suffix gets named normalize_<family>_<suffix> rstest/oracle
+      rows for v1 and openai_v1. Add unversioned_responses, unversioned_others_unchanged,
+      trailing_slash_unchanged, unknown_suffix_unchanged, empty_id_unchanged,
+      already_templated_path and normalization_cache_bound. Public-route cases cover
+      exact_before_wildcard, group_name_not_expanded, malformed_public_list_logs_false and
+      mit_no_license_skips_config; native_public_routes_without_license proves the deviation.'
+    proof: [behavior-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -171,7 +189,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_route_patterns::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/^(auth::)?auth_route_patterns::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -200,16 +218,19 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-route-patterns/query-not-route.yaml
   - tools/oracle/cases/helpers/auth-route-patterns/root-whole-segment.yaml
   - tools/oracle/cases/helpers/auth-route-patterns/sibling-root-kept.yaml
+  - tools/oracle/cases/helpers/auth-route-patterns/scope-and-template.yaml
+  - tools/oracle/cases/helpers/auth-route-patterns/normalization-families.yaml
   - tools/oracle/cases/auth/auth-route-patterns/query-not-route.yaml
   - tools/oracle/cases/auth/auth-route-patterns/root-whole-segment.yaml
   - tools/oracle/cases/auth/auth-route-patterns/sibling-root-kept.yaml
+  - tools/oracle/cases/auth/auth-route-patterns/malformed-host.yaml
+  - tools/oracle/cases/auth/auth-route-patterns/mit-public-config-ignored.yaml
 deviations:
   - what: general_settings.public_routes works without premium_user.
     why: The architect decided betterlite has no paid tier.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L621-L665
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B882 retains other RouteChecks classifiers/template matchers; B883 retains permission policy in route_checks.py.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -393,6 +414,6 @@ pitfalls:
   - Configured public routes are enabled deliberately, so their success cases are native deviation tests
     when LiteLLM lacks premium_user.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

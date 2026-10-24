@@ -3,7 +3,37 @@ title: Model grants for keys and parent entities
 description: >-
   Authorize requested and resolved models against key, team, organization, project and user grant snapshots;
   preserve access-group resource expansion. Expose can_user_call_model for organization creation and can_key_call_resolved_model
-  for admission/fallback. Consume ModelGrantIntersection without calling later endpoint registration.
+  for admission/fallback. Use B747's alias/model matcher and B737's entity reads; B885's attribution
+  collection is not called by these functions.
+
+  can_key_call_model first uses B747's resolved key models, team aliases, trusted key aliases and team ID.
+  Catch ProxyException only; if access_group_ids is nonempty, expand via B747 and retry with group models
+  alone when nonempty. Empty groups rethrow the original denial. Team access similarly retries after
+  ProxyException but combines original team models with group models, deduplicating in first-seen order.
+  Other errors propagate without fallback. Org/project calls pass their respective models (or [] for
+  absent objects) and object_type; missing users return True. A user's no-default-models sentinel raises
+  403 key_model_access_denied with param model, intentionally not user_model_access_denied. Other
+  model denials use 403, param model and key/team/org/project/user_model_access_denied from B747.
+  Client messages identify the requested model but do not expose the internal allowlist diagnostic.
+
+  Resolved-model admission skips the key check for truthy token.config or list models containing
+  all-team-models. The source calls key/team checks without passing its global prisma_client argument;
+  keep the collaborator's default/fallback behavior. Load a non-null team through B737, retaining any
+  loaded None. On any lookup exception construct the cached fallback from team_id, team_models,
+  team_blocked, team_alias, team_metadata, team_object_permission_id and team_object_permission. Only
+  team_model_access_denied can be overridden by an owner-authorized key access group; other exception
+  types escape. B887 member model checks run only with user_id and a successful team lookup, never
+  against the reconstructed fallback. Then load a non-null project through B879 and check it only
+  when its models list is nonempty. This function does not check organization or user grants itself.
+
+  Resource expansion accepts access_model_names, access_mcp_server_ids or access_agent_ids. No token,
+  no group IDs, no DB or no cache returns []. Resolve each group with B737 get_access_object, silently
+  skipping a group lookup exception. A group contributes only if assigned_team_ids contains truthy
+  token.team_id (falling back to the supplied team object's ID) or assigned_key_ids contains the truthy
+  token hash. Missing/null resource lists contribute nothing; deduplicate as a set without promising
+  order. _key_access_group_grants_model requests access_model_names, returns false for empty resources
+  or a ProxyException denial, and propagates unrelated matcher errors. There are no DB writes or
+  settings in this module. Helper adapters inject global collaborators; HTTP cases prove public errors.
 
 
   Build the production entity_model_access module in betterlite-auth; reuse the typed dependencies listed
@@ -26,33 +56,14 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  B860 provisions the model-grant fixtures via POSTGRES_TEST_URL with a testcontainers fallback. Observe
+  entity-specific denials at a real inference endpoint and verify that permitted requests continue to
+  routing; the pure grant cases must distinguish replacement from union rather than just allow/deny.
 
 
   Sizing: 307 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  307 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 579 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  300 production, 270 behavior tests, 75 adapters and 65 wiring lines, 710 within a 750-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -103,7 +114,15 @@ references:
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: org_denial, key_resolved_target,
-      user_model_denial, project_model_denial.'
+      user_model_denial, project_model_denial, key_groups_replace_grants,
+      team_groups_union_preserves_order, only_proxy_exception_falls_back,
+      empty_groups_original_denial, entity_denial_type_matrix, user_missing_allows,
+      no_default_models_uses_key_error, configured_key_skips_check, all_team_models_skips_key,
+      resolved_default_db_argument, team_lookup_error_snapshot, only_team_denial_override,
+      member_check_requires_live_team, project_after_member_nonempty_only,
+      resource_missing_inputs_empty, group_team_or_key_owner, key_team_precedes_supplied_team,
+      group_error_silent_skip, resource_field_matrix_dedup, key_group_false_on_denial
+      and matcher_other_error_propagates.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -148,14 +167,17 @@ oracle_cases:
   - tools/oracle/cases/helpers/entity-model-access/key-resolved-target.yaml
   - tools/oracle/cases/helpers/entity-model-access/user-model-denial.yaml
   - tools/oracle/cases/helpers/entity-model-access/project-model-denial.yaml
+  - tools/oracle/cases/helpers/entity-model-access/key-and-team-group-retry.yaml
+  - tools/oracle/cases/helpers/entity-model-access/resolved-check-order.yaml
+  - tools/oracle/cases/helpers/entity-model-access/resource-owner-matrix.yaml
+  - tools/oracle/cases/auth/entity-model-access/no-default-models-key-error.yaml
+  - tools/oracle/cases/auth/entity-model-access/member-scope-after-team.yaml
   - tools/oracle/cases/auth/entity-model-access/org-denial.yaml
   - tools/oracle/cases/auth/entity-model-access/key-resolved-target.yaml
   - tools/oracle/cases/auth/entity-model-access/user-model-denial.yaml
   - tools/oracle/cases/auth/entity-model-access/project-model-denial.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -269,8 +291,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Expose can_user_call_model for organization creation and can_key_call_resolved_model for admission/fallback.
+  - Key-group fallback replaces the key allowlist, while team-group fallback unions with the team's existing list.
+  - A reconstructed team after a lookup error deliberately skips the member-scope query; do not confuse it with a live lookup result.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

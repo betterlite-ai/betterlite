@@ -1,0 +1,9 @@
+id: B1525
+milestone: M3 providers
+title: Establish Fal image decoding and GPT Image option policy
+status: todo
+depends_on: [B002, B997, B193, B171]
+file: tasks/B1525-fal-image-core.yaml
+covers:
+  - "litellm/llms/fal_ai/image_generation/transformation.py"
+  - "litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py"

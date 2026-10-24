@@ -2,7 +2,7 @@ id: B884
 milestone: M4 keys, spend and management
 title: Request credential destination and metadata safety
 status: todo
-depends_on: [B001, B002, B003, B009, B176, B732, B733, B856, B860]
+depends_on: [B001, B002, B003, B009, B174, B192, B302, B732, B733, B856, B1101, B2360]
 file: tasks/B884-request-body-safety.yaml
 covers:
   - "litellm/proxy/auth/auth_utils.py"

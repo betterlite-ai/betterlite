@@ -1,0 +1,8 @@
+id: B1433
+milestone: M3 providers
+title: Clarifai, CompactifAI and DataRobot request and reply identity
+status: todo
+depends_on: [B002, B004, B249, B503, B668, B1425, B171]
+file: tasks/B1433-host-model-identity.yaml
+covers:
+  - "litellm/llms/{clarifai,compactifai,datarobot}/**"

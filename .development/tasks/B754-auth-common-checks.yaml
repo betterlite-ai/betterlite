@@ -7,6 +7,49 @@ description: >-
   before upstream dispatch and downstream effects, while warnings retain source continuation.
 
 
+  Resolve models with B746 and headers/query accessors from B1100. skip_all_budget_checks is the
+  explicit flag OR B750 route exemption, not a price check here. Fetch B736 membership before pricing
+  or blocked-team checks when a team and nonnull token user exist and either a model is truthy or
+  budgets are enabled. Pass the loaded flag even for a missing row, avoiding a second query. The
+  false-by-default block_requests_for_models_without_pricing setting rejects only LLM routes using
+  B750's singular/plural message, 403 model_cost_map_missing, param model, code 403. This precedes
+  a blocked team's ordinary exception naming /team/unblock, mapped by B757 to 401 auth_error.
+
+
+  In order run B886 team-model authorization, allowing only team_model_access_denied to be rescued
+  by key access groups; B887 member scope; agent trace requirement; managed-agent ceiling; B748 agent
+  group and caller checks; B886 personal-user model checks only without a team; B750 project checks;
+  B885 matched-group stamping; B750 rejection of client metadata.tags. Use the agent registry port
+  owned by B748. A registered agent's truthy require_trace_id_on_calls_by_agent requires a truthy
+  B1105 get_chain_id_from_headers result; otherwise 400 bad_request_error, null param, message Requests
+  made with this agent's key must include the x-litellm-trace-id header. Missing agents do not fail.
+  A managed agent with a requested model needs a nonempty list/tuple models grant, otherwise HTTP403
+  This agent has no model grants; B747 resolves aliases and applies its ceiling.
+
+
+  Unless budgets are skipped, B1106 pre-seeds route metadata then applies key tags before any
+  concurrent check. Gather all eligible checks and wait for all siblings to finish. Raise the first
+  error in scope order, not completion order: team hard, team multi, key multi, team soft,
+  organization, tags, matched groups, user, member, end user. Key multi requires a token; groups need
+  matches; end users need a row and budget relation. Alerts/mutations from siblings remain even when
+  another scope fails. Project checks occur earlier and may prevent this entire gathered batch.
+
+
+  The nested user check skips missing user/ceiling and skips team keys unless
+  general_settings.apply_user_budget_to_team_keys is exactly true (default absent). B2321 reads
+  spend:user:<id> with row spend or zero fallback and the ceiling. Schedule user_budget with spend,
+  ceiling, user_id, user_email and USER event group even below the ceiling. Then finite ceilings deny
+  at equality with BudgetExceededError, entity user and message ExceededBudget: User=<id> over budget.
+  Spend=<spend>, Budget=<budget>. Nonfinite ceilings still read and alert. B116 owns delivery.
+
+
+  After the batch run B750 required-user and global-budget checks, B888 guardrails, B1229 organization
+  RBAC and team/org request enrichment using B741 route template, B742 route permissions, B749 vector
+  permissions, and B888 tools allowlist. The enrichment's B737 team loader catches only HTTPException
+  and returns null; other failures propagate. The route check's boolean result is ignored; it enforces
+  by raising. Success returns true. Sequential failure prevents all later steps.
+
+
   Build the production auth_common_checks module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
@@ -16,12 +59,12 @@ description: >-
   common_checks (L922-L1295; 322 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Keep each invoked budget check's threshold and numeric semantics; the orchestrator must not
+  pre-round spend or merge independently scheduled budget checks into a different comparison.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.block_requests_for_models_without_pricing=False;
-  general_settings.apply_user_budget_to_team_keys=None; apply_user_budget_to_team_keys=None.
+  general_settings.apply_user_budget_to_team_keys=None.
 
 
   Add the auth_common_checks operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -31,40 +74,30 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Common-check integration uses B732 admission on chat requests with multiple simultaneous denied
+  budgets. Compare which exception escapes after all gather siblings finish, plus post-budget check
+  suppression and absence of provider calls. B757 supplies the final public envelope.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Seed B860 via POSTGRES_TEST_URL or testcontainers with a blocked team, optional membership and
+  independently failing user/org budgets; distinguish lookup effects before the first rejection.
 
 
-  Write betterlite-config::auth_common_checks::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_common_checks::tests::pricing_default_false,
+  pricing_enabled_only_on_llm_routes, team_user_budget_absent_false_and_true and invalid_boolean_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  This composition consumes B2315 typed request/row projections. It owns no decoder or premium
+  feature gate; source branches and their ordering remain observable through the booted server.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 322 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  322 production, 145 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 647 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  Sizing: 322 source lines translate to about 270 production orchestration lines; allow 300 table-driven
+  tests, 80 helper adapters, 90 wiring and 50 config lines, 790 changed lines within an 800-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -112,13 +145,22 @@ references:
     why: litellm_settings.block_requests_for_models_without_pricing default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1146-L1151
     why: general_settings.apply_user_budget_to_team_keys default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1-L6
-    why: apply_user_budget_to_team_keys default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L992-L1004
+    why: Read of block_requests_for_models_without_pricing and exact error mapping.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: blocked_team_before_dispatch,
-      key_group_override, member_denial, agent_trace_id_required, zero_price_budget_bypass.'
+  - text: 'Named cases: model_and_membership_before_pricing_and_blocked_team,
+      missing_membership_is_not_reloaded, pricing_error_all_fields, blocked_team_message,
+      only_team_model_denial_gets_key_group_override, member_scope_after_team_override,
+      agent_absent_optional_and_required_trace, managed_agent_missing_empty_invalid_and_alias_grants,
+      agent_caller_then_personal_user_then_project_order, project_failure_prevents_group_stamping,
+      client_tags_rejected_before_key_tag_injection, skip_budget_retains_nonbudget_policy,
+      gather_waits_for_all_then_scope_priority_error, gather_alerts_survive_sibling_failure,
+      absent_token_groups_and_end_user_omit_only_their_checks, user_team_key_exact_true_setting,
+      user_counter_alert_before_finite_equality_denial, user_nonfinite_still_alerts,
+      postbudget_user_global_guardrail_org_route_vector_tool_order, enrichment_only_catches_http,
+      route_false_return_is_ignored, success_returns_true.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -186,8 +228,8 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-common-checks/zero-price-budget-bypass.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B748 owns agent-policy lookup ports and B141 supplies the registered-agent adapter. B2321 owns
+    current-spend verification; the individual budget tasks own their counter policies.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -350,6 +392,6 @@ out_of_scope:
 pitfalls:
   - The first failed common check stops later checks and their side effects.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

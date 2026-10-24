@@ -1,72 +1,74 @@
 id: B808
-title: Add, remove and update team members
+title: Add team members and update member roles and budgets
 description: >-
   Implement POST /team/member_add and /team/member_update using MemberChangePlan and member budget patches.
-  Reuse team_info for update results, created-membership eviction after additions, and key-deletion audit
-  helpers only where the source calls them. Single-member deletion and roster cleanup are in B1207.
+  B1207 separately owns deletion. Add calls B807 input checks, B861 duration validation, then B737
+  get_team_object with check_cache_only=false, check_db_only=true and parent_otel_span=None. A None
+  row is 404 Team not found; lookup exceptions retain B737's contract. Validate the typed row, run
+  B807 duplicate preflight BEFORE permissions, then its administrator/available-team permission check.
+  B1206 resolves existing identities, validates caller-supplied ID provisioning, populates ID/email
+  sequentially, and computes pre-existing user IDs before B807's locked addition transaction.
+  Preserve the original before-roster for auditing. Earlier identity-population effects outside that
+  transaction survive a later failed addition; do not move them under an invented route transaction.
 
+  After addition commits, B734 deletes team cache by ID/alias, B878 evicts/broadcasts sorted updated
+  user IDs, then B805 evicts created membership caches. B807 emits the member metric and schedules
+  new-user/team audits only after those awaited cache effects. Return expanded stored team fields
+  plus updated_users and updated_team_memberships through B1231.TeamAddMemberResponse. Cache failures
+  leave committed rows and prevent subsequent effects; metric failures are swallowed by B807.
 
-  Build the production team_member_writes module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Update rejects no database (500 No db connected), null team_id (400 No team id passed in), then
+  absent BOTH user_id/email (400 Either user_id or user_email needs to be passed in), and validates
+  budget_duration via B861. Omit its local admin-role premium check as recorded below. A missing
+  stored team is 400, unlike the add route. B800 accepts proxy/team/org admins; denial is 403 with
+  source detail naming /team/member_delete even here. Call B812.team_info with key_limit=None to
+  obtain memberships and hydrated roster, preserving that service's effects/errors.
+
+  A nonnull requested user_id wins, including empty string; otherwise find the first exact email in
+  team_info. Unresolved email is 400 User id doesn't exist in team table. Take the first matching
+  membership's budget_id and a string metadata.team_member_budget_id (including empty) as the default.
+  B862.member_budget_patch computes the supplied limits. Within one transaction, B807 changes a
+  nonnull requested role under its team lock BEFORE B862._upsert_budget_and_membership; failure of
+  either rolls both back. With role=None, no roster lock/membership-existence precheck is added by
+  this handler: a budget-only patch for an existing user absent from the roster follows B862's write.
+  Shared-default clone behavior comes from B862, not a direct B802 call.
+
+  Only a nonempty budget patch invalidates B734 member spend state after commit. A role change then
+  updates the response snapshot and schedules B807 membership audit; identical before/after skips it.
+  Return team_id, resolved user_id and the REQUEST's user_email/max_budget_in_team/tpm_limit/rpm_limit/
+  budget_duration/allowed_models/temp_budget_increase/temp_budget_expiry, including nulls. Do not
+  replace these with inherited stored limits or add role to this response projection.
+
+  Neither route calls handle_exception_on_proxy. Add only catches/rethrows initial HTTPException;
+  all later failures and every update failure propagate through B003 and B865. HTTP fixtures compare
+  status, actual type/param/code, response nulls and content-type; ignore only message wording. There
+  is no litellm-changed-by argument here; membership audit scheduling supplies None. Audit enablement,
+  available teams and provisioning config remain with B065/B803/B1206.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
   team_member_add (L3356-L3505; 129 source lines), team_member_update (L3763-L3915; 128 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Register these actual HTTP routes and aliases exactly once: POST /team/member_add -> team_member_add;
-  POST /team/member_update -> team_member_update. For each route send a typed successful request, an invalid
-  or missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
+  POST /team/member_update -> team_member_update. Exercise the named source errors below through
+  B001 HTTP fixtures, including permitted available-team self-join instead of a blanket non-admin denial.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 provisions membership/role rows through POSTGRES_TEST_URL or testcontainers when no URL is
+  configured; test setup failures fail, and post-commit faults must leave the changed roster visible.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Sizing: 257 nonblank, noncomment source lines; allow 260 production, 390 behavior/Postgres tests
+  and 65 route wiring lines, 715 within 750.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Native-only deviation test in this production module: update_admin_without_license.
+  Assert an authorized role promotion succeeds without premium_user and still produces the locked
+  roster write, audit and invalidation; that promotion is excluded from MIT equality comparisons.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 257 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  257 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 467 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  Both member-write routes use B052 key authentication followed by their B865 decorators.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_writes.rs
@@ -80,8 +82,8 @@ scope:
     - crates/betterlite-server/src/team_member_writes/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3356-L3915
-    why: Pinned implementation and exact ownership boundary for team_member_writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3349-L3505
+    why: Own add route from its decorators; intervening deletion functions belong to B1207.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4678-L4707
     why: TeamMemberAddRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4710-L4711
@@ -90,13 +92,19 @@ references:
     why: TeamMemberUpdateRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3356-L3505
     why: Own team_member_add; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3763-L3915
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3756-L3915
     why: Own team_member_update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: add_member, update_role,
-      non_admin_denied, postgres_pinned_rows, postgres_failure_effects.'
+      non_admin_denied, postgres_pinned_rows, postgres_failure_effects, add_required_fields,
+      invalid_duration, add_db_only_lookup, add_missing_team_404, duplicate_before_permission,
+      available_self_join, provisioning_before_add, identity_partial_effects, add_cache_order,
+      add_response_expansion, metric_warning_continues, add_cache_failure_committed,
+      update_missing_db, update_missing_team_id, update_missing_identity, update_missing_team_400,
+      org_admin_update, denied_update_route_detail, info_unlimited_keys, user_id_before_email,
+      first_email_match, email_not_found, explicit_nonroster_budget, role_budget_rollback,
+      default_budget_clone, budget_only_invalidation, role_only_no_budget_eviction,
+      role_audit_after_commit, unchanged_role_no_audit, echoed_request_limits and error_passthrough.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -107,7 +115,8 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: update_admin_without_license accepts an authorized role promotion without premium_user;
+      unauthorized promotions still fail and B807 owns the corresponding add-route gate removal.
     proof:
       - behavior-tests
 checks:
@@ -122,23 +131,21 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_writes::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_writes::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-member-writes/post--team-member-add-success.yaml
-  - tools/oracle/cases/management/team-member-writes/post--team-member-add-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-writes/post--team-member-add-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-writes/post--team-member-update-success.yaml
-  - tools/oracle/cases/management/team-member-writes/post--team-member-update-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-writes/post--team-member-update-unauthorized-caller.yaml
   - tools/oracle/cases/management/team-member-writes/add-member.yaml
   - tools/oracle/cases/management/team-member-writes/update-role.yaml
   - tools/oracle/cases/management/team-member-writes/non-admin-denied.yaml
+  - tools/oracle/cases/management/team-member-writes/add-input-and-duplicate-errors.yaml
+  - tools/oracle/cases/management/team-member-writes/available-team-and-provisioning.yaml
+  - tools/oracle/cases/management/team-member-writes/add-effects-and-response.yaml
+  - tools/oracle/cases/management/team-member-writes/update-input-and-scope-errors.yaml
+  - tools/oracle/cases/management/team-member-writes/update-identity-selection.yaml
+  - tools/oracle/cases/management/team-member-writes/role-budget-transaction.yaml
+  - tools/oracle/cases/management/team-member-writes/response-and-audit-fields.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3356-L3915
+  - what: An authorized /team/member_update role=admin request no longer returns the premium-license HTTP 400.
+    why: README Decisions makes team administration available without a paid entitlement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3786-L3792
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -221,8 +228,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The update response calls team_info; do not duplicate its parent-model hydration.
+  - The update response echoes submitted limits, so null does not prove the stored member has no inherited cap.
+  - Add checks duplicates before permissions; changing that order changes the error visible to a forbidden caller.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,10 +1,71 @@
 id: B858
 title: Typed managed-resource and analytics rows
 description: >-
-  Add the full managed files/batches, MCP server, skills, autorouter-session, spend-log and tag row contracts
-  with typed serde/database conversions. Preserve MCP pinned-tools and secret-map decoding, baseline model
-  lists and tag model metadata. Keep source schema columns and Decimal spend; no MCP/provider execution
-  is introduced.
+  Add the six owned files' managed-resource, MCP, skill, autorouter-session, spend/error-log and tag
+  records with their actual Pydantic field/default distinctions. These are row decoders, not route
+  implementations. B1015, B1035 and B1138 supply embedded file, batch and Responses objects; B014
+  supplies the fine-tuning object. Do not create a second version of their wire schemas.
+
+  ManagedFile requires unified_file_id, model_mappings and flat_model_file_ids; file_object, created_by,
+  team_id, updated_by, storage_backend and storage_url default None. ManagedObject requires
+  unified_object_id, model_object_id, file_purpose and file_object; purpose accepts batch, fine-tune,
+  response or container, while file_object retains the batch/fine-tuning/Responses union. created_by,
+  team_id and org_id default None. Singular ManagedVectorStore requires unified_resource_id,
+  model_mappings and flat_model_resource_ids; resource_object and the same actor/team/storage fields
+  default None. Plural ManagedVectorStores instead requires vector_store_id and custom_llm_provider,
+  defaults is_config=false, and defaults vector_store_name, vector_store_description,
+  vector_store_metadata, created_at, updated_at, litellm_credential_name, litellm_params, team_id and
+  user_id to None. Retain both distinct table shapes. URL fields are stored strings and never downloaded.
+
+  MCPEnvVar requires name, defaults value="", scope=global and description=None, and accepts only
+  global/user scope. MCPServer requires server_id and transport. B2305 supplies transport/auth types,
+  credentials, MCPInfo and parse_pinned_tools; call it from decode_stored_pinned_tools. Defaults are
+  false for is_config, allow_all_keys, delegate_auth_to_upstream, oauth_passthrough,
+  per_server_oauth_discovery and is_byok; available_on_public_internet defaults true. teams,
+  mcp_access_groups, allowed_tools, extra_headers, args and byok_description each get an independent
+  empty list; env gets an empty map. status defaults unknown and accepts healthy, reachable, unhealthy,
+  unknown or null. approval_status defaults active but accepts any string or null: its descriptive
+  list is not a validation enum.
+
+  The remaining MCP fields default None: server_name, alias, description, url, spec_path, auth_type,
+  credentials, instructions, created_at, created_by, updated_at, updated_by, tool_name_to_display_name,
+  tool_name_to_description, pinned_tools, mcp_info, static_headers, env_vars, last_health_check,
+  health_check_error, command, issuer, authorization_url, token_url, registration_url, oauth2_flow,
+  token_exchange_endpoint, audience, subject_token_type, token_exchange_profile, dcr_bridge,
+  byok_api_key_help_url, has_user_credential, connected_app_reachable, source_url, timeout,
+  max_concurrent_requests, submitted_by, submitted_at, reviewed_at and review_notes. oauth2_flow accepts
+  client_credentials or authorization_code when set. Do not fill subject_token_type's egress default
+  here. static_headers and env call B2303.decode_secret_map, passing the real field name; explicit
+  null env becomes {}, while null static_headers remains None. Plaintext maps, JSON maps, quoted/raw
+  encrypted maps and wrong-key/malformed maps exercise that real decoder and its redacted error.
+
+  Skills requires skill_id. source defaults custom; display_title, description, instructions,
+  latest_version, file_content, file_name, file_type, metadata, created_at, created_by, updated_at and
+  updated_by default None. Preserve binary file_content. AutoRouterSession requires api_key, session_id,
+  router_name, router_type, first_turn_at, last_turn_at, last_model, turns, spend, saved_spend,
+  classifier_cost, tier_turns and baseline_models. Defaults are savings_estimated_turns=0,
+  savings_estimated_actual_spend=0.0, savings_estimated_saved_spend=0.0 and an independent empty
+  savings_estimated_baseline_models map. baseline_model returns None for no baselines or for multiple
+  baselines when savings_estimated_turns < turns; otherwise choose max(count, model_name), so ties
+  select the lexicographically greatest name. A single baseline survives excluded turns.
+
+  SpendLogs requires request_id, api_key, call_type and the nullable-but-required startTime, endTime,
+  messages and response fields. model, api_base and user default ""; spend defaults 0.0; total_tokens,
+  prompt_tokens and completion_tokens default 0; metadata defaults {}; cache_hit defaults string
+  "False". cache_key, request_tags, requester_ip_address, created_at and updated_at default None.
+  Supplied metadata/request_tags use Pydantic Json decoding, unlike the unvalidated default metadata
+  object. Preserve messages/response as string, list, object or null and time fields as string,
+  datetime or null. ErrorLogs requires nullable startTime/endTime; api_base, model_group,
+  litellm_model_name, model_id, exception_type, status_code and exception_string default "", and
+  request_kwargs defaults {}. Its request_id default is one UUID evaluated at Python module import,
+  reused for omitted IDs on subsequent instances; inject one startup default into the native decoder
+  instead of generating a new UUID per row. Explicit null is distinct from omission.
+
+  TagTable requires tag_name, defaults models=[], spend=0.0 and description, model_info, budget_id,
+  litellm_budget_table, created_at, created_by and updated_at to None. Its before-validator normalizes
+  missing OR null models/spend to []/0.0; it does not modify model_info despite its name set_model_info.
+  Reuse B2310's nested BudgetTable. Every default above is a named rstest row in the corresponding
+  default matrix, with missing required fields and explicit-null acceptance/rejection checked separately.
 
 
   The byte boundary is decode_managed_resource_rows(&[u8]) for stored JSON/string columns read from Postgres
@@ -37,10 +98,9 @@ description: >-
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
   otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  The architect supplies the CI Postgres service. postgres_pinned_rows hydrates independently seeded
+  rows and compares column/default/null/binary facts. This task performs no writes requiring rollback
+  cases; repositories own mutation failures. Use a unique schema per test and clean it on every exit.
 
 
   This task owns the outside-byte boundary managed_resource_rows::decode_managed_resource_rows(&[u8])
@@ -49,7 +109,7 @@ description: >-
   Seed valid, truncated, malformed, duplicate-field and limit-boundary inputs and add managed_resource_rows::tests::replays_the_managed_resource_rows_corpus.
   Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
   decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B710 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without
+  fetching URLs. B2307 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without
   recreating the workspace.
 
 
@@ -58,13 +118,13 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 297 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  297 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 591 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 297 nonblank, noncomment pinned source lines including declarations; allow 297 production,
+  310 behavior/Postgres tests, 65 helper adapters, 30 wiring and 45 decoder/fuzz lines, 747 total
+  within an 800-line gate. MCP dependency validators are split into B2305. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: managed_row_input_limits.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -100,9 +160,13 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/tag.py#L1-L35
     why: Own row_contracts; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: mcp_pinned_tools, mcp_secret_map,
-      managed_file_content, autorouter_baseline_model, spend_decimal, tag_model_info, postgres_pinned_rows,
-      postgres_failure_effects.'
+  - text: 'Default/required/null matrices are managed_file_fields, managed_object_fields,
+      singular_vector_store_fields, plural_vector_store_fields, mcp_env_var_fields,
+      mcp_server_fields, skill_fields, autorouter_fields, spend_log_fields, error_log_fields and tag_fields;
+      each case is named for the field. Additional cases cover managed_purpose_literals,
+      embedded_object_union, independent_collection_defaults, status_enum_and_null,
+      approval_status_free_string, oauth_flow_literals, mcp_pinned_tools, mcp_secret_map,
+      null_env_vs_headers, bad_secret_map_redacted and binary_skill_content.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -111,7 +175,11 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows verifies each row family against independent Postgres fixtures;
+      autorouter_baseline_model covers empty, single, excluded_turns_multiple, all_estimated_multiple
+      and lexical_tie; spend_json_default_vs_supplied, required_nullable_fields,
+      shared_error_request_id_default, explicit_error_request_id and tag_null_normalization cover
+      observable validator behavior.'
     proof:
       - postgres-tests
   - text: The production decode_managed_resource_rows decoder is used by the service and its fuzz target
@@ -119,7 +187,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: managed_row_input_limits proves byte/depth failures without leaking decrypted MCP credentials.
     proof:
       - behavior-tests
 checks:
@@ -143,7 +211,6 @@ checks:
     - id: postgres-tests
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/managed_resource_rows::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/managed_resource_rows::tests::postgres_failure_effects$/)'
     - id: parser-corpus
       why: The named production decoder target, added corpus or replay is missing or fails.
       run: test -f crates/betterlite-db/fuzz/fuzz_targets/managed_resource_rows.rs && grep -q "managed_resource_rows"
@@ -157,6 +224,11 @@ oracle_cases:
   - tools/oracle/cases/helpers/managed-resource-rows/autorouter-baseline-model.yaml
   - tools/oracle/cases/helpers/managed-resource-rows/spend-decimal.yaml
   - tools/oracle/cases/helpers/managed-resource-rows/tag-model-info.yaml
+  - tools/oracle/cases/helpers/managed-resource-rows/field-default-and-null-matrices.yaml
+  - tools/oracle/cases/helpers/managed-resource-rows/mcp-status-and-env-defaults.yaml
+  - tools/oracle/cases/helpers/managed-resource-rows/spend-json-required-fields.yaml
+  - tools/oracle/cases/helpers/managed-resource-rows/error-request-id-default.yaml
+  - tools/oracle/cases/helpers/managed-resource-rows/managed-object-union.yaml
 deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
@@ -164,11 +236,16 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/autorouter_session.py#L1-L45
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2303 owns secret-map encryption/decoding and key settings; B2305 owns pinned tools and MCP primitive types.
+  - B087 and its parts own managed-file HTTP behavior and the unresolved native managed-hook decision;
+    row support here neither installs the enterprise-only hook nor changes a missing-hook response.
+  - B136 owns MCP execution and discovery; URL and credential fields here are data, never network requests.
 pitfalls:
-  - MCP secret-map fields remain typed secret values after string-or-object decoding.
+  - ErrorLogs evaluates its omitted request_id once at import, not once per object.
+  - Null env becomes an empty map while null static_headers remains absent.
+  - The two ManagedVectorStore table names identify different schemas, not aliases.
+  - TagTable.set_model_info normalizes models and spend but leaves model_info alone.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

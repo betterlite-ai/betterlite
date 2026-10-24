@@ -2,7 +2,7 @@ id: B761
 milestone: M4 keys, spend and management
 title: JWKS and OIDC discovery caching
 status: todo
-depends_on: [B001, B002, B003, B171, B173, B732, B733, B856, B860, B869]
+depends_on: [B001, B002, B003, B171, B173, B732, B733, B757, B856, B860, B869]
 file: tasks/B761-jwt-keys.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"

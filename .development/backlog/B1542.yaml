@@ -1,0 +1,8 @@
+id: B1542
+milestone: M3 providers
+title: Normalize Deepgram listen targets and streaming billing metadata
+status: todo
+depends_on: [B2225, B171]
+file: tasks/B1542-deepgram-listen-metadata.yaml
+covers:
+  - "litellm/llms/deepgram/common_utils.py"

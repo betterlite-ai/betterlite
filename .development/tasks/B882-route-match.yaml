@@ -6,6 +6,37 @@ description: >-
   is not /fake-openai-proxy. Request method distinguishes GET MCP discovery from protected mutation. Match
   already-decoded bounded paths using the existing route decoder.
 
+  Classify LLM routes using B866/B867/B868's exact OpenAI, Anthropic, Google and native tables, MCP
+  and agent inference access patterns, then OpenAI templates/wildcards, Google/Anthropic templates,
+  Azure aliases and mapped-provider prefixes. Nonstrings are false. Azure's special regex accepts
+  /openai/deployments/<segment>/<segment>/chat/completions and /engines/<segment>/chat/completions;
+  do not broaden that special case to a single deployment segment. Management uses check_route_access;
+  info is exact table membership. GET MCP discovery accepts /v1/mcp/server or exactly one nonempty
+  child segment, not a trailing slash, approve suffix or mutation method. Missing request is false.
+
+  Templates substitute {name} with one nonempty segment; {name:path} accepts slashes, colons and
+  newlines unless a literal colon follows the placeholder, in which case it stops before any colon.
+  Preserve Python's anchored regex semantics, including regex metacharacters in the surrounding
+  pattern and its final-newline boundary; do not silently convert every pattern to an escaped literal.
+  Wildcards are recognized only by a final *, which means raw prefix matching, including empty suffix.
+  The separate allowed-route matcher accepts exact equality or prefix plus slash; it is not the
+  wildcard matcher. check_route_access tries exact, trailing-wildcard and then template/regex matching;
+  an empty list denies. get_actual_routes expands named LiteLLMRoutes groups, preserves duplicates
+  and literal unknown names; set-valued group ordering is not a compatibility promise.
+
+  _get_request_method uppercases a string and returns None for missing request, missing method,
+  AttributeError/KeyError or nonstring values. Other getter failures propagate. Assistant detection
+  is the case-sensitive substring test thread or assistant in the canonical route; generate-content
+  detection is case-sensitive generateContent or streamGenerateContent anywhere in the string.
+  These helpers return booleans, not HTTP errors; callers own denial envelopes.
+
+  Move auth_utils.get_request_route (L668-L703) below its B741 caller into this task because assistant
+  detection calls it. It reads the authoritative scope path rather than Host-derived URL path, takes
+  app_root_path before root_path, strips trailing slashes from the root and removes it only at a whole
+  segment boundary. An exact root becomes /. Non-dict scope or exceptions fall back to string URL path;
+  exceptions debug-log. B741 retains route templates, normalization and additional-public-route policy
+  and consumes this lower helper instead of being a reverse dependency.
+
 
   Build the production route_match module in betterlite-auth; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
@@ -31,33 +62,14 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  Route matching is a pure policy input. Compare the original path strings and group tables in helper
+  cases; native B732 wiring then checks that a matching result reaches its consumer without registering
+  duplicate routes or inventing a database dependency.
 
 
   Sizing: 217 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  217 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 495 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  240 production, 250 behavior tests, 75 helper adapters and 65 wiring lines, 630 within a 650-line gate;
+  this includes the moved route getter's 21 executable lines. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -87,6 +99,8 @@ scope:
     - crates/betterlite-server/src/auth/route_match/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L668-L703
+    why: Own the canonical route getter below B741 and assistant classification.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L385-L447
     why: Own RouteChecks.is_llm_api_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L450-L470
@@ -120,7 +134,14 @@ references:
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: azure_alias, bedrock_invoke,
-      path_template, wildcard_boundary, allowed_route_enum_expansion, sibling_prefix_denied.'
+      path_template, wildcard_boundary, allowed_route_enum_expansion, sibling_prefix_denied,
+      classifier_table_groups, nonstring_route_false, azure_two_segments_and_engine,
+      mcp_get_one_segment_only, info_exact_management_patterns, placeholder_nonempty_segment,
+      path_placeholder_slash_colon_newline, google_colon_suffix_boundary,
+      regex_metacharacters_and_final_newline, final_star_empty_suffix, inner_star_not_wildcard,
+      empty_allowlist_denies, expansion_unknown_and_duplicates, method_missing_nonstrings,
+      method_other_error_propagates, assistant_substrings, generate_content_case,
+      scope_path_beats_host_url, app_root_precedence, root_exact_and_sibling and route_getter_debug_fallback.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -167,6 +188,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/route-match/wildcard-boundary.yaml
   - tools/oracle/cases/helpers/route-match/allowed-route-enum-expansion.yaml
   - tools/oracle/cases/helpers/route-match/sibling-prefix-denied.yaml
+  - tools/oracle/cases/helpers/route-match/classifier-and-method-matrix.yaml
+  - tools/oracle/cases/helpers/route-match/template-regex-boundaries.yaml
+  - tools/oracle/cases/helpers/route-match/canonical-route.yaml
   - tools/oracle/cases/auth/route-match/azure-alias.yaml
   - tools/oracle/cases/auth/route-match/bedrock-invoke.yaml
   - tools/oracle/cases/auth/route-match/path-template.yaml
@@ -175,8 +199,7 @@ oracle_cases:
   - tools/oracle/cases/auth/route-match/sibling-prefix-denied.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B741 retains auth_utils route_in_additonal_public_routes, get_request_route_template and normalize_request_route; all other auth_utils functions keep their existing auth task owners.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -301,9 +324,9 @@ out_of_scope:
     (L736-L762).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Prefix matching for registered /provider/ routes requires a trailing slash; /fake-openai-proxy-600
-    is not /fake-openai-proxy.
+  - A {name:path} Google model placeholder may span slashes but must stop at the colon before generateContent.
+  - Ordinary allowed-route prefix matching requires a slash boundary, while an explicit trailing wildcard deliberately does not.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

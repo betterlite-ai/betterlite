@@ -1,8 +1,8 @@
 id: B715
 milestone: M4 keys, spend and management
-title: Database outage classification and bounded lookup
+title: Bounded database lookups and safe database metrics
 status: todo
-depends_on: [B002, B012, B171, B700, B856, B860, B872]
+depends_on: [B002, B012, B110, B171, B700, B856, B860, B872]
 file: tasks/B715-database-failures.yaml
 covers:
   - "litellm/proxy/db/exception_handler.py"

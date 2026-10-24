@@ -1,0 +1,9 @@
+id: B1502
+milestone: M3 providers
+title: Store hosted skills with owner checks after cache lookup
+status: todo
+depends_on: [B171, B192, B726, B858, B1018, B732, B2226, B860]
+file: tasks/B1502-hosted-skill-store.yaml
+covers:
+  - "litellm/llms/litellm_proxy/skills/handler.py"
+  - "litellm/llms/litellm_proxy/skills/constants.py"

@@ -2,7 +2,7 @@ id: B058
 milestone: M4 keys, spend and management
 title: Organization activity and management integration
 status: todo
-depends_on: [B001, B003, B052, B171, B700, B729, B732, B742, B816, B817, B818, B819, B820, B821, B822, B823, B824, B825, B826, B827, B828, B856, B860]
+depends_on: [B001, B003, B052, B074, B700, B723, B726, B732, B826, B860]
 file: tasks/B058-organization-activity.yaml
 covers:
   - "litellm/proxy/management_endpoints/organization_endpoints.py"

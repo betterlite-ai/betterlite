@@ -10,7 +10,7 @@ description: >-
 
   Merge B061 stored values underneath explicit model_params, including explicit None values.
   Named api_key/base/version then use truthy precedence over that merged map. Azure uses B545
-  URL/auth helpers and B529 AD resolution; OpenAI uses B528, xAI B036. B2225 model metadata detects
+  URL/auth helpers and B529 AD resolution; OpenAI uses B528, xAI B1402. B2225 model metadata detects
   Azure transcription models; metadata exceptions mean false. Vertex uses B1301 safe parameter
   accessors, B1304 region selection, B1356 speech-model detection, B1011 bounded tokens and B1365
   Live config. B173 supplies shared SSL settings with no local compatibility conversion.
@@ -109,7 +109,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
 out_of_scope:
 - B1011 owns metadata merging, Vertex token helpers and all of _arealtime; B1010 owns _with_resolved_session_model, HTTP config resolution and the three HTTP SDK methods in realtime_api/main.py.
-- B061 owns stored credential lookup; B2225 model metadata; B528/B545/B036 provider URLs; B1301/B1304/B1356/B1365 Vertex helpers. No proxy route is registered here.
+- B061 owns stored credential lookup; B2225 model metadata; B528/B545/B1402 provider URLs; B1301/B1304/B1356/B1365 Vertex helpers. No proxy route is registered here.
 pitfalls:
 - Explicit None in model_params erases a stored credential before named-argument fallback is applied.
 - The probe returns true on handshake alone; it never waits to learn whether the provider accepts the session model.

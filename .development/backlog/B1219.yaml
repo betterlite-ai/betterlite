@@ -2,7 +2,7 @@ id: B1219
 milestone: M4 keys, spend and management
 title: Key team and end-user budget reassignment checks
 status: todo
-depends_on: [B722, B725, B732, B737, B771, B800, B856, B886, B894]
+depends_on: [B124, B722, B725, B732, B770, B800, B860, B886, B894]
 file: tasks/B1219-key-reassignment.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

@@ -1,14 +1,39 @@
 id: B809
 title: Reset member spend and restore inherited budgets
 description: >-
-  Implement member reset_spend/reset_budget routes with own-spend restrictions, Decimal validation and
-  restoration of shared defaults. Spend-counter floor publication uses the same injected counter-write
-  contract as KeySpendReset; never alter a shared default row to reset one member.
+  Implement the two member reset routes, retaining their distinct self-reset policy. Both first reject
+  no database with HTTP 500 DB not connected. prisma_client is None, fetch the team through B737 with
+  check_db_only=true and parent_otel_span=None, then require B800 TEAM_OR_ORG_ADMIN (403 otherwise).
+  Spend reset additionally rejects target user_id==caller.user_id unless the caller is proxy_admin,
+  with 403 Cannot reset your own spend. Ask a proxy admin. Budget reset deliberately has no such check.
+  Both find membership by user_id_team_id and return HTTP 404 User <id> is not a member of team <id>.
 
+  B124's ResetSpendRequest requires reset_to and rejects booleans before numeric coercion (422).
+  The owned helper itself accepts Python int/float, including bool if directly called; other types
+  are 400 reset_to must be a float. Reject negative/nonfinite values (400 finite number >= 0), then
+  values above membership.spend or 0 (400 <= current spend), then above a nonnull expanded budget
+  (400 <= budget); equal values and zero pass. Use Decimal after the boundary, preserving numeric
+  strings accepted by the request model and testing nonfinite helper inputs natively.
 
-  Build the production team_member_resets module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Spend reset expands litellm_budget_table, writes only membership.spend, then calls B734's concrete
+  invalidate_team_member_spend_state with new_spend=reset_to. Return team_id/user_id/spend/previous_spend/
+  max_budget, including null max_budget if no budget row. Do not reset user/team spend or daily history.
+  There is no transaction, advisory lock or compare-and-swap protecting the read/write; cache failure
+  leaves the database reset committed. B734 owns floor/counter publication semantics; this route does
+  not use KeySpendReset's separate contract.
+
+  _team_default_budget_id validates metadata as a mapping and accepts only a string value, including
+  empty string. _existing_team_default_budget_id queries B801's budget table only when a string exists
+  and returns None for a dangling reference. Budget reset connects membership to the existing default
+  or disconnects it with {disconnect: true}; it never deletes or changes the old/shared budget row or
+  membership spend. Then invalidate member spend state WITHOUT new_spend. Return budget_id,
+  previous_budget_id and budget_source=team_default or none. The reusable _member_budget_source returns
+  custom for a nonnull ID unequal to the default, team_default for an existing default, else none.
+
+  All errors are HTTPException details {error: message} or dependency exceptions. There is no local
+  catch or handle_exception_on_proxy call; B003/B865 preserve the actual public envelope. HTTP cases
+  assert status/type/param/code, null response fields and content-type, ignoring only message wording.
+  These functions read no environment/configuration setting and produce no audit or changed-by event.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -19,53 +44,21 @@ description: >-
   (L4069-L4123; 49 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Register these actual HTTP routes and aliases exactly once: POST /team/{team_id}/member/{user_id}/reset_spend
   -> reset_team_member_spend_fn; POST /team/{team_id}/member/{user_id}/reset_budget -> reset_team_member_budget_fn.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Exercise both with real membership rows through B001; distinguish an authorized admin resetting
+  another member, forbidden own-spend reset, and permitted own-budget reset.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Reset fixtures use B860 and POSTGRES_TEST_URL (testcontainers only when unset), failing on database
+  setup errors and comparing both the member budget row and its spend-cache value after injected faults.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Sizing: 157 nonblank, noncomment source lines plus metadata view; allow 175 production,
+  285 behavior/Postgres tests and 65 route wiring lines, 525 within 550.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 157 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  157 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 376 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  Install B052 and B865 on the two member-reset registrations, retaining each handler's separate catch behavior.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_resets.rs
@@ -89,7 +82,7 @@ references:
     why: Own _raise_reset_spend_error; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3936-L3961
     why: Own _validate_team_member_reset_spend_value; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3970-L4033
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3964-L4033
     why: Own reset_team_member_spend_fn; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4040-L4043
     why: Own _team_default_budget_id; preserve caller-visible values and failure ordering.
@@ -97,14 +90,19 @@ references:
     why: Own _existing_team_default_budget_id; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4056-L4059
     why: Own _member_budget_source; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4069-L4123
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4062-L4123
     why: Own reset_team_member_budget_fn; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: self_reset_denied, negative_spend,
       reset_zero, reset_member_default, shared_budget_unmodified, counter_publication, postgres_pinned_rows,
-      postgres_failure_effects.'
+      postgres_failure_effects, no_database, team_scope_denied, member_missing,
+      proxy_self_spend_allowed, own_budget_allowed, missing_reset_to_422, bool_reset_422,
+      numeric_string_reset, helper_bool_numeric, wrong_reset_type, nonfinite_spend,
+      above_current_spend, above_budget, validation_order, equality_allowed, null_spend_zero,
+      missing_budget_uncapped, member_spend_only, spend_cache_failure_committed,
+      default_id_wrong_type, default_id_empty_string, dangling_default_disconnect,
+      budget_reset_keeps_spend, custom_budget_source, null_budget_source,
+      budget_cache_without_new_spend and reset_response_fields.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -127,22 +125,20 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_resets::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_resets::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-spend-success.yaml
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-spend-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-spend-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-budget-success.yaml
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-budget-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-resets/post--team-team-id-member-user-id-reset-budget-unauthorized-caller.yaml
   - tools/oracle/cases/management/team-member-resets/self-reset-denied.yaml
   - tools/oracle/cases/management/team-member-resets/negative-spend.yaml
   - tools/oracle/cases/management/team-member-resets/reset-zero.yaml
   - tools/oracle/cases/management/team-member-resets/reset-member-default.yaml
   - tools/oracle/cases/management/team-member-resets/shared-budget-unmodified.yaml
   - tools/oracle/cases/management/team-member-resets/counter-publication.yaml
+  - tools/oracle/cases/management/team-member-resets/required-and-bool-body.yaml
+  - tools/oracle/cases/management/team-member-resets/database-scope-membership.yaml
+  - tools/oracle/cases/management/team-member-resets/spend-ceiling-order.yaml
+  - tools/oracle/cases/management/team-member-resets/own-budget-allowed.yaml
+  - tools/oracle/cases/management/team-member-resets/default-budget-links.yaml
+  - tools/oracle/cases/management/team-member-resets/reset-response-and-effects.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -223,8 +219,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Resetting a member budget must not rewrite a shared default budget row.
+  - Only reset_spend forbids a team/org admin from targeting themselves; reset_budget permits it.
+  - A dangling default budget reference disconnects the member instead of linking a nonexistent row.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

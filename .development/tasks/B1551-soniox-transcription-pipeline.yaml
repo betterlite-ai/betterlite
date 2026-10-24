@@ -1,0 +1,83 @@
+id: B1551
+title: Compose Soniox transcription jobs with resource-aware finalization
+description: >-
+  Implement api::soniox::pipeline for _sync_audio_transcriptions and _async_audio_transcriptions.
+  B1549 prepares options and selects the authenticated base; retain a client only when it matches
+  the chosen sync/async mode, otherwise obtain B173's client with resolved ssl_verify. B1548 supplies
+  record projection and B1550 upload/poll/cleanup. Keep all IDs invocation-local and run preparation
+  before entering the resource cleanup region.
+
+  Start with caller file_id. Upload local audio only when both file_id and audio_url are falsey;
+  if no file was supplied, return the pinned Soniox 400 missing-input error. Never download audio_url:
+  send it to Soniox unchanged. Track uploaded_file_id separately from selected file_id so caller-owned
+  files are never deleted. If both references are present, send both rather than choosing one.
+  Construct/log the body, POST /v1/transcriptions, require its id, poll to completion, then GET
+  /v1/transcriptions/{id}/transcript. The selected timeout goes on each request; there is no internal
+  transient retry layer or new overall deadline.
+
+  Combine poll metadata and fetched transcript, update the supplied response through B1548 with
+  the requested format, and perform post_call before adding hidden model/provider/duration. Convert
+  a non-null audio_duration_ms to Decimal seconds strictly at this last stage, preserving the source
+  failure even though public response duration conversion was best-effort. In finally, invoke B1550
+  with any known transcription id and only the file id this call uploaded. Cleanup completes before
+  returning either the response or original error. A malformed create response can leave a remote
+  job whose id was never learned; do not claim transactional creation or invent a lookup/delete.
+
+  call.soniox_pipeline invokes the actual sync and async source methods against scripted clients.
+  Compare uploaded_success, caller_file_preserved, url_without_upload, both_references,
+  missing_input, create_failure_cleans_file, fetch_failure_cleans_both and invalid_duration_after_log.
+  Assert ordered create/poll/fetch/log/delete effects and response-object updates, including partial
+  failures. Reuse decode_soniox_reply without another byte boundary. These two bodies contain 228
+  nonblank/non-comment lines; one shared state machine should fit 210 production, 230 tests and
+  140 oracle lines under 650 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/pipeline.rs
+    - crates/betterlite-core/src/api/soniox/pipeline/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/soniox_pipeline.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/soniox_pipeline.py
+    - tools/oracle/cases/helpers/soniox-pipeline/**
+    - tools/oracle/fuzz/corpus/helper_case/soniox_pipeline*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L358-L481
+    why: Resource ownership, logging order and synchronous finalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L589-L715
+    why: Async client selection and awaited cleanup on the same job sequence.
+dod:
+  - text: Soniox chooses the correct file/reference path and completes the ordered create-poll-fetch response flow in both modes.
+    proof: [soniox-pipeline-tests, oracle, soniox-pipeline-python]
+  - text: Every tested success and partial failure cleans only known invocation-owned resources without changing the original result.
+    proof: [soniox-pipeline-tests, oracle, soniox-pipeline-python]
+checks:
+  optional: []
+  commands:
+    - id: soniox-pipeline-tests
+      why: Soniox orchestration or failure finalization is absent
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::soniox::pipeline::/)'
+    - id: soniox-pipeline-python
+      why: the full Soniox effect sequence has no independently executed source comparison
+      run: grep -qE '^[[:space:]]+soniox_pipeline:' tools/oracle/fuzz/corpus/helper_case/soniox_pipeline* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/soniox_pipeline.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/soniox-pipeline/uploaded-success.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/caller-file-preserved.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/url-without-upload.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/both-references.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/missing-input.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/create-failure-cleans-file.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/fetch-failure-cleans-both.yaml
+  - tools/oracle/cases/helpers/soniox-pipeline/invalid-duration-after-log.yaml
+deviations: []
+out_of_scope:
+  - Public Soniox mode dispatch at 111-172 stays in B047; handler records/shared helpers at 61-102 and 173-357 are B1549, and upload/poll/cleanup pairs at 482-588 and 716-816 are B1550.
+pitfalls:
+  - The job may be created remotely before a malformed response prevents learning its cleanup ID.
+  - A caller-supplied file_id is never substituted into uploaded_file_id for cleanup.
+  - Invalid audio_duration_ms can fail after post_call already ran.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

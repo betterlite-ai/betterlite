@@ -4,7 +4,42 @@ description: >-
   Implement team-admin editable team/key field verdicts over typed before/after values. general_settings.team_admin_editable_team_fields
   defaults absent/empty; accepted values are tpm_limit, rpm_limit, max_budget, projects and member_key_budgets.
   A malformed list warns and becomes empty; unsupported entries warn and are ignored. Spend is never an
-  editable key-budget field, and system-managed team_member_budget_id changes cannot bypass the diff policy.
+  editable key-budget field, even when its submitted value equals the stored value. Metadata comparison
+  deliberately ignores team_member_budget_id; do not turn that omission into a rejection.
+
+  Resolve the configured list into a set, removing duplicates. None gives an empty set. Validation failure
+  warns with the setting and raw value, then returns empty; unknown names warn in sorted order. A known
+  permission outside the requested supported subset is silently ignored. The team subset has three fields;
+  member-key editing checks only member_key_budgets. Own the declaration/verdict types at L25-L69 and
+  L272-L284, plus the two metadata-folding tables in _types.py L5069-L5101, below B894 and B800. The ordinary
+  table is model_rpm_limit, model_tpm_limit, model_itpm_limit, model_otpm_limit, default_estimated_output_tokens,
+  default_estimated_output_tokens_per_model, mcp_rpm_limit, tag_rpm_limit, rpm_limit_type, tpm_limit_type,
+  enforced_params, temp_budget_increase, temp_budget_expiry, allowed_vector_store_indexes,
+  enforced_batch_output_expires_after, enforced_file_expires_after, throttle_on_budget_exceeded,
+  enable_prompt_caching and end_user_budget_id. The premium-named table contains disable_global_guardrails,
+  guardrails, policies, tags, team_member_key_duration, prompts, logging, secret_manager_settings and
+  allowed_passthrough_routes. This policy reads both tables without a license branch.
+
+  Use B859's team row and B720's verification-token row. Compare request and row JSON representations,
+  preserving field presence. Missing metadata uses the stored
+  object; explicitly sent metadata replaces it, including null becoming an empty object. Explicit top-level
+  folded fields override that object, including null. Changes to a folded key use its own field name; any
+  other metadata difference uses metadata. Missing and null compare equally. Model aliases compare the
+  submitted parsed object against litellm_model_table.model_aliases, with an absent table treated as empty.
+  Unstored fields count as changed whenever sent. Team identity team_id and metadata are not columns;
+  key identity key, token and metadata are not columns. Empty team permissions disable even a no-op request.
+  Otherwise choose the lexicographically first blocked field. Allowed team edits retain team_id, only changed
+  submitted fields, and metadata when a logical change came from inside it; revalidate through B1231 so a
+  resent unchanged budget_duration cannot reset the budget. An allowed key verdict returns its changed set
+  and does not filter the patch. Disabled member-key editing wins before comparison; the only permitted
+  key fields are max_budget, budget_duration, soft_budget and budget_limits.
+
+  Budget windows compare unordered unique (budget_duration,max_budget) pairs, ignoring reset_at and extra
+  keys. None equals an empty list. Duplicate pairs, a non-list or invalid list items fall back to raw JSON
+  comparison; unhashable pair values raise rather than silently normalizing. Four rejection branches raise
+  HTTPException 403 with string detail, without supplying type/param/code. Preserve the exact messages at
+  L205-L216 and L310-L322, including the location literal Settings > UI > Team admin editable fields,
+  the quoted blocked field, and the quoted member_key_budgets permission.
 
 
   Build the production team_admin_fields module in betterlite-server; reuse the typed dependencies listed
@@ -28,10 +63,6 @@ description: >-
   column type; retain source storage types.
 
 
-  general_settings.team_admin_editable_team_fields=None; values tpm_limit/rpm_limit/max_budget/projects/member_key_budgets
-  use the warn-and-ignore behavior of resolve_team_admin_editable_fields.
-
-
   Add the team_admin_fields operation under B856 Management::teams. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
@@ -39,27 +70,21 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::team_admin_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests absent_and_null_disable, supported_subset_and_duplicates, malformed_list_warns_empty and
+  unsupported_sorted_warning load general_settings.team_admin_editable_team_fields through B002 and then
+  call this resolver. There is no dedicated environment variable; seed config_yaml with the nested list.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  _as_object accepts stored JSON strings as well as objects. Implement decode_team_admin_object on B192's
+  bounded JSON decoder; malformed JSON, wrong shape, over 1048576 bytes or depth over 64 yields the empty
+  object. Register team_admin_object in B770's server fuzz workspace and replay valid, malformed, duplicate
+  key, scalar, depth and byte-boundary inputs through that production decoder. Request decoding remains
+  with B770/B1231; this task owns only the stored-object coercion.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 197 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  197 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 487 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing includes the 197 helper lines, 47 declaration lines and 32 table lines before docstring exclusion:
+  allow 275 production, 280 policy tests, 65 adapters, 40 decoder/fuzz, 50 configuration and 30 wiring lines,
+  totaling 740 within an 800-line gate. No database writes or route registration belong here.
 scope:
   paths:
     - crates/betterlite-server/src/team_admin_fields.rs
@@ -80,8 +105,15 @@ scope:
     - crates/betterlite-config/src/team_admin_fields.rs
     - crates/betterlite-config/src/team_admin_fields/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-admin-fields-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/team_admin_object.rs
+    - crates/betterlite-server/fuzz/corpus/team_admin_object/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L25-L69
+    why: Setting name, supported sets, metadata exclusions and verdict declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5101
+    why: Shared ordinary and premium-named metadata field catalogs, used here without a license test.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L72-L94
     why: Own resolve_team_admin_editable_fields; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L103-L106
@@ -117,8 +149,13 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L303-L325
     why: Own team_admin_key_request_or_raise; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: field_edit_denied, metadata_diff,
-      key_budget_permission, invalid_setting_warns, unknown_field_warns.'
+  - text: 'Cases folded_field_catalog_matrix, metadata_omitted_reuses_explicit_null_clears, folded_top_level_null_overrides,
+      system_member_budget_ignored, absent_equals_null, unknown_metadata_attributed_to_metadata,
+      aliases_from_embedded_table, unstored_field_always_changed, disabled_even_for_noop,
+      first_sorted_blocked_field, unchanged_team_values_removed, nested_change_keeps_metadata,
+      key_identity_ignored, all_four_budget_fields, unchanged_spend_still_forbidden,
+      window_order_and_reset_ignored, null_and_empty_windows_equal, duplicate_windows_raw_comparison,
+      invalid_windows_raw_comparison, unhashable_window_pair_error and four_exact_403_details exercise each verdict.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -132,10 +169,17 @@ dod:
     proof:
       - config-tests
       - config-corpus
+  - text: Stored-object coercion is shared by production and fuzz replay, including native overflow-to-empty cases.
+    proof:
+      - object-corpus
+      - behavior-tests
 checks:
   optional:
     - mutants
   commands:
+    - id: object-corpus
+      why: The new stored-object decoder lacks corpus coverage or diverges from production coercion.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/team_admin_object)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(team_admin_fields::tests::replays_the_team_admin_object_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_admin_fields::tests::/)
@@ -165,20 +209,23 @@ oracle_cases:
   - tools/oracle/cases/helpers/team-admin-fields/key-budget-permission.yaml
   - tools/oracle/cases/helpers/team-admin-fields/invalid-setting-warns.yaml
   - tools/oracle/cases/helpers/team-admin-fields/unknown-field-warns.yaml
-deviations: []
+  - tools/oracle/cases/helpers/team-admin-fields/folded-field-and-presence-matrix.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/unchanged-team-patch.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/budget-window-comparisons.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/four-exact-forbidden-details.yaml
+deviations:
+  - what: Stored metadata JSON above 1048576 bytes or depth 64 becomes an empty object, like malformed metadata.
+    why: B192 bounds otherwise unbounded stored JSON; native_object_limits_become_empty proves the additional fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L109-L113
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/team_admin_field_permissions.py::team_admin_may_manage_projects:
-    no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - 'litellm/proxy/management_endpoints/team_admin_field_permissions.py::team_admin_may_manage_projects
     (L97-L100): no production caller at the pinned commit; repository-wide identifier search finds only
     this definition.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B1231 owns UpdateTeamRequest validation; B770 owns UpdateKeyRequest; B894 owns the reserved service_account_id catalog.
 pitfalls:
-  - general_settings.team_admin_editable_team_fields defaults absent/empty; accepted values are tpm_limit,
-    rpm_limit, max_budget, projects and member_key_budgets.
+  - The spend check uses field presence because the stored row can lag live counters, so equal-value diffing is insufficient.
+  - Removing duplicate budget windows before comparison would erase the source's raw-comparison fallback.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

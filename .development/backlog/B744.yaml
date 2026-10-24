@@ -2,7 +2,7 @@ id: B744
 milestone: M4 keys, spend and management
 title: Caller-controlled request field safety
 status: todo
-depends_on: [B001, B002, B003, B009, B171, B176, B732, B856, B860, B884]
+depends_on: [B001, B002, B003, B009, B171, B732, B856, B884]
 file: tasks/B744-auth-request-policy.yaml
 covers:
   - "litellm/proxy/auth/auth_utils.py"

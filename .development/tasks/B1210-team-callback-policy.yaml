@@ -1,9 +1,32 @@
 id: B1210
 title: Team callback validation redaction and audit projection
 description: >-
-  Validate and redact team callback configuration through B189/B246 callback policy and B061 stored-secret
-  format. Resolve effective callback values and construct audit before/after records for the B065 sink;
-  never expose decrypted callback secrets in GET responses.
+  Validate AddTeamCallback using B246 callback_config_error; a returned message becomes HTTPException
+  400 detail.error, otherwise accept. Redact audit metadata by deep-copying dictionaries and replacing
+  EVERY value in logging[*].callback_vars and callback_settings.callback_vars with ***REDACTED***;
+  leave non-dictionaries and malformed slots untouched. GET masking differs: B2304 sensitive-key
+  classification or a remaining litellm_enc:: prefix masks a value, while ordinary configuration stays
+  readable. Neither projection mutates stored metadata.
+
+  _resolve_team_callbacks returns default TeamCallbackMetadata for non-dictionaries. Otherwise use
+  B2304 decrypt_callback_vars, then prefer logging whenever it is not None, even [] or a non-list.
+  Iterate dictionary entries only; B1109 _get_validated_callback_metadata warns and drops invalid entries
+  with source team-level read, and convert_key_logging_metadata_to_callback folds valid entries in order.
+  Only absent/null logging permits dictionary callback_settings as fallback; invalid legacy fields can
+  raise. Mask the result after resolution. No key-level callback override is consulted here.
+
+  Audit emission calls B065 is_audit_logging_enabled and schedules create_audit_log_for_update only when
+  enabled. Its settings are litellm_settings.store_audit_logs=None, then LITELLM_STORE_AUDIT_LOGS, then
+  premium_user (B065 owns that decision and its no-paid-tier policy). Use a random UUID, UTC updated_at,
+  changed_by=truthy header then user_id then litellm_proxy_admin_name, caller api_key, table
+  LiteLLM_TeamTable, object_id=team_id and action=updated. Serialize before_value/updated_values as
+  {metadata: redacted snapshot}, default=str. Cancellation produces no warning; a task failure warns
+  Failed to write team-callback audit log and cannot undo the route's committed write. Native Postgres
+  tests use POSTGRES_TEST_URL or testcontainers; helper equality covers pure redaction/error projections.
+
+  _callback_error preserves the supplied status and detail.error message. _unknown_team_error reveals
+  the requested missing-team status only to PROXY_ADMIN; every other role receives 403 with string
+  detail You do not have access to this team. There is no HTTP route or exception remapping here.
 
 
   Build the production team_callback_policy module in betterlite-server; reuse the typed dependencies
@@ -37,8 +60,8 @@ description: >-
 
 
   Sizing: 159 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  159 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 393 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  159 production, 240 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 494 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -74,9 +97,17 @@ references:
     why: Own _callback_error; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L236-L249
     why: Own _unknown_team_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L41
+    why: B065's actual store_audit_logs and LITELLM_STORE_AUDIT_LOGS read order, before the premium fallback.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: invalid_callback, list_masked_secrets,
-      audit_after_write.'
+  - text: >-
+      Cases invalid_callback_400, valid_callback, audit_redacts_all_vars, redaction_deep_copy,
+      malformed_slots_unchanged, sensitive_keys_masked, undecrypted_prefix_masked, ordinary_vars_visible,
+      nonobject_defaults, logging_empty_shadows_legacy, logging_nonlist_shadows_legacy,
+      null_logging_uses_legacy, invalid_entry_warn_drop, fold_callback_entries,
+      invalid_legacy_raises, audit_disabled_no_task, audit_identity_and_json,
+      audit_task_failure_warns, audit_cancel_no_warning, admin_unknown_team_status and
+      nonadmin_unknown_team_403 prove resolution and audit effects. B065's config tests own the audit switch.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -105,20 +136,21 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/team-callback-policy/invalid-callback.yaml
   - tools/oracle/cases/helpers/team-callback-policy/list-masked-secrets.yaml
-  - tools/oracle/cases/helpers/team-callback-policy/audit-after-write.yaml
+  - tools/oracle/cases/helpers/team-callback-policy/audit-redaction-copy.yaml
+  - tools/oracle/cases/helpers/team-callback-policy/logging-precedence.yaml
+  - tools/oracle/cases/helpers/team-callback-policy/unknown-team-role.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns callback encryption/decryption and sensitive-key selection; B065 owns audit storage and its settings.
   - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B057 owns add_team_callbacks (L258-L432),
     delete_team_callback (L442-L577).'
   - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1211 owns disable_team_logging (L586-L716),
     get_team_callbacks (L725-L815).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Resolve effective callback values and construct audit before/after records for the B065 sink; never
-    expose decrypted callback secrets in GET responses..
+  - Audit masking hides all callback variables, but GET masking must retain ordinary project, bucket and host configuration.
+  - A present empty logging array suppresses the legacy callback_settings object rather than merging it.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: security

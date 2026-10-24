@@ -2,7 +2,7 @@ id: B762
 milestone: M4 keys, spend and management
 title: Verify JWT signatures and trusted issuers
 status: todo
-depends_on: [B001, B002, B003, B171, B173, B732, B733, B760, B761, B856, B860, B869]
+depends_on: [B001, B002, B003, B171, B173, B213, B732, B733, B757, B760, B761, B856, B860]
 file: tasks/B762-jwt-verification.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"

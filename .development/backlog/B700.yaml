@@ -2,7 +2,7 @@ id: B700
 milestone: M4 keys, spend and management
 title: Native Postgres access and transaction test support
 status: todo
-depends_on: [B000, B171, B856, B860]
+depends_on: [B000, B171, B860]
 file: tasks/B700-postgres-store.yaml
 covers:
   - "litellm/proxy/db/base_client.py"

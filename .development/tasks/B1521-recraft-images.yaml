@@ -1,0 +1,94 @@
+id: B1521
+title: Prepare Recraft generation and image-to-image requests
+description: >-
+  Implement api::recraft in betterlite-core for every callable under the Recraft provider, its two
+  request TypedDicts and cost_calculator. Reuse B997 image records, B1120 MIME detection and B068's
+  resolve_image_model_info. The generation selector always returns the Recraft configuration. Load
+  RECRAFT_API_KEY (no default) and RECRAFT_API_BASE (https://external.api.recraft.ai) through B002;
+  recraft_environment tests must load unset values and explicit overrides. Explicit arguments precede
+  environment values. Missing truthy key raises ValueError and a valid key overwrites Authorization
+  with Bearer. Append /v1/images/generations or /v1/images/imageToImage after trimming base slashes.
+
+  Generation maps n, response_format, size and style only when the destination lacks the key;
+  unsupported fields raise unless drop_params. Build prompt/model plus supplied provider options with
+  the TypedDict's permissive runtime behavior, including optional text_layout, style_id, substyle,
+  negative_prompt and controls. Duplicate explicit prompt/model arguments retain their source argument
+  error rather than silently winning. Editing advertises n/response_format/style and filters other
+  OpenAI options regardless of drop_params. Its request transform pops strength from the supplied
+  map (default 0.2), retains other provider fields, includes prompt only when non-null and returns
+  multipart data without image. Do not invent range validation from TypedDict comments.
+
+  Recraft sends one image part. Select the first list member; an absent/falsey image yields no part.
+  BufferedReader preserves its filename, other supplied content uses image.png, and B1120 supplies
+  MIME. Parse final JSON through decode_recraft_images, retaining upstream status/headers on JSON
+  failure. Generation appends image url/b64_json pairs to the existing response; editing starts fresh.
+  Missing data is a structural error, while an empty data list succeeds. Cost is actual returned image
+  count times resolved output_cost_per_image (falsey/missing means zero); a non-ImageResponse fails.
+
+  Add the recraft_images fuzz target and replay test for that production reply decoder. The recraft
+  helper calls the source configurations and calculator for generation_keep_existing, edit_strength_pop,
+  first_file_name, empty_image_data, malformed_json and returned_count_cost. Register call.recraft.
+  Test api::recraft plus the named config loader. The provider bodies, selector and request declarations
+  total 334 nonblank/non-comment lines; reserve 280 native/config, 230 tests, 110 oracle and 65 fuzz
+  lines, with an 800-line budget.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/recraft.rs
+    - crates/betterlite-core/src/api/recraft/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/recraft_images.rs
+    - crates/betterlite-core/fuzz/corpus/recraft_images/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/recraft.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/recraft.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/recraft.py
+    - tools/oracle/cases/helpers/recraft/**
+    - tools/oracle/fuzz/corpus/helper_case/recraft*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L25-L152
+    why: Generation options, credential lookup and result appending.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_edit/transformation.py#L24-L175
+    why: Strength mutation and single-image multipart layout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/recraft.py#L1-L34
+    why: Optional request fields are TypedDict declarations rather than runtime validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/cost_calculator.py#L8-L28
+    why: Returned-image accounting and wrong-response-type rejection.
+dod:
+  - text: Recraft request preparation preserves field filtering, mutation, credential precedence and the one-image multipart contract.
+    proof: [recraft-tests, oracle, recraft-python]
+  - text: Reply decoding and image-count pricing preserve empty data, malformed JSON and wrong-type outcomes.
+    proof: [recraft-tests, recraft-corpus, oracle, recraft-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: recraft-tests
+      why: image-to-image preparation, Recraft pricing or loaded settings are unsupported
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::recraft::/) - test(replays_the_recraft_images_corpus) | test(recraft_environment)'
+    - id: recraft-corpus
+      why: the image reply decoder has no added malformed-response replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/recraft_images)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_recraft_images_corpus)'
+    - id: recraft-python
+      why: Recraft's distinct request and pricing rules are not exercised against Python
+      run: grep -qE '^[[:space:]]+recraft:' tools/oracle/fuzz/corpus/helper_case/recraft* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/recraft.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/recraft/generation-keep-existing.yaml
+  - tools/oracle/cases/helpers/recraft/edit-strength-pop.yaml
+  - tools/oracle/cases/helpers/recraft/first-file-name.yaml
+  - tools/oracle/cases/helpers/recraft/empty-image-data.yaml
+  - tools/oracle/cases/helpers/recraft/malformed-json.yaml
+  - tools/oracle/cases/helpers/recraft/returned-count-cost.yaml
+deviations: []
+out_of_scope:
+  - B046 selects these operations for generation and editing; B068 retains shared model-info resolution and total-cost routing.
+pitfalls:
+  - RecraftImageEditRequestParams is not a validator for the documented strength or image-count ranges.
+  - The generation path retains preexisting images, but the edit path constructs a new response.
+  - A requested n does not determine billing when the provider returns fewer images.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

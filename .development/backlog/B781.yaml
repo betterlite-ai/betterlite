@@ -2,7 +2,7 @@ id: B781
 milestone: M4 keys, spend and management
 title: Scope key list and alias queries
 status: todo
-depends_on: [B003, B171, B722, B732, B736, B737, B771, B778, B800, B856, B897]
+depends_on: [B003, B171, B720, B722, B723, B724, B732, B770, B778, B800, B856, B2314]
 file: tasks/B781-key-list-filters.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

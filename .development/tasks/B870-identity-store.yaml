@@ -1,81 +1,77 @@
 id: B870
 title: Resolve keys to principals through injected stores
 description: >-
-  Implement IdentityStore key cache lookup, typed DB refetch with one reconnect retry, object_permission
-  load and principal projection. Inject KeyCache::get(KeyHash)->Result<Option<KeyRow>,CacheError>, KeyReader::get(KeyHash)->Result<Option<KeyRow>,DbError>
-  and PermissionReader::get(PermissionId)->Result<Option<ObjectPermission>,DbError>. B733/B738 and B715
-  supply implementations later; this leaf defines required ports and tests fail-closed behavior. KeyNotFoundError
-  is 401 auth_error param key code token_not_found_in_db; a missing source key is distinct.
+  Implement IdentityStore in betterlite-auth::identity_store over B732 principals and B2314 resolved
+  keys. Own its constructor, resolve, key_from_principal, _resolve_key and _principal_from_key.
+  Constructor defaults parent_otel_span/proxy_logging_obj to None and check_cache_only to false;
+  resolve defaults auth_method to API_KEY and network to None. These are arguments, not settings.
+  The store receives an already hashed token and must not hash it again or consult a key repository
+  independently of the injected reader.
 
+  _resolve_key first rejects an absent database, EVEN with a warm key cache or check_cache_only=true,
+  with B732 NoDatabaseConnectionError and the virtual-keys help URL. Otherwise read the exact supplied
+  hash through B733 cache with UserAPIKeyAuth model_type. A nonnull hit returns B733's shallow cache
+  copy without revalidation, clearing exactly budget_reservation, budget_throttle_pct, parent_otel_span
+  and request_route. Do not mutate the cached object, refetch permissions, refresh its timestamp or
+  write it back on a hit. Cache errors propagate. On a miss, check_cache_only raises KeyNotInCacheError
+  before any DB reader call. Otherwise fetch with the hash, DB, span and logging sink; the reader
+  owns reconnect/retry. A null result raises KeyNotFoundError. A row is dumped with exclude_none=true
+  and constructed through B2314 UserAPIKeyAuth before any permission or cache write.
 
-  Injected port instead of a reverse dependency on B734: KeyCache::put(KeyHash,KeyRow)->Result<(),CacheError>;
-  B734 installs cache mutation. A configured but unregistered implementation is a named startup error,
-  never a success stub.
+  Only a truthy object_permission_id together with a falsey object_permission triggers a permission
+  read using the same DB/cache/span/logging arguments. A null result stays null. Any ordinary loader
+  exception is swallowed after DEBUG "Failed to load object_permission for key with object_permission_id=%s: %s";
+  it does not reject authentication. Existing permission data skips that call. Then always await the
+  cache-writer port with the original hash and the mutable key; it preserves B734's timestamp update,
+  cache-copy cleanup and write policy. Writer errors propagate after the permission read. There are
+  no database writes here, and no transaction around these effects.
 
+  Use KeyReader::fetch_with_reconnect and PermissionReader::load interfaces with the full
+  arguments above, plus KeyWriter::cache_key taking a mutable resolved key and logging sink. B738,
+  B735 and B734 respectively provide their existing source-equivalent services as direct dependencies.
+  No reverse edge is needed for those owners; do not replace them with simpler get/put
+  stubs that lose reconnect, timestamp, TTL or cache-side behavior. B733 owns direct cache reads and
+  copy_for_cache and is a direct dependency. An absent required implementation is a named startup
+  error; configured DB absence remains the separate runtime error. Port contract tests record every
+  argument, effect order and error. Actual integration uses production implementations when installed.
 
-  Injected port instead of a reverse dependency on B738: KeyReader::get(KeyHash)->Result<Option<KeyRow>,DbError>
-  and PermissionReader::get(PermissionId)->Result<Option<ObjectPermission>,DbError>; B738 supplies key
-  refetch and B735 supplies permission reads. A configured but unregistered implementation is a named
-  startup error, never a success stub.
+  resolve projects the loaded key with subject_fallback=key.token and CredentialRef(token_id=key.token),
+  never the requested hash when those differ. _principal_from_key requires auth_method and defaults
+  issuer/subject_fallback/credential_ref/network to None and scopes to an empty sequence. A nonnull
+  team_id, including '', creates one TeamIdentity with team_alias; team_member.role goes through
+  B732 team_role (only exact 'admin' is admin), and absent member means member. Nonnull org_id,
+  user_id, project_id and end_user_id independently create identities using organization_alias,
+  user_email and project_alias where applicable. Empty IDs still create those records.
 
+  principal_type is HUMAN only for a TRUTHY user_id, otherwise SERVICE_ACCOUNT, even if an empty-ID
+  user record was constructed. subject is the first truthy user_id, key_alias, subject_fallback,
+  then ''. Map only B732's recognized legacy roles to a one-element roles list; unmapped roles
+  produce []. Copy scopes preserving order/duplicates, preserve issuer/auth_method, and use a fresh
+  default CredentialRef/NetworkContext when omitted. Carry the exact resolved key as source_key;
+  B732 excludes it from serialization. key_from_principal returns that carrier unchanged or raises
+  PrincipalMissingSourceKeyError, not a token lookup or an HTTP error invented by this method.
 
-  Injected port instead of a reverse dependency on B735: PermissionReader::get(PermissionId)->Result<Option<ObjectPermission>,DbError>;
-  B735 implements row loading. A configured but unregistered implementation is a named startup error,
-  never a success stub.
+  Through B757, missing keys retain status 401, type token_not_found_in_db, param key, string code
+  '401', and create-key guidance. Missing DB and cache-only miss become 401 auth_error, param 'None',
+  code '401'; source messages distinguish "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
+  and "Key doesn't exist in cache + check_cache_only=True. key={hash}." Missing source key says
+  "Principal carries no source key; it was not produced by IdentityStore.resolve" but is an internal
+  carrier failure, not a route-generated case. Preserve B732/B757's diagnostic redaction policy.
 
+  Only projection and carrier extraction are pure oracle operations under B856 Management::auth.
+  Python invokes the actual static methods; stateful lookup/reconnect/cache tests are native tests.
+  Wire the stage through B732 into an existing protected /v1/chat/completions route and compare the
+  real MIT HTTP envelope for missing-key and no-DB fixtures, plus a valid-key request reaching the
+  mock provider. Do not add a test-only endpoint or a nonexistent unauthorized-caller rule. B860
+  tests use POSTGRES_TEST_URL when set and testcontainers otherwise; a bad configured URL fails.
+  Native stage_is_registered, required_ports_missing and failure_stops_downstream exercise the real
+  server constructor. cache_copy_isolation, no_db_before_cache, cache_only_miss, reader_arguments,
+  row_validation_before_permissions, permission_failure_debug_then_cache, permission_skip_and_none,
+  writer_mutation_visible and writer_failure_propagates cover the ordered effects.
 
-  Build the production identity_store module in betterlite-auth; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
-
-
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/resolvers/store.py:
-  IdentityStore.__init__ (L59-L72; 14 source lines), IdentityStore.resolve (L74-L88; 15 source lines),
-  IdentityStore.key_from_principal (L91-L100; 9 source lines), IdentityStore._resolve_key (L102-L146;
-  39 source lines), IdentityStore._principal_from_key (L149-L191; 42 source lines).
-
-
-  Add the identity_store operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a identity-store-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 119 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  119 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 397 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Server wiring tests live under betterlite-server::auth::identity_store::tests: stage_is_registered and
-  failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  store.py contains 147 nonblank noncomment lines including imports and excluding docstrings.
+  Reserve 155 production, 265 focused tests, 75 pure adapters and 85 server wiring lines, 580 within
+  600. This consumes typed records and the existing HelperCase decoder, so adds no byte parser.
 scope:
   paths:
     - crates/betterlite-auth/src/identity_store.rs
@@ -98,82 +94,64 @@ scope:
     - crates/betterlite-server/src/auth/identity_store/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L59-L72
-    why: Own IdentityStore.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L74-L88
-    why: Own IdentityStore.resolve; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L91-L100
-    why: Own IdentityStore.key_from_principal; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L59-L100
+    why: Constructor defaults, resolve forwarding and carrier extraction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L102-L146
-    why: Own IdentityStore._resolve_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L149-L191
-    why: Own IdentityStore._principal_from_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
-    why: Auth exceptions become public HTTP type, param and code.
+    why: DB-before-cache ordering, typed construction, best-effort permission read and cache write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L148-L191
+    why: Pure principal projection preserves the nonnull-versus-truthy ID distinctions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/exceptions.py#L12-L44
+    why: B732's exact typed error contracts distinguish missing DB, cache, row and carrier.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3026-L3044
+    why: B734 writer mutates last_refreshed_at before copying and publishing cache state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3970-L3978
+    why: B733 clears exactly four request-local fields from a shallow cache copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L83
+    why: B757 retains ProxyException codes and maps ordinary resolver failures to auth_error.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_to_principal, missing_source_key,
-      no_db_versus_no_key, key_cache, refetch_reconnect, permission_load.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
-    proof:
-      - stage-wiring-tests
-      - behavior-tests
+  - text: Named ordered-effect tests distinguish DB absence, cache hit/miss/error, cache-only mode, invalid row, optional permission failure and writer failure without silent success stubs.
+    proof: [behavior-tests]
+  - text: Projection cases cover all identity fields, empty IDs, role maps, subject precedence, default context, ordered scopes and exact carrier recovery.
+    proof: [behavior-tests, helper-python, oracle, helper-case-corpus]
+  - text: Registered production stages pass a real valid request and return source-compatible missing-key/no-DB errors while stopping downstream calls on failure.
+    proof: [stage-wiring-tests, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^identity_store::tests::/)
-        - test(/replays_the_/)'
+      why: IdentityStore ordering or principal projection lacks executable assertions.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^identity_store::tests::/) - test(/replays_the_/)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/identity_store.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure projection adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/identity_store.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-store-*")"
-        && grep -rlq "identity_store" tools/oracle/fuzz/corpus/helper_case/identity-store-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: New projection operation is absent from decoder seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-store-*")" && grep -rlq "identity_store" tools/oracle/fuzz/corpus/helper_case/identity-store-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: stage-wiring-tests
-      why: The server does not register this production auth stage or discards its failure.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::identity_store::tests::/)
-        - test(/replays_the_/)'
+      why: Actual server construction omits a required store port or fails to stop after rejection.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::identity_store::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/identity-store/key-to-principal.yaml
+  - tools/oracle/cases/helpers/identity-store/all-identity-fields.yaml
+  - tools/oracle/cases/helpers/identity-store/empty-user-id-service-account-with-user.yaml
+  - tools/oracle/cases/helpers/identity-store/subject-precedence.yaml
+  - tools/oracle/cases/helpers/identity-store/team-member-role-defaults.yaml
+  - tools/oracle/cases/helpers/identity-store/mapped-and-unmapped-roles.yaml
+  - tools/oracle/cases/helpers/identity-store/default-context-and-ordered-scopes.yaml
+  - tools/oracle/cases/helpers/identity-store/source-key-roundtrip.yaml
   - tools/oracle/cases/helpers/identity-store/missing-source-key.yaml
-  - tools/oracle/cases/helpers/identity-store/no-db-versus-no-key.yaml
-  - tools/oracle/cases/helpers/identity-store/key-cache.yaml
-  - tools/oracle/cases/helpers/identity-store/refetch-reconnect.yaml
-  - tools/oracle/cases/helpers/identity-store/permission-load.yaml
-  - tools/oracle/cases/auth/identity-store/key-to-principal.yaml
-  - tools/oracle/cases/auth/identity-store/missing-source-key.yaml
-  - tools/oracle/cases/auth/identity-store/no-db-versus-no-key.yaml
-  - tools/oracle/cases/auth/identity-store/key-cache.yaml
-  - tools/oracle/cases/auth/identity-store/refetch-reconnect.yaml
-  - tools/oracle/cases/auth/identity-store/permission-load.yaml
+  - tools/oracle/cases/auth/identity-store/valid-key-reaches-provider.yaml
+  - tools/oracle/cases/auth/identity-store/missing-key-token-not-found.yaml
+  - tools/oracle/cases/auth/identity-store/no-database-auth-error.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B732 owns the Principal/identity/role/error records and B2314 owns UserAPIKeyAuth validation; this store only projects them.
+  - B733 owns cache reads and copy_for_cache. Direct dependencies B734, B735 and B738 implement the writer, permission loader and reconnecting reader respectively; this task composes their production services.
+  - B757 owns HTTP auth-error translation, failure hooks and DB-outage recovery. This task does not add its own recovery policy.
 pitfalls:
-  - Inject KeyCache::get(KeyHash)->Result<Option<KeyRow>,CacheError>, KeyReader::get(KeyHash)->Result<Option<KeyRow>,DbError>
-    and PermissionReader::get(PermissionId)->Result<Option<ObjectPermission>,DbError>.
+  - An object-permission lookup exception is logged at DEBUG and ignored; describing the whole resolver as fail-closed changes this branch.
+  - The database-presence check precedes even a cache hit, so cached credentials do not make a database-free store valid.
+  - Empty user_id creates a UserIdentity but selects service_account as the principal type.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

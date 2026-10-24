@@ -1,48 +1,68 @@
 id: B704
 title: Postgres migrations for managed resources
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  Register the 29 scoped migrations after B703, preserving exact bytes and directory spellings,
+  including 20251122125322_Add organization_id to spend logs. schema_managed_resources tests compare
+  independent pinned/candidate histories at behavioral checkpoints. B873 applies this SQL and records
+  its ledger. Existing rows survive except for the deliberately dropped MCP spec_version column;
+  alias data moves to server_name and a fresh alias starts null.
+
+  DailyTag/Team/UserSpend first drop their compound unique indexes, add nullable TEXT
+  mcp_namespaced_tool_name, make model nullable, add tool-name indexes and recreate uniqueness over
+  (entity,date,api_key,model,custom_llm_provider,mcp_namespaced_tool_name). Old truncated index names
+  are reused. SpendLogs receives a nullable tool name. DailyOrganization/EndUser/AgentSpend each add
+  required TEXT id primary key/date/api_key, nullable entity/model/model_group/provider/tool name,
+  seven required BIGINT counters prompt_tokens/completion_tokens/cache_read_input_tokens/
+  cache_creation_input_tokens/api_requests/successful_requests/failed_requests default 0, required
+  DOUBLE PRECISION spend=0 and TIMESTAMP(3) created_at now/updated_at without default. Each has five
+  individual indexes on date/entity/api_key/model/tool and six-column compound uniqueness. Check
+  distinct-null behavior. DailyTagSpend gains nullable request_id; SpendLogs gains nullable
+  organization_id/agent_id. The final schema_sync repeats agent_id ADD COLUMN IF NOT EXISTS.
+
+  MCPServerTable gains nullable args/allowed_tools/extra_headers TEXT arrays default [], command TEXT,
+  env/static_headers/credentials JSONB default {}, and mcp_access_groups TEXT[] without a default;
+  url becomes nullable. ObjectPermissionTable.mcp_access_groups instead defaults []. The alias rename
+  guard checks information_schema without schema qualification. Because alias is added back, a second
+  run attempts alias-to-server_name again and fails with duplicate_column 42701; an alias only in another
+  schema can trigger undefined_column 42703. The spec_version DROP intentionally loses its values.
+  SQL leaves existing/new credential/header/environment JSON unchanged; do not add a cipher migration.
+
+  VerificationToken's nullable auto_rotate defaults false and rotation_count defaults 0; key_rotation_at,
+  last_rotation_at and rotation_interval have no defaults. ObjectPermissionTable gets nullable JSONB
+  mcp_tool_permissions and later nullable agents/agent_access_groups TEXT arrays default []. AgentsTable
+  also gains nullable agent_access_groups default []. These columns alone schedule nothing or grant nothing.
+
+  PromptTable requires TEXT id/prompt_id, JSONB litellm_params, created_at default now and updated_at
+  without default, with nullable prompt_info. Initially prompt_id is unique; versioning drops that
+  unique index, adds required INTEGER version=1, creates a prompt_id lookup index and unique
+  (prompt_id,version). Existing prompts become version 1; different versions may share an ID.
+  SearchToolsTable requires search_tool_id/name and litellm_params, nullable search_tool_info,
+  created_at now/required updated_at, and unique name. ManagedVectorStoreIndexTable requires
+  id/index_name/litellm_params, nullable index_info/actors, created_at now/required updated_at and unique
+  index_name. The plural ManagedVectorStoresTable gains nullable JSONB litellm_params. ManagedFileTable
+  gains nullable TEXT storage_backend/storage_url without backfill, download or hook activation.
+
+  TagTable has TEXT tag_name primary key, nullable description/models/model_info/budget_id/created_by,
+  required spend=0 and required created_at/updated_at default now. Its budget reference deletes SET
+  NULL and updates CASCADE. SSOConfig/CacheConfig/UISettings have required TEXT primary-key defaults
+  sso_config/cache_config/ui_settings, required JSONB sso_settings/cache_settings/ui_settings without
+  defaults, created_at now and required updated_at without default. Preserve these IDs and raw JSON.
+
+  ProjectTable requires TEXT project_id/actors, JSONB metadata/model_spend default {}, spend=0,
+  blocked=false and both timestamps now; project_alias/team_id/budget_id/object_permission_id/models
+  are nullable. Add nullable description and required model_rpm_limit/model_tpm_limit JSONB {}.
+  Its team/budget/object_permission references delete SET NULL and update CASCADE, as does the new
+  VerificationToken.project_id reference. AgentsTable requires agent_id/unique agent_name,
+  JSONB agent_card_params, actors and both timestamp defaults now; litellm_params is nullable.
+  No foreign key is inferred merely from an agent/organization identifier in spend logs.
 
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
-
-
-  Build the production schema_managed_resources module in betterlite-db; reuse the typed dependencies
-  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
-  with adjacent tests.rs files.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 345 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  345 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 520 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  B700 supplies typed sessions for catalog/default/constraint checks. B860 supplies independent
+  databases through POSTGRES_TEST_URL, using testcontainers only when absent, and cleans up after
+  failure. The rename guard case deliberately uses two schemas. Static SQL needs no HTTP adapter or
+  byte decoder. Runtime managed files/batches remain B087's open product decision. There are 264
+  nonblank, noncomment SQL lines and 431 physical lines to copy; allow 320 tests and 30 registration
+  lines, 781 within 800. Keep Rust test/registration modules below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/schema_managed_resources.rs
@@ -141,13 +161,27 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20251211100212_schema_sync/migration.sql#L1-L3
     why: Pinned implementation and exact ownership boundary for schema_managed_resources.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: pinned_sql_checksums checks all 29 immutable files and directory identities; postgres_catalog compares every owned column/default, primary key, index and foreign-key action with independent upstream application.
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_spend_history covers three_tool_indexes_replaced_in_order,
+      old_index_names_new_six_columns, nullable_models_and_tool_names,
+      organization_end_user_agent_counter_defaults, daily_entity_null_uniqueness,
+      tag_request_id, spend_organization_and_agent_nullable and repeated_agent_column_no_change.'
+    proof: [postgres-tests]
+  - text: 'postgres_mcp_history covers stdio_arrays_json_and_nullable_url,
+      server_groups_no_default_permission_groups_empty, alias_values_move_new_alias_null,
+      rename_repeat_duplicate_column_42701, other_schema_alias_undefined_column_42703,
+      spec_version_drop_loses_only_that_column, allowed_tools_extra_headers_empty,
+      static_headers_credentials_empty_raw_json, nullable_tool_permissions and empty_agent_permissions.'
+    proof: [postgres-tests]
+  - text: 'postgres_resource_history covers rotation_false_zero_and_nullable_times,
+      prompt_initial_unique_id, prompt_existing_version_one, prompt_different_versions_allowed,
+      prompt_duplicate_version_rejected, search_tool_required_params_and_unique_name,
+      vector_index_unique_name_and_actors, vector_store_nullable_params,
+      managed_file_storage_fields_no_backfill, tag_defaults_and_budget_set_null,
+      singleton_sso_cache_ui_ids_and_required_json, project_defaults_and_model_limit_objects,
+      project_three_set_null_references, key_project_set_null_reference and agent_required_card_and_actor_defaults.'
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -156,20 +190,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_managed_resources::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_managed_resources::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_managed_resources::tests::postgres_failure_effects$/)'
+      why: Resource defaults, destructive history or index and foreign-key behavior fails against real Postgres.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_managed_resources::tests::postgres_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B703 supplies the preceding checkpoint, B705-B709 later SQL, B701 final-schema comparison and B873 deploy ledger behavior.
+  - B136 and the SSO/cache configuration persistence owners encrypt application credentials; these SQL additions only define nullable JSON columns and defaults.
+  - B087 decides managed-file/batch runtime hooks; storage_url here is stored data and is never downloaded by a migration.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - Reusing a truncated daily-spend index name hides a changed column set unless the test inspects pg_index.
+  - The alias migration recreates alias after renaming it, so rerunning it attempts to rename onto an existing server_name.
+  - spec_version is intentionally dropped; copying its value into mcp_info would change the pinned migration.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

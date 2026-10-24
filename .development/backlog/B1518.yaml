@@ -1,0 +1,8 @@
+id: B1518
+milestone: M3 providers
+title: Encode BFL image edits from supplied image and mask bytes
+status: todo
+depends_on: [B002, B1517, B997, B183, B171]
+file: tasks/B1518-bfl-edit-format.yaml
+covers:
+  - "litellm/llms/black_forest_labs/image_edit/transformation.py"

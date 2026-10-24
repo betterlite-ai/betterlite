@@ -2,8 +2,7 @@ id: B045
 milestone: M3 providers
 title: Subscription-backed providers, ChatGPT and GitHub Copilot
 status: todo
-depends_on: [B024]
-file: null
+depends_on: [B004, B005, B006, B010, B024, B080, B081, B174, B2230, B1507, B1508, B1509, B1510, B1511, B1512, B1513, B1514, B1515, B1516]
+file: tasks/B045-subscription-dispatch.yaml
 covers:
-  - "litellm/llms/{chatgpt,github_copilot}/**"
   - "litellm/main.py"

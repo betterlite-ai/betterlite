@@ -1,10 +1,31 @@
 id: B765
 title: JWT user and team provisioning and fallback identity
 description: >-
-  Implement JwtProvisioning with explicit user_id_upsert/team_id_upsert settings, canonical database identity,
-  team-role synchronization and single-team/database-team fallbacks. Write memberships through repositories
-  without invoking management endpoints, preserving source ordering and cache invalidation. Failed provisioning
-  must not manufacture an authenticated team.
+  Implement JWT user lookup and synchronization, using B760 claim readers and B871 GrantResolver.
+  get_user_info reads email first; domain enforcement produces None when disabled, false for an absent
+  email when enabled, otherwise B761's domain result. The user-id reader falls back to that email.
+  get_objects resolves organization by truthy id before alias through B879, then rejects false domain
+  validation with 403 auth_error, param user_email. That failure happens after organization lookup but
+  before user creation. Resolve user/membership with B736/B737 loaders and sso_user_id equal to the claim
+  id; an explicit user_id_upsert argument overrides B760's setting/domain decision. Only then load a truthy
+  end_user_id through B739 with the route. Return user, organization, end user, membership and effective
+  database user id in that order; B871 owns canonical identity and its fuzzy lookup behavior.
+
+  map_user_to_teams returns when either object is absent or a roster member has the same truthy user_id.
+  Otherwise invoke B808's team_member_add service with Member role user and a PROXY_ADMIN principal,
+  retaining its database/cache/audit effects. Swallow only ProxyException type team_member_already_in_team,
+  debug-log it, and propagate every other error. The source comment calls this nonblocking, but the call
+  is awaited and most failures still fail authentication.
+
+  sync_user_role_and_teams returns if disabled or either user/database is missing. Map the role through
+  B890; only a nonempty changed role writes B723's user row, then changes the in-memory user and writes
+  B733's cache under user_id using get_management_object_ttl. Next compute claim-team sets: with
+  fallback_to_db_teams off use only plural claims, with it on use the combined singular/plural reader.
+  Add missing teams and remove stored teams absent from claims, except that fallback enabled with no
+  claims preserves database teams. If any difference exists call B064.patch_team_membership with its
+  default raise_on_error=False, then assign the user object's teams to the claim set and cache it. The
+  SCIM helper attempts every add/remove and logs roster failures; its success return does not prove all
+  writes landed. Preserve this possible partial database/cache divergence, not an invented transaction.
 
 
   Build the production jwt_provisioning module in betterlite-auth; reuse the typed dependencies listed
@@ -13,17 +34,18 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/handle_jwt.py:
-  JWTAuthManager.get_user_info (L1753-L1763; 11 source lines), JWTAuthManager._canonical_user_id_from_db
-  (L1766-L1776; 10 source lines), JWTAuthManager.get_objects (L1779-L1887; 101 source lines), JWTAuthManager.map_user_to_teams
+  JWTAuthManager.get_user_info (L1753-L1763; 11 source lines), JWTAuthManager.get_objects (L1779-L1887; 101 source lines), JWTAuthManager.map_user_to_teams
   (L2009-L2057; 43 source lines), JWTAuthManager.sync_user_role_and_teams (L2060-L2130; 59 source lines).
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.user_allowed_email_domain=None;
-  litellm_jwtauth.sync_user_role_and_teams=False; litellm_jwtauth.fallback_to_db_teams=False.
+  litellm_jwtauth.sync_user_role_and_teams=False; litellm_jwtauth.fallback_to_db_teams=False;
+  litellm_jwtauth.user_id_upsert=False. B760 owns claim-path settings and B890 owns role mapping settings.
 
 
-  Add the jwt_provisioning operation under B856 Management::jwt. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Add the pure get_user_info projection as jwt_provisioning under B856 Management::jwt. Python calls that
+  MIT method with configured claim readers. Database lookup and synchronization are HTTP and Rust Postgres
+  cases, not helper invocations that indirectly call management handlers.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
   warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-provisioning-*
   seed to B171 helper_case, which already owns this decoder.
@@ -51,7 +73,9 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::jwt_provisioning::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::jwt_provisioning::tests::provisioning_defaults, loads_provisioning_settings,
+  boolean_setting_coercion and malformed_provisioning_settings. Assert accepted YAML booleans and the
+  pinned bool string coercion, and validation errors for unrecognized strings rather than a default fallback.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -68,9 +92,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 224 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  224 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 552 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 214 nonblank, noncomment pinned lines after removing the uncalled canonical-id wrapper. Allow
+  215 production, 300 behavior/Postgres tests, 45 helper adapters, 65 stage wiring and 65 config lines,
+  690 changed lines within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -109,7 +133,7 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1753-L1887
     why: Pinned implementation and exact ownership boundary for jwt_provisioning.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2009-L2388
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2009-L2130
     why: Pinned implementation and exact ownership boundary for jwt_provisioning.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5143-L5158
     why: JWTAuthBuilderResult request/response fields and defaults.
@@ -117,21 +141,29 @@ references:
     why: JWT settings declaration; only the fields consumed by this task are enabled.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1753-L1763
     why: Own JWTAuthManager.get_user_info; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1766-L1776
-    why: Own JWTAuthManager._canonical_user_id_from_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1779-L1887
     why: Own JWTAuthManager.get_objects; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2009-L2057
     why: Own JWTAuthManager.map_user_to_teams; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2060-L2130
     why: Own JWTAuthManager.sync_user_role_and_teams; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.fallback_to_db_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5484-L5495
+    why: fallback_to_db_teams defaults false; synchronization reads it at handle_jwt.py lines 2105 and 2110.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5395-L5436
+    why: user_id_upsert and sync_user_role_and_teams defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2288-L2322
+    why: B064's awaited roster patch and default suppression of collected write failures.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: user_upsert_disabled,
-      canonical_user_id, team_upsert, role_sync, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Named cases: email_id_fallback, missing_enforced_email, domain_check_disabled, domain_denied,
+      org_id_before_alias, domain_after_org_before_user, explicit_upsert_override, user_upsert_disabled,
+      canonical_user_lookup, end_user_after_identity, missing_objects_skip_add, existing_member_skip_add,
+      member_add_admin_principal, duplicate_member_ignored, other_member_error_propagates,
+      sync_disabled_no_writes, missing_database_skips_sync, unchanged_role_no_write, role_before_roster,
+      plural_claim_removes_team, singular_claim_fallback, no_claim_preserves_db, cache_ttl_from_owner,
+      postgres_pinned_rows and postgres_failure_effects. The last test proves role/cache writes survive
+      later roster errors and default SCIM failure suppression can still cache the claim-team set.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -194,18 +226,21 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_provisioning::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/jwt-provisioning/user-upsert-disabled.yaml
-  - tools/oracle/cases/helpers/jwt-provisioning/canonical-user-id.yaml
-  - tools/oracle/cases/helpers/jwt-provisioning/team-upsert.yaml
-  - tools/oracle/cases/helpers/jwt-provisioning/role-sync.yaml
+  - tools/oracle/cases/helpers/jwt-provisioning/email-id-fallback.yaml
+  - tools/oracle/cases/helpers/jwt-provisioning/email-domain-state.yaml
   - tools/oracle/cases/auth/jwt-provisioning/user-upsert-disabled.yaml
   - tools/oracle/cases/auth/jwt-provisioning/canonical-user-id.yaml
-  - tools/oracle/cases/auth/jwt-provisioning/team-upsert.yaml
   - tools/oracle/cases/auth/jwt-provisioning/role-sync.yaml
+  - tools/oracle/cases/auth/jwt-provisioning/domain-denied.yaml
+  - tools/oracle/cases/auth/jwt-provisioning/claim-team-removal.yaml
+  - tools/oracle/cases/auth/jwt-provisioning/claimless-db-team-retained.yaml
+  - tools/oracle/cases/auth/jwt-provisioning/singular-claim-sync.yaml
+  - tools/oracle/cases/auth/jwt-provisioning/member-add-effects.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - JWTAuthManager._canonical_user_id_from_db has no caller at the pin; live identity canonicalization is B871's.
+  - B891 owns team_id_upsert and single/database-team fallback selection; B877 owns provisional header-team authorization.
+  - B064 owns SCIM roster patching in scim_v2.py; B808 owns the team_member_add service and its effects.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -261,8 +296,9 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Team upsert is suppressed for a provisional header team until membership is verified.
+  - With fallback_to_db_teams=false, a singular-only claim is ignored by synchronization and existing DB teams are removed.
+  - SCIM's default failure suppression can leave cached claim teams ahead of actual roster writes.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

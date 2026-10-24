@@ -1,9 +1,67 @@
 id: B794
 title: Bulk user deletion and membership cleanup
 description: >-
-  Implement BulkUserDeletion and BulkTeamRemoval over writer transactions, scoped organization authority
-  and exact user/email identity matching. Remove key, invitation and membership references in source order,
-  return per-row failures and publish invalidations after commit.
+  Implement the bulk-user deletion service for B1222 POST /management/v1/users/bulk_delete.
+  B1202 owns bulk TEAM-member removal and its locked roster helper; do not duplicate that route.
+  B2334 owns request length 1..500, forbidden extras and response defaults. This service returns
+  an ordered tuple, not an HTTP response. No license or settings branch belongs here.
+
+  Exact proxy_admin bypasses organization reads. Other callers with a truthy user_id load memberships
+  with user_role=org_admin and keep truthy organization IDs; caller.role itself need not be org_admin.
+  An unbound/empty-ID caller gets no memberships. Non-admin without any administered organizations
+  raises B1202 ManagementProblem status=403,type=urn:litellm:error:forbidden,title='Forbidden',detail=
+  'Only PROXY_ADMIN or ORG_ADMIN users may delete users.'. No OpenAI param/code exists here.
+  Cases proxy_admin_skips_org_lookup, membership_grants_not_role_label, unbound_caller_forbidden
+  and no_admin_memberships_problem compare the exact preflight behavior.
+
+  Fetch unique requested IDs using sorted IN values. Non-admin also loads all target memberships;
+  a target requires a NONEMPTY set of truthy organization IDs wholly contained in caller's set.
+  Target role is irrelevant. Missing user is row error 'User id={id} not found'; scope failure
+  names ID and says only PROXY_ADMIN may delete users outside administered organizations.
+  Candidates are sorted by ID. Read team memberships even for zero candidates and union each
+  user's stored teams with membership team IDs; do not infer from roster alone. No candidates
+  means no transaction. Cases target_all_orgs_required, orgless_target_denied, missing_target_row,
+  sorted_candidates, team_array_membership_union and no_candidates_no_transaction pin this.
+
+  One Prisma transaction with timeout=60 seconds loads existing teams in that union, sorts team IDs,
+  and invokes B1202 locked removal once per team with candidate user IDs AND row emails, retaining
+  exact email matching. Nonexistent teams from stale arrays are skipped; disappearance after the
+  initial read causes the locked helper's failure and rolls back the batch. Cases sorted_team_locks,
+  stale_team_skipped, team_disappears_rolls_back and roster_only_reference_not_scanned inspect locks
+  and writes. B1202 owns the advisory SQL, roster reread and team-key archival inside this same tx.
+
+  Next read remaining keys for candidate users inside tx, snapshot JWT-mapping cache keys through
+  B738 using the OUTER Prisma client, then B777 archives keys with tx and changed-by before token
+  delete_many. Skip archive/token delete if no keys. Delete invitation links matching user_id OR
+  created_by OR updated_by, then organization memberships, team memberships, and users, all in tx.
+  Cases delete_order_and_invitation_references, no_keys_skip_archive, jwt_snapshot_outer_client,
+  archive_failure_rolls_back and user_delete_failure_rolls_back prove every mutation boundary.
+  Return deleted keys/JWT cache keys with remaining-user keys FIRST, followed by each sorted team's
+  keys, without deduplication. Own _UserBatchDeletion/_DeletedKeys and token projection at L103-L117;
+  token projection keeps order and duplicates. Cases combined_key_order and token_projection_duplicates.
+
+  Only transaction exceptions are caught: log error with sorted user IDs and return a shared error
+  string for every candidate. The error extractor uses ManagementProblem.detail; HTTP dict detail's
+  error field or entire dict; other HTTP detail text; ordinary str(exception) or class name if empty.
+  Each candidate then reports 'Failed to delete user: {error}', retaining its email. Cases
+  transaction_error_per_candidate and error_detail_shapes cover exact result messages.
+
+  After COMMIT, schedule B784 deleted-key audits if any keys; delete token cache objects via B734;
+  B878 evict/broadcast JWT mappings, then sorted user IDs; emit B1202 team metrics in sorted order;
+  finally run B797 user audits with concurrency exactly 10. User audits use action=deleted,
+  supplied changed-by/admin-name/caller, before=row JSON excluding nulls, after default null.
+  Per-user audit exceptions warn and continue; the bounded gather retains BaseException outcomes
+  in input order. Key-audit scheduling, token cache and broadcast exceptions propagate globally
+  AFTER deletion and prevent later effects; they are not converted to per-row transaction failures.
+  Cases postcommit_effect_order, postcommit_key_audit_failure, postcommit_cache_failure,
+  audit_concurrency_ten and user_audit_warning_preserves_success distinguish these paths.
+
+  Results preserve ORIGINAL request order: every later duplicate fails with 'Duplicate user_id in
+  request: {id}', taking precedence over missing/scope errors, even if the first occurrence failed.
+  Duplicate/precheck failure email=null,teams_removed=(); transaction failure preserves row email;
+  success preserves email,error=null and sorted team IDs whose removal set contains the user.
+  Stored-but-nonexistent teams are absent from teams_removed. Cases duplicates_after_failed_first,
+  precheck_failure_nulls, transaction_failure_email and success_removed_team_order pin all fields.
 
 
   Build the production user_bulk_delete module in betterlite-server; reuse the typed dependencies listed
@@ -17,7 +75,9 @@ description: >-
   _bounded (L209-L216; 6 source lines), _caller_admin_org_ids (L368-L376; 9 source lines), _scope_error
   (L379-L385; 7 source lines), _delete_user_rows (L388-L419; 32 source lines), _delete_users_tx (L422-L461;
   40 source lines), _delete_users (L464-L510; 47 source lines), bulk_delete_users (L513-L596; 78 source
-  lines).
+  lines). Own _OrgAdminFilter L71-L73, _UserBatchDeletion/_DeletedKeys L103-L117 and
+  _AUDIT_LOG_CONCURRENCY=10 at L67. B1202 owns shared _BATCH_TX_TIMEOUT=60 seconds at L68,
+  lower filter/table helpers and _TeamRemoval; flatten trivial table accessors into repositories.
 
 
   Add the user_bulk_delete operation under B856 Management::users. Python calls only the owned MIT helper
@@ -45,9 +105,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 233 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  233 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 473 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 233 function lines before docstring removal plus about 20 declaration lines; allow
+  265 production, 350 behavior/Postgres tests, 65 helper adapters and 30 wiring, 710 changed
+  lines within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -93,8 +153,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L513-L596
     why: Own bulk_delete_users; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_scope_denied, delete_user_cascade,
-      transaction_rollback, postgres_pinned_rows, postgres_failure_effects.'
+  - text: Every description case proves its branch; postgres_pinned_rows and postgres_failure_effects
+      prove sorted locking, archive and reference deletion order, rollback and postcommit failures.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -128,13 +188,23 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_delete::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_delete::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/user-bulk-delete/org-scope-denied.yaml
-  - tools/oracle/cases/helpers/user-bulk-delete/delete-user-cascade.yaml
-  - tools/oracle/cases/helpers/user-bulk-delete/transaction-rollback.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/membership-grants-not-role-label.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/no-admin-memberships-problem.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/target-all-orgs-required.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/orgless-target-denied.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/team-array-membership-union.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/sorted-team-locks.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/delete-order-and-invitation-references.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/user-delete-failure-rolls-back.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/postcommit-effect-order.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/postcommit-cache-failure.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/user-audit-warning-preserves-success.yaml
+  - tools/oracle/cases/helpers/user-bulk-delete/duplicates-after-failed-first.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B1222 owns the HTTP route/problem envelope; B2334 owns wire contracts; B777 owns archive
+    row projection; B738 owns JWT cache-key snapshots; B734 owns token cache eviction;
+    B784/B797 own key/user audit sinks. B1202 owns shared team records and the transaction timeout.
   - 'litellm/proxy/management_helpers/bulk_user_deletion.py: B1202 owns _TeamRemoval.deleted_key_tokens
     (L99-L100), _team_not_found (L120-L128), _team_tx_db (L153-L154), _membership_tx_db (L161-L162), _same_email
     (L177-L178), _addresses_member (L181-L184), _with_row_email (L187-L190), _remove_members_from_team
@@ -144,9 +214,9 @@ out_of_scope:
     (L193-L196).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Bulk deletion authority checks every target organization, not only the caller-supplied organization
-    filter.
+  - Organization authority comes from membership rows, and an orgless target fails even for an org admin.
+  - Only the transaction is caught as row errors; a failed postcommit broadcast can leave deletion committed.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

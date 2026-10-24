@@ -1,9 +1,54 @@
 id: B888
 title: Guardrail tool and token-inherited auth policy
 description: >-
-  Implement guardrail-modification and tool allowlists plus typed inherited team/org context helpers used
-  by CommonAuthChecks. A token may vouch for a team only under the pinned provenance conditions; ordinary
-  request metadata cannot confer that authority.
+  Implement the guardrail/tool admission helpers and trusted context fallbacks used by CommonAuthChecks.
+  Guardrail detection checks metadata, litellm_metadata and the root, in that order, for the presence
+  of guardrails, disable_global_guardrails, disable_global_guardrail or opted_out_global_guardrails;
+  false/null values still count. Dicts and JSON-string objects count; malformed JSON and other roots
+  are ignored through B192's existing decoder. Move _GUARDRAIL_MODIFICATION_KEYS (L785-L790) and
+  guardrail_helpers.can_modify_guardrails (L13-L23) here from B104. Only a dict team.metadata.guardrails
+  whose modify_guardrails is literally False denies; no team, absent settings and other values allow.
+  Denial is HTTPException 403 with detail.error 'Your team does not have permission to modify guardrails.';
+  the caller's auth projector exposes auth_error, param string None and code 403. Do not invent an
+  explicit-permission requirement where the source defaults to allowing modifications.
+
+  Tool checks skip missing tokens, unknown/non-tool routes and empty extracted names. A nonempty list
+  token.metadata.allowed_tools overrides team_metadata.allowed_tools; empty or malformed key values
+  fall back to the team value, and empty/malformed effective values allow everything. Convert list
+  entries to strings, preserve request name order and duplicates, compare exact case-sensitive names,
+  and raise 403 tool_access_denied, param tools, code 403 listing all disallowed names. The separate
+  team_object argument is unused: do not refresh policy from it.
+
+  Move tool_name_extraction.py's functions/constants (L16-L86) below B104 into this task, together
+  with the three extract_request_tool_names methods: OpenAI chat handler L257-L268, Responses handler
+  L662-L673 and Anthropic handler L918-L921. Use B207's route mapping and a native typed extractor
+  registry rather than depending on guardrail execution. Tool-capable values are completion,
+  acompletion, responses, aresponses, anthropic_messages, generate_content, agenerate_content and
+  call_mcp_tool. Register standalone Gemini/MCP extractors once; an existing nonempty registry is
+  unchanged. Gemini reads tools[].functionDeclarations[].name; MCP prefers truthy name over
+  mcp_tool_name. Standalone returns immediately even if empty; other matching handlers continue
+  until names are nonempty, missing handlers/unsupported call types yield no names. Chat reads
+  function tools' function.name then legacy functions[].name. Responses reads function/custom name
+  or mcp server_label. Also move base_llm/guardrail_translation/utils.py anthropic_tool_names
+  (L295-L303) here: it accepts nonempty string flat names and, only for type function, nonempty
+  string function.name, returning both in that order. Anthropic flattens these pairs. Ignore wrong
+  object shapes and falsey names; retain truthy names after source string conversion, duplicates and
+  order. Truthy noniterable tools/declarations propagate the source error rather than becoming an
+  allow-all result. B104 retains dynamic Python discovery and all other translation behavior.
+
+  _safe_fetch debug-logs and rethrows HTTPException, ProxyException and BudgetExceededError;
+  other exceptions debug-log 'swallowed' and return None. The reconstructed cached team copies
+  team_id, max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models via B753, metadata and
+  object_permission_id; it does not synthesize organization_id or team_alias. Team id is required.
+  For vouching, litellm-dashboard always wins, even over TeamNotFoundError; other missing teams
+  never vouch. Otherwise truthy team_models vouch before B1217's outage setting is consulted.
+  Empty team_models use that setting. The policy does not inspect the exception's transport class.
+
+  Organization inheritance first fills a missing org_id from the team. Any nonnull organization_alias,
+  organization_max_budget, organization_tpm_limit, organization_rpm_limit or organization_metadata
+  suppresses the entire lookup, including zero/empty values. Missing org id or DB also skips it.
+  B879 supplies the org; None changes nothing, otherwise assign alias/metadata before testing for a
+  budget row, then copy max_budget/tpm/rpm. Do not fill holes in a partially populated token.
 
 
   Build the production auth_policy_support module in betterlite-auth; reuse the typed dependencies listed
@@ -25,33 +70,14 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Guardrail and tool fixtures send the exact presence/null/false combinations through B732 auth wiring.
+  Team lookup cases use B860 with POSTGRES_TEST_URL or testcontainers, while extractor cases compare
+  only the source's native tool-name lists and leave provider calls out of the test.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 193 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  193 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 462 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 193 lines in the initial ranges before docstring exclusion plus the small extracted leaves;
+  allow 280 production, 320 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring,
+  no new decoder or config loader, 730 changed lines within an 800-line gate. Only fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -81,6 +107,18 @@ scope:
     - crates/betterlite-server/src/auth/auth_policy_support/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L295-L303
+    why: Anthropic checks both names but only accepts nonempty strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L13-L23
+    why: The permission helper defaults to allowing changes and is moved below its auth caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/tool_name_extraction.py#L16-L86
+    why: Shared extractor dispatch and standalone Gemini/MCP names, formerly in the later B104 task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L257-L268
+    why: Chat function names and legacy functions are collected in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L662-L673
+    why: Responses custom/function names and MCP server labels.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L918-L921
+    why: Anthropic extraction delegates to the shared name helper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L793-L844
     why: Own _guardrail_modification_check; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L847-L885
@@ -96,10 +134,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: tool_allowlist, guardrail_opt_out_denied,
-      token_team_provenance.'
+  - text: 'Cases guardrail_four_keys_three_locations, guardrail_false_and_null_count,
+      guardrail_json_object_and_malformed, modify_false_only_denies, no_team_allows,
+      tool_key_overrides_team, tool_empty_key_falls_back, tool_bad_effective_allows,
+      tool_route_skip, tool_exact_string_names_and_duplicates, tool_team_argument_unused,
+      tool_all_eight_call_types, standalone_empty_stops, handler_empty_continues,
+      missing_handler_empty, chat_and_legacy_names, responses_custom_and_mcp_names,
+      gemini_declarations, mcp_name_precedence, anthropic_both_names,
+      extraction_falsey_names_and_wrong_objects and extraction_noniterable_error cover policy and names.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: 'Context cases safe_fetch_rethrows_three_auth_errors, safe_fetch_other_debug_drop,
+      reconstructed_team_all_fields, dashboard_vouches_for_missing_team, missing_team_never_vouches,
+      nonempty_team_models_bypass_outage_setting, empty_models_consult_outage_setting,
+      org_id_inherits_first, any_populated_org_field_skips, org_lookup_missing_db_or_id,
+      org_missing_row_noop, org_without_budget_copies_identity and org_budget_fields_copy.'
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -144,10 +197,16 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-policy-support/tool-allowlist.yaml
   - tools/oracle/cases/auth/auth-policy-support/guardrail-opt-out-denied.yaml
   - tools/oracle/cases/auth/auth-policy-support/token-team-provenance.yaml
+  - tools/oracle/cases/helpers/auth-policy-support/tool-extractor-formats.yaml
+  - tools/oracle/cases/helpers/auth-policy-support/safe-fetch-errors.yaml
+  - tools/oracle/cases/helpers/auth-policy-support/organization-inheritance.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B104 owns the remaining guardrail_helpers functions, base translation utils except anthropic_tool_names,
+    and every translation-handler method except
+    the three extraction leaves explicitly moved here. It installs runtime guardrail execution later;
+    tool allowlists already use this task's concrete built-in name extractors. B1217 owns outage setting loading and tests.
+    B860 Postgres fixtures select POSTGRES_TEST_URL first, then testcontainers.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -305,9 +364,10 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A token may vouch for a team only under the pinned provenance conditions; ordinary request metadata
-    cannot confer that authority..
+  - The UI_TEAM_ID sentinel is checked before TeamNotFoundError, while all other deleted teams fail.
+  - Any populated organization field suppresses filling all the remaining fields.
+  - Empty key allowed_tools inherits the team list rather than imposing an empty grant.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

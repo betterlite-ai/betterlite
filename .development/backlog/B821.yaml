@@ -2,7 +2,7 @@ id: B821
 milestone: M4 keys, spend and management
 title: Access-group response projections and lookups
 status: todo
-depends_on: [B001, B003, B052, B171, B700, B722, B724, B732, B734, B742, B856, B860]
+depends_on: [B001, B003, B052, B065, B124, B136, B141, B724, B726, B732, B734, B860, B2314]
 file: tasks/B821-access-group-read.yaml
 covers:
   - "litellm/types/access_group.py"

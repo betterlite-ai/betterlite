@@ -1,0 +1,8 @@
+id: B2309
+milestone: M4 keys, spend and management
+title: Request-log index definitions and catalog inspection
+status: todo
+depends_on: [B171, B700, B856, B860]
+file: tasks/B2309-request-log-index-catalog.yaml
+covers:
+  - "litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py"

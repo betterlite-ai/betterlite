@@ -1,10 +1,39 @@
 id: B853
 title: Offline spend-log partition conversion
 description: >-
-  Expose opt-in native Postgres partition/unpartition SQL operations in tools/betterlite-db-admin, preserving
-  legacy table/index renames, composite primary key and rollback deduplication semantics. Verify against
-  populated fixtures and explicit transactions. Automatic retention and partition maintenance remain B070;
-  no conversion runs at ordinary startup.
+  Implement B1232 offline partition-spend-logs and unpartition-spend-logs operations with B700's primary
+  database connection. Own both complete executable SQL scripts. Each operation has its own explicit
+  BEGIN/COMMIT transaction; rollback all table/index/data changes on any SQL error. They are manual
+  commands, not startup migrations or B070's periodic retention work. Preserve B701 column/default
+  types; do not rebuild tables from an independently invented schema.
+
+  Partitioning renames LiteLLM_SpendLogs to LiteLLM_SpendLogs_legacy, then moves existing indexes
+  LiteLLM_SpendLogs_pkey, _startTime_idx, _startTime_request_id_idx, _end_user_idx, _session_id_idx
+  and _api_key_startTime_idx to the corresponding LiteLLM_SpendLogs_legacy_* names using IF EXISTS.
+  Create the new canonical table LIKE legacy INCLUDING DEFAULTS INCLUDING GENERATED, partitioned by
+  RANGE(startTime), with primary key(request_id,startTime). Recreate those five non-PK canonical
+  indexes on startTime; (startTime,request_id); end_user; session_id; (api_key,startTime), respectively,
+  using IF NOT EXISTS. Create LiteLLM_SpendLogs_pdefault as the DEFAULT partition with IF NOT EXISTS,
+  then commit. New rows without an explicit range land there. No day/month partitions are created.
+  Critically, no old rows are copied and the legacy table is not dropped: the commented backfill/drop
+  examples are NOT executable steps. A populated input leaves populated legacy and an empty new table.
+
+  Unpartitioning renames the canonical table to LiteLLM_SpendLogs_partitioned and similarly renames
+  the six indexes, plus legacy alternate LiteLLM_SpendLogs_pkey1, to _partitioned_* names. Create a
+  plain LIKE table including defaults/generated columns, restore primary key(request_id) and the
+  same five non-PK indexes, copy SELECT * from the partitioned parent with ON CONFLICT(request_id)
+  DO NOTHING, drop the old partitioned parent (and its partitions), then commit. Duplicate request_id
+  values at distinct startTime values collapse to one arbitrary scan-order survivor: no timestamp
+  ordering or newest-row guarantee exists. Test survivor membership, not an invented selection rule.
+
+  IF EXISTS only covers index renames, and IF NOT EXISTS only index/default-partition creation; neither
+  command is idempotent as a whole. Existing legacy/partitioned destination table or rename-target
+  collisions fail and roll back. Assert index ownership/catalog definitions, not only names, because
+  same-name indexes on the retained old table can otherwise hide missing new indexes. LIKE does not
+  copy indexes; recreated parent indexes propagate to future partitions. Command help preserves the
+  source guidance: enable use_spend_logs_partitioning and retention separately after conversion,
+  keep SPEND_LOG_PARTITION_INTERVAL consistent with later partition creation, and disable partitioning
+  for rollback. No config value is read or written by these SQL operations; those settings belong B070.
 
 
   Build the production spend_partitions module in betterlite-db; reuse the typed dependencies listed in
@@ -16,33 +45,17 @@ description: >-
   the admin command check must fail without these real CLI dispatch tests.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  B860 initializes separate schemas for the pinned scripts and native operations. Use the supplied
+  POSTGRES_TEST_URL or, only when absent, testcontainers; never skip connection failures. Query actual
+  partition/index catalogs and retained rows, and clean schemas after success or rollback tests.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Partition SQL has 32 and unpartition SQL 36 nonblank noncomment lines. Allow 120 SQL/service,
+  270 Postgres tests and 65 CLI/wiring lines, 455 within 525. Reuse B1232 argv decoding.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 157 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  157 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 341 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
-  operation only; do not recreate its Cargo package or depend on betterlite-server from the admin tool.
-  The operation adapter assembles native betterlite-db services directly.
+  Register partition and unpartition commands in B1232's existing database-admin dispatcher, invoking
+  these native DB operations without introducing a server dependency or a second command package.
 scope:
   paths:
     - crates/betterlite-db/src/spend_partitions.rs
@@ -63,6 +76,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/unpartition_spend_logs.sql#L1-L74
     why: Pinned implementation and exact ownership boundary for spend_partitions.
 dod:
+  - text: 'Named Postgres cases partition_retains_legacy_without_copy, defaults_generated_columns,
+      canonical_index_definitions, missing_old_indexes, default_partition_accepts_rows,
+      same_id_distinct_start_time, rollback_restores_single_key, alternate_pkey1_rename,
+      duplicate_survivor_is_unspecified, drop_removes_children, destination_collision_rollback and
+      mid_copy_failure_rollback verify every DDL step and its transaction boundary.'
+    proof: [behavior-tests, postgres-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: partition_populated_table,
       legacy_index_renames, composite_primary_key, unpartition_deduplication, failure_rolls_back, startup_no_conversion,
       postgres_pinned_rows, postgres_failure_effects.'
@@ -93,13 +112,13 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B070 owns retention, future partition creation and partition-related config loading; B1232 owns CLI parsing/outcome reporting.
+  - The commented manual legacy backfill/drop examples have no executable caller at the pin and are not automatically performed.
 pitfalls:
-  - Unpartition deduplication follows the source composite-key semantics rather than dropping arbitrary
-    duplicates.
+  - Partitioning a populated table creates an empty new table; copying legacy rows is a separate optional operator action.
+  - ON CONFLICT(request_id) DO NOTHING does not choose the newest duplicate during unpartitioning.
+  - The pkey1 rename exists only in the unpartition script; adding it to partitioning changes collision behavior.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: security

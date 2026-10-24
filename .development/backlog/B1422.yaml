@@ -1,0 +1,11 @@
+id: B1422
+milestone: M3 providers
+title: Jina mixed-media embeddings and Infinity embedding replies
+status: todo
+depends_on: [B002, B006, B183, B249, B171]
+file: tasks/B1422-jina-infinity-embedding.yaml
+covers:
+  - "litellm/llms/jina_ai/common_utils.py"
+  - "litellm/llms/jina_ai/embedding/**"
+  - "litellm/llms/infinity/common_utils.py"
+  - "litellm/llms/infinity/embedding/**"

@@ -2,7 +2,7 @@ id: B717
 milestone: M4 keys, spend and management
 title: Native migration recovery and drift guards
 status: todo
-depends_on: [B002, B171, B700, B702, B710, B711, B716, B718, B856, B857, B860, B873]
+depends_on: [B002, B700, B711, B716, B718, B857, B860, B873, B2307]
 file: tasks/B717-migration-recovery.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/utils.py"

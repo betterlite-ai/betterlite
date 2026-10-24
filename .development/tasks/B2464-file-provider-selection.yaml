@@ -7,7 +7,7 @@ description: >-
   betterlite-provider::api::file_provider_selection. Return the existing concrete provider config
   behind a closed FileProviderConfig enum, or None; do not add an OpenAI fallback to the registry.
   Keep model accepted but unused. Provider implementations remain their current leaves; this task
-  only selects them. B036 owns xAI/Mistral and B050 Manus until their provider planning passes split
+  only selects them. B1407 owns xAI files, B1411 Mistral files, and B050 Manus until its provider planning pass splits
   those existing owners further. Do not add network work or new provider implementations here.
 
   Register B171 file_provider_selection helper using the actual Python registry and project its
@@ -76,7 +76,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/file-provider-selection/file-timeout-capability.yaml
 deviations: []
 out_of_scope:
-- B1367 owns Gemini files, B1376 Vertex file config, B644-B646 Bedrock file operations, B588 Anthropic files, B036 xAI/Mistral and B050 Manus. Their constructors/config records are reused, never reconstructed from this task's fixture table.
+- B1367 owns Gemini files, B1376 Vertex file config, B644-B646 Bedrock file operations, B588 Anthropic files, B1407 xAI, B1411 Mistral and B050 Manus. Their constructors/config records are reused, never reconstructed from this task's fixture table.
 - Other utils.py functions keep their existing owners; only the two whole functions referenced above move here. B1028/B1029/B1030 own SDK timeout coercion and subsequent provider dispatch.
 pitfalls:
 - Registry None is normal for Azure and OpenAI; those SDK dispatchers have separate handlers.

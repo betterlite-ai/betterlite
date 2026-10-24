@@ -1,0 +1,118 @@
+id: B1436
+title: DeepInfra chat mapping and rerank inference records
+description: >-
+  Implement deepinfra in betterlite-openai over B503/B668 chat and B1013 rerank records.
+  Preserve all captured chat constructor defaults as None unless explicitly supplied.
+  Advertise stream, frequency_penalty, function_call, functions, logit_bias, both token
+  limits, n, presence_penalty, stop, temperature, top_p, response_format, tools and
+  tool_choice, adding reasoning_effort only for a B2221 reasoning-capable deepinfra model.
+  The mapper deliberately never inserts tool_choice, including auto and none. Other
+  choices raise UnsupportedParamsError 400 unless argument or litellm.drop_params is
+  exactly true. Rename max_completion_tokens even when null; copy other supported
+  non-None values. Exact model mistralai/Mistral-7B-Instruct-v0.1 replaces temperature
+  equal to zero with MIN_NON_ZERO_TEMPERATURE, parsed as a float from that env key and
+  defaulting to 0.0001. Retain input-order overwrite behavior.
+
+  Run parent message conversion before DeepInfra's tool-message cleanup in both modes.
+  A tool content list containing one dictionary with type=text and a present text key
+  becomes that value, including null. Every other tool list becomes Python-compatible
+  JSON text with its spacing and ASCII escaping; other roles/content remain unchanged.
+  Identity uses explicit/DEEPINFRA_API_BASE/https://api.deepinfra.com/v1/openai and
+  explicit/DEEPINFRA_API_KEY. Add deepinfra_settings loader tests for these aliases,
+  MIN_NON_ZERO_TEMPERATURE and global drop_params=false by default.
+
+  Rerank URL preparation requires a truthy supplied base, removes every openai substring,
+  trims final slashes and appends /inference/{model} exactly as supplied. Its key fallback
+  reads DEEPINFRA_API_KEY only when the key is None, rejects final None but accepts empty,
+  and merges caller headers over Bearer, accept and lowercase content-type defaults.
+  Advertise query/documents only. A truthy formal query produces a repeated queries
+  array sized to formal documents; it does not itself insert documents. Non-None
+  non_default_params entries queries, documents, service_tier, instruction and webhook
+  overlay that result. Request transformation copies the map or returns {} for None.
+
+  decode_deepinfra_rerank reads bounded response bytes, then post_call runs with raw
+  response text before scores are converted by Python float semantics. Preserve score
+  order and enumerate indices; absent scores yields an empty result. Default input_tokens
+  to zero and falsey request_id to injected UUID. Metadata has input_tokens, output_tokens=0
+  and billed total_tokens=input_tokens. Hidden fields copy inference_status status/runtime_ms/
+  cost/tokens_generated/tokens_input with defaults unknown/0/0.0/0/0 and the requested model.
+  Any exception inside this entire block, including logging or conversion, returns the
+  originally supplied model_response through the parent's fallback and adds hidden model.
+  Do not turn malformed rerank JSON into a new error or warn on this fallback.
+
+  decode_deepinfra_error attempts bounded JSON from the error-message string and selects
+  detail.error when the nested key exists, otherwise a string detail, otherwise original
+  message. Parsing and selection failures are swallowed. get_error_class raises the
+  BaseLLMException immediately, retaining status/headers. Use a tagged deepinfra_payload
+  fuzz target for both byte entry points and isolated replay tests. Helper deepinfra_policy
+  covers chat maps, tool content, rerank records and error extraction with source logging
+  callbacks; seeds assert call.deepinfra_policy and nonempty coverage of chat and rerank.
+  Owned files total 374 nonblank/noncomment lines; budget 290 production, 215 tests,
+  145 adapters, 70 fuzz/replay and 70 settings/export lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,deepinfra}.rs
+    - crates/betterlite-openai/src/deepinfra/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/deepinfra_payload.rs
+    - crates/betterlite-openai/fuzz/corpus/deepinfra_payload/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,deepinfra}.rs
+    - crates/betterlite-config/tests/deepinfra_settings.rs
+    - tools/oracle/src/helpers/{mod,deepinfra_policy}.rs
+    - tools/oracle/helpers/{dispatch,deepinfra_policy}.py
+    - tools/oracle/cases/helpers/deepinfra-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/deepinfra_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/chat/transformation.py#L12-L199
+    why: The tool_choice branch validates without forwarding and tool-list conversion runs after the parent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L29-L270
+    why: Inference score projection, broad response fallback and immediately raised error objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L486-L486
+    why: The minimum replacement temperature has an environment-controlled float default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/rerank/transformation.py#L41-L54
+    why: The parent's nominally abstract response method returns the supplied model_response on fallback.
+dod:
+  - text: DeepInfra chat retains omitted tool_choice, temperature replacement and post-parent tool content conversion.
+    proof: [deepinfra-tests, deepinfra-settings, deepinfra-python, oracle]
+  - text: Rerank request projection, score conversion and silent fallback preserve the source result and headers.
+    proof: [deepinfra-tests, deepinfra-python, oracle]
+  - text: Both DeepInfra payload decoders and the new helper tag replay branch-added inputs.
+    proof: [deepinfra-corpus, deepinfra-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: deepinfra-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^deepinfra::/) - test(replays_deepinfra_payload_corpus)'
+      why: Silent fallback requires assertions about the original response object, not just lack of an exception.
+    - id: deepinfra-settings
+      run: cargo nextest run --locked -p betterlite-config --test deepinfra_settings --no-tests=fail
+      why: Nondefault minimum temperature and explicit empty rerank credentials must pass the real loader.
+    - id: deepinfra-python
+      run: test -f tools/oracle/helpers/deepinfra_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The Python adapter must invoke the inherited fallback and capture its mutation of hidden model.
+    - id: deepinfra-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/deepinfra_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/deepinfra_payload)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_deepinfra_payload_corpus)'
+      why: Replay both score-body and nested-error byte formats with fresh corpus entries.
+    - id: deepinfra-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepinfra_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::deepinfra_policy::/)'
+      why: The parsed helper tag must select deepinfra_policy for both API families.
+oracle_cases:
+  - tools/oracle/cases/helpers/deepinfra-policy/tool-choice-never-inserted.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/mistral-zero-temperature.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/tool-null-text-and-json-array.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/rerank-query-repetition-and-base-replacement.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/score-order-and-inference-status.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/malformed-body-and-logging-fallback.yaml
+  - tools/oracle/cases/helpers/deepinfra-policy/nested-error-is-raised.yaml
+deviations: []
+out_of_scope:
+  - B038 binds DeepInfra chat and native rerank into the provider dispatcher and existing API services.
+  - The MIN_NON_ZERO_TEMPERATURE declaration remains in the shared constants inventory; this task consumes its loaded value rather than changing unrelated providers.
+pitfalls:
+  - DeepInfra validates tool_choice=auto and none successfully but still omits either from the resulting options.
+  - Rerank documents arrive through non_default_params; the formal documents argument only sizes repeated queries.
+  - A failing post_call hook triggers the same silent rerank fallback as invalid JSON.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

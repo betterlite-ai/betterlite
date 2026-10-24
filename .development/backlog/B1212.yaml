@@ -2,7 +2,7 @@ id: B1212
 milestone: M4 keys, spend and management
 title: Organization list and information routes
 status: todo
-depends_on: [B001, B003, B052, B723, B724, B732, B742, B800, B826, B856, B860]
+depends_on: [B001, B003, B052, B723, B732, B826, B860, B2314]
 file: tasks/B1212-organization-read.yaml
 covers:
   - "litellm/proxy/management_endpoints/organization_endpoints.py"

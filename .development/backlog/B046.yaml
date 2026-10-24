@@ -2,9 +2,10 @@ id: B046
 milestone: M3 providers
 title: Image and video generation providers
 status: todo
-depends_on: [B082, B093]
-file: null
+depends_on: [B002, B004, B010, B082, B083, B093, B174, B196, B198, B249, B900, B998, B999, B1000, B1084, B1517, B1518, B1519, B1520, B1521, B1522, B1523, B1524, B1525, B1526, B1527, B1528, B1529, B1530, B1531, B1532, B1533, B1534, B1535, B1536, B1537, B1538, B1539]
+file: tasks/B046-media-provider-dispatch.yaml
 covers:
-  - "litellm/llms/{black_forest_labs,fal_ai,recraft,stability,runwayml,topaz}/**"
-  - "litellm/types/llms/{recraft,stability}.py"
+  - "litellm/llms/runwayml/__init__.py"
+  - "litellm/llms/fal_ai/__init__.py"
+  - "litellm/llms/fal_ai/image_generation/__init__.py"
   - "litellm/main.py"

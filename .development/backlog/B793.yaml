@@ -2,7 +2,7 @@ id: B793
 milestone: M4 keys, spend and management
 title: Bulk user creation and team roster reconciliation
 status: todo
-depends_on: [B003, B171, B723, B724, B732, B734, B773, B786, B790, B797, B800, B816, B828, B856, B860, B861, B892, B1201, B1226]
+depends_on: [B003, B171, B720, B723, B724, B732, B790, B797, B800, B816, B828, B856, B860, B861, B892, B893, B1201, B1226, B2334]
 file: tasks/B793-user-bulk-create.yaml
 covers:
   - "litellm/proxy/management_helpers/bulk_user_creation.py"

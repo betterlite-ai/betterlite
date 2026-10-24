@@ -1,13 +1,13 @@
 id: B798
 title: User daily activity reports
 description: >-
-  Implement /user/daily/activity using DailyActivityRepository and user/email entity scope resolution.
-  Preserve metadata email recovery, caller visibility, pagination and timezone query semantics.
-
-
-  Build the production user_activity module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Register GET /user/daily/activity with B052 authentication and B865's management wrapper. Own
+  resolve_user_daily_activity_entity_ids (2866-2875), _resolve_user_email_metadata (2878-2889) and
+  get_user_daily_activity (2899-3004) in internal_user_endpoints.py. Build user_activity in betterlite-server.
+  B2314's admin-view predicate allows a global report when user_id is absent, otherwise one requested
+  user, including an empty string. A non-admin uses B861's required caller identity; absent caller ID
+  is 403, and a different requested ID is ScopeDenied 403. Omitted user_id selects the caller despite
+  the query documentation saying it is required. An unknown admin-selected user yields an empty report.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
@@ -15,40 +15,26 @@ description: >-
   12 source lines), get_user_daily_activity (L2899-L3004; 98 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /user/daily/activity -> get_user_daily_activity.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  start_date/end_date/model/api_key/user_id/timezone default None; page=1 (minimum 1), page_size=50
+  (1..1000), include_current_utc_day=false. Missing database is HTTP 500 with db_not_connected_error;
+  missing either date is HTTP 400 with Please provide start_date and end_date. These precede the try.
+  Forward all filters to B074.get_daily_activity with table litellm_dailyuserspend, entity_id_field
+  user_id, entity_metadata_field=None and timezone_offset_minutes=timezone. B074 owns date parsing,
+  timezone/current-day extension, query execution and SpendAnalyticsPaginatedResponse, not this route.
+  Collect distinct nonempty string user_ids from the returned page, skip the database lookup if none,
+  then fetch B723 user rows and attach user_email/user_alias including nulls; absent rows add no entry.
+  The route rethrows HTTPException and logs other failures before HTTP 500 Failed to fetch analytics.
+  There is no handle_exception_on_proxy call. HTTP fixtures compare B003's actual error envelope,
+  type/param/code, status and content-type; ignore only message wording. No response cookie or redirect
+  is produced. B790 supplies the typed _user_table accessor; no writes or budget-counter resets occur.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Exercise independent B860 Postgres databases through POSTGRES_TEST_URL (CI supplies it), using
+  testcontainers only when that variable is absent; a configured connection failure fails the test.
+  Sizing: 119 nonblank, noncomment source lines, including docstrings; allow 120 production,
+  260 behavior/database tests and 65 route wiring lines, 445 within a 475-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 119 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  119 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 332 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
 scope:
   paths:
     - crates/betterlite-server/src/user_activity.rs
@@ -67,13 +53,17 @@ references:
     why: Own resolve_user_daily_activity_entity_ids; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2878-L2889
     why: Own _resolve_user_email_metadata; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2899-L3004
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2892-L3004
     why: Own get_user_daily_activity; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L126-L150
+    why: B861 rejects unbound service-account analytics with 403.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: self_activity, admin_other_user,
-      email_resolution, daily_page, timezone_filter, cross_user_denied.'
+  - text: 'Named tests: self_activity, omitted_user_uses_caller, admin_global, admin_other_user,
+      admin_empty_id, unknown_user_empty, service_account_denied, cross_user_denied, missing_database,
+      missing_start_date, missing_end_date, query_defaults, page_bounds, model_key_filters,
+      timezone_current_day, http_error_preserved, analytics_failure_logged, distinct_page_users,
+      no_page_users_skips_lookup, email_alias_nulls and missing_metadata_user. The metadata tests use
+      real Postgres; compare daily totals after resetting the separate user budget counter.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -89,19 +79,23 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_activity::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/user-activity/get--user-daily-activity-success.yaml
-  - tools/oracle/cases/management/user-activity/get--user-daily-activity-invalid-target.yaml
-  - tools/oracle/cases/management/user-activity/get--user-daily-activity-unauthorized-caller.yaml
   - tools/oracle/cases/management/user-activity/self-activity.yaml
   - tools/oracle/cases/management/user-activity/admin-other-user.yaml
   - tools/oracle/cases/management/user-activity/email-resolution.yaml
   - tools/oracle/cases/management/user-activity/daily-page.yaml
   - tools/oracle/cases/management/user-activity/timezone-filter.yaml
   - tools/oracle/cases/management/user-activity/cross-user-denied.yaml
+  - tools/oracle/cases/management/user-activity/admin-global-empty-unknown.yaml
+  - tools/oracle/cases/management/user-activity/service-account-denied.yaml
+  - tools/oracle/cases/management/user-activity/missing-dates-database.yaml
+  - tools/oracle/cases/management/user-activity/query-defaults-bounds.yaml
+  - tools/oracle/cases/management/user-activity/model-key-current-day.yaml
+  - tools/oracle/cases/management/user-activity/analytics-errors.yaml
+  - tools/oracle/cases/management/user-activity/page-metadata.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B074 owns common_daily_activity.py, including get_daily_activity and raise_public; B2314 owns
+    user_api_key_has_admin_view, imported here as _user_has_admin_view.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -136,8 +130,8 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A caller without user_id cannot turn self-activity into all-user activity.
+  - Metadata is resolved only for IDs on this page; fetching all users would leak unrelated identities.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 475
   max_new_expects: 0
 review_level: security

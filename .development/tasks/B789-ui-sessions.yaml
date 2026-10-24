@@ -1,232 +1,139 @@
 id: B789
 title: Password change and UI session revocation
 description: >-
-  Implement /user/password/change and /session/logout with session-only credential restrictions and archived
-  session revocation. Keep current session when source allows it, clear auth caches, and preserve post-password-write
-  revocation failure as a warning. Register expired-session cleanup with LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED=false,
-  interval 86400 seconds and batch size 1000.
+  Own every function in password_endpoints.py L52-L170 and session_endpoints.py L48-L175,
+  registering POST /user/password/change and POST /session/logout exactly once. Neither uses
+  management_endpoint_wrapper: password values must never reach generic management span kwargs.
+  B2333 owns the extracted expired-session cleanup job, including its batch-size setting.
 
+  Password change requires B124 ChangePasswordRequest.current_password and new_password strings,
+  both excluded from diagnostic representations; missing/wrong-type fields return schema 422.
+  Require DB first (HTTP 500 detail.error), then a session team_id exactly litellm-dashboard and
+  metadata.login_method exactly username_password (HTTP 403 detail.error otherwise). Invalid
+  metadata shape fails the dict validator and reaches the outer 500 handler, not the 403 branch.
+  Require non-null caller.user_id (400), find_first by user_id, and require non-null stored
+  password (400, including no row). Verify current password through B786 (400 if incorrect),
+  reject exact equality of new/current strings (400), then B786 strength and breach validation.
+  Cases change_body_required, change_db_before_session, change_session_kind,
+  change_invalid_metadata, change_missing_identity, change_missing_password,
+  change_wrong_current, change_same_password and change_policy_before_write prove ordering.
+  Each explicit error is a detail.error message describing its failed condition, with no
+  OpenAI type/param/code; route wording may follow README Decisions. No except block remaps it.
 
-  Build the production ui_sessions module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Update password with B786 hash_password, password_reset_required=false and
+  last_breach_check_at=null in one user-row write. Then await revoke_ui_session_keys retaining
+  caller.token, log only user_id, await B2330 create_object_audit_log, and return required fields
+  user_id and message='Password updated successfully.'. Audit action is updated, table
+  LiteLLM_UserTable, object ID=user_id, changed-by header=null, after_value exactly
+  '{"fields_changed": ["password"]}', and before_value absent. Cases change_write_fields,
+  change_keep_current_revoke_others, change_audit_fields_only and change_write_failure_no_revoke
+  inspect actual rows and submitted audit records. The retained session's metadata and allowed
+  routes are not rewritten: change_forced_reset_session_unchanged proves that restriction remains
+  until a new session. No new cookie is minted by password change.
 
+  revoke_ui_session_keys returns zero silently without DB. Query by user_id and
+  team_id=litellm-dashboard, excluding null tokens and keep_hashed_token after the read.
+  No remaining rows returns zero. B777 archives them first, forwarding litellm_changed_by;
+  delete_many by token-in-list next, B734 delete_cache_key_objects last. Return selected-token
+  count, not delete_many's count. Catch ANY exception across read/validation/archive/delete/cache,
+  log failure with user_id, return zero and preserve previous writes. Cases revoke_without_db,
+  revoke_null_and_kept_tokens, revoke_selected_count, revoke_archive_failure,
+  revoke_delete_failure_keeps_archive and revoke_cache_failure_keeps_deletion cover every stage.
+  This failure does not undo the password update; change_revocation_failure_still_success proves it.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/password_endpoints.py:
-  _error_detail (L52-L54; 3 source lines), _is_password_login_session (L57-L61; 5 source lines), _user_table
-  (L64-L68; 5 source lines), change_password (L76-L170; 80 source lines). litellm/proxy/management_endpoints/session_endpoints.py:
-  _error_detail (L48-L50; 3 source lines), revoke_ui_session_keys (L53-L113; 56 source lines), session_logout
-  (L120-L175; 47 source lines). litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py:
-  _ExpiredSessionKeyRow.token (L32-L32; 1 source lines), ExpiredUISessionKeyCleanupManager.__init__ (L40-L48;
-  9 source lines), ExpiredUISessionKeyCleanupManager.cleanup_expired_keys (L50-L116; 63 source lines),
-  ExpiredUISessionKeyCleanupManager._get_deleted_token_count (L119-L145; 24 source lines), ExpiredUISessionKeyCleanupManager._find_expired_ui_session_keys
-  (L147-L158; 12 source lines).
+  Logout accepts no key selector or request body. Require DB (500) then UI-session team (403),
+  irrespective of password/SSO login method. If caller.token is null, skip DB/cache work. Otherwise
+  find_unique; archive an existing row through B777, delete_many by that token and set revoked=true,
+  then evict the token even when no row existed. Finally delete cookie token with the framework's
+  default path / and expiry/max-age zero, returning message='Session revoked.' or
+  'Session already revoked.'. Cases logout_sso_session_allowed, logout_non_ui_denied,
+  logout_null_token, logout_missing_row_evicts, logout_archive_delete_evict_cookie and
+  logout_cookie_defaults pin exact behavior. A missing row after authentication is idempotent;
+  a second HTTP request with an already revoked bearer may fail B052 auth before reaching this
+  handler. logout_revoked_bearer_auth_failure keeps that distinction explicit.
 
+  Logout has no catch: archive failure leaves the live row; delete failure leaves an archive;
+  cache failure leaves deletion committed and does not reach cookie clearing. Cases
+  logout_archive_failure, logout_delete_failure and logout_cache_failure compare those effects.
+  Unexpected errors use B124's outer 500 internal_server_error message/type envelope without
+  param/code, except B731 database-unavailability classification. There is no overall transaction.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE=1000.
+  B001 route cases run against booted proxies and independent Postgres schemas, using
+  POSTGRES_TEST_URL or testcontainers, never skipped on unavailable infrastructure. Inject failure
+  ports only into native tests; pure row-selection assertions use source-safe fixtures. B788 owns
+  the source PASSWORD_SESSION_METADATA literal; this module compares that record's declared
+  login_method value without importing or invoking password-login orchestration.
 
+  Own decode_password_change_request over bounded B003 JSON; use B770's existing server fuzz
+  workspace, with ui_sessions target and valid/missing/type/duplicate/truncated/limit seeds.
+  Keep request byte/depth bounds inherited from B003/B009 and the repository fallback 1048576/64.
+  Native password_body_limits proves the recorded bound deviation. Other request/response record
+  declarations remain B124's contract. Production files stay below 300 lines.
 
-  Register these actual HTTP routes and aliases exactly once: POST /user/password/change -> change_password;
-  POST /session/logout -> session_logout. For each route send a typed successful request, an invalid or
-  missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  Write betterlite-config::ui_sessions::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This task owns the outside-byte boundary ui_sessions::decode_password_change_request(&[u8]) -> Result<TypedValue,DecodeError>
-  for password-change request JSON. Production calls this decoder before its typed policy functions; the
-  cargo-fuzz target ui_sessions calls that same function. Seed valid, truncated, malformed, duplicate-field
-  and limit-boundary inputs and add ui_sessions::tests::replays_the_ui_sessions_corpus. Reuse B002 limits
-  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
-  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B770
-  owns crates/betterlite-server/fuzz; depend on it and register this decoder target without recreating
-  the workspace.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 308 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  308 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 625 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  Sizing: about 199 nonblank, noncomment source lines including docstrings before translation;
+  allow 200 production, 330 behavior/Postgres tests, 65 HTTP wiring and 45 fuzz, 640 within 700.
+  Keeping the cleanup manager, settings and helper adapter here would exceed 800.
 scope:
   paths:
     - crates/betterlite-server/src/ui_sessions.rs
     - crates/betterlite-server/src/ui_sessions/**
     - crates/betterlite-server/src/lib.rs
-    - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/management/ui-sessions/**
-    - crates/betterlite-server/src/ui_sessions/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/ui_sessions.rs
-    - crates/betterlite-config/src/ui_sessions/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/ui-sessions-*
+    - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/ui_sessions.rs
     - crates/betterlite-server/fuzz/corpus/ui_sessions/**
+    - tools/oracle/cases/management/ui-sessions/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L1-L170
-    why: Pinned implementation and exact ownership boundary for ui_sessions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L1-L175
-    why: Pinned implementation and exact ownership boundary for ui_sessions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L1-L158
-    why: Pinned implementation and exact ownership boundary for ui_sessions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2021-L2023
-    why: ChangePasswordRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L52-L54
-    why: Own _error_detail; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L57-L61
-    why: Own _is_password_login_session; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L64-L68
-    why: Own _user_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L76-L170
-    why: Own change_password; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L48-L50
-    why: Own _error_detail; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L53-L113
-    why: Own revoke_ui_session_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L120-L175
-    why: Own session_logout; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L32-L32
-    why: Own _ExpiredSessionKeyRow.token; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L40-L48
-    why: Own ExpiredUISessionKeyCleanupManager.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L50-L116
-    why: Own ExpiredUISessionKeyCleanupManager.cleanup_expired_keys; preserve caller-visible values and
-      failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L119-L145
-    why: Own ExpiredUISessionKeyCleanupManager._get_deleted_token_count; preserve caller-visible values
-      and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L147-L158
-    why: Own ExpiredUISessionKeyCleanupManager._find_expired_ui_session_keys; preserve caller-visible
-      values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1730-L1735
-    why: LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L48-L170
+    why: Own audit literal, session predicate, table adapter and decorated password-change route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L48-L175
+    why: Own best-effort revocation and the logout route with its different failure contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2021-L2032
+    why: B124 request/response fields have no optional password or response-message defaults.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: change_current_password,
-      non_password_session_denied, keep_current_revoke_others, logout_session_only, logout_already_revoked,
-      revocation_failure_warning, cleanup_batch, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: The production decode_password_change_request decoder is used by the service and its fuzz target
-      and rejects malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: Every named password, revocation and logout branch above passes with its real envelope and cookie behavior.
+    proof: [behavior-tests, oracle]
+  - text: Postgres row and injected failure tests retain all source partial writes.
+    proof: [postgres-tests]
+  - text: The production password body decoder and fuzz corpus reject malformed or bounded input safely.
+    proof: [behavior-tests, parser-corpus]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_sessions::tests::/)
-        - test(/replays_the_/)'
+      why: A password/session branch or secret-redaction case is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_sessions::tests::/) - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/ui_sessions::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/ui_sessions::tests::postgres_failure_effects$/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^ui_sessions::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/ui-sessions-*")"
-        && grep -rlq "LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE" crates/betterlite-config/fuzz/corpus/config_yaml/ui-sessions-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Password writes and archive/delete/cache partial effects are unproved.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/ui_sessions::tests::postgres_rows_and_failures$/)'
     - id: parser-corpus
-      why: The named production decoder target, added corpus or replay is missing or fails.
-      run: test -f crates/betterlite-server/fuzz/fuzz_targets/ui_sessions.rs && grep -q "ui_sessions"
-        crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
-        -- crates/betterlite-server/fuzz/corpus/ui_sessions)" && cargo nextest run --locked -p betterlite-server
-        --no-tests=fail -E 'test(replays_the_ui_sessions_corpus)'
+      why: The password decoder fuzz target or replay is absent.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/ui_sessions.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_ui_sessions_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/ui-sessions/post--user-password-change-success.yaml
-  - tools/oracle/cases/management/ui-sessions/post--user-password-change-invalid-target.yaml
-  - tools/oracle/cases/management/ui-sessions/post--user-password-change-unauthorized-caller.yaml
-  - tools/oracle/cases/management/ui-sessions/post--session-logout-success.yaml
-  - tools/oracle/cases/management/ui-sessions/post--session-logout-invalid-target.yaml
-  - tools/oracle/cases/management/ui-sessions/post--session-logout-unauthorized-caller.yaml
-  - tools/oracle/cases/management/ui-sessions/change-current-password.yaml
-  - tools/oracle/cases/management/ui-sessions/non-password-session-denied.yaml
-  - tools/oracle/cases/management/ui-sessions/keep-current-revoke-others.yaml
-  - tools/oracle/cases/management/ui-sessions/logout-session-only.yaml
-  - tools/oracle/cases/management/ui-sessions/logout-already-revoked.yaml
-  - tools/oracle/cases/management/ui-sessions/revocation-failure-warning.yaml
-  - tools/oracle/cases/management/ui-sessions/cleanup-batch.yaml
+  - tools/oracle/cases/management/ui-sessions/password-validation-order.yaml
+  - tools/oracle/cases/management/ui-sessions/password-write-and-retained-session.yaml
+  - tools/oracle/cases/management/ui-sessions/revocation-partial-failure.yaml
+  - tools/oracle/cases/management/ui-sessions/logout-session-kinds.yaml
+  - tools/oracle/cases/management/ui-sessions/logout-cookie-and-missing-row.yaml
+  - tools/oracle/cases/management/ui-sessions/logout-failure-order.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L52-L54
+  - what: Enforce inherited HTTP limits, or the repository fallback of 1048576 bytes and JSON depth 64,
+      on password-change request bodies, with a typed request-limit error.
+    why: README bounded parsing; password_body_limits tests the concrete decoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L70-L80
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2333 owns expired-session cleanup and its settings. B786 owns password policy/hash/verify/HIBP;
+    B777 archives tokens, B734 evicts key objects, B2330 audits, B124 owns wire record declarations
+    and outer error handling, B731 database-unavailability classification, B052 authentication.
+  - All functions in the two covered endpoint modules are owned here; no cryptographic storage format is added.
 pitfalls:
-  - A revocation failure after a password change warns without undoing the password write.
+  - Password change keeps the caller's forced-reset session unchanged rather than widening its allowed routes.
+  - Logout's missing-row success occurs after authentication and does not promise reuse of a revoked bearer.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

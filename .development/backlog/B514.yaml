@@ -2,7 +2,7 @@ id: B514
 milestone: M3 providers
 title: OpenAI binary speech generation
 status: todo
-depends_on: [B173, B171, B004, B206, B190, B249]
+depends_on: [B173, B171, B004, B206, B249]
 file: tasks/B514-openai-speech.yaml
 covers:
   - "litellm/llms/openai/openai.py"

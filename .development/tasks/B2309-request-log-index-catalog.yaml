@@ -1,0 +1,128 @@
+id: B2309
+title: Request-log index definitions and catalog inspection
+description: >-
+  Extract betterlite-db::request_log_index_catalog below B718's DDL builder and B701's schema
+  contract. Own RequestLogIndex.columns/partition_index_name, REQUEST_LOG_INDEXES, identifier/digest
+  limits, the four catalog SQL queries and their row types, _regclass_name, _index_state,
+  _equivalent_indexes and _children_without_the_index. Move the table-kind lookup from _ensure_index's
+  prelude into this service too. These operations inspect and name indexes; none creates, renames,
+  drops or attaches one, takes a migration lock, or depends on the B716 migration coordinator.
+
+  The two definitions, in order, are LiteLLM_SpendLogs_api_key_startTime_idx over ("api_key","startTime")
+  and LiteLLM_SpendLogs_litellm_call_id_idx over ("litellm_call_id"), both on LiteLLM_SpendLogs. Keep
+  columns in quoted-definition order; the reference columns property collects nonempty double-quoted
+  fragments with its regular expression, not a general SQL grammar. Definitions are compiled constants,
+  never request-supplied SQL. B701 uses this same registry to recognize deferred managed indexes.
+
+  partition_index_name forms '{partition}_{index_name_without_table_prefix}', removing only a matching
+  leading '{table}_'. Return it unchanged at <=63 UTF-8 bytes. Longer names use the longest whole-character
+  prefix within 54 bytes, an underscore and the first eight lower-case hex SHA256 digits of the entire
+  untruncated UTF-8 name. Preserve suffix sensitivity and Unicode boundaries; do not count Rust chars
+  as bytes or hash the shortened prefix. A nonmatching index prefix is kept in full before truncation.
+
+  Quote schema/name separately for regclass lookup and bind that fully quoted identity as a value.
+  The table-kind query returns absent for no relation, otherwise whether relkind='p'. Index state
+  returns absent when the resolved relation is not an index; otherwise return indisvalid and only
+  the indexed table's relname. It does not verify columns, uniqueness or the indexed table's namespace.
+  Do not strengthen that projection: B718's source comparison accepts a valid expected index name
+  whose table relname matches, even if its definition differs or its table is in another namespace.
+
+  Equivalent-index discovery excludes the expected name and requires the exact target table OID,
+  btree access method, nonunique, no expression or predicate, no INCLUDE columns, all sort-option
+  bits zero (no DESC or NULLS FIRST), default operator classes and each nonzero collation equal to
+  its column's collation. Match the complete column-name list in order. Exclude indexes already
+  attached as partition children. Return both valid and invalid candidates ordered valid first and
+  then index relname; B718 decides which valid candidate to rename and warns about all remaining copies.
+  A partial index with the same columns is not equivalent, nor is a unique index or reversed column order.
+
+  Child discovery reads immediate table children from pg_inherits, including each child's namespace
+  and partitioned flag. Exclude any child table that already has an index attached to the specified
+  parent index; it checks attachment/table identity, not a newly calculated name. Order by child relname.
+  A partitioned child remains a child record for B718's recursive builder, not a flat list of leaves.
+  All catalog queries propagate database errors to their caller without warnings or mutation.
+
+  Use B860 real Postgres fixtures via POSTGRES_TEST_URL or testcontainers to establish each equivalence
+  inclusion/exclusion independently, including quoted namespaces, cross-schema children and an invalid
+  concurrently built index. Compare OIDs before/after to prove inspection did not rename or repair.
+  Pure helper oracle cases invoke RequestLogIndex.columns and partition_index_name directly; no helper
+  adapter executes a catalog query. Extend B856's database namespace and B171's existing HelperCase
+  corpus. Inputs here are compiled definitions and typed database identifiers, with no new byte parser.
+
+  The moved ranges contain about 115 nonblank noncomment lines, including static SQL and docstrings.
+  Allow 150 native types/query code, 250 catalog/naming tests, 65 helper adapters and 30 wiring lines,
+  495 within 550. Separate definitions/naming from catalog queries to keep source files under 300 lines.
+scope:
+  paths:
+    - crates/betterlite-db/src/request_log_index_catalog.rs
+    - crates/betterlite-db/src/request_log_index_catalog/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/request_log_index_catalog.rs
+    - tools/oracle/helpers/request_log_index_catalog.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/request-log-index-catalog/**
+    - tools/oracle/fuzz/corpus/helper_case/request-log-index-catalog-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L28-L58
+    why: Exact index registry, quoted-column projection and UTF-8-safe child naming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L64-L123
+    why: Eight-digit digest limit and exact catalog predicates/row shapes; the v1 SQL regex is excluded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L215-L217
+    why: Table-kind lookup moved below the caller's leaf/partition dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L225-L228
+    why: Schema-qualified identifier projection for regclass lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L237-L261
+    why: State and equivalent-index queries and their ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L314-L325
+    why: Immediate unattached children retain namespace and partitioned status.
+dod:
+  - text: 'Pure cases prove registry_order_and_columns, child_name_matching_prefix,
+      child_name_nonmatching_prefix, name_exactly_sixty_three_bytes, long_name_full_digest,
+      long_unicode_name_boundary and long_suffixes_remain_distinct.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Catalog tests prove missing_relation, plain_and_partitioned_kind,
+      state_contains_validity_and_relname_only, nonindex_relation_has_no_state,
+      postgres_equivalent_default_btree, wrong_column_order_excluded, unique_excluded,
+      expression_excluded, predicate_excluded, include_columns_excluded,
+      descending_and_nulls_first_excluded, custom_opclass_excluded,
+      nondefault_collation_excluded, attached_index_excluded,
+      valid_before_invalid_then_name, expected_name_excluded, immediate_children_only,
+      existing_attachment_excluded, cross_schema_children_and_quoted_names,
+      query_error_propagates and postgres_inspection_never_mutates.'
+    proof: [behavior-tests, postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Naming boundaries and each catalog predicate must have distinct assertions.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_log_index_catalog::tests::/)'
+    - id: postgres-tests
+      why: Real catalog objects must determine equivalence without being renamed, repaired or dropped.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_index_catalog::tests::postgres_equivalent_default_btree$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_index_catalog::tests::postgres_inspection_never_mutates$/)'
+    - id: helper-python
+      why: Naming adapters must invoke the real pinned dataclass methods and type-check.
+      run: test -f tools/oracle/helpers/request_log_index_catalog.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new naming operation must replay through the existing typed HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/request-log-index-catalog-*")" && grep -rlq request_log_index_catalog tools/oracle/fuzz/corpus/helper_case/request-log-index-catalog-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/request-log-index-catalog/columns-and-prefix.yaml
+  - tools/oracle/cases/helpers/request-log-index-catalog/utf8-name-boundaries.yaml
+deviations: []
+out_of_scope:
+  - B718 owns _connect, ensure_request_log_indexes, _under_migration_lock, _with_bounded_lock,
+    _ensure_index dispatch, _create_index_statement, _adopt_equivalent_index, _report_second_copies,
+    _build_leaf_index, build_index_on_partitioned_table, _create_parent_index and _attach_child_index.
+  - filter_request_log_index_diff, _creates_one_of and _without_comments belong only to the excluded
+    v1 schema-diff path under B717's native-v2 deviation. B701 recognizes deferred indexes structurally.
+pitfalls:
+  - Index state exposes only the indexed table's relname, so it cannot distinguish a same-named table in another schema.
+  - Equivalent-index matching excludes attached indexes even when every key column otherwise matches.
+  - The child-name digest covers the untruncated UTF-8 name, while only the retained prefix has a 54-byte budget.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: standard

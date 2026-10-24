@@ -1,0 +1,8 @@
+id: B1428
+milestone: M3 providers
+title: OpenAI-like chat execution and fake-stream mode differences
+status: todo
+depends_on: [B004, B005, B173, B249, B503, B609, B2230, B1425, B1427, B171]
+file: tasks/B1428-compatible-chat-execution.yaml
+covers:
+  - "litellm/llms/openai_like/chat/handler.py"

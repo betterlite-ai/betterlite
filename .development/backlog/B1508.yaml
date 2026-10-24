@@ -1,0 +1,8 @@
+id: B1508
+milestone: M3 providers
+title: Read ChatGPT token records and derive expiry and account hints
+status: todo
+depends_on: [B002, B171, B1507]
+file: tasks/B1508-chatgpt-token-store.yaml
+covers:
+  - "litellm/llms/chatgpt/authenticator.py"

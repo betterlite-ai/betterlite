@@ -2,7 +2,7 @@ id: B721
 milestone: M4 keys, spend and management
 title: Typed organization and resource database rows
 status: todo
-depends_on: [B171, B700, B710, B856, B860]
+depends_on: [B171, B700, B720, B856, B860, B2307, B2310]
 file: tasks/B721-resource-rows.yaml
 covers:
   - "litellm/models/__init__.py"

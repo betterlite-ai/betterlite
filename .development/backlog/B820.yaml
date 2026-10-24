@@ -2,7 +2,7 @@ id: B820
 milestone: M4 keys, spend and management
 title: Maintain model grants across rename and delete
 status: todo
-depends_on: [B003, B171, B368, B700, B714, B732, B734, B819, B856, B860]
+depends_on: [B171, B714, B726, B819, B844, B856, B860]
 file: tasks/B820-access-group-models.yaml
 covers:
   - "litellm/proxy/management_helpers/access_group_model_sync.py"

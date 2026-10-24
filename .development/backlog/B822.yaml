@@ -2,7 +2,7 @@ id: B822
 milestone: M4 keys, spend and management
 title: Create, update and delete access groups
 status: todo
-depends_on: [B001, B003, B052, B171, B700, B732, B734, B737, B819, B821, B856, B860, B872]
+depends_on: [B001, B003, B052, B124, B732, B819, B821, B860, B872, B2340]
 file: tasks/B822-access-group-write.yaml
 covers:
   - "litellm/proxy/management_endpoints/access_group_endpoints.py"

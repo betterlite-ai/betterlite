@@ -1,0 +1,8 @@
+id: B1407
+milestone: M3 providers
+title: xAI file multipart operations and speech recognition
+status: todo
+depends_on: [B1402, B1406, B1015, B235, B171]
+file: tasks/B1407-xai-files-stt.yaml
+covers:
+  - "litellm/llms/xai/{files,audio_transcription}/**"

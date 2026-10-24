@@ -1,0 +1,8 @@
+id: B1403
+milestone: M3 providers
+title: Grok chat options and streamed usage
+status: todo
+depends_on: [B1400, B1402, B668, B503, B504, B218, B219, B2221, B171]
+file: tasks/B1403-xai-chat.yaml
+covers:
+  - "litellm/llms/xai/chat/transformation.py"

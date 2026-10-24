@@ -1,0 +1,95 @@
+id: B1525
+title: Establish Fal image decoding and GPT Image option policy
+description: >-
+  Add api::fal::images and api::fal::gpt_image in betterlite-core. Own every callable/type in
+  image_generation/transformation.py and gpt_image_2_transformation.py, including the nested
+  to_image_object mapper. B002 loads FAL_AI_API_KEY without a default and FAL_AI_API_BASE defaulting
+  to https://fal.run; fal_image_environment exercises both through the real loader. Explicit truthy
+  arguments take priority. Require the key and overwrite Authorization with the literal Key scheme.
+  The base config trims the base and appends its fixed endpoint only when nonempty, so generic
+  generation posts to the base itself. Generic mapping accepts n/response_format/size, preserves
+  existing original keys and rejects unsupported options unless drop_params. Provider options overlay
+  prompt in the final body.
+
+  Decode Fal JSON in decode_fal_image_reply with bounded typed images and metadata fields usable by
+  the model-specific tasks. Non-list images becomes no output. List entries may be strings or maps;
+  ignore other entries. Retain string url/b64_json, positive exact integers for width/height (exclude
+  bool), and string content_type, including an empty string. Emit provider_specific_fields only when
+  that metadata is nonempty. Generation appends to existing data and preserves JSON-error status and
+  headers. Fuzz this production decoder with fal_image_reply and replay newly added wrong-shape,
+  boolean-dimension and mixed-list seeds.
+
+  GPT Image URL building prepends openai/ unless the model already starts with it; preserve the rest
+  of the endpoint. Its size helper passes nonstrings/auto through, converts case-insensitive WxH to
+  integer dimensions without positive-value validation, and leaves malformed strings unchanged.
+  Normalize hd to high and standard to medium. Infer supported qualities from B193 catalog keys shaped
+  fal_ai/<quality>/<dimension-containing--x->/<qualified-openai-endpoint>; only matching endpoints count.
+  Add auto only when matching qualities exist. With no matches retain the normalized quality, otherwise
+  replace unsupported quality with auto. GPT mapping checks the translated destination for precedence,
+  supports output_format directly, and advertises response_format but omits it from translation.
+
+  Register call.fal_image_core for generic_base_only, key_scheme, mixed_image_objects,
+  bool_dimensions_excluded, gpt_destination_precedence, pricing_quality_alias and malformed_size_kept.
+  Python invokes both configurations and their exported helpers with a supplied catalog. Tests live
+  in api::fal::images and api::fal::gpt_image. The owned files contain 288 nonblank/non-comment lines;
+  allow 270 implementation/config, 240 tests, 110 adapters and 70 fuzz/wiring, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/{images,gpt_image}.rs
+    - crates/betterlite-core/src/api/fal/images/**
+    - crates/betterlite-core/src/api/fal/gpt_image/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/fal_image_reply.rs
+    - crates/betterlite-core/fuzz/corpus/fal_image_reply/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/fal.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_image_core.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_image_core.py
+    - tools/oracle/cases/helpers/fal-image-core/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_image_core*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L27-L192
+    why: Shared image metadata filtering and generic Fal base behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L14-L147
+    why: Catalog-derived quality support and translated-key precedence.
+dod:
+  - text: Generic Fal and GPT Image preparation preserve their distinct endpoint and option rules with loaded credentials.
+    proof: [fal-core-tests, oracle, fal-core-python]
+  - text: Shared reply decoding retains valid image metadata and excludes malformed list members and boolean dimensions.
+    proof: [fal-core-tests, fal-reply-corpus, oracle, fal-core-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fal-core-tests
+      why: Fal configuration, GPT quality selection or image projection lacks executable coverage
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::fal::images::/) - test(replays_the_fal_image_reply_corpus) | test(/^api::fal::gpt_image::/) | test(fal_image_environment)'
+    - id: fal-reply-corpus
+      why: the Fal image boundary has no new typed-decoder replay inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/fal_image_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_fal_image_reply_corpus)'
+    - id: fal-core-python
+      why: shared Fal/GPT behavior has no checked differential adapter
+      run: grep -qE '^[[:space:]]+fal_image_core:' tools/oracle/fuzz/corpus/helper_case/fal_image_core* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_image_core.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-image-core/generic-base-only.yaml
+  - tools/oracle/cases/helpers/fal-image-core/key-scheme.yaml
+  - tools/oracle/cases/helpers/fal-image-core/mixed-image-objects.yaml
+  - tools/oracle/cases/helpers/fal-image-core/bool-dimensions-excluded.yaml
+  - tools/oracle/cases/helpers/fal-image-core/gpt-destination-precedence.yaml
+  - tools/oracle/cases/helpers/fal-image-core/pricing-quality-alias.yaml
+  - tools/oracle/cases/helpers/fal-image-core/malformed-size-kept.yaml
+deviations: []
+out_of_scope:
+  - B046 owns get_fal_ai_image_generation_config and composes the model-specific adapters after their prerequisites exist.
+pitfalls:
+  - The generic configuration has an empty endpoint and does not append the requested model name.
+  - GPT response_format is accepted without producing an outgoing output_format value.
+  - Supported quality discovery compares the entire endpoint suffix, including edit or flare segments.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1

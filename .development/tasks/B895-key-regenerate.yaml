@@ -6,7 +6,37 @@ description: >-
   permission, guardrail/pass-through escalation guards, deprecated-key overlap and master-key delegation
   to B785. Axum cannot put a catch-all before /regenerate: mount one trailing /key/{*tail} dispatcher
   that splits the final /regenerate or /reset_spend suffix and forwards a validated key to the same handler;
-  literal /key/regenerate has precedence. Share that dispatcher with B780.
+  literal /key/regenerate has precedence. Own this dispatcher here; B780 later installs the
+  reset_spend handler into its typed slot. Do not call B780 or mount a second catch-all.
+
+  Run raw allowed_routes, passthrough and permissions guards in that order, then B1224.handle_key_type
+  against a fresh empty dict and B892's safe-preset recheck. The derived preset is only validated;
+  it is not copied into the update payload. Body data.key wins only when truthy, otherwise use the
+  path/query key. Source premium bypass requires BOTH nonnull new_master_key and B069's actual
+  master-key match; merely supplying new_master_key does not bypass it. Native omits the paid gate
+  but preserves all authorization checks. Missing/empty target gives HTTP 400 'No key passed in.';
+  missing DB gives 500 'DB not connected. prisma_client is None'. A master target with a body
+  requires new_master_key, else 400; B785 rotates it and returns key/token/key_name all equal to the
+  new master key and expires None. A master target without a body takes the virtual lookup path.
+
+  Virtual lookup hashes any key containing the substring sk, not just the sk- prefix; other values
+  are already ids. Use B2362's unconditional hash for that branch. Missing row is HTTP 404; redact
+  the supplied credential in its message as the deviation below requires. Then guardrail opt-out
+  uses B861 against stored metadata (no data is a no-op), B800 checks KEY_REGENERATE team-member
+  permission, and B777.can_modify_verification_token checks ownership/team administration. A false
+  result gives HTTP 403 'You are not authorized to regenerate this key'. Do not replace these with
+  a blanket non-admin denial. For truthy access_group_ids OR nonnull object_permission, fetch the
+  EXISTING team with check_db_only True, check member access-group delegation, then B818 MCP,
+  search-tool and vector-store grants in that order. Store MCP normalization back into data before
+  the next checks. Explicit empty access_group_ids alone skips this branch. Log alias/info and row
+  debug, normalize a nonstring internal changed-by value to None, then call B896 with the original
+  key, hash, row, caller and header. No write occurs in this handler before that call except B785's
+  master branch; B896 owns partial effects and events.
+
+  The route's own except at L5984-L5986 logs and really calls B124.handle_exception_on_proxy.
+  HTTPException retains status/detail but becomes internal_server_error, nullable param and matching
+  code; ProxyException preserves its type/status/param/code; other exceptions default to 500
+  internal_server_error unless carrying status_code. This is not update_key_fn's auth_error mapper.
 
 
   Build the production key_regenerate module in betterlite-server; reuse the typed dependencies listed
@@ -19,57 +49,28 @@ description: >-
   214 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): LITELLM_KEY_ROTATION_GRACE_PERIOD=''.
+  LITELLM_KEY_ROTATION_GRACE_PERIOD is read only by B896's deprecated-row helper, not this route.
 
 
   Register these actual HTTP routes and aliases exactly once: POST /key/{key:path}/regenerate -> regenerate_key_fn;
-  POST /key/regenerate -> regenerate_key_fn. For each route send a typed successful request, an invalid
-  or missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
+  POST /key/regenerate -> regenerate_key_fn. MIT HTTP equality covers pre-license permission errors,
+  missing authentication and the authorized master-key branch. Virtual regeneration and its later
+  denials are native booted-server cases outside equality because the MIT license gate prevents
+  reaching them. Compare full JSON/error fields, application/json and changed-by effects on both
+  route spellings, including encoded slashes handled by the shared tail dispatcher.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  The regeneration HTTP tests need real key/team ownership rows in B860's separate schemas. Select
+  POSTGRES_TEST_URL before testcontainers and fail if the selected fixture cannot start. The named
+  postgres_pinned_rows and postgres_failure_effects checks inspect B896's resulting token and archive
+  state through the route, including failures after an earlier committed write.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Settings loading stays with B896/B785; the route adds no independent configuration decoder.
 
 
-  Write betterlite-config::key_regenerate::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 227 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  227 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 487 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  Sizing: 227 lines before docstring exclusion; allow 230 production, 330 behavior/Postgres/HTTP
+  tests and 65 route wiring, 625 within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -87,25 +88,24 @@ scope:
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/key-regenerate/**
     - crates/betterlite-server/src/key_regenerate/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/key_regenerate.rs
-    - crates/betterlite-config/src/key_regenerate/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/key-regenerate-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5701-L5713
     why: Own _check_regenerate_guardrail_opt_out; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5727-L5986
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5716-L5986
     why: Own regenerate_key_fn; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1-L6
-    why: LITELLM_KEY_ROTATION_GRACE_PERIOD default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: guardrail_opt_out_denied,
-      non_owner_not_team_admin_403, team_member_missing_permission, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'MIT HTTP cases missing_bearer, raw_routes_permission_before_license,
+      passthrough_permission_before_license, permissions_before_license and master_rotation_response
+      exercise both route spellings. Native HTTP cases native_virtual_regeneration_without_license,
+      body_target_precedence, empty_target_400, missing_db_500, missing_master_replacement_400,
+      master_without_body_virtual_lookup, substring_sk_hashing, missing_target_redacts_secret,
+      guardrail_opt_out_denied, team_member_missing_permission, non_owner_not_team_admin_403,
+      allowed_owner_or_team_admin, preset_does_not_write_routes, empty_groups_skip_resource_branch,
+      existing_team_resource_check_order, mcp_normalization_forwarded, changed_by_to_write,
+      route_exception_shapes, postgres_pinned_rows and postgres_failure_effects cover later behavior.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -116,14 +116,8 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -133,29 +127,21 @@ checks:
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_regenerate::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_regenerate::tests::postgres_failure_effects$/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^key_regenerate::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/key-regenerate-*")"
-        && grep -rlq "LITELLM_KEY_ROTATION_GRACE_PERIOD" crates/betterlite-config/fuzz/corpus/config_yaml/key-regenerate-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/key-regenerate/post--key-key-path-regenerate-success.yaml
-  - tools/oracle/cases/management/key-regenerate/post--key-key-path-regenerate-invalid-target.yaml
-  - tools/oracle/cases/management/key-regenerate/post--key-key-path-regenerate-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-regenerate/post--key-regenerate-success.yaml
-  - tools/oracle/cases/management/key-regenerate/post--key-regenerate-invalid-target.yaml
-  - tools/oracle/cases/management/key-regenerate/post--key-regenerate-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-regenerate/guardrail-opt-out-denied.yaml
-  - tools/oracle/cases/management/key-regenerate/non-owner-not-team-admin-403.yaml
-  - tools/oracle/cases/management/key-regenerate/team-member-missing-permission.yaml
-deviations: []
+  - tools/oracle/cases/management/key-regenerate/missing-bearer-both-paths.yaml
+  - tools/oracle/cases/management/key-regenerate/prelicense-permission-errors.yaml
+  - tools/oracle/cases/management/key-regenerate/master-rotation-both-paths.yaml
+deviations:
+  - what: Authorized callers can regenerate virtual keys without a license; MIT returns 500 internal_server_error at its premium branch.
+    why: README removes paid gates. native_virtual_regeneration_without_license tests the real HTTP routes outside equality.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5839-L5844
+  - what: A missing-key 404 does not echo the supplied raw credential in its message.
+    why: Secret redaction; missing_target_redacts_secret checks the response and logs while preserving status/type/param/code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5892-L5896
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B785 owns master-key encryption/rotation, B896 virtual writes, B124 the actually called exception
+    projector, B069 master comparison, B2362 SHA256, B770 request/response contracts and B800 member
+    permission policy. B896 reads grace settings. This route never encrypts stored callback fields itself.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -251,9 +237,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve owner/team-admin checks, team-member /key/regenerate permission, guardrail/pass-through escalation
-    guards, deprecated-key overlap and master-key delegation to B785.
+  - Lookup hashes on the substring sk, whereas cache deletion later hashes only the sk- prefix.
+  - key_type is checked through a throwaway dict and does not populate allowed_routes in the patch.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

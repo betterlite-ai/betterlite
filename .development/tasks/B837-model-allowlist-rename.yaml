@@ -1,9 +1,31 @@
 id: B837
 title: Rename model allowlists without widening grants
 description: >-
-  Implement ModelAllowlistRename using parameterized SQL for key/team/org/project/user allowlists and
-  source cache-key generation. Preserve order/deduplication and update only exact served names; combine
-  with AccessGroupModelSync for atomic last-sibling behavior.
+  Implement ModelAllowlistRename for the five models arrays in LiteLLM_TeamTable (team_id and team_alias),
+  LiteLLM_VerificationToken (token), LiteLLM_OrganizationTable (organization_id), LiteLLM_ProjectTable
+  (project_id) and LiteLLM_UserTable (user_id). Use B820 raw_executor/still_backed, B733 UserApiKeyCache
+  and B734 evict_and_broadcast. The callers in model_management_endpoints.py invoke access-group sync
+  and this operation separately; no transaction combines them with the deployment rename.
+
+
+  Equal old_name/new_name returns before acquiring an executor or querying siblings. Otherwise ask
+  B820 whether a different database or config deployment still serves old_name, excluding model_id.
+  If backed, append new_name only to rows containing old_name and lacking new_name. If unbacked,
+  remove every existing new_name, then replace every old_name with new_name, only in rows containing
+  old_name. Preserve other entries and order. Multiple old_name entries remain multiple new_name
+  entries; this is not general deduplication. Matching is exact, including case and wildcard literals.
+  NULL and empty arrays do not match. Bind both names as parameters; table/column/kind identifiers
+  come only from this closed five-table set. All five UPDATE CTEs and UNION ALL returns belong to one
+  statement, so a statement failure rolls back all five, but not an earlier model/access-group write.
+
+
+  Decode touched kind/object_id/team_alias records, with team_alias default None, before invalidation.
+  Teams evict team_id:<id> and team_alias:<alias> only for a nonempty alias. Keys evict the raw token
+  hash, organizations both org_id:<id> and org_id:<id>:with_budget, projects project_id:<id>, users
+  their bare user_id. Forward duplicates and the returned row order; SQL does not promise a sorted
+  return. Even no touched rows calls evict_and_broadcast with an empty tuple. SQL, row-decoding or
+  cache errors propagate without a local warning or retry; a decode/cache failure occurs after the
+  statement has committed and cannot restore the arrays. There are no settings or stored secrets.
 
 
   Build the production model_allowlist_rename module in betterlite-server; reuse the typed dependencies
@@ -18,35 +40,25 @@ description: >-
   sync_model_allowlists_for_renamed_model (L89-L109; 21 source lines).
 
 
-  Add the model_allowlist_rename operation under B856 Management::models. Python calls only the owned
-  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
-  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a model-allowlist-rename-* seed to B171 helper_case, which already owns this decoder.
+  Add model_allowlist_rename under B856 Management::models for the five pure cache-key functions only;
+  its Python adapter calls those pinned functions and Rust calls the production projection. Compare
+  exact key tuples for empty/nonempty team alias, key hash, organization, project and user, including
+  empty ids. Add a B171 helper_case seed. Stateful rename tests run against Postgres, using independently
+  initialized pinned fixtures, not a helper adapter calling a route or replacing SQL with a fake.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Execute the five-table CTE in B860 Postgres fixtures, selecting POSTGRES_TEST_URL first and
+  testcontainers only when it is unset. Failed connection/startup is a test failure. Give each test
+  its own cleaned schema and assert persisted arrays before inspecting ordered cache evictions.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 44 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 314 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Also own _TouchedRow, _AllowlistTable fields and both SQL constants/table maps L22-L86, not just the
+  callable ranges. The full file has 64 nonblank noncomment non-import lines including declarations and
+  SQL construction. Estimate 100 implementation/SQL, 245 Postgres/behavior tests, 70 pure adapters and
+  35 wiring lines, 450 within 500. postgres_pinned_rows has named cases equal_names, database_sibling,
+  config_sibling, last_sibling, duplicate_old, existing_new, no_old, null_array, empty_array,
+  literal_wildcard and quoted_name. postgres_failure_effects covers one_table_failure,
+  bad_returned_row and eviction_failure; record SQL completion before cache calls.
 scope:
   paths:
     - crates/betterlite-server/src/model_allowlist_rename.rs
@@ -84,7 +96,7 @@ references:
     why: Own sync_model_allowlists_for_renamed_model; preserve caller-visible values and failure ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: all_entity_allowlists,
-      duplicate_target_name, exact_name_only, key_cache_invalidation, team_cache_invalidation, rollback,
+      duplicate_target_name, exact_name_only, key_cache_invalidation, team_cache_invalidation,
       postgres_pinned_rows, postgres_failure_effects.'
     proof:
       - behavior-tests
@@ -119,20 +131,22 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_allowlist_rename::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_allowlist_rename::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/model-allowlist-rename/all-entity-allowlists.yaml
-  - tools/oracle/cases/helpers/model-allowlist-rename/duplicate-target-name.yaml
-  - tools/oracle/cases/helpers/model-allowlist-rename/exact-name-only.yaml
-  - tools/oracle/cases/helpers/model-allowlist-rename/key-cache-invalidation.yaml
-  - tools/oracle/cases/helpers/model-allowlist-rename/team-cache-invalidation.yaml
-  - tools/oracle/cases/helpers/model-allowlist-rename/rollback.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/team-alias.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/team-empty-alias.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/team-null-alias.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/key-hash.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/org-with-budget.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/project-id.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/user-id.yaml
+  - tools/oracle/cases/helpers/model-allowlist-rename/empty-ids.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B820 owns sibling detection and access-group changes; B835 and B840 own the calling rename routes and their write ordering.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Allowlist rename matches exact served names, not arbitrary substrings.
+  - Removing new_name before replacing old_name retains duplicate old-name positions as duplicate new-name grants.
+  - A cache decoding or eviction error follows a committed CTE statement; rolling back the deployment rename here would invent atomicity.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 500
   max_new_expects: 0
 review_level: security

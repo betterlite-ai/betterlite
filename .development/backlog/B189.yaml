@@ -2,7 +2,7 @@ id: B189
 milestone: M1 openai data plane
 title: Callback registry and configuration validation
 status: todo
-depends_on: [B188, B246]
+depends_on: [B188, B246, B2304]
 file: tasks/B189-callback-registry.yaml
 covers:
   - "litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py"

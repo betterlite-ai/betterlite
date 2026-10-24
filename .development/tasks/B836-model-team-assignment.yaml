@@ -1,9 +1,58 @@
 id: B836
 title: Team-specific model names and deployment ownership
 description: >-
-  Implement TeamModelAssignment for stored deployments, team public names, model aliases and assignment/update/delete
-  cleanup. Preserve backing deployment checks and retain a team grant while any configured or stored sibling
-  still serves it. Reuse TeamRepository model-list primitives without invoking /team/update recursively.
+  Implement TeamModelAssignment and the stored-model patch merge used by it. Move update_db_model here
+  from B835 so both create/update helpers sit below their route callers. Use B814's real team_model_add,
+  team_model_delete and append_team_models services, including their authorization and cache effects;
+  do not substitute a direct array write for these calls. No route is registered in this task.
+
+  _add_model_to_db encrypts EVERY non-null litellm_params value with B2303.encrypt_value_helper and the
+  optional new_encryption_key, not just api_key. Non-string values follow that helper's unchanged-value
+  behavior; encryption errors abort before insertion. It mutates the supplied deployment, serializes
+  both JSON blobs, uses model_info.id and sets created_by/updated_by to user_id or LITELLM_PROXY_ADMIN_NAME.
+  should_create_model_in_db=false returns the encrypted row without writing or entering a slot; otherwise
+  write through the supplied capability slot, or the ordinary model table if no slot was supplied.
+
+  _add_team_model_to_db returns None without a team ID. Otherwise capture the original public model_name,
+  put a truthy name in model_info.team_public_model_name and replace the database name with
+  model_name_<team_id>_<uuid>. Write the deployment before append_team_models adds that public name.
+  A failed append leaves the model row; an empty original name still creates the row but adds no grant.
+
+  update_db_model keeps a falsey incoming name from clearing the old name. Start from stored non-null
+  params and model_info. Strip echoed cost-map pricing fields from stored model_info and filter incoming
+  display-only pricing through B014's echoed_cost_map_fields/without_server_derived_pricing, consulting
+  B833's live and loaded catalog entries. Encrypt supplied non-null params; complexity_router_config
+  instead uses B1213's merge. After both merges, explicit null clears the mirrored pricing fields,
+  cache_control_injection_points and litellm_credential_name from both blobs. Null
+  auto_router_routing_compression/auto_router_model_compression clears only params; arbitrary privileged
+  model_info fields cannot be cleared through this path. Then clear explicit PTU fields, validate the
+  merged PTU configuration, apply B833's pricing delta/releases to both blobs, encode datetimes as ISO
+  strings and serialize JSON. Include blocked only when not None. An omitted secret stays unchanged;
+  a failed encryption never silently writes plaintext here.
+
+  _update_team_model_in_db first invokes B832.allow_team_model_action and B1213/B833's merged PTU
+  checks. No patch team_id means merge and write only. A patch team_id selects a public name in this
+  order: a truthy incoming model_name that is neither the current DB name nor prefixed
+  model_name_<team_id>_, then the existing truthy team_public_model_name, then the old DB name. Ignore
+  the incoming model_info.team_public_model_name when choosing it. A new/changed team gets a fresh
+  internal UUID name; the same team keeps its internal name. Write_row completes before the setup or
+  existing-assignment service touches team grants. Do not clean the old team's grant on a move unless
+  another explicitly owned source helper does so.
+
+  For an existing team rename, only a truthy old public name different from the new name triggers the
+  sibling query. If the DB handle is absent, warn and skip the entire grant update. Query B1230's DB
+  team deployments; retain the old grant when another row with a different internal model_name has
+  that public name. This particular helper does not inspect configured siblings. Add the new grant
+  first, then delete the old one only with no surviving DB sibling. A missing old public name merely
+  adds a truthy new name; an unchanged name does nothing. Preserve a completed add if the later delete
+  fails. B1230 separately owns configured-sibling cleanup used by other deletion paths.
+
+  delete_team_models reads and deletes exact model IDs for all team_ids in one transaction through
+  B1230's prefix-and-model_info filter. After commit, publish a config change with object_type
+  litellm_proxymodeltable only when IDs were deleted. Then under B124's MODEL_RECONCILE_LOCK remove
+  those IDs from the auto-router catalog and, if a router exists, call B302.delete_deployment for each.
+  A publish failure leaves rows deleted and prevents the later local removal. A database rollback
+  prevents both publication and router removal. Return the deleted IDs, including an empty list.
 
 
   Build the production model_team_assignment module in betterlite-server; reuse the typed dependencies
@@ -12,17 +61,19 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_management_endpoints.py:
-  _add_model_to_db (L1495-L1525; 30 source lines), _add_team_model_to_db (L1528-L1580; 38 source lines),
+  update_db_model (L975-L1085; 89 source lines), _add_model_to_db (L1495-L1525; 30 source lines),
+  _add_team_model_to_db (L1528-L1580; 38 source lines),
   _update_team_model_in_db (L1583-L1669; 62 source lines), _get_public_model_name (L1672-L1715; 37 source
   lines), _setup_new_team_model_assignment (L1718-L1731; 14 source lines), delete_team_models (L1769-L1809;
   32 source lines), _update_existing_team_model_assignment (L1910-L1980; 60 source lines).
 
 
-  Add the model_team_assignment operation under B856 Management::teams. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a model-team-assignment-* seed to B171 helper_case, which already owns this decoder.
+  The model_team_assignment operation under B856 Management::teams calls only the pure
+  _get_public_model_name predicate. Its cases compare the chosen string, including stale/internal-name
+  dashboard echoes. Database, crypto and handlers called transitively by assignment use native Postgres
+  tests and B835/B1215's real HTTP cases; a Python helper must not invoke those handlers. Seed B171's
+  existing HelperCase decoder with the predicate operation. Typed settings for cipher, PTU and team
+  policy remain with B2303, B1213 and B814; this component reads no additional config/env value.
 
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
@@ -43,15 +94,14 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 273 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  273 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 522 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 362 nonblank, noncomment pinned source lines including docstrings; allow 330 production,
+  310 behavior/Postgres tests, 65 helper adapters, 45 wiring and no new config/decoder lines,
+  750 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Passing premium_user to B832 is not a separate license branch here; B832 owns that policy and its
+  deviation tests. Keep this component's outcomes in the corresponding compatible/native fixtures.
 scope:
   paths:
     - crates/betterlite-server/src/model_team_assignment.rs
@@ -69,6 +119,8 @@ scope:
     - crates/betterlite-server/src/model_team_assignment/fixtures/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L975-L1085
+    why: Own the stored patch merge called by _update_team_model_in_db.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1495-L1980
     why: Pinned implementation and exact ownership boundary for model_team_assignment.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5577-L5583
@@ -88,9 +140,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1910-L1980
     why: Own _update_existing_team_model_assignment; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_public_model_name,
-      duplicate_public_name, assignment_create, assignment_update, delete_last_team_model, configured_sibling_remains,
-      postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'patch_merge cases cover omitted_secret, supplied_string_encrypted, non_string_param,
+      encryption_failure, complexity_config_merge, empty_name_preserved, stale_cost_map_echo,
+      edited_pricing_retained, clear_credential, clear_mirrored_prices_after_merge, clear_compression,
+      protected_team_id_null, ptu_clear_and_reprice, datetime_iso and blocked_omitted_or_false.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -99,12 +152,15 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows covers encrypted_create, actor_fallback, dry_run_no_slot,
+      capability_slot_create, no_team_no_create, team_public_name_before_internal_name,
+      empty_public_name_no_grant, team_move_new_internal_name, same_team_keeps_internal_name,
+      sibling_db_grant_retained, first_public_name_add, unchanged_name_no_op and multi_team_delete_ids.
+      postgres_failure_effects covers cipher_failure_no_write, write_failure_no_grant,
+      grant_failure_keeps_row, add_before_delete_failure, missing_db_warn_skip_rename,
+      delete_transaction_rollback, publish_failure_after_commit and reconcile_lock_before_router_removal.'
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
 checks:
   optional: []
   commands:
@@ -128,19 +184,11 @@ checks:
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_team_assignment::tests::postgres_failure_effects$/)'
 oracle_cases:
   - tools/oracle/cases/helpers/model-team-assignment/team-public-model-name.yaml
-  - tools/oracle/cases/helpers/model-team-assignment/duplicate-public-name.yaml
-  - tools/oracle/cases/helpers/model-team-assignment/assignment-create.yaml
-  - tools/oracle/cases/helpers/model-team-assignment/assignment-update.yaml
-  - tools/oracle/cases/helpers/model-team-assignment/delete-last-team-model.yaml
-  - tools/oracle/cases/helpers/model-team-assignment/configured-sibling-remains.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1495-L1980
+  - tools/oracle/cases/helpers/model-team-assignment/internal-name-echo.yaml
+  - tools/oracle/cases/helpers/model-team-assignment/legacy-public-name-fallback.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2303 owns the concrete StoredCipher and both supported stored-value formats; model writes use it directly.
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B832 owns _canonical_session_tags
     (L1985-L1986), ModelManagementAuthChecks.can_user_make_team_model_call (L1995-L2015), ModelManagementAuthChecks.can_user_attach_credential
     (L2018-L2042), ModelManagementAuthChecks.can_user_set_aws_session_tags (L2045-L2064), ModelManagementAuthChecks.allow_team_model_action
@@ -151,8 +199,8 @@ out_of_scope:
     _cost_map_entry (L953-L960), _loaded_catalog_entry (L966-L972).'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B834 owns _auto_router_capability_slot
     (L521-L675).'
-  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B835 owns update_db_model (L975-L1085),
-    patch_model (L1093-L1320).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B835 owns patch_model (L1093-L1320)
+    and calls this task; update_db_model belongs here with its caller.'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B838 owns delete_model (L2182-L2310),
     update_model (L2567-L2780).'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B839 owns update_public_model_groups
@@ -188,11 +236,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py::update_team: no production caller
     at the pin; this shim only supports legacy tests patching the symbol, while management calls team_model_add/team_model_delete.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - litellm/proxy/management_endpoints/model_management_endpoints.py::update_team (L161-L166) is an uncalled
-    legacy test shim; live management uses team_model_add/team_model_delete.
 pitfalls:
-  - A surviving sibling deployment retains its team public model name.
+  - A team model's UUID-based internal name must never replace its public grant after a dashboard echo.
+  - A new team assignment writes the model before updating grants and does not undo it when grant work fails.
+  - _update_existing_team_model_assignment looks only at DB siblings, unlike B1230's broader cleanup path.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

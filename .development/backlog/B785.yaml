@@ -2,7 +2,7 @@ id: B785
 milestone: M4 keys, spend and management
 title: Master key and encrypted credential rotation routes
 status: todo
-depends_on: [B001, B002, B003, B052, B061, B171, B730, B732, B742, B770, B856, B860]
+depends_on: [B001, B002, B003, B052, B061, B124, B732, B860, B2331, B2332]
 file: tasks/B785-master-key-rotation.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

@@ -1,0 +1,8 @@
+id: B1430
+milestone: M3 providers
+title: DeepSeek, Tencent and MiniMax native Messages policies
+status: todo
+depends_on: [B002, B960, B961, B962, B171]
+file: tasks/B1430-native-messages-hosts.yaml
+covers:
+  - "litellm/llms/{deepseek,tencent,minimax}/messages/transformation.py"

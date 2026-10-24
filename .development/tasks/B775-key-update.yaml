@@ -1,9 +1,32 @@
 id: B775
-title: Apply single-key updates atomically
+title: Apply single-key updates in source write order
 description: >-
-  Implement POST /key/update over KeyPatchPlan and writer-pinned repository transactions. Synchronize
-  access-group membership through a typed after-write collaborator and invalidate key/user/team caches
-  only after commit; return the pinned response shape and custom policy failures.
+  Register POST /key/update with its management wrapper and preserve update_key_fn's partial effects.
+  Reject negative/non-finite max_budget with HTTP 400, then validate soft_budget (B894), resolve the
+  existing key or unique alias (B1219), and authorize the patch (B774). Resolve data.key before invoking
+  B1224's custom_key_update hook. Enforce B772 upperbounds without filling defaults, prepare B894's
+  merge patch, check alias format only when changed, check uniqueness, set rotation fields, then run
+  custom_key_policy with operation update. B165 installs the configured Python hooks; B1224 owns their
+  invocation semantics and general_settings.custom_key_update/custom_key_policy configuration.
+
+  After the no-database check, object-permission preparation may already write its row. Choose B894's
+  transaction only when soft_budget is present in model_fields_set, including explicit null; changed_by
+  is the caller user_id or litellm_proxy_admin_name. Otherwise call B124's PrismaClient.update_data key
+  branch: hash the token, set settings_updated_at through B770, include object_permission, and retain
+  its three-try, ten-second exponential retry behavior. This is not a transaction around the route.
+  Invalidate old/new object permission caches (B816), drop the key cache (B734), then synchronize access
+  groups (B819). A sync failure leaves the updated database row and evicted key cache in place.
+
+  If spend is non-null, set spend:key:<hash> to that value for 60 seconds in memory and then Redis when
+  configured (B125/B126). Redis errors warn that budget checks may see stale spend and do not fail the
+  update; memory errors propagate. Enqueue B784's updated event with litellm-changed-by using the server's
+  tracked task owner. Only then reject a None response; otherwise return {key: resolved_key, **row} with
+  row fields taking precedence. This header goes to the event, not the soft-budget changed_by value.
+
+  The route's own except block converts HTTPException to auth_error with its status, detail and param
+  (default string None), rethrows ProxyException unchanged, and maps all other failures to 400 auth_error
+  with default param None and an Authentication Error message. Match type/param/code in HTTP cases;
+  ignore only /error/message because betterlite supplies its own wording without leaking secrets.
 
 
   Build the production key_update module in betterlite-server; reuse the typed dependencies listed in
@@ -15,13 +38,10 @@ description: >-
   update_key_fn (L3357-L3617; 229 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /key/update -> update_key_fn. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  B001 HTTP cases exercise update-by-key, update-by-alias, missing/ambiguous key resolution, authorization,
+  hook rejection and exception conversion through the booted servers. Compare the response body and
+  content-type, including the original key and expanded object_permission. Use native typed tests for
+  non-finite budget inputs that cannot be represented by ordinary JSON fixtures.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -48,15 +68,10 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 229 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  229 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 439 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: 229 nonblank, noncomment pinned source lines, including the long route docstring; allow
+  230 production, 380 behavior/Postgres tests and 65 route/manifests/wiring lines, 675 changed lines
+  within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -75,17 +90,20 @@ scope:
     - crates/betterlite-server/src/key_update/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2698-L2911
-    why: Pinned implementation and exact ownership boundary for key_update.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3357-L3617
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3355-L3617
     why: Own update_key_fn; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
     why: UpdateKeyRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5426-L5472
+    why: B124's update_data retry wrapper and ordinary key write, including the returned data row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6783-L6793
+    why: Python custom-key hook installation consumed from B165, not a mocked success in route cases.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: update_key, policy_hook_rejection,
-      unauthorized_update, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Named route tests: update_key, update_by_alias, missing_key, ambiguous_alias, unauthorized_update,
+      negative_max_budget, nonfinite_max_budget, soft_budget_presence, hook_before_upperbounds,
+      policy_hook_rejection, unchanged_alias_skips_format, changed_alias_validated, rotation_before_policy,
+      no_database_error, http_error_to_auth, proxy_error_passthrough, unexpected_error_to_auth,
+      response_key_and_row, changed_by_event_header and none_response_after_event.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -93,12 +111,12 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows covers hashed tokens, settings_updated_at, object_permission and spend;
+      postgres_failure_effects covers object-permission preparation, ordinary write retries, soft-budget
+      rollback, permission/key eviction before group sync, sync failure after commit, Redis warn-and-continue,
+      no-Redis memory-only spend and null spend leaving the counter unchanged. Assert both 60-second TTLs.'
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
 checks:
   optional: []
   commands:
@@ -111,20 +129,21 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_update::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_update::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-update/post--key-update-success.yaml
-  - tools/oracle/cases/management/key-update/post--key-update-invalid-target.yaml
-  - tools/oracle/cases/management/key-update/post--key-update-unauthorized-caller.yaml
   - tools/oracle/cases/management/key-update/update-key.yaml
   - tools/oracle/cases/management/key-update/policy-hook-rejection.yaml
   - tools/oracle/cases/management/key-update/unauthorized-update.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2698-L2911
+  - tools/oracle/cases/management/key-update/update-by-alias.yaml
+  - tools/oracle/cases/management/key-update/key-resolution-errors.yaml
+  - tools/oracle/cases/management/key-update/negative-budget.yaml
+  - tools/oracle/cases/management/key-update/alias-validation.yaml
+  - tools/oracle/cases/management/key-update/soft-budget-null.yaml
+  - tools/oracle/cases/management/key-update/error-mapping.yaml
+  - tools/oracle/cases/management/key-update/spend-counter.yaml
+  - tools/oracle/cases/management/key-update/changed-by-header.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns PrismaClient.update_data and _hash_token_if_needed in proxy/utils.py; this handler calls
+    that ordinary-write implementation, not B1220's bulk-update helper.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -221,8 +240,10 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Cache invalidation follows successful source writes, not pre-validation.
+  - A failing access-group sync must not leave the old key in cache after its database grants changed.
+  - Testing only non-null soft_budget misses the explicit-null path that still selects the budget transaction.
+  - Passing premium_user to validation does not make update_key_fn itself a license-gated function.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

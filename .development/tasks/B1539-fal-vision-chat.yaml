@@ -1,0 +1,86 @@
+id: B1539
+title: Translate Fal single-image chat queries and usage replies
+description: >-
+  Add api::fal::vision_chat implementing every callable in fal_ai/chat/transformation.py against
+  B004 chat records. Reuse B1525 FAL_AI_API_BASE/FAL_AI_API_KEY settings: explicit truthy values win,
+  base defaults to https://fal.run with trailing slashes removed, and credentials use Authorization
+  Key rather than Bearer. Default content-type is application/json, caller headers can override it,
+  and Authorization is written last. Remove one leading fal_ai/ from the model when appending its
+  endpoint; do not add another fal-ai namespace.
+
+  Require exactly one user message. For multipart content, join nonempty string text parts with
+  newline and accept exactly one image_url part whose value is a string or mapping with string url.
+  Empty image strings count as image parts; malformed image members do not. Preserve the source's
+  text-error precedence and separate error for nonempty plain-text content lacking an image. Image
+  URLs pass to Fal without local fetches. A truthy stream option fails with FalAIError 400 before
+  message processing. Only reasoning, temperature and top_p survive the final body projection when
+  non-null. reasoning_effort none/minimal maps false, low/medium/high true; other values are omitted
+  only with drop_params, otherwise error 400. Mapped values overwrite existing optional values;
+  unrelated input parameters are ignored by the mapper.
+
+  decode_fal_chat parses upstream JSON bytes into required output string and usage_info integer
+  counts, optional nullable reasoning/finish_reason, ignoring extras with Pydantic-compatible scalar
+  coercion. Invalid JSON or records produce status 422, source unexpected-response text and response
+  headers. Update the first choice only, preserve response identity, set assistant content/reasoning,
+  map falsey finish reason to stop through B206, stamp injected integer time and set model/usage totals.
+  Add fal_chat_reply fuzzing with malformed UTF-8, absent usage, coercible counts and overflow seeds;
+  replays_the_fal_chat_corpus must drive the production decoder.
+
+  Register call.fal_vision_chat, invoking source functions for one_user_required, joined_text,
+  empty_image_url, reasoning_override, header_overlay, malformed_reply and reasoning_usage.
+  Source ownership is 208 nonblank/non-comment lines; plan 230 production, 220 tests and 180
+  adapters/fuzz lines, maximum 750. B046 owns network dispatch and HTTP-facing stream rejection.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/vision_chat.rs
+    - crates/betterlite-core/src/api/fal/vision_chat/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/fal_chat_reply.rs
+    - crates/betterlite-core/fuzz/corpus/fal_chat_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_vision_chat.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_vision_chat.py
+    - tools/oracle/cases/helpers/fal-vision-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_vision_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L26-L250
+    why: Strict single-image chat input, parameter translation and validated completion output.
+dod:
+  - text: Fal chat input validation and optional-parameter precedence match every accepted and rejected source case.
+    proof: [fal-chat-tests, oracle, fal-chat-python]
+  - text: Typed replies produce source-compatible usage and reasoning or the pinned 422 error while tolerating malformed bytes safely.
+    proof: [fal-chat-tests, fal-chat-corpus, oracle, fal-chat-python]
+checks:
+  optional: []
+  commands:
+    - id: fal-chat-tests
+      why: Fal's vision-only request and response semantics have no behavior tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::vision_chat::/) - test(replays_the_fal_chat_corpus)'
+    - id: fal-chat-corpus
+      why: no new provider reply corpus reaches decode_fal_chat
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/fal_chat_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_fal_chat_corpus)'
+    - id: fal-chat-python
+      why: the helper protocol does not exercise the pinned Fal chat adapter
+      run: grep -qE '^[[:space:]]+fal_vision_chat:' tools/oracle/fuzz/corpus/helper_case/fal_vision_chat* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_vision_chat.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-vision-chat/one-user-required.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/joined-text.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/empty-image-url.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/reasoning-override.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/header-overlay.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/malformed-reply.yaml
+  - tools/oracle/cases/helpers/fal-vision-chat/reasoning-usage.yaml
+deviations: []
+out_of_scope:
+  - B046 retains _complete_fal_ai in main.py and selects this adapter through the upper-layer provider dispatcher.
+pitfalls:
+  - reasoning_effort=none must serialize reasoning=false rather than dropping the field as falsey.
+  - A content list with one empty image_url string satisfies the image-count requirement.
+  - The source validates usage_info even when output is an empty string.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

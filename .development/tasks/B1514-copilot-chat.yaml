@@ -1,0 +1,83 @@
+id: B1514
+title: Prepare Copilot chat and repair native Claude replies
+description: >-
+  Build api::copilot_chat in betterlite-core, composing B668 OpenAI policy, B504 decoded chat replies,
+  B578 Anthropic content extraction and B1512/B1513 credentials. This upper-layer adapter owns every
+  GithubCopilotConfig method. Resolve base as explicit, cached endpoint, GITHUB_COPILOT_API_BASE, then
+  https://api.githubcopilot.com; the login-free accessor never obtains a key. Provider-info acquisition
+  ignores the supplied api_key and translates GetAPIKeyError to AuthenticationError. Header validation
+  first runs the parent, overlays that result onto Copilot defaults and suppresses GetAPIKeyError at
+  this stage only. Always overwrite X-Initiator: tool or assistant means agent, otherwise user. Add
+  Copilot-Vision-Request=true for a list content part with an image_url key or matching type.
+
+  Load litellm_settings.disable_copilot_system_to_assistant=false and GITHUB_COPILOT_API_BASE (unset
+  by default) in betterlite-config; copilot_chat_settings must exercise the actual loader for both.
+  With conversion enabled, copy each system message to role assistant without changing other fields.
+  Extend supported parameters with thinking and reasoning_effort only for case-insensitive Claude
+  names that B2221 recognizes as reasoning-capable.
+
+  Repair both raw and SDK-parsed replies when choices is falsey. Extract native text, tools and thinking
+  through B578; tool calls take finish-reason priority, then end_turn/stop_sequence map to stop,
+  max_tokens to length and tool_use to tool_calls. Unknown stop reasons use stop for nonempty text and
+  length otherwise. Tool-only content is null; empty no-tool content remains an empty string. Preserve
+  existing usage fields, fill prompt/completion from input/output only when absent, and synthesize total
+  only when absent. Raw JSON failure delegates to the parent error path with the original response;
+  successful repair keeps status and headers. Reuse B504's boundary decoder rather than parsing twice.
+
+  Add copilot_chat helper cases system_role_switch, parent_headers_win, vision_key_without_type,
+  claude_capability, tool_only_reply, empty_probe and usage_already_normalized. Python calls actual
+  configuration methods and B578 extraction, not a reproduced mapper. Register call.copilot_chat and
+  test production functions under api::copilot_chat. The 273 source lines justify 260 service/config,
+  230 tests, 100 adapter and 45 wiring lines, maximum 700.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/copilot_chat.rs
+    - crates/betterlite-core/src/api/copilot_chat/**
+    - crates/betterlite-config/src/providers/copilot.rs
+    - crates/betterlite-config/src/providers/copilot/chat.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/copilot_chat.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/copilot_chat.py
+    - tools/oracle/cases/helpers/copilot-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/copilot_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/chat/transformation.py#L24-L327
+    why: Role conversion, request classification and two native-reply repair entry points.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L505-L505
+    why: The system-role conversion setting defaults to false.
+dod:
+  - text: Loaded chat settings govern roles and base selection while Copilot identity headers retain their precedence.
+    proof: [copilot-chat-tests, oracle, chat-python]
+  - text: Claude native replies produce equivalent choices through both raw-response and parsed-response entry points.
+    proof: [copilot-chat-tests, oracle, chat-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: copilot-chat-tests
+      why: chat preparation, loader support or native reply repair is absent
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::copilot_chat::/) | test(copilot_chat_settings)'
+    - id: chat-python
+      why: the Claude repair comparisons do not reach the pinned implementation
+      run: grep -qE '^[[:space:]]+copilot_chat:' tools/oracle/fuzz/corpus/helper_case/copilot_chat* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/copilot_chat.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/copilot-chat/system-role-switch.yaml
+  - tools/oracle/cases/helpers/copilot-chat/parent-headers-win.yaml
+  - tools/oracle/cases/helpers/copilot-chat/vision-key-without-type.yaml
+  - tools/oracle/cases/helpers/copilot-chat/claude-capability.yaml
+  - tools/oracle/cases/helpers/copilot-chat/tool-only-reply.yaml
+  - tools/oracle/cases/helpers/copilot-chat/empty-probe.yaml
+  - tools/oracle/cases/helpers/copilot-chat/usage-already-normalized.yaml
+deviations: []
+out_of_scope:
+  - B045 owns provider installation and main.py's authorization preamble; B578 owns the shared Anthropic extraction algorithm.
+pitfalls:
+  - An empty choices array needs repair just as a missing choices field does.
+  - A tool role triggers agent for chat even though Copilot Responses uses a different rule.
+  - Swallowing GetAPIKeyError in validate_environment must not suppress it during provider-info acquisition.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

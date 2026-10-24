@@ -2,7 +2,7 @@ id: B396
 milestone: M2 routing
 title: Pass-through deployment selection
 status: todo
-depends_on: [B302, B364, B395, B014, B011, B301]
+depends_on: [B302, B364, B395, B011, B301]
 file: tasks/B396-passthrough-selection.yaml
 covers:
   - "litellm/router.py"

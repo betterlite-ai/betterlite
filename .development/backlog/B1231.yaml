@@ -2,7 +2,7 @@ id: B1231
 milestone: M4 keys, spend and management
 title: Team management request and response contracts
 status: todo
-depends_on: [B002, B199, B732, B770, B856, B859]
+depends_on: [B002, B008, B124, B171, B732, B770, B856, B859, B1665, B2310, B2317]
 file: tasks/B1231-team-request-contracts.yaml
 covers:
   - "litellm/proxy/_types.py"

@@ -2,7 +2,7 @@ id: B704
 milestone: M4 keys, spend and management
 title: Postgres migrations for managed resources
 status: todo
-depends_on: [B171, B700, B703, B856, B860]
+depends_on: [B700, B703, B860]
 file: tasks/B704-schema-managed-resources.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql"

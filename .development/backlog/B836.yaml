@@ -2,7 +2,7 @@ id: B836
 milestone: M4 keys, spend and management
 title: Team-specific model names and deployment ownership
 status: todo
-depends_on: [B003, B171, B368, B724, B725, B732, B734, B814, B832, B833, B835, B841, B856, B860, B1213, B1230]
+depends_on: [B003, B014, B120, B124, B171, B302, B725, B732, B733, B814, B832, B833, B841, B856, B860, B1213, B1230, B2303]
 file: tasks/B836-model-team-assignment.yaml
 covers:
   - "litellm/proxy/management_endpoints/model_management_endpoints.py"

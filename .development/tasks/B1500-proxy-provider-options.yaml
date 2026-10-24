@@ -1,0 +1,97 @@
+id: B1500
+title: Resolve proxy credentials and preserve forwarded model options
+description: >-
+  Add ProxyOptions and the proxy-specific OpenAI transformations under betterlite-openai/src/proxy.rs.
+  Own every method in the four referenced transformation files. Resolve LITELLM_PROXY_API_BASE and
+  LITELLM_PROXY_API_KEY after truthy explicit values; neither has a default. USE_LITELLM_PROXY,
+  litellm_settings.use_litellm_proxy and deployment use_litellm_proxy enable forcing independently when
+  true, with false as the default. Strip only an initial litellm_proxy/ when forcing, retaining embedded
+  provider prefixes such as gemini/gemini-1.5-pro. Map thinking into extra_body.thinking and accept the
+  union of the inherited parameter list and OPENAI_CHAT_COMPLETION_PARAMS. Both request transformations
+  preserve messages verbatim and apply optional parameters after model/messages. Responses append
+  /responses to a trailing-slash-trimmed base and advertise no native websocket; images append
+  /images/generations or /images/edits and overwrite Authorization even when the resolved key is absent.
+  Model listing requires a base, delegates to the OpenAI catalog client and prefixes each returned id.
+  Reuse B668 chat policy, B504 catalog transport, B511 generation, B512 editing and B506 Responses options without importing
+  the provider dispatcher. B044 will install these transformations.
+
+  Register the pure proxy_options helper with B171 in both dispatch files; its Python adapter invokes
+  the pinned methods on isolated settings. Cases force_nested_model, thinking_extra_body, optional_model_override,
+  trailing_slashes, absent_base, absent_image_key and listed_prefix compare values and typed exceptions.
+  Add a call.proxy_options seed to the shared HelperCase corpus. Configuration tests named
+  proxy_options_loads_sources must load every environment/global/deployment input above through B002,
+  asserting precedence, false defaults and secret-safe Debug. These transformations take decoded records;
+  config bytes continue through B002 and no new decoder is introduced. The four files contain 207
+  nonblank/non-comment lines; allow 245 implementation, 185 tests, 105 adapters and 95 loader/seed/wiring
+  lines, with a 650-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-openai/src/lib.rs
+    - crates/betterlite-openai/src/proxy.rs
+    - crates/betterlite-openai/src/proxy/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/proxy.rs
+    - crates/betterlite-config/src/providers/proxy/**
+    - crates/betterlite-config/src/settings.rs
+    - crates/betterlite-config/src/model.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/proxy_options*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/proxy_options.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/proxy_options.py
+    - tools/oracle/cases/helpers/proxy-options/**
+    - tools/oracle/fuzz/corpus/helper_case/proxy_options*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/chat/transformation.py#L17-L142
+    why: Proxy forcing, parameter projection, catalog names and unmodified message forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/responses/transformation.py#L13-L50
+    why: Required Responses base and disabled websocket capability.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/image_generation/transformation.py#L7-L37
+    why: Image authorization replacement and endpoint suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/image_edit/transformation.py#L5-L25
+    why: Editing inherits multipart behavior while replacing the credential source.
+dod:
+  - text: Proxy options retain nested model names, thinking and raw messages while matching endpoint and missing-base behavior.
+    proof: [proxy-options-tests, oracle, proxy-python]
+  - text: Each proxy setting loads through the configuration boundary and keys remain secret.
+    proof: [proxy-config-tests, proxy-config-corpus]
+  - text: The helper operation is accepted by the shared case decoder.
+    proof: [proxy-helper-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: proxy-options-tests
+      why: forwarded proxy fields or inherited endpoint overrides differ
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^proxy::/)'
+    - id: proxy-config-tests
+      why: proxy environment and configuration precedence has no executable loader coverage
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(proxy_options_loads_sources)'
+    - id: proxy-python
+      why: the independent proxy adapter is absent or fails Python typing
+      run: test -f tools/oracle/helpers/proxy_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: proxy-config-corpus
+      why: the proxy loader extension lacks fresh fuzz inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/proxy_options*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: proxy-helper-corpus
+      why: no proxy_options variant seed exercises the case parser
+      run: grep -qE '^[[:space:]]+proxy_options:' tools/oracle/fuzz/corpus/helper_case/proxy_options* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/proxy-options/force-nested-model.yaml
+  - tools/oracle/cases/helpers/proxy-options/thinking-extra-body.yaml
+  - tools/oracle/cases/helpers/proxy-options/optional-model-override.yaml
+  - tools/oracle/cases/helpers/proxy-options/trailing-slashes.yaml
+  - tools/oracle/cases/helpers/proxy-options/absent-base.yaml
+  - tools/oracle/cases/helpers/proxy-options/absent-image-key.yaml
+  - tools/oracle/cases/helpers/proxy-options/listed-prefix.yaml
+deviations: []
+out_of_scope:
+  - Provider registration and main.py composition are B044; inherited OpenAI parsing stays with B504, B506, B511 and B512.
+pitfalls:
+  - A false deployment use_litellm_proxy does not veto a true USE_LITELLM_PROXY environment value.
+  - Proxy image authorization renders the missing value as Bearer None at this seam.
+  - The optional_params expansion can replace model and messages, so a fixed-field-first serializer changes behavior.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

@@ -2,8 +2,38 @@ id: B879
 title: Organization and project authentication lookup
 description: >-
   Load organization and project records with cache and DB provenance. Preserve the request-scoped last-known
-  organization fallback on outage, missing-table versus not-found errors and alias resolution. Expose
-  typed records for budget and route policy; do not turn infrastructure errors into an absent tenant.
+  organization fallback on outage, confirmed absence and alias resolution. Direct ID lookup propagates
+  infrastructure faults; the request wrapper intentionally drops non-outage errors with a debug log.
+
+  Alias lookup requires a DB before consulting org_alias:<alias>. A hit returns immediately. Otherwise
+  B723 OrganizationRepository.find_many filters organization_alias: zero rows gives HTTP 404 with a
+  detail.error directing the caller to /organization/new; multiple rows gives 400 and recommends
+  org_id_jwt_field or unique aliases. Validate the single row, cache alias first and org_id:<id> second
+  with DEFAULT_IN_MEMORY_TTL, then return. HTTPException passes through; other query/validation/cache
+  write errors log an exception and become HTTP 500 with detail.error. The initial DB and cache-read
+  errors are outside that catch. Through B757 these HTTP failures have type auth_error, param "None"
+  and their original status/code; generic no-DB is 401 auth_error.
+
+  ID lookup also rejects no DB before checking that org_id is a string; nonstring returns None. Use
+  org_id:<id> or org_id:<id>:with_budget depending on include_budget_table=false by default. Only the
+  latter includes litellm_budget_table in find_unique. Cached rows return unchanged. A missing row
+  raises OrganizationNotFoundError, and other read/validation/cache failures propagate. Cache a found
+  row at DEFAULT_IN_MEMORY_TTL. B735 owns _model_dump_table and its bounded query execution.
+
+  Request lookup always requests the budget relation. OrganizationNotFoundError returns None without
+  consulting stale cache. A non-service-unavailable error in the preserved cause chain debug-logs
+  'continuing without org limits' and returns None. On a classified outage, try
+  org_id:<id>:with_budget:last_known; return it when available, otherwise consult B1217's
+  general_settings.allow_requests_on_db_unavailable (False) and return None only when allowed.
+  Otherwise rethrow the original failure. Success calls _keep_last_known_org: check local_only first,
+  never refresh an already-held entry, otherwise store with B733 get_management_object_ttl. These
+  success-path cache errors are not swallowed. B733 owns management TTL configuration.
+
+  Project lookup returns None immediately without a DB, even if cached. Use project_id:<id>, return a
+  typed cache hit, or find_unique by project_id including litellm_budget_table. No row is None; a found
+  row gets last_refreshed_at=time.time() and B734's _cache_management_object before returning. Project
+  failures propagate with no last-known fallback and no negative caching. All operations here are reads
+  plus ordered cache writes, with no credential storage or database mutations.
 
 
   Build the production auth_org_lookup module in betterlite-auth; reuse the typed dependencies listed
@@ -18,10 +48,6 @@ description: >-
   36 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_IN_MEMORY_TTL=5.
 
 
@@ -32,40 +58,24 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Organization/project lookup tests use B860's POSTGRES_TEST_URL or testcontainers schemas and controlled
+  cache contents. HTTP fixtures distinguish absent rows, stale cached rows and database outages at the
+  actual auth caller; isolated lookup assertions retain the original exception before caller translation.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::auth_org_lookup::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_org_lookup::tests::ttl_default_five, ttl_integer_override,
+  ttl_bad_integer_stops_startup and ttl_zero_negative_passthrough. DEFAULT_IN_MEMORY_TTL is parsed by
+  int() at import; invalid text has no warning/fallback. The loader tests call the shared TTL loader.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 212 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  212 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 531 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  240 production, 260 behavior/Postgres tests, 75 adapters, 65 wiring and 60 config lines,
+  700 within a 750-line gate. DB tests use POSTGRES_TEST_URL or testcontainers when absent.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -119,7 +129,13 @@ references:
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: org_last_known_on_outage,
-      project_not_found, org_alias.'
+      project_not_found, org_alias, alias_no_db_before_cache, alias_cache_hit,
+      alias_zero_404, alias_multiple_400, alias_cache_write_order, alias_write_failure_500,
+      alias_read_failure_propagates, id_nonstring_after_db_guard, budget_cache_partition,
+      id_missing_is_typed_absence, id_fault_propagates, confirmed_absence_ignores_stale,
+      nonoutage_debug_drop, outage_stale_before_policy, outage_no_stale_policy_matrix,
+      last_known_local_no_refresh, last_known_write_failure, project_no_db_before_cache,
+      project_includes_budget, project_clock_and_cache, project_failure_propagates and no_negative_cache.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -178,13 +194,15 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-org-lookup/org-last-known-on-outage.yaml
   - tools/oracle/cases/helpers/auth-org-lookup/project-not-found.yaml
   - tools/oracle/cases/helpers/auth-org-lookup/org-alias.yaml
+  - tools/oracle/cases/helpers/auth-org-lookup/alias-errors-and-cache-order.yaml
+  - tools/oracle/cases/helpers/auth-org-lookup/id-budget-cache.yaml
+  - tools/oracle/cases/helpers/auth-org-lookup/request-fallback-matrix.yaml
+  - tools/oracle/cases/helpers/auth-org-lookup/project-cache-effects.yaml
   - tools/oracle/cases/auth/auth-org-lookup/org-last-known-on-outage.yaml
   - tools/oracle/cases/auth/auth-org-lookup/project-not-found.yaml
   - tools/oracle/cases/auth/auth-org-lookup/org-alias.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -299,9 +317,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve the request-scoped last-known organization fallback on outage, missing-table versus not-found
-    errors and alias resolution.
+  - An alias cache-write failure becomes HTTP 500 even after the alias entry was written; there is no rollback of the first cache write.
+  - A confirmed missing organization bypasses last_known, while an outage consults last_known before allow_requests_on_db_unavailable.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

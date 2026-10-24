@@ -7,6 +7,34 @@ description: >-
   when expiry is earlier than now. EXPERIMENTAL_UI_LOGIN absent permits attempted blob decryption; explicit
   false disables it, and invalid blobs fail closed.
 
+  Extract the end-user ID through B880 with safe headers from B1100, then resolve/validate it before
+  best-effort enrichment. With a DB, B735 prefetches identity cache keys, omitting the key lookup when
+  a token is already resolved. A truthy end-user ID enters end_user_params before B739's lookup.
+  Copy allowed_model_region and apply the row's budget via B753; only an absent row may use B739's
+  default budget when litellm.max_end_user_budget_id is not None. BudgetExceededError escapes as
+  429 budget_exceeded/null param; every other enrichment error debug-logs and continues, retaining
+  the end-user ID and any fields already set.
+
+  If no token was supplied by an earlier stage, hash the credential through B2314 and resolve it via
+  B870 IdentityStore with check_cache_only=true. A trusted cache token restores via_virtual_key=true;
+  cache errors are debug-logged and treated as a miss. Attempt B1223 blob decryption only on a miss,
+  only for tokens without the literal sk- prefix, and unless EXPERIMENTAL_UI_LOGIN resolves to False.
+  Its secret boolean resolver trims/case-folds true and false; unknown strings resolve None and still
+  attempt decryption. B002 supplies that resolved setting; there is no separate startup parser here.
+  The decrypted blob never gains cache provenance. Refresh is_session_token grants through B738 only
+  when a DB exists, before examining the role. There is no credential or callback-variable DB write.
+
+  Cached PROXY_ADMIN expiry accepts a datetime or ISO string, assigning UTC to a naive timestamp.
+  Only expiry strictly before now triggers B734 cache deletion, then 401 expired_key; param is B881's
+  abbreviate_api_key result (sk-... for short keys, otherwise sk-... plus the last four characters).
+  No expiry and equality with now pass. Invalid date parsing propagates as 401 auth_error/param "None".
+  An accepted admin receives B753 end-user params, parent span and any end-user object_permission and
+  returns before team refresh. For non-admins, refresh only a non-null team other than litellm-dashboard,
+  via B737 cache-only lookup. Both timestamps must exist and the team's must be strictly newer. Copy
+  only fields whose team_-prefixed name exists on the token, including null values; debug-log/drop
+  refresh errors. Finally compare api_key and master_key in constant time, treating comparison errors
+  as false; B052 owns what happens with that result.
+
 
   Build the production auth_cached_sessions module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
@@ -21,40 +49,22 @@ description: >-
   litellm_settings.max_end_user_budget_id=None.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Session and master-key cases cross the real protected HTTP route after installing this stage in B732.
+  B860 seeds equivalent cache backing rows in isolated Postgres schemas, selecting POSTGRES_TEST_URL
+  before testcontainers; compare the downstream response as well as each rejected session's error.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::auth_cached_sessions::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_cached_sessions::tests::ui_login_absent_attempts, ui_login_false_skips,
+  ui_login_true_attempts, ui_login_secret_bool_conversion and default_budget_id_loads.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 149 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  149 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 409 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  190 production, 250 behavior/server tests, 65 wiring and 60 config lines, 565 within a 600-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -87,12 +97,22 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1995-L2000
     why: EXPERIMENTAL_UI_LOGIN default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L470-L475
-    why: litellm_settings.max_end_user_budget_id default and read site.
+    why: Default budget identifier declaration; the actual read is user_api_key_auth.py:1937.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L166-L186
+    why: EXPERIMENTAL_UI_LOGIN resolves as bool or None, not an integer-import fallback.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: cached_admin, expired_admin_401,
-      session_live_grants, ui_blob_disabled, team_cache_refresh.'
+      session_live_grants, ui_blob_disabled, team_cache_refresh, resolved_key_skips_cache,
+      prefetch_requires_db, end_user_region_budget, absent_end_user_default_budget,
+      end_user_budget_429, end_user_failure_keeps_id, cache_error_blob_fallback,
+      cache_restores_provenance, blob_unmarked, sk_prefix_skips_blob, blob_error_401,
+      session_without_db_no_refresh, refreshed_role_before_admin,
+      admin_naive_utc, admin_expiry_equal_now, admin_no_expiry, expiry_param_abbreviation,
+      invalid_admin_expiry, admin_end_user_permissions, admin_returns_before_team,
+      dashboard_team_skipped, team_refresh_timestamp_matrix, team_prefix_fields_only,
+      team_refresh_error_dropped and master_comparison_failure_false.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -137,10 +157,14 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-cached-sessions/session-live-grants.yaml
   - tools/oracle/cases/auth/auth-cached-sessions/ui-blob-disabled.yaml
   - tools/oracle/cases/auth/auth-cached-sessions/team-cache-refresh.yaml
+  - tools/oracle/cases/auth/auth-cached-sessions/end-user-enrichment.yaml
+  - tools/oracle/cases/auth/auth-cached-sessions/end-user-budget-429.yaml
+  - tools/oracle/cases/auth/auth-cached-sessions/cache-blob-provenance.yaml
+  - tools/oracle/cases/auth/auth-cached-sessions/admin-expiry-boundaries.yaml
+  - tools/oracle/cases/auth/auth-cached-sessions/team-refresh-boundaries.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B1223 owns encrypted session parsing and calls the B061 cipher; this stage consumes its result without implementing storage encryption.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -186,9 +210,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve trusted via_virtual_key provenance restoration, live session grant refresh, cached team last_refreshed_at
-    ordering and expired admin-key eviction.
+  - Equal or missing refresh timestamps must not overwrite cached team fields; source compares strictly greater only when both exist.
+  - End-user lookup failures are swallowed except BudgetExceededError, so replacing that block with a generic fail-closed lookup changes requests that currently proceed.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

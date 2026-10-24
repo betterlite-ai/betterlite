@@ -2,7 +2,7 @@ id: B895
 milestone: M4 keys, spend and management
 title: Regenerate keys and preserve deprecated overlap
 status: todo
-depends_on: [B001, B002, B003, B052, B199, B722, B732, B734, B737, B771, B773, B774, B777, B785, B800, B818, B819, B856, B860, B861, B865, B892, B896, B1224]
+depends_on: [B001, B003, B052, B069, B124, B722, B732, B737, B770, B771, B777, B785, B800, B818, B860, B861, B865, B892, B896, B1224, B2362]
 file: tasks/B895-key-regenerate.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

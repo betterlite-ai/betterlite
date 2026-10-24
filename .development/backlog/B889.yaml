@@ -2,7 +2,7 @@ id: B889
 milestone: M4 keys, spend and management
 title: Virtual-key end-user and fallback context
 status: todo
-depends_on: [B001, B002, B003, B732, B736, B738, B739, B748, B749, B751, B752, B753, B856, B860, B881, B884, B886]
+depends_on: [B001, B002, B003, B012, B732, B739, B749, B753, B856, B860, B881, B884, B886, B2314]
 file: tasks/B889-key-context.yaml
 covers:
   - "litellm/proxy/auth/user_api_key_auth.py"

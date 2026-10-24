@@ -1,0 +1,81 @@
+id: B1526
+title: Convert Fal image edits to inline data and depth-control requests
+description: >-
+  Add api::fal::edit to betterlite-core, implementing all three image_edit modules, their reader
+  protocol, _read_image_bytes, to_data_url, _first and selector. Use B1525's GPT size/quality functions,
+  credentials and image reply decoder, and B1120's MIME detection. Strings pass through to_data_url
+  verbatim, including remote URLs; bytes become MIME-tagged base64 data URLs. A tuple recursively uses
+  element one, PathLike reads a local file, and a seekable reader saves its cursor, reads from zero and
+  restores it. Other shapes raise the source ValueError. This task does not resolve or fetch URL strings.
+
+  Generic edit mapping retains every non-null option, translating background/n/quality/size and using
+  GPT value policy; advertised supported fields do not act as a filter and drop_params has no effect.
+  Build the URL from the resolved Fal base plus the original model, appending /edit only when absent.
+  Authentication returns a copied header map with Authorization=Key. JSON mode is mandatory. Filter
+  null images from the supplied sequence, require at least one, convert all remaining images, and use
+  only the first nonempty-list mask entry. An empty mask list remains a list and fails conversion.
+  Start the body with prompt, image_urls and optional mask_url, then overlay all provider options except
+  mask; those options may replace the generated fields. Return no multipart files.
+
+  The case-insensitive flux-lora-depth selector chooses a fixed fal-ai/flux-lora-depth endpoint without
+  /edit. Its mapper only retains non-null n and size; its request requires exactly one non-null control
+  image, uses singular image_url, drops mask and overlays remaining provider parameters. Final replies
+  start a new ImageResponse and project images through B1525, preserving edit-specific JSON error text.
+  File bytes are encoded, not parsed, and the shared JSON decoder already has a fuzz target.
+
+  Register helper call.fal_edit with local_path_and_cursor, forwarded_url, empty_mask_list,
+  provider_field_override, generic_unknown_option and depth_exactly_one. Source adapters use temporary
+  files and real configuration methods; tests under api::fal::edit assert no HTTP effect during
+  to_data_url. There are 229 nonblank/non-comment lines including the selector; plan 200 implementation,
+  210 tests and 110 adapters/registration, capped at 600.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/edit.rs
+    - crates/betterlite-core/src/api/fal/edit/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_edit.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_edit.py
+    - tools/oracle/cases/helpers/fal-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/transformation.py#L26-L175
+    why: Reader/cursor semantics, URL passthrough and request overlay order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/flux_lora_depth_transformation.py#L14-L73
+    why: Singular control image and fixed LoRA endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/__init__.py#L11-L25
+    why: Depth model selection before the generic edit configuration.
+dod:
+  - text: Generic Fal edits encode supplied local data, forward strings unchanged and preserve mask and provider-overlay behavior.
+    proof: [fal-edit-tests, oracle, fal-edit-python]
+  - text: Depth LoRA editing enforces one control image and selects the fixed non-edit endpoint.
+    proof: [fal-edit-tests, oracle, fal-edit-python]
+checks:
+  optional: []
+  commands:
+    - id: fal-edit-tests
+      why: Fal local-input conversion or depth-edit policy is absent
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::edit::/)'
+    - id: fal-edit-python
+      why: real Fal edit configurations are not represented in the helper oracle
+      run: grep -qE '^[[:space:]]+fal_edit:' tools/oracle/fuzz/corpus/helper_case/fal_edit* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_edit.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-edit/local-path-and-cursor.yaml
+  - tools/oracle/cases/helpers/fal-edit/forwarded-url.yaml
+  - tools/oracle/cases/helpers/fal-edit/empty-mask-list.yaml
+  - tools/oracle/cases/helpers/fal-edit/provider-field-override.yaml
+  - tools/oracle/cases/helpers/fal-edit/generic-unknown-option.yaml
+  - tools/oracle/cases/helpers/fal-edit/depth-exactly-one.yaml
+deviations: []
+out_of_scope:
+  - B046 installs the edit selector into the executable image family; B1525 remains the owner of GPT quality inference and Fal image-object decoding.
+pitfalls:
+  - The generic edit mapper forwards unsupported keys even when drop_params=false.
+  - None entries do not count toward the depth endpoint's one-image limit.
+  - A string that looks like a local path is forwarded unchanged; only PathLike triggers a local file read.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

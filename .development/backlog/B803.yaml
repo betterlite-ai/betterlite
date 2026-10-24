@@ -2,7 +2,7 @@ id: B803
 milestone: M4 keys, spend and management
 title: Organization and user ceilings for team writes
 status: todo
-depends_on: [B002, B003, B171, B723, B724, B732, B800, B801, B856, B1204, B1231]
+depends_on: [B002, B003, B071, B158, B171, B724, B726, B732, B801, B856, B860]
 file: tasks/B803-team-limits.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"

@@ -1,0 +1,9 @@
+id: B1419
+milestone: M3 providers
+title: Cohere rerank versions and query guardrails
+status: todo
+depends_on: [B002, B104, B1013, B1414, B171]
+file: tasks/B1419-cohere-rerank.yaml
+covers:
+  - "litellm/llms/cohere/rerank/**"
+  - "litellm/llms/cohere/rerank_v2/**"

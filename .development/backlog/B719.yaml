@@ -1,8 +1,8 @@
 id: B719
 milestone: M4 keys, spend and management
-title: Compatibility views and one-time database repairs
+title: Runtime and offline compatibility views
 status: todo
-depends_on: [B171, B700, B701, B856, B860]
+depends_on: [B700, B710, B860]
 file: tasks/B719-database-views.yaml
 covers:
   - "litellm/proxy/db/create_views.py"

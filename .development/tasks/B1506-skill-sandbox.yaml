@@ -1,0 +1,99 @@
+id: B1506
+title: Execute hosted skill files through an owned sandbox session
+description: >-
+  Build skills::sandbox in betterlite-core for all of SkillsSandboxExecutor and its result/session protocols.
+  Reuse the optional llm-sandbox SDK through B165's bounded embedded-Python bridge; the native service
+  owns execution order and typed results. Compare that existing SDK with bollard before implementation:
+  the SDK preserves its Python runtime initialization and default image without reconstructing a second
+  sandbox platform. Its pinned dependency is 0.3.39, whose default Python image is
+  ghcr.io/vndee/sandbox-python-311-bullseye. Supply only lang=python, verbose=False and a truthy image;
+  the source stores timeout=60/backend=docker but does not pass either to SandboxSession. Keep backend
+  selection unchanged; Docker commands run through the SDK's engine API and never a host subprocess.
+  The caller B095 supplies 120 seconds by default, but that value is likewise not forwarded as a session
+  option. Own session cleanup and temporary files through B165's tracked runtime work.
+
+  Stage each skill file under a private temporary directory, skip and warn on paths escaping its absolute
+  prefix, then copy it to /sandbox/path. A truthy explicit requirements string becomes
+  /sandbox/.litellm_requirements.txt; otherwise use requirements.txt when present. Execute pip inside
+  the container with the requirements filename, preserving pip's -r, -e and VCS syntax. A nonzero install
+  result returns success=false, captured stdout/stderr and no files before executing user code. The code
+  wrapper changes directory and prepends /sandbox to sys.path. After code execution, collect generated
+  files even when the code exits nonzero. List only gif/png/jpg/jpeg/pdf/csv/json extensions, exclude
+  paths present in original_files, and return name, relative path, base64 and the source MIME mapping.
+  Copy failures warn and continue; enumeration failures warn and retain the collected prefix. SDK import
+  failure returns the source unsuccessful result without raising, while session errors log and become
+  success=false with no files.
+
+  Add decode_generated_paths for the bounded JSON stdout list, with malformed JSON becoming an empty
+  list. Limit it to 1 MiB/4096 entries and cap collected bytes at 64 MiB. Fuzz/replay this decoder. The
+  skill_sandbox helper invokes the pinned executor against a scripted SandboxSession and temporary files,
+  comparing copied paths, submitted code, effects and result fields. Cases missing_sdk, escaping_file,
+  requirements_precedence, install_failure, failed_code_with_files and partial_copy prove distinct branches.
+  Rust tests under skills::sandbox also check cancellation closes the owned session and cleans staging.
+  Reuse B171's call.skill_sandbox seed format. The source has 253 nonblank/non-comment lines; allocate
+  300 orchestration/bridge, 215 tests, 110 oracle adapters, 80 decoder/fuzz and 70 wiring lines (775).
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/sandbox.rs
+    - crates/betterlite-core/src/skills/sandbox/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/generated_paths.rs
+    - crates/betterlite-core/fuzz/corpus/generated_paths/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/skill_sandbox.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/skill_sandbox.py
+    - tools/oracle/cases/helpers/skill-sandbox/**
+    - tools/oracle/fuzz/corpus/helper_case/skill_sandbox*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L17-L326
+    why: Entire executor, including ignored constructor options and partial collection fallbacks.
+  - url: https://github.com/vndee/llm-sandbox
+    why: Reusable session/run/copy interface supplied through the optional embedded SDK.
+  - url: https://docs.rs/bollard/latest/bollard/
+    why: Native Docker alternative to compare without replacing the pinned SDK initialization accidentally.
+dod:
+  - text: Skill staging, requirement installation and result collection follow the source's ordered effects and failure returns.
+    proof: [sandbox-behavior, oracle, sandbox-python]
+  - text: Cancellation and input bounds release session/staging resources without blocking the async runtime.
+    proof: [sandbox-lifetime, generated-paths-corpus]
+checks:
+  optional: []
+  commands:
+    - id: sandbox-behavior
+      why: sandbox effects or fallback results no longer match the pinned executor
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::/) - test(replays_generated_paths)'
+    - id: sandbox-lifetime
+      why: cancellation leaves an owned session or staged file behind
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::.*cancellation_cleans_session/)'
+    - id: sandbox-python
+      why: the real executor is not exercised through a typed helper bridge
+      run: grep -qE '^[[:space:]]+skill_sandbox:' tools/oracle/fuzz/corpus/helper_case/skill_sandbox* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/skill_sandbox.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: generated-paths-corpus
+      why: generated-file JSON parsing lacks new fuzz inputs and normal-test replay
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/generated_paths.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/generated_paths)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_generated_paths)'
+oracle_cases:
+  - tools/oracle/cases/helpers/skill-sandbox/missing-sdk.yaml
+  - tools/oracle/cases/helpers/skill-sandbox/escaping-file.yaml
+  - tools/oracle/cases/helpers/skill-sandbox/requirements-precedence.yaml
+  - tools/oracle/cases/helpers/skill-sandbox/install-failure.yaml
+  - tools/oracle/cases/helpers/skill-sandbox/failed-code-with-files.yaml
+  - tools/oracle/cases/helpers/skill-sandbox/partial-copy.yaml
+deviations:
+  - what: Enumeration or output exceeding the stated caps warns and returns the collected prefix; a 120-second outer execution deadline returns success=false with a timeout error in the tool result, without changing the enclosing completion HTTP status/code.
+    why: The source ignores its timeout field and permits unbounded output; gateway waits and allocations must be bounded independently of the SDK.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/sandbox_executor.py#L55-L225
+out_of_scope:
+  - B095 performs LLM follow-up calls; this service executes one code submission and returns its files.
+  - B165 owns interpreter lifecycle, callable handles and bounded off-runtime SDK invocation; no Python subprocess bridge is added here.
+pitfalls:
+  - backend and timeout are stored but never included in session_kwargs at the pin.
+  - Generated files are collected after an unsuccessful code exit as well as a successful one.
+  - The MIME table knows txt even though the generated-file listing excludes .txt.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

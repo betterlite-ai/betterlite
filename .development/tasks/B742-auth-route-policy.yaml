@@ -1,11 +1,40 @@
 id: B742
 title: Role and pass-through route permissions
 description: >-
-  Implement administrator/viewer/internal-user route policy and organization role checks. Preserve caller-supplied
-  organization_id in the request body and _user_is_org_admin reading the caller organization_id and organizations;
-  do not replace this with a different authorization policy. Enable configured admin_only_routes without
-  premium_user. A non-admin denial from _raise_admin_only_route_exception is a plain Exception normalized
-  by auth handling to HTTP 401 auth_error.
+  Implement role-based route admission with the source's branch order. _is_api_route_allowed requires
+  a nonnull valid_token even for a proxy admin, then bypasses non-admin checks only when the live user
+  row has role proxy_admin (B732). The non-admin chain first checks configured admin_only_routes,
+  then B883 auth-enforced pass-through grants, B882 LLM routes and info routes. /key/info, /v2/user/info,
+  /model/info and /team/info defer authorization to their handlers. /user/info denies a nonempty
+  different user_id with 403 unless the role is proxy_admin_viewer; missing/empty IDs pass here.
+  Global spend routes require permissions containing get_spend_routes. Only after these branches
+  does the viewer-specific checker run: do not silently reorder it ahead of LLM admission.
+
+  Next allow internal_user routes, B1229 organization-admin routes, internal_user_viewer routes,
+  self-managed routes, /v1/mcp/ and /mcp-rest/ prefixes, B883 pass-through grants and team-service-account
+  routes in that order. Organization administration uses the caller's request_data.organization_id
+  and user organizations unchanged. The final allowed_routes fallback checks B882 template/prefix
+  and wildcard matching for each entry; None or an unmatched/empty list raises a plain Exception,
+  translated by B757 to 401 auth_error, param string None, code string 401. Keep the diagnostic role
+  or 'unknown' and masked user ID: empty/length<=4 is '***'; length 5..8 is all asterisks; longer
+  uses B244 SensitiveDataMasker with visible_prefix=6, visible_suffix=2, mask_char='*'.
+
+  The direct viewer checker rejects LLM routes with 403. Before safe-method handling it checks
+  management routes: /user/update may contain only user_email (empty mapping passes), and the
+  _PROXY_ADMIN_VIEW_ONLY_BLOCKED_ROUTES table plus /key/ suffixes /regenerate and /reset_spend deny.
+  Own the static tables at route_checks.py L22-L66 and L800-L832 with the checker, including every
+  listed user/team/model/JWT/key write path and bulk alias. Then GET, HEAD and OPTIONS pass, with
+  request=None treated as GET. Unsafe methods permit email-only /user/update, /user/password/change
+  and /session/logout; deny the second write table and /key/*/regenerate; allow explicit admin-viewer
+  and global-spend route sets, and otherwise deny 403. All these HTTPExceptions become auth_error
+  with param string None and code string 403; source wording is compared only in helper diagnostics.
+
+  JWT route admission expands named LiteLLMRoutes groups with Starlette template matching or uses
+  B882 wildcard matching. PROXY_ADMIN uses admin_allowed_routes; TEAM uses team_allowed_routes,
+  with a None value falling back to only openai_routes and info_routes. An empty list denies all;
+  every other role returns False. B869 owns the typed default lists (admin management/spend/global
+  spend/info; team openai/info/mcp/messages/count_tokens). allowed_route_check_inside_route permits
+  admin/viewer, or matching nonnull caller/requested user IDs including empty strings; others fail.
 
 
   Build the production auth_route_policy module in betterlite-auth; reuse the typed dependencies listed
@@ -22,9 +51,9 @@ description: >-
   28 source lines), allowed_route_check_inside_route (L1404-L1417; 14 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.admin_only_routes=required
-  when this branch is enabled; litellm_jwtauth.team_allowed_routes=['openai_routes', 'info_routes', 'mcp_routes',
-  '/v1/messages', '/v1/messages/count_tokens'].
+  general_settings.admin_only_routes is absent by default and matches exact routes only. Source logs
+  ERROR and skips it without premium_user=True; betterlite applies it without the license and returns
+  403 auth_error for a listed non-admin request. JWT config loading stays with B869; this task consumes it.
 
 
   general_settings.admin_only_routes defaults absent; configured entries apply to non-admin callers without
@@ -38,40 +67,27 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  B732 wires the route-policy service into actual protected handlers. HTTP cases exercise the listed
+  role/route pairs and compare B757 status/type/param/code, including branches that return False
+  without raising; do not invent a denial for a caller that ignores the returned boolean.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Use B860 with POSTGRES_TEST_URL or testcontainers for distinct key owner, team administrator,
+  organization administrator and unrelated caller identities; the role cases must not collapse them.
 
 
-  Write betterlite-config::auth_route_policy::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Load absent, empty and populated admin_only_routes through B002 in admin_routes_absent,
+  admin_routes_empty and admin_routes_exact tests, then exercise native route admission. There is
+  no numeric parse or invalid-value fallback. The source helpers that import proxy_server globals
+  are exercised through HTTP; pure role/masking/JWT projections use the helper adapter.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Route-policy inputs are parsed requests/principals. The native admin_only_routes license removal
+  is isolated from the equality corpus, which runs without the enterprise package.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 310 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  310 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 641 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  Sizing: 310 owned function lines plus 69 nonblank table lines; allow 300 production, 300 table-driven
+  tests, 75 adapters, 65 wiring and 50 config lines, 790 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -143,16 +159,37 @@ references:
     why: Own allowed_route_check_inside_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L378-L383
     why: general_settings.admin_only_routes default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L1-L6
-    why: litellm_jwtauth.team_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5356-L5375
+    why: B869's admin/team JWT route defaults, consumed at auth_checks.py L1383-L1398.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L22-L66
+    why: Own the management viewer deny table and key-write suffixes used before safe-method admission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L800-L832
+    why: Own safe verbs and the later viewer write table.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: admin_only_routes_enabled,
-      custom_admin_only_route, configured_admin_only_routes_without_license, viewer_read_only, non_admin_management_denied,
-      masked_denial, non_admin_401_auth_error.'
+  - text: 'Admission cases: null_token_admin_fails, live_admin_bypasses_policy,
+      custom_admin_check_first, pass_through_before_llm, llm_before_viewer_check,
+      info_handler_deferral, other_user_info_403, empty_user_id_passes,
+      viewer_other_user_info_passes, spend_permission_required, internal_user_routes,
+      org_admin_body_scope, internal_viewer_routes, self_managed_routes,
+      mcp_prefix_deferral, team_service_account_routes, explicit_allowed_route_match,
+      empty_allowed_routes_401 and absent_allowed_routes_401.'
     proof:
       - behavior-tests
+  - text: 'Viewer cases cover direct_llm_403, email_only_update, empty_update_allowed,
+      extra_update_field_403, each_early_blocked_route, regenerate_and_reset_suffixes,
+      safe_get_head_options, absent_request_get, password_change_allowed,
+      logout_allowed, each_late_blocked_route, legacy_read_post_allowed and unknown_post_403.
+      Masking cases cover empty_short_mask, five_to_eight_all_masked,
+      long_id_six_two_visible and unknown_identity_masked. Run named HTTP cases for all denials.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'JWT and self-access cases name admin_default_groups, team_default_groups,
+      team_none_two_group_fallback, empty_routes_deny, other_role_denied,
+      route_group_template, route_wildcard, admin_viewer_self_check,
+      matching_user_self_check and absent_user_not_self. Configured-admin license behavior
+      has native tests; the MIT HTTP case asserts its warning and skipped policy.'
+    proof: [behavior-tests, config-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -183,7 +220,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_route_policy::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_route_policy::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -213,17 +250,20 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-route-policy/non-admin-management-denied.yaml
   - tools/oracle/cases/helpers/auth-route-policy/masked-denial.yaml
   - tools/oracle/cases/helpers/auth-route-policy/non-admin-401-auth-error.yaml
+  - tools/oracle/cases/helpers/auth-route-policy/viewer-table-and-verbs.yaml
+  - tools/oracle/cases/helpers/auth-route-policy/jwt-groups-and-self.yaml
   - tools/oracle/cases/auth/auth-route-policy/viewer-read-only.yaml
   - tools/oracle/cases/auth/auth-route-policy/non-admin-management-denied.yaml
   - tools/oracle/cases/auth/auth-route-policy/masked-denial.yaml
   - tools/oracle/cases/auth/auth-route-policy/non-admin-401-auth-error.yaml
+  - tools/oracle/cases/auth/auth-route-policy/admission-branch-order.yaml
+  - tools/oracle/cases/auth/auth-route-policy/viewer-write-denials.yaml
+  - tools/oracle/cases/auth/auth-route-policy/mit-admin-config-warning.yaml
 deviations:
   - what: Configured admin_only_routes is enforced without premium_user.
     why: No paid tier; all MIT policy functionality is available.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L368-L382
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -357,6 +397,6 @@ pitfalls:
     endpoint uses 403.
   - Do not overwrite a caller-supplied organization_id before the source organization policy reads it.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

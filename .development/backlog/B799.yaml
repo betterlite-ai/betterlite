@@ -2,7 +2,7 @@ id: B799
 milestone: M4 keys, spend and management
 title: Local UI login form and credential hint
 status: todo
-depends_on: [B002, B003, B171, B788, B856]
+depends_on: [B002, B003, B124, B171, B856]
 file: tasks/B799-login-form.yaml
 covers:
   - "litellm/proxy/common_utils/html_forms/ui_login.py"

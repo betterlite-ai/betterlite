@@ -1,10 +1,50 @@
 id: B751
 title: Key budget thresholds and alert inputs
 description: >-
-  Implement KeyBudgetChecks using injected SpendReader, BudgetThrottle and AlertSink ports. Keep max/multi/soft
-  budget distinctions, temporary budget expiry, email normalization and threshold validation. Source-owned
-  B071 throttle and B116 alert transports plug into these ports later; this task emits typed required
-  actions and enforces the pinned admission result without a permissive placeholder.
+  Implement key hard/multi-window/soft checks and budget-alert inputs. Hard checks do nothing for
+  max_budget=None. Otherwise call B2321 with spend:key:<token>, fallback spend or zero and max_budget,
+  schedule token_budget with token/spend/max/soft/user/team/org/email/key_alias and event_group=key,
+  then test finite spend>=max_budget. The alert is scheduled even below the limit and before denial.
+  B2325's throttle policy may instead set only request-local budget_throttle_pct and permit the request;
+  stored RPM/TPM limits remain unchanged. Hard denial carries BudgetExceededError current_cost,
+  max_budget, entity_type=key and entity_id=token. Its message uses key_alias or 'key', adding key_name
+  only if it fully matches sk-\.\.\.(?:[^\s\x00-\x1f\x7f-\x9f]{4})?. Never echo a raw key_name.
+
+  Multi-window checks iterate budget_limits in order, accepting dict or typed rows. Counter names are
+  spend:key:<token>:window:<budget_duration>, with zero fallback, max budget, entity_type='Key', token,
+  string duration and B2325 get_budget_window_start. A finite maximum rejects at equality; stop at
+  the first failure. Throttling is not used here. Preserve the diagnostic's four-decimal spend and
+  two-decimal limit formatting, with key entity fields. The stale source comment about never reseeding
+  windows does not override get_current_spend's actual maintained-window lookup.
+
+  Soft checks use token.spend, not the cross-pod reader; a truthy soft_budget and spend>=soft_budget
+  DEBUG-log and schedule soft_budget without denial. Its CallInfo additionally carries team_alias.
+  All alert tasks are owned by B116's sink and are not awaited on the request path; capture scheduling
+  order in tests and drain tasks at shutdown. No database write occurs in these checks.
+
+  Email parsing accepts a list of trimmed nonempty strings, or a comma-separated string; tuple/other
+  inputs become []. Normalize each threshold, then union global and per-key mappings, deduplicating
+  recipients global-first. Empty mappings merge to None; threshold iteration order is not defined.
+  Key alerts read litellm_settings.default_key_max_budget_alert_emails=None and metadata.max_budget_alert_emails.
+  They require a nonnull maximum and positive nonnull token.spend. A nonempty merged map uses the
+  minimum digit-only threshold, with no 1..100 validation; no numeric threshold means no alert.
+  At/above the minimum percentage schedule max_budget_alert with the merged map, even beyond max budget.
+  Without a map, use EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE (float env, default 0.8) and alert
+  only at/above that fraction but strictly below max budget. Include owner email and all key identity
+  fields, team_alias and event_group=key; only this legacy branch DEBUG-logs the threshold.
+
+  Team-member alerts read team metadata team_member_max_budget_alert_emails. Invalid mapping input
+  is silently discarded; accept only digit threshold strings of length<=3 and integer value 1..100.
+  Invalid entries drop silently, not with the old invented warning. Parse recipients as above; unsupported
+  values become None then []. No global email config is merged. Positive spend at/above the lowest
+  threshold schedules max_budget_alert with team/user/org/email fields, event_group=team_member and
+  the map; spend at/above the hard limit is still alertable.
+
+  Temporary increases require both metadata.temp_budget_increase and temp_budget_expiry. Parse the
+  latter with datetime.fromisoformat semantics, treating a naive value as UTC; only expiry>now applies.
+  Missing/expired/equal expiry returns None; invalid date/type propagates. A None max budget skips
+  parsing; a falsey increase keeps the original token. A truthy increase (including negative) returns
+  a copy with max_budget+increase, preserving the original. B757 owns budget's default 422 envelope.
 
 
   Build the production auth_key_budgets module in betterlite-auth; reuse the typed dependencies listed
@@ -23,8 +63,8 @@ description: >-
   9 source lines), _update_key_budget_with_temp_budget_increase (L3626-L3634; 9 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Use checked finite money values for arithmetic while retaining the source's explicit isfinite
+  predicate outcomes for nonfinite inputs; Decimal conversion must not invent a denial or alert.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.default_key_max_budget_alert_emails=None;
@@ -38,49 +78,37 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  POST /v1/chat/completions tests hard/multi-window denial and temporary increases through B732
+  admission with B757's budget_exceeded envelope. Assert soft-budget alerts never deny a request.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 uses POSTGRES_TEST_URL or testcontainers to seed hard/soft/window limits independently;
+  ordered alert records must identify the correct key without exposing a raw key_name.
 
 
-  Write betterlite-config::auth_key_budgets::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Loader cases alert_config_default_none, global_email_map_loaded, alert_fraction_default,
+  alert_fraction_env_override and invalid_alert_fraction_stops_startup exercise B002 and the consumer.
+  The env is parsed with float at import; empty/nonnumeric input fails, not falls back. Zero/negative
+  and nonfinite fractions retain their comparison semantics with typed classifications.
 
 
-  This task owns the outside-byte boundary auth_key_budgets::decode_alert_recipients(&[u8]) -> Result<TypedValue,DecodeError>
-  for stored JSON/string email recipient configuration. Production calls this decoder before its typed
-  policy functions; the cargo-fuzz target auth_key_budgets calls that same function. Seed valid, truncated,
-  malformed, duplicate-field and limit-boundary inputs and add auth_key_budgets::tests::replays_the_auth_key_budgets_corpus.
-  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
-  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B733 owns crates/betterlite-auth/fuzz; depend on it and register this decoder target
-  without recreating the workspace.
+  Email fields are already parsed records; do not invent JSON decoding. The actual outside-string
+  decoder is parse_temp_budget_expiry(&str), shared by production and the auth_key_budgets fuzz target
+  in B733's workspace. Replay ISO date-only/basic/offset/naive/fractional formats, malformed UTF-8
+  at the outer boundary, invalid dates and overlong input. Cap new timestamp input at 1048576 bytes;
+  there is no JSON-depth limit for a timestamp. Name the replay replays_the_auth_key_budgets_corpus.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  No premium gate surrounds these budget checks. Timestamp bounds are tested as a native decoder
+  difference; ordinary expiry arithmetic and email filtering remain source-comparison cases.
 
 
-  Sizing: 313 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  313 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 686 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
+  Sizing: 313 source lines; allow 260 production, 300 named table tests, 70 adapters, 55 wiring,
+  45 parser/fuzz and 60 config, 790 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: expiry_input_limit.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -160,10 +188,28 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: max_budget_equality,
-      multi_window_exhaustion, soft_budget_alert_only, temporary_increase_expired, email_merge, invalid_threshold_warning.'
+  - text: 'Admission cases: no_max_no_io, cross_pod_hard_counter, alert_before_hard_result,
+      equal_max_denied, nonfinite_max_not_denied, throttle_request_only,
+      unmasked_name_not_echoed, masked_name_regex, each_call_info_field,
+      window_duration_counter, window_start_forwarded, first_window_stops,
+      multi_window_no_throttle, zero_soft_budget_skips, soft_uses_token_spend,
+      equal_soft_alert_only and alerts_not_awaited.'
     proof:
       - behavior-tests
+  - text: 'Email cases: list_and_csv_trim, nonlist_sequence_ignored, global_first_dedup,
+      threshold_union, empty_merge_none, key_map_min_digit_threshold,
+      invalid_key_threshold_no_alert, key_threshold_outside_range_kept,
+      mapped_alert_at_or_over_max, legacy_fraction_boundary, legacy_max_excluded,
+      member_invalid_map_silent, member_threshold_bounds_length, member_recipients_coercion,
+      member_no_global_merge and member_positive_spend_threshold. Compare ordered scheduling
+      and fields, not undefined threshold-map iteration order.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Temporary cases: both_fields_required, naive_expiry_utc, offset_expiry,
+      expiry_equal_inactive, invalid_expiry_propagates, no_max_skips_parse,
+      zero_increase_same_token, negative_increase_applies and increase_copies_token.
+      HTTP cases assert default budget 422 and malformed-expiry auth 401; repository fixtures
+      run on POSTGRES_TEST_URL or testcontainers.'
+    proof: [behavior-tests, stage-wiring-tests, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -180,12 +226,12 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: The production decode_alert_recipients decoder is used by the service and its fuzz target and
+  - text: The production parse_temp_budget_expiry decoder is used by the service and its fuzz target and
       rejects malformed/oversize input without panic.
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: expiry_input_limit checks the precise timestamp cap through production parsing.
     proof:
       - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
@@ -199,7 +245,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_key_budgets::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_key_budgets::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -236,22 +282,20 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-key-budgets/soft-budget-alert-only.yaml
   - tools/oracle/cases/helpers/auth-key-budgets/temporary-increase-expired.yaml
   - tools/oracle/cases/helpers/auth-key-budgets/email-merge.yaml
-  - tools/oracle/cases/helpers/auth-key-budgets/invalid-threshold-warning.yaml
+  - tools/oracle/cases/helpers/auth-key-budgets/invalid-threshold-silent.yaml
+  - tools/oracle/cases/helpers/auth-key-budgets/alert-scheduling-fields.yaml
+  - tools/oracle/cases/helpers/auth-key-budgets/temporary-expiry-forms.yaml
   - tools/oracle/cases/auth/auth-key-budgets/max-budget-equality.yaml
   - tools/oracle/cases/auth/auth-key-budgets/multi-window-exhaustion.yaml
   - tools/oracle/cases/auth/auth-key-budgets/soft-budget-alert-only.yaml
   - tools/oracle/cases/auth/auth-key-budgets/temporary-increase-expired.yaml
   - tools/oracle/cases/auth/auth-key-budgets/email-merge.yaml
-  - tools/oracle/cases/auth/auth-key-budgets/invalid-threshold-warning.yaml
+  - tools/oracle/cases/auth/auth-key-budgets/invalid-expiry.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5461-L5476
+  - what: Temporary-budget timestamp text over 1048576 bytes raises a typed auth parse failure (401 auth_error) without echoing the value.
+    why: Bound the actual new timestamp parser; recipient lists are already decoded and receive no fictitious JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3634
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -406,6 +450,6 @@ out_of_scope:
 pitfalls:
   - Soft-budget thresholds emit alerts without becoming hard admission denials.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

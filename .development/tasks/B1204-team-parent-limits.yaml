@@ -1,9 +1,24 @@
 id: B1204
 title: Organization and user team limit ceilings
 description: >-
-  Validate organization/user per-model rates, aggregate RPM/TPM and team budget ceilings before team writes.
-  Preserve explicit zero/unset distinctions and the existing-model cap comparison without querying management
-  endpoints.
+  Validate team limits in team_parent_limits before creation or organization-scoped updates. The organization
+  checks run budget, model allowlist, direct TPM, direct RPM, then guaranteed-throughput allocation. Each
+  rejection is HTTPException 400 with detail.error for the direct checks and string detail for allocation
+  checks; these helpers do not choose an HTTP error envelope. Organization models=[] or containing
+  all-proxy-models allow any requested model. Equality is allowed and None disables a ceiling.
+
+  Read rpm_limit_type/tpm_limit_type from a truthy request field, otherwise metadata. Unless either is
+  guaranteed_throughput, do not query sibling teams. Otherwise read every team with the organization_id,
+  including the updated team, and sum non-null RPM/TPM and metadata.model_rpm_limit/model_tpm_limit by model.
+  A truthy request model-limit dictionary wins over metadata; an empty dictionary falls back. Check each
+  model's aggregate against the organization's budget-table rate first, then its metadata model ceiling.
+  A zero aggregate ceiling is enforced, but a zero per-model ceiling is skipped by the truthiness check.
+  Missing budget-table/metadata limits remain unset. Model RPM precedes model TPM; aggregate TPM precedes RPM.
+
+  Standalone creation checks the caller's budget with B736 get_user_object(user_id_upsert=False) only when
+  both max_budget and user_id are present, then caller models, TPM and RPM. Missing user/limit allows the
+  budget; an empty caller model list allows all, but all-proxy-models is not a wildcard in this user check.
+  B801 supplies the organization-team reader; B1231 supplies team request types. No writes occur here.
 
 
   Build the production team_parent_limits module in betterlite-server; reuse the typed dependencies listed
@@ -22,11 +37,10 @@ description: >-
   column type; retain source storage types.
 
 
-  Add the team_parent_limits operation under B856 Management::teams. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-parent-limits-*
-  seed to B171 helper_case, which already owns this decoder.
+  Compare the four synchronous model/rate allocation helpers under B856 Management::teams with B171
+  helper_case seeds. _check_org_team_limits and _check_user_team_limits perform repository/auth lookups:
+  test them natively with POSTGRES_TEST_URL or testcontainers, including whether a lookup occurs and the
+  source error ordering. Do not substitute Python table doubles for those integrations.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -40,8 +54,8 @@ description: >-
 
 
   Sizing: 290 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  290 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 524 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  290 production, 220 behavior tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 605 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -72,8 +86,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1109-L1178
     why: Own _check_user_team_limits; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_model_rate_ceiling,
-      user_team_budget, existing_model_cap.'
+  - text: >-
+      Named rstest cases org_budget_boundary, org_model_allowlist, org_all_proxy_models, org_empty_models,
+      org_direct_tpm, org_direct_rpm, org_failure_order, no_guarantee_no_query, metadata_guarantee_fallback,
+      siblings_include_updated_team, request_model_limits_precede_metadata, empty_model_limits_fall_back,
+      model_rpm_aggregate, model_rpm_specific, model_tpm_aggregate, model_tpm_specific,
+      zero_specific_ceiling_skipped, zero_aggregate_ceiling_enforced, missing_org_budget,
+      aggregate_tpm_before_rpm, user_budget_lookup_no_upsert, user_missing_budget_or_identity,
+      user_models_empty, user_all_proxy_models_literal, user_tpm, user_rpm and user_failure_order
+      assert the stated boundary, status and detail shape, and absence of writes.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -101,12 +122,11 @@ checks:
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/team-parent-limits/org-model-rate-ceiling.yaml
-  - tools/oracle/cases/helpers/team-parent-limits/user-team-budget.yaml
-  - tools/oracle/cases/helpers/team-parent-limits/existing-model-cap.yaml
+  - tools/oracle/cases/helpers/team-parent-limits/aggregate-tpm-before-rpm.yaml
+  - tools/oracle/cases/helpers/team-parent-limits/model-limit-precedence-and-zero.yaml
+  - tools/oracle/cases/helpers/team-parent-limits/absent-budget-and-metadata-limits.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -168,8 +188,8 @@ out_of_scope:
     resolve_team_daily_activity_scope (L6525-L6623), get_team_daily_activity (L6631-L6689), aggregated_date_range_error
     (L6695-L6705), _team_user_spend_sql (L6708-L6731), get_team_spend_by_user (L6753-L6821), _team_alias_or_none
     (L6824-L6826).'
-  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
-    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B2370 owns patch_team (L2568-L2642);
+    B1205 owns _set_budget_reset_at (L2645-L2663) and handle_update_object_permission (L2666-L2687).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
     _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
     (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
@@ -187,9 +207,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve explicit zero/unset distinctions and the existing-model cap comparison without querying management
-    endpoints..
+  - Updating an existing organization team includes that team's old allocation in the sum; subtracting it changes LiteLLM's rejection boundary.
+  - The organization wildcard all-proxy-models is not recognized by the caller's personal model check.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

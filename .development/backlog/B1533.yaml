@@ -1,0 +1,8 @@
+id: B1533
+milestone: M3 providers
+title: Retrieve Fal video job failures and completed binary content
+status: todo
+depends_on: [B1532, B173, B672, B1087, B171]
+file: tasks/B1533-fal-video-results.yaml
+covers:
+  - "litellm/llms/fal_ai/videos/**"

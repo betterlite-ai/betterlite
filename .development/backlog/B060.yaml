@@ -2,7 +2,7 @@ id: B060
 milestone: M4 keys, spend and management
 title: Model group info, deprecations and management integration
 status: todo
-depends_on: [B001, B002, B003, B007, B052, B171, B732, B759, B832, B833, B834, B835, B836, B837, B838, B839, B840, B841, B842, B843, B844, B845, B846, B847, B848, B849, B850, B851, B856, B860]
+depends_on: [B001, B002, B003, B007, B052, B124, B141, B302, B732, B759, B842, B843, B846, B860]
 file: tasks/B060-model-management.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

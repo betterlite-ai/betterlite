@@ -1,0 +1,81 @@
+id: B1524
+title: Prepare Topaz enhancement uploads and encode binary image replies
+description: >-
+  Implement api::topaz in betterlite-core for all TopazModelInfo and TopazImageVariationConfig methods,
+  exposing the variation operation to B1000. Model discovery returns the five pinned names with their
+  spaces and capitalization: Standard V2, Low Resolution V2, CGI, High Resolution V2 and Text Refine,
+  each prefixed topaz/. get_base_model is identity. Load TOPAZ_API_KEY (unset) and TOPAZ_API_BASE
+  (https://api.topazlabs.com) through B002 and test them in topaz_settings. get_api_key/get_api_base
+  use truthy explicit values before those settings. validate_environment rejects only a missing key,
+  then replaces the whole header map with Accept=image/jpeg and X-API-Key. get_complete_url itself
+  uses its argument or the default host and appends /image/v1/enhance without trimming a slash.
+
+  Map response_format directly to output_format, including literal url/b64_json values, and size to
+  string output_width/output_height by splitting on x and requiring exactly two parts. Ignore other
+  optional keys regardless of drop_params. Do not parse dimensions as numbers. prepare_file_tuple
+  starts with image.png, null content, image/png and empty headers; bytes/BytesIO supply content,
+  tuples of lengths two through four supply the corresponding members with falsey filename/MIME
+  falling back to defaults. Unsupported shapes retain null content, matching the source helper.
+  Emit one image file part and the mapped fields as multipart data; model is not added to the form.
+
+  Both response entry points base64-encode the received binary body without decoding the image format.
+  Return a fresh single-image response with null URL/revised_prompt and the current integer timestamp.
+  Sync response_ms comes from HTTP elapsed seconds times 1000; async response_ms comes from the supplied
+  call timing value. Preserve TopazException's status, message and headers. Binary passthrough/encoding
+  is not a parser, so use B1087 response limits without creating an image decoder or fuzz target.
+
+  Add call.topaz_variation and source-backed cases discover_names, replace_headers, doubled_slash,
+  string_dimensions, tuple_defaults and distinct_timing_sources. Test native preparation/result code
+  under api::topaz. This provider contributes 187 nonblank/non-comment lines; 180 service/config,
+  200 tests and 110 adapters/wiring fit a 550-line task. The pin has no image-variation HTTP route.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/topaz.rs
+    - crates/betterlite-core/src/api/topaz/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/topaz.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/topaz_variation.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/topaz_variation.py
+    - tools/oracle/cases/helpers/topaz-variation/**
+    - tools/oracle/fuzz/corpus/helper_case/topaz_variation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/common_utils.py#L8-L50
+    why: Fixed model names, credential/base accessors and complete header replacement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/image_variations/transformation.py#L29-L175
+    why: File-tuple defaults, unparsed size strings and different timing sources.
+dod:
+  - text: Topaz model discovery and upload preparation preserve settings, header replacement and file defaults.
+    proof: [topaz-tests, oracle, topaz-python]
+  - text: Binary enhancement responses are returned as base64 with the source-specific sync and async timing values.
+    proof: [topaz-tests, oracle, topaz-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: topaz-tests
+      why: Topaz upload semantics or environment settings are unimplemented
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::topaz::/) | test(topaz_settings)'
+    - id: topaz-python
+      why: variation comparisons have no checked source adapter and helper tag
+      run: grep -qE '^[[:space:]]+topaz_variation:' tools/oracle/fuzz/corpus/helper_case/topaz_variation* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/topaz_variation.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/topaz-variation/discover-names.yaml
+  - tools/oracle/cases/helpers/topaz-variation/replace-headers.yaml
+  - tools/oracle/cases/helpers/topaz-variation/doubled-slash.yaml
+  - tools/oracle/cases/helpers/topaz-variation/string-dimensions.yaml
+  - tools/oracle/cases/helpers/topaz-variation/tuple-defaults.yaml
+  - tools/oracle/cases/helpers/topaz-variation/distinct-timing-sources.yaml
+deviations: []
+out_of_scope:
+  - B046 supplies the Topaz variant to B1000's callable variations executor; no new proxy route is authorized by this provider.
+pitfalls:
+  - response_format=url still produces a base64 response from the binary body.
+  - An empty key passes validate_environment when invoked directly, because the check is api_key is None.
+  - A trailing slash on api_base is preserved before /image/v1/enhance is appended.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0

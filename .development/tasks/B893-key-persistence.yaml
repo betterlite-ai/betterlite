@@ -1,10 +1,58 @@
 id: B893
 title: Persist generated keys and initial budgets
 description: >-
-  Implement generate_key_helper_fn persistence with typed key/budget rows, injected clock/random source,
-  source write order and metadata_json_with_limits. Return a raw generated secret only once and persist
-  its SHA256 hash. Consume already validated request defaults; callers decide lifecycle event dispatch.
-  Preserve non-transactional earlier effects wherever the pinned helper does not open a transaction.
+  Generate keys over B2362's concrete key/user writes. Before the try block, require a DB (otherwise
+  raise 'Connect Proxy to database to generate keys' with the source documentation URL), validate
+  router weights with B2301, and choose token over key over sk- plus token_urlsafe random bytes.
+  LENGTH_OF_LITELLM_GENERATED_KEY defaults to 16 bytes, not sixteen output characters; invalid int()
+  environment input stops startup. Custom key length validation belongs to B881. A supplied raw key
+  is returned as supplied; there is no one-time-only read guarantee. B2362 persists its SHA256 hash.
+
+  Defaults are duration/key_budget_duration/budget_duration None, models and allowed_cache_controls
+  [], aliases/config/permissions/model_max_budget/metadata {}, spend 0.0, query_type insert_data,
+  table_name None and other optional inputs None. duration uses UTC now plus B199 seconds; user/key
+  budget durations use B2317 reset time. Truthy budget_limits copies each window and overwrites
+  reset_at with the duration's ISO instant; empty yields SQL NULL on insert. JSON-encode aliases,
+  config, permissions and model_max_budget; router_settings None and falsey budget_fallbacks become
+  {}. B1224 validates model_max_budget before writes. No soft-budget row is created here.
+
+  metadata_json_with_limits returns JSON null only for metadata None and all overrides None.
+  Otherwise nonnull model_rpm_limit, model_tpm_limit, mcp_rpm_limit, tag_rpm_limit, guardrails,
+  policies and prompts replace matching metadata, including explicit empty overrides. Call
+  B2304.encrypt_callback_vars BEFORE serialization and either row write. Preserve that helper's
+  exact behavior: selected sensitive callback strings encrypt, existing litellm_enc:: values stay
+  unchanged, and encryption failure silently retains the original plaintext. Serialization failures
+  remain outside the later catch. Do not silently replace this source fallback with mandatory encryption.
+
+  User data includes max_budget, user_email/id/alias, team_id, organization_id, user_role, spend,
+  models, metadata, max_parallel_requests, tpm/rpm, budget_duration/reset_at, allowed_cache_controls,
+  sso_user_id and object_permission_id. teams is added only when nonnull and model_max_budget only
+  when truthy, preventing empty defaults from clearing existing budgets. Key data includes token,
+  key_alias, expires, models, aliases/config, spend, key_max_budget, user/team/agent/project ids,
+  parallel limit, metadata, tpm/rpm/tpd, key duration/reset, cache controls, permissions/model budgets/
+  budget_fallbacks, organization/budget ids, blocked/windows, created_by/updated_by, allowed_routes
+  or [], key_type, object_permission_id, router settings and access_group_ids or []. soft_budget,
+  object_permission and send_invite_email are unused. B1224 adds rotation fields using auto_rotate
+  or False. DISABLE_KEY_NAME through get_secret defaults False; only boolean True suppresses
+  B881's abbreviated key_name.
+
+  Preserve saved_token's prewrite validation even though that copy is never returned: decode its
+  aliases/config/metadata/permissions/model budgets; a serialized permissions string containing
+  get_spend_routes anywhere fails on MIT without premium_user. Native removes that paid guard as
+  recorded below. Parse saved router settings with YAML, {} on YAMLError, and ISO-format its expiry.
+  For table_name None or user, write the user first through B2362, using insert_data or update_data
+  with update_key_values. Insert returning None raises 'Failed to create user'; a returned user's
+  nonempty models fill an empty key model list. table_name user returns user_data without a key.
+  Otherwise insert the key, then if returned token is a string sync access groups via B819 with
+  previous None and ORIGINAL access_group_ids, then attach token_id, budget relation and created/
+  updated timestamps. Parse response router settings via YAML with {} fallback. These writes have
+  no encompassing transaction: user survives key failure and key survives group-sync failure.
+  Restore input budget_id; request_type user finally overlays user_data, including user max_budget
+  and duration, onto key_data. Other request types retain key values.
+
+  Errors inside the try log exception and traceback; HTTPException passes through, everything
+  else becomes HTTP 500 detail.error 'Internal Server Error.'. Earlier failures keep their type
+  for the caller's route mapper. Do not route these through a generic management exception helper.
 
 
   Build the production key_persistence module in betterlite-server; reuse the typed dependencies listed
@@ -17,16 +65,11 @@ description: >-
   lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DISABLE_KEY_NAME=False;
   LENGTH_OF_LITELLM_GENERATED_KEY=16.
 
 
-  DISABLE_KEY_NAME=false; MINIMUM_CUSTOM_KEY_LENGTH=16 and LENGTH_OF_LITELLM_GENERATED_KEY=16. Key names
-  are omitted only by the source branch.
+  B881 owns MINIMUM_CUSTOM_KEY_LENGTH; it is not read in the generation helper.
 
 
   Add the key_persistence operation under B856 Management::keys. Python calls only the owned MIT helper
@@ -36,34 +79,20 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Run generation writes against an isolated betterlite-postgres-fixture schema, using POSTGRES_TEST_URL
+  or testcontainers. postgres_pinned_rows checks user/key conflict rows; postgres_failure_effects fails
+  each ordered write and verifies the preceding rows remain. A fixture startup failure fails the check.
 
 
-  Write betterlite-config::key_persistence::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests key_persistence::tests::length_default_and_override, bad_length_stops_startup and
+  disable_key_name_requires_boolean_true load B002 and exercise the consuming generator. Use pure
+  metadata helper equality; generation sequencing and raw-secret/hash assertions use real Postgres
+  with deterministic clock/randomness, not a helper invocation of a management route.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 295 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  295 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 588 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 295 lines before docstring exclusion; moving SQL primitives to B2362 leaves an allowance
+  of 280 production, 330 behavior/Postgres tests, 65 metadata adapters, 30 wiring and 45 config,
+  750 within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -99,10 +128,22 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1887-L1892
     why: LENGTH_OF_LITELLM_GENERATED_KEY default and read site.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: generated_key_hash,
-      budget_window_create, metadata_limits, raw_key_return_once, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Cases no_db_before_generation, router_validation_before_randomness, token_key_random_precedence,
+      generation_defaults_all_fields, expiry_vs_reset_clock, window_reset_overwrites_copy,
+      metadata_null_vs_empty, seven_metadata_overrides, callbacks_encrypted_before_user_and_key,
+      callback_ciphertext_not_double_encrypted, callback_encryption_failure_preserves_source_value,
+      pretry_errors_unchanged, user_conditional_teams_and_model_budgets, key_all_fields_and_unused_inputs,
+      disable_name_literal_true, saved_token_validation_before_writes, user_insert_model_inheritance,
+      user_only_return, user_update_map, key_group_sync_order_and_original_ids,
+      response_hash_relation_timestamps, router_response_yaml_fallback, user_overlay_changes_key_budget,
+      http_exception_passthrough_and_other_500, postgres_pinned_rows and postgres_failure_effects
+      check all columns and each surviving partial write.'
     proof:
       - behavior-tests
+      - postgres-tests
+  - text: Metadata oracle cases compare encrypted-value presence with a deterministic B2304 cipher;
+      native_get_spend_routes_without_license proves the local paid-guard deviation separately.
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -149,14 +190,16 @@ checks:
         && grep -rlq "DISABLE_KEY_NAME" crates/betterlite-config/fuzz/corpus/config_yaml/key-persistence-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/key-persistence/generated-key-hash.yaml
-  - tools/oracle/cases/helpers/key-persistence/budget-window-create.yaml
   - tools/oracle/cases/helpers/key-persistence/metadata-limits.yaml
-  - tools/oracle/cases/helpers/key-persistence/raw-key-return-once.yaml
-deviations: []
+  - tools/oracle/cases/helpers/key-persistence/metadata-null-and-encryption.yaml
+deviations:
+  - what: Keys can store get_spend_routes permissions without a license; MIT instead returns HTTP 500 from its saved-token check.
+    why: README excludes paid gates. native_get_spend_routes_without_license tests the successful insert outside equality cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4768-L4772
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns encrypt_callback_vars and its cipher, B2362 hash/SQL writes, B819 group synchronization,
+    B1224 model budgets/rotation fields and B2301 router weights. The unused soft_budget argument
+    creates no row; callers own budget construction and lifecycle notifications.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -252,8 +295,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Return a raw generated secret only once and persist its SHA256 hash.
+  - request_type user overlays user max_budget and duration onto the response after key insertion.
+  - saved_token is not returned, but its decoding and permissions check can fail before writes.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

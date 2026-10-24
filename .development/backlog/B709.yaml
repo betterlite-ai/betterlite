@@ -2,7 +2,7 @@ id: B709
 milestone: M4 keys, spend and management
 title: Postgres migrations for agent identity
 status: todo
-depends_on: [B171, B700, B708, B856, B860]
+depends_on: [B700, B708, B860]
 file: tasks/B709-schema-agent-identity.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260921190000_agent_identity/migration.sql"

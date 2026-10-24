@@ -1,7 +1,7 @@
 id: B024
 title: OpenAI provider endpoint composition
 description: >-
-  Compose OpenAI chat, embeddings, Responses and text/moderation calls using the installed provider modules and
+  Compose OpenAI chat, embeddings and text/moderation calls using the installed provider modules and
   the closed operation dispatcher. B668 supplies base parameter policy before B004, B502 and B504; B669 installs
   media, B670 resources and B671 assistants/session operations. Own the OpenAI branch of main.py _complete_custom_openai
   and _complete_text_completion_openai, including configuration default merging without replacing explicit call
@@ -33,9 +33,10 @@ description: >-
   with explicit stream/provider_config and B196 encoding. Preserve both sync and async return shapes and the provider
   identifier. embeddings_dispatch: The installed embedding operation calls B006 through the existing OpenAI adapter
   and preserves B507/B508 dimensions, encoding_format, usage and error contracts; it does not enter the chat/default
-  metadata branch. responses_operation: Install the OpenAI Responses operation from the API-family dispatcher B080
-  and provider transformation B900/B901 by their IDs; preserve response item IDs, tool metadata and streaming events.
-  B669/B670/B671 install the media/resource/assistant families without registering their routes again. explicit_param_before_config:
+  metadata branch. The OpenAI Responses operation is not installed here: the Responses operation variant belongs
+  to the API-family dispatcher, so B080 binds OpenAI's B507/B508 transformation into it and this provider task
+  never depends on a route task. B669/B670/B671 install the media/resource/assistant families without registering
+  their routes again. explicit_param_before_config:
   Resolve base using B500; key uses truthy explicit api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY.
   Organization uses explicit, litellm.organization, OPENAI_ORGANIZATION, then None. headers uses truthy supplied
   map or litellm.headers. Merge B668 OpenAIConfig defaults only for absent optional keys, retaining explicit None,
@@ -61,7 +62,7 @@ description: >-
 
   SDK module assignments become isolated per-call values in Rust: do not leak organization/api_type/api_version
   between deployments. Loader ownership for global key/base/organization/headers is B500, preview and experimental
-  settings are owned here. Existing public routes are B004/B006/B080; the helper cases call the executable operation
+  settings are owned here. Existing public routes are B004/B006; the helper cases call the executable operation
   dispatcher, while the named HTTP case drives both existing chat aliases.
 
 
@@ -94,7 +95,7 @@ description: >-
 
 
   Write rstest function openai_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
-  file): chat_dispatch, embeddings_dispatch, responses_operation, explicit_param_before_config, experimental_handler,
+  file): chat_dispatch, embeddings_dispatch, explicit_param_before_config, experimental_handler,
   preview_metadata, openai_provider_dispatch_http, text_defaults, text_chat_projection, call_failure_logging. Each
   case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
   use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
@@ -127,9 +128,9 @@ description: >-
 
 
   Budget from 188 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 225 production lines, 290 behavior/config-test lines,
-  130 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 35 module/dispatch/shared-seed
-  wiring lines; 715 planned, 725 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 215 production lines, 270 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 670 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
@@ -193,13 +194,6 @@ dod:
     metadata branch.'
   proof:
   - case-embeddings-dispatch
-  - oracle
-  - helper-python
-- text: 'responses_operation: Install the OpenAI Responses operation from the API-family dispatcher B080 and provider
-    transformation B900/B901 by their IDs; preserve response item IDs, tool metadata and streaming events. B669/B670/B671
-    install the media/resource/assistant families without registering their routes again.'
-  proof:
-  - case-responses-operation
   - oracle
   - helper-python
 - text: 'explicit_param_before_config: Resolve base using B500; key uses truthy explicit api_key, litellm.api_key,
@@ -290,11 +284,6 @@ checks:
     why: The installed embedding operation calls B006 through the existing OpenAI adapter and preserves B507/B508
       dimensions, encoding_format, usage and error contracts; it does not enter the chat/default metadata branch.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_embeddings_dispatch$/)'
-  - id: case-responses-operation
-    why: Install the OpenAI Responses operation from the API-family dispatcher B080 and provider transformation
-      B900/B901 by their IDs; preserve response item IDs, tool metadata and streaming events. B669/B670/B671 install
-      the media/resource/assistant families without registering their routes again.
-    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_responses_operation$/)'
   - id: case-explicit-param-before-config
     why: Resolve base using B500; key uses truthy explicit api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY.
       Organization uses explicit, litellm.organization, OPENAI_ORGANIZATION, then None. headers uses truthy supplied
@@ -371,7 +360,6 @@ checks:
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-provider/chat-dispatch.yaml
 - tools/oracle/cases/helpers/providers/openai-provider/embeddings-dispatch.yaml
-- tools/oracle/cases/helpers/providers/openai-provider/responses-operation.yaml
 - tools/oracle/cases/helpers/providers/openai-provider/explicit-param-before-config.yaml
 - tools/oracle/cases/helpers/providers/openai-provider/experimental-handler.yaml
 - tools/oracle/cases/helpers/providers/openai-provider/preview-metadata.yaml
@@ -382,6 +370,8 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+  B080 binds the OpenAI Responses create operation into the Responses dispatcher it extends, so no Responses case
+  lives here.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.

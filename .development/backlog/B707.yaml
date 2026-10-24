@@ -2,7 +2,7 @@ id: B707
 milestone: M4 keys, spend and management
 title: Postgres migrations for routing state
 status: todo
-depends_on: [B171, B700, B706, B856, B860]
+depends_on: [B700, B706, B860]
 file: tasks/B707-schema-routing-state.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260418000000_add_adaptive_router_tables/migration.sql"

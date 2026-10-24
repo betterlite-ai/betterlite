@@ -2,7 +2,7 @@ id: B1224
 milestone: M4 keys, spend and management
 title: Key policy hooks aliases and rotation fields
 status: todo
-depends_on: [B002, B199, B722, B732, B856]
+depends_on: [B002, B129, B165, B171, B199, B722, B732, B770, B856, B2304, B2317]
 file: tasks/B1224-key-policy-fields.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"

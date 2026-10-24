@@ -1,0 +1,11 @@
+id: B1425
+milestone: M3 providers
+title: OpenAI-like response cleanup, embedding transport and model discovery
+status: todo
+depends_on: [B002, B004, B006, B173, B249, B668, B171]
+file: tasks/B1425-openai-like-primitives.yaml
+covers:
+  - "litellm/llms/openai_like/common_utils.py"
+  - "litellm/llms/openai_like/chat/transformation.py"
+  - "litellm/llms/openai_like/embedding/handler.py"
+  - "litellm/llms/openai_like/model_info.py"

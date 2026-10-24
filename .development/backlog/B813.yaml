@@ -2,7 +2,7 @@ id: B813
 milestone: M4 keys, spend and management
 title: Scoped team list and UI search routes
 status: todo
-depends_on: [B001, B003, B052, B171, B722, B723, B724, B732, B748, B800, B801, B803, B856, B860, B865, B1209, B1231]
+depends_on: [B001, B003, B052, B724, B732, B801, B803, B860, B865, B1209, B1231]
 file: tasks/B813-team-lists.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"

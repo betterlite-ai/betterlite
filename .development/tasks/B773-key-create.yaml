@@ -2,8 +2,8 @@ id: B773
 title: Create keys and initial budget records
 description: >-
   Resolve request defaults and validation in _common_key_generation_helper, then call B893 KeyPersistence
-  with the final effective fields. Keep team/user/org ceilings and default_key_generate_params precedence
-  before persistence. Do not copy persistence or lifecycle events into this orchestration.
+  with the final effective fields. This orchestrator writes a soft-budget row and object-permission
+  row before the key, and schedules the lifecycle hook after persistence; it is not atomic.
 
 
   Build the production key_create module in betterlite-server; reuse the typed dependencies listed in
@@ -19,9 +19,68 @@ description: >-
   MINIMUM_CUSTOM_KEY_LENGTH=16.
 
 
-  litellm_settings.default_key_generate_params=None; defaults are applied before generation and team defaults
-  may supersede them according to the pinned branch. DISABLE_KEY_NAME=false belongs to B893 persistence;
-  do not parse it twice.
+  default_key_generate_params has no team-default application in open-source LiteLLM: the attempted
+  enterprise import fails and emits a debug diagnostic, then generation continues. DISABLE_KEY_NAME
+  belongs to B893. MINIMUM_CUSTOM_KEY_LENGTH is int(os.getenv(...,16)); malformed integers stop
+  startup, while zero/negative values are not silently replaced with 16. Use B881's shared setting.
+
+  validation_order calls B771 common access, B861 budget-duration/logging guards, then rejects
+  throttle_on_budget_exceeded=true from non-admins with 403 detail.error. Next call B1219 end-user
+  budget validation with B894's requested value, B745 output/batch estimate guards, and B771 service
+  account team validation when metadata.service_account_id is non-null but team_id is None.
+  Capture original max_budget,team_id,metadata before filling any defaults.
+  configured_defaults fills None max_budget,user_id,team_id,max_parallel_requests,tpm_limit,rpm_limit,
+  budget_duration,duration only; explicit_null_budget_duration stays null. empty_models_default and
+  empty_metadata_default replace []/{}; explicit null models/metadata are not those empty defaults.
+  upperbound_after_defaults invokes B772 with fill_defaults=true.
+
+  cli_personal_explicit_budget gives 400 when a non-admin session requests max_budget without a
+  team object and without the UI-team exemption. ui_explicit_team_exempt requires caller team
+  litellm-dashboard AND an originally supplied team_id; a config-injected team does not qualify.
+  delegation_ceiling_order prefers UI user_max_budget, then caller max_budget, then session team
+  max_budget; only the original explicit request is compared. delegated_budget_over is 400;
+  default_budget_not_caller_request is not rejected by that comparison. Call B892 budget-window
+  and permission delegation guards, then B861 global-guardrail guard with original metadata.
+  enterprise_params_skipped confirms the missing enterprise module makes no mutation. It is not
+  a warning or a premium feature to rebuild. custom_policy_before_writes invokes B1224's generate
+  policy with existing_key=None and effective_key calculated from a fresh UTC time.
+
+  soft_budget_first writes BudgetRepository with soft_budget and model_max_budget or {}, assigning
+  created_by/updated_by to caller.user_id or B881's litellm_proxy_admin_name; its new budget_id
+  replaces any requested ID. no_db_soft_budget makes no such write. Move each non-null premium
+  metadata field in order: disable_global_guardrails,guardrails,policies,tags,team_member_key_duration,
+  prompts,logging,secret_manager_settings,allowed_passthrough_routes. Then move non-null ordinary
+  fields: model_rpm_limit,model_tpm_limit,model_itpm_limit,model_otpm_limit,default_estimated_output_tokens,
+  default_estimated_output_tokens_per_model,mcp_rpm_limit,tag_rpm_limit,rpm_limit_type,tpm_limit_type,
+  enforced_params,temp_budget_increase,temp_budget_expiry,allowed_vector_store_indexes,
+  enforced_batch_output_expires_after,enforced_file_expires_after,throttle_on_budget_exceeded,
+  enable_prompt_caching,end_user_budget_id. metadata_moves preserve false/zero/empty values, overwrite
+  the metadata key and remove the top-level attribute using B861. No encryption step exists here;
+  never invent a new stored callback credential format or log the values.
+
+  Dump exclude_unset/exclude_none, apply B1224 handle_key_type, then recheck B892 allowed_routes
+  with allow_safe_presets=true (preset_rechecked). Rename max_budget to key_max_budget and any
+  present budget_duration to key_budget_duration; budget_tier_schedule leaves it absent when
+  omitted. Stamp created_by/updated_by only for non-null caller.user_id. The later top-level tags
+  block contains a premium_user refusal, but normal typed tags have already moved to metadata;
+  tags_moved_once proves that ordering instead of fabricating a reachable second tag check.
+
+  resource_check_order validates MCP, search and vector grants through B818, then default_object_grants
+  merges operator defaults by setdefault: explicit null fields win and new defaults are not
+  rechecked as caller grants. B816 _set_object_permission persists before B1224 alias format and
+  uniqueness checks, B771 custom-key-disable check, and custom_prefix/custom_min_length HTTP 400
+  detail.error checks. Betterlite's prefix error never includes the masked key either.
+  organization_membership skips non-admin membership only when the requested org equals the team's
+  inherited org; no DB skips the org checks. org_missing is 400 string detail. B879 loads the org,
+  B772 checks limits, then B893 writes the key with request_type=table_name='key' and the router.
+  response_key_and_hash adds user soft_budget, validates GenerateKeyResponse, then sets token=token_id
+  while key remains plaintext. generated_hook_scheduled runs B784 asynchronously with changed-by.
+
+  postgres_failure_effects names budget_retained_after_permission_failure,
+  permission_retained_after_alias_failure and key_retained_after_response_failure; inspect ordered
+  rows and assert no compensating rollback. Typed helpers may inject collaborators into the source
+  helper, but must not call generate_key_fn or another FastAPI handler. B055 owns HTTP registration
+  and the handler's auth_error wrapping; this leaf compares raw helper exception status/detail.
 
 
   Add the key_create operation under B856 Management::keys. Python calls only the owned MIT helper with
@@ -39,7 +98,8 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::key_create::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::key_create::tests::loads_settings, defaults_and_precedence,
+  explicit_null_budget_duration and invalid_minimum_stops_startup.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -57,12 +117,12 @@ description: >-
 
 
   Sizing: 310 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  310 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 597 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  310 production, 335 behavior/Postgres tests, 65 helper adapters, 30 wiring and 50 config lines,
+  790 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
+  Native-only deviation tests in this production module: metadata_without_license and custom_key_not_echoed.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -90,8 +150,8 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1172-L1562
     why: Own _common_key_generation_helper; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4494-L4854
-    why: Pinned implementation and exact ownership boundary for key_create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5101
+    why: Exact ordinary and premium metadata projection field order.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1268-L1280
     why: LiteLLM_ObjectPermissionBase request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376-L1396
@@ -104,7 +164,8 @@ references:
     why: MINIMUM_CUSTOM_KEY_LENGTH default and read site.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: configured_defaults,
-      rollback_on_budget_failure, postgres_pinned_rows, postgres_failure_effects.'
+      soft_budget_first, postgres_pinned_rows, postgres_failure_effects; every separately named
+      default, permission, write-order and response case in the description is required.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -121,7 +182,8 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: metadata_without_license permits the MIT metadata features without entitlement;
+      custom_key_not_echoed rejects bad key syntax without reproducing credential fragments.
     proof:
       - behavior-tests
 checks:
@@ -156,16 +218,26 @@ checks:
         && grep -rlq "default_key_generate_params" crates/betterlite-config/fuzz/corpus/config_yaml/key-create-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
+  - tools/oracle/cases/helpers/key-create/default-presence-matrix.yaml
+  - tools/oracle/cases/helpers/key-create/delegation-ceiling-order.yaml
+  - tools/oracle/cases/helpers/key-create/validation-order.yaml
+  - tools/oracle/cases/helpers/key-create/default-object-grants.yaml
+  - tools/oracle/cases/helpers/key-create/ordered-partial-writes.yaml
+  - tools/oracle/cases/helpers/key-create/organization-membership.yaml
+  - tools/oracle/cases/helpers/key-create/response-key-and-hash.yaml
+  - tools/oracle/cases/helpers/key-create/custom-key-validation.yaml
   - tools/oracle/cases/helpers/key-create/configured-defaults.yaml
-  - tools/oracle/cases/helpers/key-create/rollback-on-budget-failure.yaml
+  - tools/oracle/cases/helpers/key-create/budget-create-failure.yaml
 deviations:
+  - what: Invalid custom-key diagnostics omit even the source's first/last-four-character masked key.
+    why: Keys remain secret values; the same HTTP 400 is returned with betterlite's own message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1490-L1495
   - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
       entitlement.
     why: README Decisions specifies no paid tier and no user/team cap.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1172-L1562
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B893 owns hashing/persisting the key, B784 asynchronous lifecycle effects, and B055 the HTTP routes.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -261,8 +333,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Keep team/user/org ceilings and default_key_generate_params precedence before persistence.
+  - The soft-budget and permission rows can survive later alias, key-format or organization rejection.
+  - Operator object-permission defaults are merged after caller grant checks; moving them earlier rejects valid configured grants.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

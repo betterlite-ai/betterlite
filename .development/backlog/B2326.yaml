@@ -1,0 +1,8 @@
+id: B2326
+milestone: M4 keys, spend and management
+title: Master identity and uncached virtual-key resolution
+status: todo
+depends_on: [B001, B003, B732, B734, B744, B753, B755, B757, B760, B860, B866, B869, B870, B881, B889, B2314]
+file: tasks/B2326-master-and-database-auth.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

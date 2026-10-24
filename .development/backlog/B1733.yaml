@@ -2,7 +2,7 @@ id: B1733
 milestone: M4 keys, spend and management
 title: Compact entity and daily spend updates without mutating queued callers
 status: todo
-depends_on: [B012, B171, B204, B1690, B1697]
+depends_on: [B171, B204, B1690, B1697]
 file: tasks/B1733-spend-update-queues.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/{spend_update_queue,daily_spend_update_queue}.py"

@@ -2,7 +2,7 @@ id: B056
 milestone: M4 keys, spend and management
 title: Register user creation and UI identity services
 status: todo
-depends_on: [B001, B003, B052, B171, B732, B773, B786, B787, B788, B789, B790, B791, B792, B793, B794, B795, B796, B797, B798, B799, B816, B856, B860, B861, B865, B892, B893, B899, B1222, B1226]
+depends_on: [B001, B003, B052, B124, B732, B736, B790, B797, B816, B860, B861, B865, B892, B893, B1226]
 file: tasks/B056-user-management.yaml
 covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"

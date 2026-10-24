@@ -1,0 +1,79 @@
+id: B1503
+title: Project hosted skill operations into the public Skill records
+description: >-
+  Implement HostedSkillOps in betterlite-core/src/skills/operations.rs over B1502's store, returning typed
+  HostedSkillReply records with the fields projected below. This owns all LiteLLMSkillsTransformationHandler methods, including its
+  provider property and db_skill_to_response. Rust's async service is the common implementation; B161
+  retains Python sync/coroutine facades. Creation accepts explicit file_content/name/type or the first
+  tuple from a files list when file_content is falsey. A two-element tuple defaults type to application/zip;
+  later tuples are ignored by the pinned transformation. Preserve this documented first-file behavior
+  rather than concatenating uploads. The store receives NewSkillRequest's optional metadata and the caller
+  identity unchanged. Update the B247 call context before invoking the store, using model None, the operation's
+  optional_params, litellm_call_id and custom_llm_provider litellm_proxy.
+
+  List defaults to 20/0 and emits has_more when returned length is at least limit, even for limit zero;
+  next_page is always null. Skill projection uses ISO datetime strings or empty strings for missing dates,
+  retains latest_version and description, sets type skill and uses source custom when the row's source
+  is falsey. Deletion projects id with a fallback type skill_deleted. Do not read proxy globals in native
+  code: the store and logging context are injected. The operations are callable from B095's routes without
+  registering HTTP paths here.
+
+  Exercise the actual production service in skills::operations tests and helper operation hosted_skill_ops.
+  The Python bridge patches only LiteLLMSkillsHandler's collaborators and runs the pinned transformation.
+  Compare first_tuple, explicit_bytes_win, full_page, zero_limit, missing_dates and delete_default_type,
+  including the order and contents of logging updates. Its externally tagged corpus seed belongs under
+  call.hosted_skill_ops. No decoder is added: file bytes are opaque and rows are already B858 records.
+  There are 319 nonblank/non-comment source lines, mostly repeated sync/async signatures; estimate 210
+  native operations, 205 tests, 115 adapters and 40 module/case wiring lines, capped at 600.
+scope:
+  paths:
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/operations.rs
+    - crates/betterlite-core/src/skills/operations/**
+    - crates/betterlite-core/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/hosted_skill_ops.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/hosted_skill_ops.py
+    - tools/oracle/cases/helpers/hosted-skill-ops/**
+    - tools/oracle/fuzz/corpus/helper_case/hosted_skill_ops*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L27-L379
+    why: Complete hosted transformation class, including tuple extraction and pagination projection.
+dod:
+  - text: Each operation forwards its identity and payload to the store after updating the call context.
+    proof: [skill-ops-behavior, oracle, skill-ops-adapters]
+  - text: Skill dates, list boundaries and delete defaults have the same public record shape as the pinned class.
+    proof: [skill-ops-projections, oracle, skill-ops-adapters]
+checks:
+  optional: []
+  commands:
+    - id: skill-ops-behavior
+      why: file selection or identity forwarding differs at the store call
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::operations::/)'
+    - id: skill-ops-projections
+      why: the source pagination and date edge cases are not independently tested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::operations::.*projects_skill_records/)'
+    - id: skill-ops-adapters
+      why: hosted_skill_ops has no typed seed or its independent bridge fails linting
+      run: grep -qE '^[[:space:]]+hosted_skill_ops:' tools/oracle/fuzz/corpus/helper_case/hosted_skill_ops* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/hosted_skill_ops.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-skill-ops/first-tuple.yaml
+  - tools/oracle/cases/helpers/hosted-skill-ops/explicit-bytes-win.yaml
+  - tools/oracle/cases/helpers/hosted-skill-ops/full-page.yaml
+  - tools/oracle/cases/helpers/hosted-skill-ops/zero-limit.yaml
+  - tools/oracle/cases/helpers/hosted-skill-ops/missing-dates.yaml
+  - tools/oracle/cases/helpers/hosted-skill-ops/delete-default-type.yaml
+deviations: []
+out_of_scope:
+  - B1502 owns _prisma_skill_to_litellm and every database/cache operation; no database access is duplicated here.
+  - Skills HTTP handlers and multipart decoding are B095; B161 exports the public sync and async functions.
+pitfalls:
+  - An empty file_content value permits the first files tuple to replace explicitly supplied filename and MIME type.
+  - has_more is computed from page length without fetching an extra row or producing a continuation cursor.
+  - source falls back on empty text as well as null, whereas description is copied unchanged.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

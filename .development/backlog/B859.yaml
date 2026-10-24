@@ -2,7 +2,7 @@ id: B859
 milestone: M4 keys, spend and management
 title: Team and membership storage contracts
 status: todo
-depends_on: [B171, B700, B710, B856, B860]
+depends_on: [B171, B700, B856, B860, B2307, B2310]
 file: tasks/B859-team-rows.yaml
 covers:
   - "litellm/models/team.py"

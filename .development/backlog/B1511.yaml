@@ -1,0 +1,8 @@
+id: B1511
+milestone: M3 providers
+title: Recover ChatGPT Responses from completed event streams
+status: todo
+depends_on: [B507, B508, B919, B1507, B1508, B1509, B206, B249, B004, B171]
+file: tasks/B1511-chatgpt-responses.yaml
+covers:
+  - "litellm/llms/chatgpt/responses/**"

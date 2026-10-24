@@ -1,14 +1,46 @@
 id: B813
 title: Scoped team list and UI search routes
 description: >-
-  Implement /team/list, /v2/team/list and /team/filter/ui with organization/admin/member scoping, typed
-  filters/sort and batched key counts/access-group expansion. Preserve source pagination defaults and
-  visibility for callers with multiple organizations.
+  Implement the three distinct team list contracts, using B1209 for authorization/filter construction
+  and row conversion, B803 for memberships and B801 for database accessors. In /v2/team/list all ID,
+  alias, organization, search, sort_by and status filters default null; search_team_id_match="exact"
+  also accepts "prefix"; page=1, page_size=10 with bounds 1..100, sort_order="asc". No database is 500
+  detail.error="No db connected. prisma client=None". Enforce B1209 access before rejecting non-null
+  status other than "deleted" with 400 "Invalid status value. Currently only 'deleted' is supported.".
+  Its no-results sentinel returns teams=[],total=0,total_pages=0 with the requested page/size and skips
+  later queries. Only team_id/team_alias/created_at are accepted sort columns; invalid/missing columns
+  use created_at descending. For an accepted column, lowercase asc/desc, else fall back to asc (no trim).
+  Cases v2_defaults_and_bounds, scope_before_status, no_results_short_circuit and sort_column_order_matrix
+  prove these rules and B1209's proxy viewer, org-admin own-team union and regular-user scope.
 
+  Read one page then count independently (no snapshot promise); live rows include litellm_model_table,
+  deleted rows do not. total_pages is ceiling(total/page_size), even on an empty out-of-range page.
+  Live pages call B1209 grouped key counts and conversion, then one access-group query across teams with
+  nonempty IDs. Omit missing groups, union each group's nullable models/MCP/agent lists as unordered sets;
+  do not populate inherited fields on rows without group IDs. Deleted pages skip both enrichment paths.
+  Cases live_counts_and_group_unions, deleted_page_projection and page_beyond_total inspect exact rows,
+  null fields and query counts.
 
-  Build the production team_lists module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Legacy /team/list defaults user_id/organization_id to null and has no pagination. A missing DB is 400
+  CommonProxyErrors.db_not_connected_error, unlike v2. B1209 requires explicit own-user scope for an
+  ordinary user here; it does not inject user_id as v2 does. Fetch memberships once with the originally
+  supplied user_id, then keys once per team without expiry filtering or token stripping. Build each
+  TeamListResponseObject; conversion errors log the team ID, object and error and drop only that team,
+  while query failures escape. Sort aliases ascending with null/empty treated as "". Filter organization
+  afterward: "default_organization" selects null organization_id, other strings exact equality. Cases
+  legacy_explicit_self_scope, legacy_memberships_and_keys, legacy_alias_and_org_filter and
+  invalid_team_logged_and_dropped cover these differences.
+
+  The live Prometheus caller uses get_paginated_teams: defaults page_size=10,page=1, count before page
+  read, sort team_alias ascending, return (rows,count). Any count/read error logs the [Non-Blocking]
+  diagnostic and returns ([],0); native pagination_failure_is_empty exercises both errors. UI filtering
+  is hidden from OpenAPI and has no management wrapper or local role check despite its admin-only
+  docstring; use B052's actual middleware policy. It defaults page=1,page_size=50 (1..100), null ID/alias,
+  adds case-insensitive contains predicates only for truthy filters (both are AND), orders created_at
+  descending and returns [] for no match. No DB is 500 detail.error="No db connected" before its try;
+  query exceptions inside become 500 detail="Error searching teams: ...". Cases ui_defaults_and_and_search,
+  ui_empty_filter_and_page, ui_middleware_policy and ui_query_error cover this route. None of the three
+  handlers calls handle_exception_on_proxy; v2 and legacy have no route-wide catch.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -17,40 +49,19 @@ description: >-
 
 
   Register these actual HTTP routes and aliases exactly once: GET /v2/team/list -> list_team_v2; GET /team/list
-  -> list_team; GET /team/filter/ui -> ui_view_teams. For each route send a typed successful request,
-  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
-  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
-  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
-  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
-  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
-  partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  -> list_team; GET /team/filter/ui -> ui_view_teams. B001 cases compare the described query semantics,
+  status, B003 error type/param/code and JSON content-type through the booted servers. B865 decorates
+  only v2 and legacy. Native Postgres tests use POSTGRES_TEST_URL or, when absent, B860 testcontainers;
+  never skip failed connections. The owned code has no new setting, environment read or byte decoder.
 
 
   Sizing: 287 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  287 production, 139 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 491 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  260 production, 370 behavior/Postgres tests, 0 helper adapters, 70 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 700 changed lines estimated within a 750-line gate.
 
 
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  Keep get_paginated_teams callable by the existing Prometheus integration without importing that
+  higher-level caller; only its repository dependency is needed here.
 scope:
   paths:
     - crates/betterlite-server/src/team_lists.rs
@@ -65,19 +76,17 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5291-L6035
     why: Pinned implementation and exact ownership boundary for team_lists.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5598-L5780
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5591-L5780
     why: Own list_team_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5859-L5931
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5857-L5931
     why: Own list_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
     why: Own get_paginated_teams; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5977-L6035
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5968-L6035
     why: Own ui_view_teams; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: v2_pagination, ui_search,
-      empty_page.'
+  - text: Named v2, legacy and UI cases in the description cover defaults, errors, query shapes, dropped
+      invalid rows and logging; pagination_failure_is_empty proves both Prometheus lookup failure paths.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -93,22 +102,22 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_lists::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-lists/get--v2-team-list-success.yaml
-  - tools/oracle/cases/management/team-lists/get--v2-team-list-invalid-target.yaml
-  - tools/oracle/cases/management/team-lists/get--v2-team-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-lists/get--team-list-success.yaml
-  - tools/oracle/cases/management/team-lists/get--team-list-invalid-target.yaml
-  - tools/oracle/cases/management/team-lists/get--team-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-lists/get--team-filter-ui-success.yaml
-  - tools/oracle/cases/management/team-lists/get--team-filter-ui-invalid-target.yaml
-  - tools/oracle/cases/management/team-lists/get--team-filter-ui-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-lists/v2-pagination.yaml
-  - tools/oracle/cases/management/team-lists/ui-search.yaml
-  - tools/oracle/cases/management/team-lists/empty-page.yaml
+  - tools/oracle/cases/management/team-lists/v2-defaults-and-bounds.yaml
+  - tools/oracle/cases/management/team-lists/scope-before-status.yaml
+  - tools/oracle/cases/management/team-lists/no-results-short-circuit.yaml
+  - tools/oracle/cases/management/team-lists/sort-column-order-matrix.yaml
+  - tools/oracle/cases/management/team-lists/live-counts-and-group-unions.yaml
+  - tools/oracle/cases/management/team-lists/deleted-page-projection.yaml
+  - tools/oracle/cases/management/team-lists/page-beyond-total.yaml
+  - tools/oracle/cases/management/team-lists/legacy-explicit-self-scope.yaml
+  - tools/oracle/cases/management/team-lists/legacy-memberships-and-keys.yaml
+  - tools/oracle/cases/management/team-lists/legacy-alias-and-org-filter.yaml
+  - tools/oracle/cases/management/team-lists/ui-defaults-and-and-search.yaml
+  - tools/oracle/cases/management/team-lists/ui-empty-filter-and-page.yaml
+  - tools/oracle/cases/management/team-lists/ui-middleware-policy.yaml
+  - tools/oracle/cases/management/team-lists/database-status-differences.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -191,8 +200,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Organization administrators see only teams in their administered scope even on v2 list aliases.
+  - A v2 organization administrator's own query includes direct team memberships outside administered organizations through B1209.
+  - A bad sort_order is normalized only when sort_by names a recognized column.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

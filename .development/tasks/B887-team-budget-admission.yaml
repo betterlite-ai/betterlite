@@ -1,8 +1,42 @@
 id: B887
 title: Team and membership budget admission
 description: >-
-  Enforce team/member hard, multi-window, soft and model-scoped budgets over injected Decimal spend. Preserve
-  the strict source threshold comparisons and soft-alert continuation; no counter mutation occurs here.
+  Enforce team and membership admission over B751's SpendReader and AlertSink ports. Member checks
+  require a team id and token user id. Reuse B2318's membership load unless membership_loaded is true;
+  a loaded None suppresses another query. A nonnull member max_budget wins, including zero, and uses
+  B2310's effective_max_budget at the injected UTC instant. Otherwise a string metadata.team_member_budget_id
+  selects B739's default: only a positive default applies, plus any active member temporary increase.
+  Missing, zero and negative defaults impose no cap. Read spend:team_member:<user>:<team> with row
+  spend or zero, then invoke B751's member threshold alert before rejecting spend >= effective maximum.
+  Pass team id/alias/metadata/org and the optional user's email to that alert. Rejection is
+  BudgetExceededError with TEAM_MEMBER entity and user:team identity; B757's caller projection returns
+  429 budget_exceeded, null param and code 429. Source nonfinite maxima skip enforcement after the
+  spend read; B2310's checked Decimal row decoder excludes those inputs from the native domain.
+
+  A member model scope applies only to a present membership budget with nonempty allowed_models.
+  Delegate to B747 with object_type team, team_id and key_model_aliases. Catch only ProxyException
+  and replace it with ModelAccessDeniedProxyException, 403 team_model_access_denied, param model,
+  code 403; retain the detailed user/team/allowlist message internally and expose B747's safe model
+  denial message. Other lookup/model errors propagate.
+
+  The team hard cap reads spend:team:<id>, fallback team.spend or zero, and denies only spend >
+  max_budget. Equality passes. With a token, queue a team_budget alert before denial, carrying its
+  token/user/team/team_alias/org, the measured spend and team maximum; without a token deny without
+  alerting. BudgetExceededError identifies TEAM and the team id. Window checks iterate budget_limits
+  in order, accept dict or model rows, key counters by budget_duration rather than position and deny
+  at equality. Supply fallback zero, window_entity_type Team, entity id, string duration and B2361's
+  window_start to SpendReader. The first exhausted window stops later reads, emits no alert and
+  reports TEAM/id with spend to four decimals and limit to two in the diagnostic message. Missing
+  team/limits or hard maximum skips that check. The reader may repair counters; this module itself
+  neither reserves spend nor writes rows.
+
+  Soft admission uses the row's spend, not SpendReader, and continues even at/above soft_budget.
+  Log the crossed threshold before checking for a token. Only metadata.soft_budget_alerting_emails
+  authorizes a soft_budget alert: string input splits on commas and trims, while list input removes
+  nonstrings/blank strings but preserves whitespace in retained strings. Missing/empty/other shapes
+  debug-log the skipped alert; global recipients do not substitute. Alert CallInfo carries token,
+  row spend/max/soft, token user/team/team_alias/org/key_alias, TEAM, user_email None and those emails.
+  Dispatch through the supervised B751 sink; delivery cannot turn soft admission into a denial.
 
 
   Build the production team_budget_admission module in betterlite-auth; reuse the typed dependencies listed
@@ -16,10 +50,6 @@ description: >-
   35 source lines), _team_soft_budget_check (L6065-L6133; 61 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Add the team_budget_admission operation under B856 Management::auth. Python calls only the owned MIT
   helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
   algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
@@ -27,33 +57,14 @@ description: >-
   a team-budget-admission-* seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Budget fixtures pin spend and clock independently, using B860 Postgres selected by POSTGRES_TEST_URL
+  or testcontainers. The HTTP cases exercise the two equality boundaries through admission; alert tests
+  inspect the supplied recipient list and sink calls without sending email.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 271 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  271 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 540 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  Sizing: the five ranges contain 271 nonblank, noncomment lines before docstring exclusion; allow
+  260 production, 290 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 680 changed lines estimated within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -96,10 +107,21 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_budget_equality,
-      member_model_scope, team_soft_alert.'
+  - text: 'Member cases: missing_identity_skips, loaded_none_avoids_query, member_override_zero_denies,
+      positive_default_only, temporary_increase_expiry_boundary, member_counter_key_and_fallback,
+      alert_precedes_member_equality_denial, member_entity_and_email, member_scope_absent_inherits,
+      member_alias_scope, member_denial_safe_message and nonproxy_model_error_propagates.'
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: 'Team cases: hard_equality_passes, hard_overage_alert_before_denial, hard_without_token,
+      hard_null_skips, windows_empty_skips, window_duration_keys_survive_reordering,
+      window_read_metadata, first_window_equality_stops_reads, soft_row_spend_only,
+      soft_equality_continues, soft_without_token_logs, soft_list_keeps_whitespace,
+      soft_csv_trims, soft_invalid_recipient_shapes_skip, global_recipients_not_used and soft_call_info.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -144,10 +166,15 @@ oracle_cases:
   - tools/oracle/cases/auth/team-budget-admission/member-budget-equality.yaml
   - tools/oracle/cases/auth/team-budget-admission/member-model-scope.yaml
   - tools/oracle/cases/auth/team-budget-admission/team-soft-alert.yaml
+  - tools/oracle/cases/helpers/team-budget-admission/member-defaults-and-temporary-budget.yaml
+  - tools/oracle/cases/helpers/team-budget-admission/hard-and-window-boundaries.yaml
+  - tools/oracle/cases/helpers/team-budget-admission/soft-recipient-shapes.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B751 owns spend/alert ports and member alert thresholds; the later server/spend tasks install
+    real counter readers and delivery. B2361 owns budget window coercion and start calculation.
+    B2310 owns finite Decimal conversion and temporary budget arithmetic. Postgres fixtures use
+    POSTGRES_TEST_URL when provided, otherwise testcontainers, through B860.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -262,9 +289,10 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve the strict source threshold comparisons and soft-alert continuation; no counter mutation
-    occurs here..
+  - A zero member override disables spending, but a zero team-member default supplies no cap.
+  - Team hard equality passes while member and window equality fail.
+  - Soft recipient lists retain whitespace that comma-separated strings discard.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

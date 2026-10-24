@@ -2,7 +2,7 @@ id: B1601
 milestone: M4 keys, spend and management
 title: Manage reusable credentials in Postgres and memory
 status: todo
-depends_on: [B002, B003, B052, B721, B725, B732, B844, B860, B1600]
+depends_on: [B002, B003, B721, B725, B732, B844, B860, B1600]
 file: tasks/B1601-credential-routes.yaml
 covers:
   - "litellm/proxy/credential_endpoints/**"

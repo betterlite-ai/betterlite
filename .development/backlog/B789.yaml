@@ -2,9 +2,8 @@ id: B789
 milestone: M4 keys, spend and management
 title: Password change and UI session revocation
 status: todo
-depends_on: [B001, B002, B003, B052, B171, B722, B723, B732, B734, B770, B777, B784, B786, B856, B860]
+depends_on: [B001, B003, B052, B124, B722, B723, B731, B732, B734, B770, B777, B786, B860, B2330, B2333]
 file: tasks/B789-ui-sessions.yaml
 covers:
   - "litellm/proxy/management_endpoints/password_endpoints.py"
   - "litellm/proxy/management_endpoints/session_endpoints.py"
-  - "litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py"

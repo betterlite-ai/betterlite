@@ -2,9 +2,60 @@ id: B784
 title: Key lifecycle audit and secret-manager events
 description: >-
   Implement key lifecycle event orchestration and create_key_deleted_audit_logs over typed KeyEvent and
-  injected AuditSink. Call B898 for secret-manager and legacy email effects in the pinned order. B065
-  owns audit persistence; this leaf owns event projection and scheduling, so key APIs do not depend on
-  the later audit endpoint umbrella.
+  B2330's concrete audit policy, masked records and sink. Call B898 for secret-manager and legacy
+  email effects in the pinned order. B065 owns only the later audit endpoint umbrella; no key event
+  depends on it. The concrete shared sink is split into B2330 to stay below 800 changed lines.
+
+  Generated events first await the B898 created-email sink only when send_invite_email is exactly
+  true; failures warn and continue. If audit policy is enabled, schedule a created audit with
+  fresh UUID/aware UTC time, B2330 changed-by resolution, caller.api_key, table
+  LiteLLM_VerificationToken, object_id=response.token_id or empty string, updated_values=response
+  JSON excluding nulls and before_value=null. Then always attempt B898 secret storage with
+  data.key_alias or virtual-key-<response.token_id>, response.key and data.team_id; failures warn
+  and return normally. Cases generated_email_true_only, generated_email_failure_continues,
+  generated_audit_projection, generated_null_token_fallback and generated_store_failure_warning
+  capture order, including no rollback of earlier email or audit scheduling.
+
+  Updated events rename a secret only when request.key_alias is non-null and differs from the
+  old alias; empty string still requests rename. Use old alias or virtual-key-<old token> and
+  the OLD team's ID. Rename errors warn and do not suppress audit. Build updated fields by
+  excluding null request fields, then explicitly restore project_id when present, including
+  null detach. The audit object ID uses B770's sk- prefix hash; action is updated and identity
+  uses caller.api_key. The source before_value applies json.dumps to existing_row.json, producing
+  a JSON string value rather than the generated/rotated object's encoding; retain that shape
+  through B2330's record constructor. After masking, restore an explicit null project_id again
+  via model_copy. response is unused. Cases update_alias_unchanged_no_rename,
+  update_empty_alias_rename_old_team, update_rename_failure_continues,
+  update_project_null_survives_masking, update_before_value_encoding and update_response_unused
+  pin these details, including constructor failure before task scheduling.
+
+  Rotated events attempt secret rotation only when response.token_id is non-null, using old
+  alias or virtual-key-<old token> as current name; new name prefers truthy response.key_alias,
+  then truthy requested alias (data may be null), then current name. Pass response.key and the
+  old row's team_id. Rotation failure warns and continues. Always attempt rotated-email next,
+  passing response without nulls and old alias; email errors warn and continue. Schedule audit
+  last only if enabled AND old token is non-null. Its object_id is the OLD token, action rotated,
+  before_value old row JSON, updated_values response JSON, and changed_by_api_key is caller.token,
+  not caller.api_key. Cases rotation_name_precedence, rotation_no_new_token_skips_store,
+  rotation_store_warning_still_emails, rotation_email_warning_still_audits,
+  rotation_missing_old_token_skips_audit and rotation_audit_identity distinguish the branches.
+
+  Deleted events synchronously prepare/schedule audit records first, then await B898 secret
+  deletion; data and response are unused. Disabled audit exits before validating rows. With audit
+  enabled, validate every row from attributes, skip only null token, and schedule one audit per
+  remaining row in source order with action deleted, object_id=row.token, updated_values='{}',
+  before_value=row JSON excluding nulls, caller.token and B2330 changed-by selection. Empty-token
+  strings are not skipped. Invalid later rows can leave earlier audit tasks scheduled and prevent
+  the secret-delete call; this wrapper has no catch around B898 deletion. Cases delete_audit_first,
+  delete_disabled_skips_validation, delete_null_vs_empty_token, delete_invalid_later_row_partial,
+  delete_sink_exception_propagates and delete_unused_request_fields cover it.
+
+  All audit payloads use B2330 masking, not stored-secret encryption. Raw new virtual keys go only
+  to the designated B898 secret/email sinks, never diagnostics or unmasked audit fields. Native
+  audit_no_raw_key tests actual B2330 construction; source equality cases compare submitted masked
+  records before the MIT sink's premium guard, using injected sinks, clock and task scheduler.
+  Spawned audit work is not awaited by these hooks; event preparation failures can propagate while
+  later asynchronous sink failures are B2330's responsibility. No hook owns a database transaction.
 
 
   Build the production key_events module in betterlite-server; reuse the typed dependencies listed in
@@ -37,8 +88,8 @@ description: >-
 
 
   Sizing: 225 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  225 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 459 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  225 production, 315 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 635 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -56,7 +107,7 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/key-events-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L1-L645
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L36-L286
     why: Pinned implementation and exact ownership boundary for key_events.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376-L1396
     why: GenerateKeyRequest request/response fields and defaults.
@@ -84,8 +135,8 @@ references:
     why: Own KeyManagementEventHooks.create_key_deleted_audit_logs; preserve caller-visible values and
       failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: generated_event, rotated_event,
-      audit_no_raw_key.'
+  - text: Every named generation/update/rotation/deletion case above passes, including each warning
+      branch, old/new identifier selection, audit masking and partial task scheduling.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -113,12 +164,17 @@ checks:
         --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-events/generated-event.yaml
+  - tools/oracle/cases/helpers/key-events/update-rename-and-project-detach.yaml
+  - tools/oracle/cases/helpers/key-events/rotation-sink-order-and-failures.yaml
+  - tools/oracle/cases/helpers/key-events/delete-row-validation-and-scheduling.yaml
+  - tools/oracle/cases/helpers/key-events/audit-api-key-versus-token.yaml
   - tools/oracle/cases/helpers/key-events/rotated-event.yaml
   - tools/oracle/cases/helpers/key-events/audit-no-raw-key.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2330 owns is_audit_logging_enabled, get_audit_log_changed_by, create_audit_log_for_update and
+    LiteLLM_AuditLogs masking. B770 owns request/response fields and _hash_token_if_needed;
+    B720 owns stored key rows. B898 owns actual secret storage and email delivery.
   - 'litellm/proxy/hooks/key_management_event_hooks.py: B898 owns KeyManagementEventHooks._store_virtual_key_in_secret_manager
     (L289-L318), KeyManagementEventHooks._rotate_virtual_key_in_secret_manager (L321-L345), KeyManagementEventHooks._stored_virtual_key_secret_manager
     (L348-L356), KeyManagementEventHooks._rename_virtual_key_in_secret_manager (L359-L395), KeyManagementEventHooks._get_secret_name
@@ -127,8 +183,9 @@ out_of_scope:
     (L517-L589), KeyManagementEventHooks._send_key_rotated_email (L592-L645).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Missing enterprise email classes select the MIT legacy fallback, not invented V2 payload delivery.
+  - Generated/updated audits use caller.api_key, but rotated/deleted audits use caller.token.
+  - A null project_id detach must survive exclude_none and the audit masking pass.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

@@ -7,6 +7,44 @@ description: >-
   duplicated-header precedence and mode overrides through typed selectors.
 
 
+  Both bearer helpers recognize only Bearer, bearer and Basic followed by a space and remove all
+  occurrences of that exact prefix after the starts-with check; they neither trim nor decode Basic.
+  AWS4-HMAC-SHA256 uses Credential=Bearer followed by whitespace first, then plain Credential=,
+  stopping at slash, whitespace or comma. The permissive helper preserves unmatched input; the strict
+  helper returns an empty string, including malformed AWS credentials. Unknown case BEARER is not
+  recognized. get_api_key chooses custom-header string even empty, then nonempty Authorization,
+  then Azure, Anthropic, Google and APIM header strings even empty, then a truthy generateContent
+  query key, finally exact configured pass-through paths. It returns the original passed_in_key too;
+  multiple matching pass-through declarations overwrite in list order. B003 owns duplicate wire headers.
+
+
+  The second pass-through check normalizes the root via B2302 and accepts mapped path prefixes;
+  litellm_user_api_key replaces the credential even when empty. Exact configured paths default auth
+  to true; any value that is not exactly true returns an empty UserAPIKeyAuth immediately. The langfuse
+  parser strips Basic plus whitespace, base64-decodes UTF-8 and takes text before the first colon;
+  malformed base64/UTF-8 propagates. Its other custom-header branch executes only for dict headers,
+  not Starlette's normal Headers object. Preserve that distinction in helper cases.
+
+
+  Custom-header-name lookup lowercases names and the received header map. A truthy value uses the
+  strict parser and logs only its abbreviation; missing/empty logs the missing-header exception text
+  and returns empty. Do not reproduce the source DEBUG dump of all request headers: the native logger
+  records names only. Public-route normalization strips trailing slashes except root; metrics always
+  requires auth unless litellm.require_auth_for_metrics_endpoint is exactly false, regardless of
+  general_settings. Development no-auth mode requires master_key is null (empty does not count) and
+  all enable_jwt_auth/enable_oauth2_auth/enable_oauth2_proxy_auth flags falsey; custom auth is not a flag.
+
+
+  A null routing selector matches anything. Otherwise stringify scalar/list selectors and claims;
+  absent claims fail, empty lists never match. All iss/client_id/scope/aud selectors must match, with
+  any cross-product value accepted per selector. Only scope splits a stripped string containing an
+  internal ASCII space; tabs alone do not split. Case-sensitive fnmatch runs only if selector has * or ?;
+  a bracket-only selector is literal. For nonscope wildcard matching, any claim whitespace blocks a
+  match; exact full-string matches may contain spaces. Empty/missing overrides or unreadable B760
+  unverified claims return false. First matching path=oauth2 logs DEBUG and selects introspection,
+  without granting identity. B890 is_admin maps get_rbac_role to PROXY_ADMIN or TEAM.
+
+
   Build the production auth_headers module in betterlite-auth; reuse the typed dependencies listed in
   the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.
@@ -26,7 +64,7 @@ description: >-
   litellm_jwtauth.routing_overrides=None.
 
 
-  general_settings.require_auth_for_metrics_endpoint=false, litellm_key_header_name=None; query ?key=
+  general_settings.litellm_key_header_name=None; query ?key=
   supplies credentials only on generateContent routes. pass_through_endpoints remains unavailable until
   B102 installs PassThroughRegistry, where a missing auth-key declaration defaults to enforced authentication.
 
@@ -38,21 +76,17 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Real requests exercise credential precedence, custom header emptiness and the metrics override
+  through B732 state. Record the chosen validator without trusting unverified JWT selectors as grants.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Give each competing header a different B860 fixture key, using POSTGRES_TEST_URL or testcontainers,
+  so the response identity proves precedence rather than merely accepting either credential.
 
 
-  Write betterlite-config::auth_headers::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_headers::tests::metrics_default_true_and_explicit_false,
+  general_settings_metrics_is_not_read_here, routing_overrides_default_none_and_validation,
+  custom_header_name_default_none, passthrough_auth_default_true and no_auth_mode_flags.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -60,27 +94,28 @@ description: >-
 
 
   This task owns the outside-byte boundary auth_headers::decode_auth_headers(&[u8]) -> Result<TypedValue,DecodeError>
-  for untrusted header bytes and configured header names. Production calls this decoder before its typed
+  for credential value bytes, including the langfuse base64 payload; B003 already parses HTTP headers
+  and B002 parses configured names. Production calls this decoder before its typed
   policy functions; the cargo-fuzz target auth_headers calls that same function. Seed valid, truncated,
   malformed, duplicate-field and limit-boundary inputs and add auth_headers::tests::replays_the_auth_headers_corpus.
-  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
-  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
+  Reuse B002 limits for config and B009/B003 limits for HTTP; cap any otherwise unbounded credential
+  value at 1048576 bytes. There is no JSON-depth limit on a header string. Return auth_error
+  401 without echoing credentials on the native limit branch, without panicking or
   fetching URLs. B733 owns crates/betterlite-auth/fuzz; depend on it and register this decoder target
   without recreating the workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  Authentication-mode services are injected independently of the MIT header parsers. B102 installs
+  the passthrough registry later through B2302; configured unavailable modes fail initialization.
 
 
-  Sizing: 228 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  228 production, 157 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 610 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  Sizing: allow 228 production, 260 table-driven tests, 80 helper adapters, 90 wiring, 55 decoder/fuzz
+  and 60 config lines, 773 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: credential_size_limit_rejects_without_echo,
+  custom_header_logs_never_contain_header_values.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -153,14 +188,21 @@ references:
     why: Own is_no_auth_dev_mode; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L191-L196
     why: litellm_settings.require_auth_for_metrics_endpoint default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
-    why: litellm_jwtauth.routing_overrides default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
+    why: Actual routing_overrides read; B869 owns the typed settings default and validation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: six_headers_precedence,
-      malformed_bearer, custom_header, jwt_routing_selector, pass_through_credential, public_protected_route,
-      generate_content_query_key, metrics_auth_enabled, passthrough_missing_auth_key.'
+  - text: 'Named cases: strict_and_permissive_prefix_table, repeated_prefixes_not_trimmed,
+      aws_bearer_plain_and_missing_credential, header_precedence_including_empty_strings,
+      passed_in_key_keeps_original, generate_content_query_only, duplicate_endpoint_last_match,
+      mapped_prefix_root_and_empty_override, passthrough_auth_exact_true_default,
+      langfuse_base64_colons_padding_and_invalid_utf8, normal_headers_skip_dict_only_branch,
+      custom_header_casefold_missing_empty_and_strict_parse, metrics_trailing_slashes_exact_false,
+      dev_mode_null_master_and_all_three_flags, selector_null_missing_empty_and_stringification,
+      scope_space_not_tab_splitting, wildcard_case_whitespace_and_bracket_rules,
+      selectors_and_values_cross_product, only_oauth2_override_debug_no_identity,
+      invalid_unverified_claims_no_override, admin_scope_role_mapping.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -249,14 +291,17 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-headers/metrics-auth-enabled.yaml
   - tools/oracle/cases/auth/auth-headers/passthrough-missing-auth-key.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
+  - what: Credential values above 1048576 bytes fail with 401 auth_error without echoing input;
+      smaller HTTP header limits still apply.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
       parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L160-L163
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L861-L905
+  - what: Custom-header DEBUG logs contain names rather than the source's complete request header values.
+    why: Prevent credential disclosure; custom_header_logs_never_contain_header_values proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3592-L3611
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B003 owns duplicate wire-header selection. B760 decodes unverified JWT claims; B762/B053 verify
+    and authenticate after mode selection. No credentials are stored here.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -300,6 +345,6 @@ pitfalls:
   - Unverified claims select a verifier but never grant identity or model access.
   - get_api_key_from_custom_header logs every header at debug upstream; betterlite never logs header values.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,75 @@
+id: B1510
+title: Adapt ChatGPT chat calls and normalize repeated tool deltas
+description: >-
+  Add chatgpt::chat to betterlite-openai for every method in chat/transformation.py and streaming_utils.py,
+  including the first-choice accessor and sync/async stream protocol. Use B668's OpenAI base policy,
+  B1509 login and B1507 headers. api_base_without_login returns B1508's configured base without starting
+  device login. _get_openai_compatible_provider_info ignores its supplied key/base in favor of that
+  base and the authenticator token, translating only GetAccessTokenError into AuthenticationError.
+  Header validation overlays the parent's validated headers onto ChatGPT defaults after reading account
+  and session ids. Parameter mapping sets stream=False only when stream is absent.
+
+  Keep per-stream seen_ids, next_index and last_id. A new nonempty tool id receives the next contiguous
+  index; a repeated id drops that tool call completely. An id-less delta uses the most recently seen id's
+  index, retaining its existing index before any id is seen. Only choices[0].delta is normalized. Empty
+  choices and missing tool calls pass unchanged; when all tool calls in that first delta were duplicates,
+  skip the whole chunk, even if it also carried content or a finish reason. Remaining choices and source
+  stream metadata are untouched. Sync and async iteration use this same typed normalizer; B005 owns
+  SSE bytes and cancellation, so this task creates no parser.
+
+  The chatgpt_chat helper calls pinned configuration methods and consumes ChatGPTToolCallNormalizer
+  over scripted decoded chunks. Cases login_base_ignores_argument, parent_header_overlay,
+  absent_stream_only, interleaved_ids, closing_chunk_removed and first_choice_only compare exact
+  outputs and which authentication calls occur. Add call.chatgpt_chat to B171's corpus. Domain tests
+  live under chatgpt::chat, including separate per-stream state isolation. The two source files total
+  144 nonblank/non-comment lines; reserve 160 mapper/normalizer, 175 tests, 95 adapters and 40 wiring
+  lines, with a 500-line maximum.
+scope:
+  paths:
+    - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/chat.rs
+    - crates/betterlite-openai/src/chatgpt/chat/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/chatgpt_chat.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/chatgpt_chat.py
+    - tools/oracle/cases/helpers/chatgpt-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/chat/transformation.py#L16-L78
+    why: Login-free base discovery, authentication translation and inherited-header overlay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/chat/streaming_utils.py#L18-L103
+    why: Request-local tool-index assignment and removal of duplicate closing chunks.
+dod:
+  - text: ChatGPT preparation uses the authenticator and correct header precedence while retaining explicit stream values.
+    proof: [chatgpt-chat-tests, oracle, chatgpt-chat-adapter]
+  - text: Tool-call deltas get stable indices and duplicate-only chunks disappear in both iterator modes without sharing state.
+    proof: [chatgpt-chat-tests, oracle, chatgpt-chat-adapter]
+checks:
+  optional: []
+  commands:
+    - id: chatgpt-chat-tests
+      why: chat preparation or stream-local normalization is absent or wrong
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chatgpt::chat::/)'
+    - id: chatgpt-chat-adapter
+      why: the configuration/iterator comparison lacks a checked adapter or case tag
+      run: grep -qE '^[[:space:]]+chatgpt_chat:' tools/oracle/fuzz/corpus/helper_case/chatgpt_chat* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_chat.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-chat/login-base-ignores-argument.yaml
+  - tools/oracle/cases/helpers/chatgpt-chat/parent-header-overlay.yaml
+  - tools/oracle/cases/helpers/chatgpt-chat/absent-stream-only.yaml
+  - tools/oracle/cases/helpers/chatgpt-chat/interleaved-ids.yaml
+  - tools/oracle/cases/helpers/chatgpt-chat/closing-chunk-removed.yaml
+  - tools/oracle/cases/helpers/chatgpt-chat/first-choice-only.yaml
+deviations: []
+out_of_scope:
+  - B1511 handles ChatGPT Responses requests and complete SSE bodies; B045 connects this chat adapter to the provider dispatcher.
+pitfalls:
+  - Continuation chunks follow last_id rather than the index sent by the backend.
+  - Duplicate id detection drops the repeated call even when its arguments contain new text.
+  - Explicit stream=None survives setdefault and must not be rewritten to False.
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

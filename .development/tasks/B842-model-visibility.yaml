@@ -1,10 +1,43 @@
 id: B842
 title: Discoverable and healthy model visibility
 description: >-
-  Implement ModelVisibility using typed configured deployment metadata, public team names, aliases, wildcard
-  provider resolution and B304 health snapshots. Preserve source defaults for healthy_only and undiscoverable
-  metadata; visibility filtering is separate from model access authorization. general_settings.model_list_healthy_only
-  defaults false; only a literal true enables the proxy-wide filter.
+  Implement ModelVisibility over B844 get_model_list, B302 alias/pattern snapshots, B307
+  async_get_fully_unhealthy_model_names, B209 declared_authenticating_provider, B174 get_llm_provider
+  and B732 user_api_key_has_admin_view. A deployment is hidden only when model_info is a mapping
+  containing discoverable whose value is literally false; absent, null, 0 and "false" remain visible.
+  A model name is hidden only when lookup returns at least one deployment and every backing row is
+  hidden. Missing router, missing models and a single visible sibling keep the name discoverable.
+
+
+  For non-admin listings, collect hidden rows' string model_name and team_public_model_name values,
+  then aliases whose direct target is in that set. Both string and {model: ...} alias forms work;
+  do not recursively resolve alias chains here. Compile global patterns plus the requested team's
+  patterns, keeping patterns with any hidden deployment. Match the original name first using prefix
+  match, then declared provider or inferred provider plus slash/name. Inference exceptions are
+  swallowed without warning and the source still tests the literal None/<name> candidate. A candidate
+  matched by served name or pattern is hidden only after B844 confirms all its resolved deployments
+  are hidden. Admin-view and absent routers return an empty hidden set without looking up patterns.
+  No hidden rows also short-circuits pattern work. discoverable_rows instead filters each row directly,
+  preserving order/duplicates; admins retain all rows. Invalid internal pattern records/regexes propagate,
+  with no newly invented fail-open fallback.
+
+
+  Read general_settings.model_list_healthy_only (default false) at healthy_model_filter.py L41.
+  Only boolean true enables it; strings, numbers, null, lists and mappings normalize false, not a
+  startup parse failure. There is no dedicated environment variable. Request healthy_only defaults
+  None at the call boundary; true OR the setting enables filtering, so request false cannot disable
+  the global opt-in. Without a router or with both opt-ins false, do not read health at all. Otherwise
+  return B307's hidden-name set unchanged. Empty results log the source debug diagnostic about
+  background_health_checks and return unfiltered; exceptions from the router are not caught here.
+  Unknown/stale health, allowed_fails_policy and literal wildcard treatment remain B307's policy.
+  This is listing presentation, not admission control.
+
+
+  Config tests loads_health_filter and health_filter_nonbool call B002's real loader with every value
+  above, including os.environ/ resolution, and pass the normalized setting into the production filter.
+  Seed B002's existing config_yaml corpus; do not add another config decoder. The helper adapter
+  supplies immutable router snapshots and ready health outcomes, invokes the pinned functions and
+  compares hidden sets, row sequences, lookup counts, debug events and propagated error categories.
 
 
   Build the production model_visibility module in betterlite-server; reuse the typed dependencies listed
@@ -40,10 +73,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 121 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  121 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 364 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned ranges total 121 nonblank noncomment lines including 29 docstring lines; allow 125 production,
+  245 tests, 85 adapters, 60 config and 30 wiring lines, 545 within 600. Compiled router patterns and
+  decoded config records are consumed here; their byte parsers stay with B302 and B002.
 scope:
   paths:
     - crates/betterlite-server/src/model_visibility.rs
@@ -58,6 +90,12 @@ scope:
     - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/model-visibility/**
     - tools/oracle/fuzz/corpus/helper_case/model-visibility-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/model_visibility.rs
+    - crates/betterlite-config/src/model_visibility/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/model-visibility-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L1-L118
@@ -101,13 +139,15 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
+  - text: loads_health_filter and health_filter_nonbool load the actual setting and exercise literal-true normalization and request precedence.
+    proof: [config-tests, config-corpus]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_visibility::tests::/)
-        - test(/replays_the_/)'
+        - test(/replays_the_/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_visibility::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/model_visibility.py && uv run --locked --project tools/oracle/litellm
@@ -118,6 +158,12 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-visibility-*")"
         && grep -rlq "model_visibility" tools/oracle/fuzz/corpus/helper_case/model-visibility-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: Require production acceptance and normalization of model_list_healthy_only.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_visibility::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: Require a new health-listing config seed and replay it through the existing parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/model-visibility-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/model-visibility/undiscoverable-model.yaml
   - tools/oracle/cases/helpers/model-visibility/team-public-alias.yaml
@@ -125,14 +171,32 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-visibility/healthy-only-default.yaml
   - tools/oracle/cases/helpers/model-visibility/explicit-healthy-only.yaml
   - tools/oracle/cases/helpers/model-visibility/unknown-health.yaml
+  - tools/oracle/cases/helpers/model-visibility/discoverable-literal-false.yaml
+  - tools/oracle/cases/helpers/model-visibility/metadata-not-mapping.yaml
+  - tools/oracle/cases/helpers/model-visibility/visible-sibling.yaml
+  - tools/oracle/cases/helpers/model-visibility/no-backing-model.yaml
+  - tools/oracle/cases/helpers/model-visibility/no-router.yaml
+  - tools/oracle/cases/helpers/model-visibility/admin-view-bypass.yaml
+  - tools/oracle/cases/helpers/model-visibility/no-hidden-short-circuit.yaml
+  - tools/oracle/cases/helpers/model-visibility/alias-object-and-chain.yaml
+  - tools/oracle/cases/helpers/model-visibility/team-pattern-scope.yaml
+  - tools/oracle/cases/helpers/model-visibility/provider-prefix-match.yaml
+  - tools/oracle/cases/helpers/model-visibility/unknown-provider-none-prefix.yaml
+  - tools/oracle/cases/helpers/model-visibility/pattern-needs-hidden-backing.yaml
+  - tools/oracle/cases/helpers/model-visibility/row-order-and-duplicates.yaml
+  - tools/oracle/cases/helpers/model-visibility/global-true-request-false.yaml
+  - tools/oracle/cases/helpers/model-visibility/disabled-skips-health.yaml
+  - tools/oracle/cases/helpers/model-visibility/empty-health-debug.yaml
+  - tools/oracle/cases/helpers/model-visibility/health-error-propagates.yaml
+  - tools/oracle/cases/helpers/model-visibility/invalid-pattern-propagates.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B307 owns the router's health aggregation and staleness rules; B130 populates health snapshots.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Only literal true enables model_list_healthy_only; truthy strings are not equivalent.
+  - A wildcard's hidden row is only a candidate; a visible sibling resolved for the requested name prevents hiding it.
+  - healthy_only=false cannot undo the proxy-wide setting, and an unexpected health lookup error still propagates.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

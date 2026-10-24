@@ -2,7 +2,7 @@ id: B071
 milestone: M4 keys, spend and management
 title: Budgets, budget resets and reservations
 status: todo
-depends_on: [B069]
+depends_on: [B2311, B2313, B2316, B2317]
 file: null
 covers:
   - "litellm/budget_manager.py"

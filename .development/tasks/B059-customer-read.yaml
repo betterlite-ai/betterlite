@@ -1,57 +1,43 @@
 id: B059
 title: Customer info, list and daily activity
 description: >-
-  Register customer/budget routes and implement customer/end_user info/list/daily-activity aliases through
-  typed rows and DailyActivityRepository. Keep source admin-versus-self activity restrictions and response
-  budget fields; the original ID is the final integration point for these services.
+  Own resolve_customer_daily_activity_scope L500-L512, customer_daily_activity_is_admin L515-L519,
+  end_user_info L534-L577, list_end_user L849-L891 and get_customer_daily_activity L906-L958 in
+  customer_endpoints.py. Register GET /customer/info, /customer/list, /customer/daily/activity and
+  their /end_user equivalents once with B052 auth. Legacy aliases are absent from OpenAPI. Info
+  returns CustomerResponse, list returns its array, activity SpendAnalyticsPaginatedResponse.
 
+  Info requires end_user_id as a string query parameter; B003 owns the missing-parameter422. It has
+  no additional caller-specific check. A missing database raises HTTP500 with the common database
+  detail.error. B830's typed adapter over B726 EndUserRepository.find_first reads user_id with both
+  litellm_budget_table and object_permission included. A missing row raises404 not_found, param
+  end_user_id, message End User Id=<id> does not exist in db. Convert through B830 _to_customer_response,
+  dropping reverse permissions relations and budget audit fields by the typed response schema.
 
-  Build the production customer_read module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  List checks PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY before database availability; all other roles get
+  HTTP401 detail.error Admin-only endpoint. Your user role=<role>. Authorized callers without a
+  database get HTTP400 common database detail, unlike info's500. Query all rows with both relations,
+  without a route sort or pagination, and convert every row through the same response helper. Info
+  and list catch every exception, log their route exception, and call B124 handle_exception_on_proxy:
+  existing ProxyException fields survive, HTTP errors become internal_server_error with original
+  status/detail and openai_error_param, other errors use status_code or500. These helpers are called
+  here, unlike routes that have their own unrelated mapping.
 
+  Activity also permits only proxy admin/view; there is no customer-self activity branch. Its401
+  admin denial precedes the database500. Defaults are end_user_ids, exclude_end_user_ids, dates,
+  model and api_key absent, page=1, page_size=10. Split truthy IDs on commas without trimming or
+  deduplication; empty strings become None. The scope resolver loads aliases via B700 find_many_in
+  for explicit IDs, otherwise find_many(where={}); metadata maps user_id to alias including null.
+  Empty tuples remain empty scopes and missing rows do not produce404. Call B074 get_daily_activity
+  with litellm_dailyenduserspend, entity_id_field=end_user_id, scope IDs, aliases, exclusions and every
+  filter/page argument unchanged. Activity has no local except or handle_exception_on_proxy call;
+  B003 global mapping handles raised HTTP errors. All paths are reads, with no cache mutation.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/customer_endpoints.py:
-  resolve_customer_daily_activity_scope (L500-L512; 13 source lines), customer_daily_activity_is_admin
-  (L515-L519; 5 source lines), end_user_info (L534-L577; 37 source lines), list_end_user (L849-L891; 36
-  source lines), get_customer_daily_activity (L906-L958; 47 source lines).
-
-
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
-  Register these actual HTTP routes and aliases exactly once: GET /customer/info -> end_user_info; GET
-  /end_user/info -> end_user_info; GET /customer/list -> list_end_user; GET /end_user/list -> list_end_user;
-  GET /customer/daily/activity -> get_customer_daily_activity; GET /end_user/daily/activity -> get_customer_daily_activity.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 138 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  138 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 351 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Implement customer_read in betterlite-server with files below 300 lines and adjacent tests. B860
+  provisions independent Postgres schemas using POSTGRES_TEST_URL or testcontainers; B001 HttpCase
+  compares complete bodies/error fields on real routes, including all aliases. Reuse B003 decoding
+  and B830 response contracts, with no new parser/fuzz target. Allow 145 production, 270 table-driven
+  tests and 80 wiring lines, 495 within a 550-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/customer_read.rs
@@ -65,78 +51,43 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L500-L577
-    why: Pinned implementation and exact ownership boundary for customer_read.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L849-L958
-    why: Pinned implementation and exact ownership boundary for customer_read.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L500-L512
-    why: Own resolve_customer_daily_activity_scope; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L515-L519
-    why: Own customer_daily_activity_is_admin; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L534-L577
-    why: Own end_user_info; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L849-L891
-    why: Own list_end_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L906-L958
-    why: Own get_customer_daily_activity; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: Scope helpers, info lookup, typed response and route catch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L836-L958
+    why: Alias registration, list/activity permissions, defaults and distinct error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8241
+    why: Actual shared mapper called by info and list only.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: customer_info, customer_list,
-      legacy_alias, customer_daily_admin, self_activity_scope, other_customer_denied.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
+  - text: 'Named cases: six_aliases_and_legacy_schema_visibility, info_missing_query422,
+      info_no_db500, info_missing_row404_all_fields, info_relations_and_response_field_projection,
+      list_admin_and_view_only, list_role_denial_before_db401, list_no_db400,
+      list_all_rows_no_route_pagination, info_list_exception_log_and_mapper,
+      activity_admin_and_view_only_no_self_bypass, activity_denial_before_db401,
+      activity_no_db500, activity_defaults_and_filter_passthrough,
+      comma_ids_preserve_spaces_empty_segments_duplicates, alias_metadata_null_missing_rows,
+      empty_scope_never_all, activity_table_entity_and_exclusions,
+      activity_errors_not_locally_wrapped, no_database_writes.'
+    proof: [behavior-tests, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_read::tests::/)
-        - test(/replays_the_/)'
+      why: Customer read scope, response or error behavior differs from the pinned route.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_read::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/customer-read/get--customer-info-success.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-info-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-info-success.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-info-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-list-success.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-list-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-list-success.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-list-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-daily-activity-success.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-daily-activity-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--customer-daily-activity-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-daily-activity-success.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-daily-activity-invalid-target.yaml
-  - tools/oracle/cases/management/customer-read/get--end-user-daily-activity-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-read/customer-info.yaml
-  - tools/oracle/cases/management/customer-read/customer-list.yaml
-  - tools/oracle/cases/management/customer-read/legacy-alias.yaml
-  - tools/oracle/cases/management/customer-read/customer-daily-admin.yaml
-  - tools/oracle/cases/management/customer-read/self-activity-scope.yaml
-  - tools/oracle/cases/management/customer-read/other-customer-denied.yaml
+  - tools/oracle/cases/management/customer-read/info-and-alias.yaml
+  - tools/oracle/cases/management/customer-read/info-missing-query-and-row.yaml
+  - tools/oracle/cases/management/customer-read/list-admin-view-and-denial.yaml
+  - tools/oracle/cases/management/customer-read/activity-admin-view-and-self-denial.yaml
+  - tools/oracle/cases/management/customer-read/activity-filter-defaults.yaml
+  - tools/oracle/cases/management/customer-read/three-no-database-statuses.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B830 owns _typed_table (L98-L98), _typed_table
-    (L100-L100), _typed_table (L101-L102), _evict_end_user_cache_keys (L108-L119), _end_user_cache_keys
-    (L122-L124), _to_customer_response (L127-L134), block_user (L149-L190), unblock_user (L205-L249),
-    new_budget_request (L252-L275), _handle_customer_object_permission_update (L278-L305), new_end_user
-    (L320-L492).'
-  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B831 owns update_end_user (L592-L756),
-    delete_end_user (L771-L834).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B830 owns customer row adapters and response projection; B831 owns updates; B829 owns budgets.
+  - B074 owns activity date validation, aggregation and pagination; B700 owns find_many_in.
 pitfalls:
-  - customer and end_user aliases share one authorization decision and response shape.
+  - Info/list locally map exceptions, but activity does not. Their missing-database statuses differ.
+  - Activity's admin-only check forbids an end user reading its own activity.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

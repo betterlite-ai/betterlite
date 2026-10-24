@@ -7,6 +7,24 @@ description: >-
   cleanup projection outside this transaction, preserving its different partial-write semantics.
 
 
+  Validate in order: no DB (500), missing team_id (400), missing both user identifiers (400), missing
+  team (400), then B800 TEAM_OR_ORG_ADMIN authorization (403). These are uncaught HTTPException values
+  with detail.error; B865 rethrows them and FastAPI returns detail, not an OpenAI error type/param/code.
+  Match roster entries by non-null ID OR exact email. Under the writer transaction acquire
+  TEAM_ADVISORY_LOCK_SQL and re-read the roster through B724; a concurrently deleted team is again 400.
+  Derive addressed IDs from removed entries, otherwise the supplied ID, otherwise query by email. With
+  no removed entries only users whose teams still contain this team are eligible; no such user is 400
+  User not found in team. Several email matches must not delete unrelated users' keys.
+
+  Fetch keys for eligible IDs AND this team, then B738 JWT mapping cache keys. Write roster JSON only
+  when entries were removed; strip the team from stale user rows; delete memberships in sorted ID
+  order; archive keys through B777 using the same tx; delete those keys. A failure rolls back these
+  writes. After commit schedule B784 deletion audit logs with changed_by=None, evict team then key
+  caches through B734, broadcast JWT mappings then sorted user IDs through B878, invalidate each member's
+  spend state through B734, and emit B807 membership metrics. The route finally schedules B807's
+  membership audit with fresh before/after rosters and returns the updated team snapshot. Failures after
+  commit do not restore rows. B801 owns typed transaction tables; B724 owns the advisory lock SQL.
+
   Build the production team_member_delete module in betterlite-server; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
@@ -20,11 +38,9 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: POST /team/member_delete -> team_member_delete.
   For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  route permission through B001 HttpCase. Compare status, returned team, content-type and detail.error
+  versus authentication's separate OpenAI error envelope. Inspect rows through B860. There is no local
+  except block and no litellm-changed-by request argument on this route.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -52,8 +68,8 @@ description: >-
 
 
   Sizing: 178 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  178 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 391 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  178 production, 280 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 523 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -77,15 +93,19 @@ references:
     why: Own _is_member_addressed_by; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3514-L3528
     why: Own _cleanup_members_with_roles; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3537-L3575
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3531-L3575
     why: Own team_member_delete; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3578-L3753
     why: Own _team_member_delete; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: remove_by_email, remove_associated_keys,
-      roster_race, rollback, postgres_pinned_rows, postgres_failure_effects.'
+  - text: >-
+      Named cases no_database_500, missing_team_id_400, missing_member_identity_400, unknown_team_400,
+      scoped_admin_allowed, unrelated_user_403, remove_by_email, id_or_email_matches,
+      stale_user_team_cleanup, duplicate_email_only_stale_users, user_absent_400,
+      remove_associated_keys, roster_race, team_disappears_under_lock, sorted_membership_deletes,
+      archive_before_delete_same_tx, rollback, postcommit_effect_order and postcommit_failure_keeps_rows
+      cover validation and transaction ordering. postgres_pinned_rows and postgres_failure_effects
+      inspect rows and archived keys against real Postgres.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -108,17 +128,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_delete::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_delete::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-member-delete/post--team-member-delete-success.yaml
-  - tools/oracle/cases/management/team-member-delete/post--team-member-delete-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-delete/post--team-member-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-member-delete/validation-statuses.yaml
+  - tools/oracle/cases/management/team-member-delete/scoped-admin-and-unrelated-user.yaml
+  - tools/oracle/cases/management/team-member-delete/stale-roster-and-email-collisions.yaml
+  - tools/oracle/cases/management/team-member-delete/user-absent.yaml
   - tools/oracle/cases/management/team-member-delete/remove-by-email.yaml
   - tools/oracle/cases/management/team-member-delete/remove-associated-keys.yaml
   - tools/oracle/cases/management/team-member-delete/roster-race.yaml
   - tools/oracle/cases/management/team-member-delete/rollback.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -184,8 +203,8 @@ out_of_scope:
     (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
     check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
     (L1109-L1178).'
-  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
-    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B2370 owns patch_team (L2568-L2642);
+    B1205 owns _set_budget_reset_at (L2645-L2663) and handle_update_object_permission (L2666-L2687).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
     _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
     (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
@@ -201,9 +220,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The single-member path takes TEAM_ADVISORY_LOCK_SQL and performs its own writer transaction, then
-    evicts affected key/member caches and emits key-deletion audit events.
+  - A missing roster entry can still require removal from user.teams; an immediate 400 leaves stale access.
+  - Resolve the removal against the roster read under the advisory lock, not the authorization snapshot.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

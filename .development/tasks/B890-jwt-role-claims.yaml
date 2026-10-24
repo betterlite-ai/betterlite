@@ -1,9 +1,31 @@
 id: B890
 title: JWT role and scope claim projections
 description: >-
-  Project role/scope claims from verified token records with dot-path lookup and configured maps. Scope
-  strings and lists retain source semantics; a normalized trust marker is accepted only from JwtVerifier
-  provenance. No projection creates an authenticated context by itself.
+  Project JWT roles without normalizing away the source's claim-shape behavior. get_scopes reads only
+  the literal scope claim: missing means [], strings split on arbitrary whitespace, and lists are
+  returned unchanged, including nonstring members. Null, numbers and objects raise the 'Unmapped
+  scope type' exception; they are not empty scopes. is_admin tests exact membership of configured
+  admin_jwt_scope (default litellm_proxy_admin). The scope error occurs before any team/user/role
+  mapping can grant access.
+
+  get_user_roles and get_jwt_role use B213's get_nested_value with respectively user_roles_jwt_field
+  and roles_jwt_field; unset fields and KeyError return the caller's default. Present values retain
+  their shape: a string is not wrapped as one role and null is not replaced by the default. Other
+  lookup errors propagate. is_allowed_user_role requires nonnull claim and user_allowed_roles, then
+  iterates the claim and accepts any exact member; a string therefore iterates characters, a dict
+  iterates keys, and a noniterable fails. role_mappings likewise builds a set of the truthy roles
+  and returns the first mapping whose role is in it; null/empty means no mapping, unhashable members
+  fail. Map order wins over claim order, and these mappings have no wildcard matching.
+
+  get_rbac_role evaluates scopes/admin and user roles first, then chooses proxy_admin, a nonnull
+  B760 team id (including an empty id), a nonnull B760 user id or allowed user role, then the first
+  role_mappings match, else None. A user id does not need an allowed role. B760 alone owns trusted
+  issuer normalization; this task neither accepts a request trust marker nor verifies signatures.
+  jwt_litellm_role_map is a separate projection used by role synchronization: for each mapping in
+  configuration order, scan the JWT roles and return the first fnmatch match. Match Python fnmatch's
+  pinned Linux behavior: case-sensitive *, ?, bracket sets/ranges/negation, slash as an ordinary
+  character and unmatched brackets literal. Do not use model/provider wildcard semantics. Empty
+  mappings or roles return None; wrong role types propagate instead of silently dropping the role.
 
 
   Build the production jwt_role_claims module in betterlite-auth; reuse the typed dependencies listed
@@ -31,47 +53,25 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  These pure projections have no route, SQL or authentication success of their own. The equality
+  corpus invokes JWTHandler methods on constructed verified-claim fixtures, not a JWT HTTP request
+  that MIT LiteLLM rejects at B875's license gate. B875/B053 own the native JWT integration and
+  B757 owns outer error translation (a plain scope/role exception becomes 401 auth_error, string
+  None param, code 401); do not add a second premium deviation here.
+
+  Load the six settings through B869 and test the real B002 boundary with
+  jwt_role_claims::tests::six_role_settings_defaults, six_role_settings_consumed and
+  invalid_role_setting_shapes_fail. Config schema errors stop loading; they do not pick a fallback.
+  Preserve B869's requirement that user_roles_jwt_field and user_allowed_roles appear together.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::jwt_role_claims::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 126 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  126 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 445 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: the eight ranges contain 126 lines before docstring exclusion; allow 160 production,
+  240 behavior tests, 65 helper adapters, 25 wiring and 50 config lines, 540 within a 600-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Server wiring tests live under betterlite-server::auth::jwt_role_claims::tests: stage_is_registered
-  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  Keep the implementation in the auth crate; B053 calls these projections through its handler.
 scope:
   paths:
     - crates/betterlite-auth/src/jwt_role_claims.rs
@@ -86,18 +86,12 @@ scope:
     - tools/oracle/helpers/management/jwt.py
     - tools/oracle/cases/helpers/jwt-role-claims/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-*
-    - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/auth/jwt-role-claims/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/jwt_role_claims.rs
     - crates/betterlite-config/src/jwt_role_claims/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*
-    - crates/betterlite-server/src/auth/jwt_role_claims.rs
-    - crates/betterlite-server/src/auth/jwt_role_claims/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L304-L333
@@ -116,36 +110,35 @@ references:
     why: Own JWTHandler.is_allowed_user_role; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L735-L746
     why: Own JWTHandler.get_scopes; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.jwt_litellm_role_map default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5358-L5435
+    why: Role settings default to None except the admin scope; each method reference above is its actual read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: role_map, scope_string_list,
-      unknown_role.'
+  - text: 'Cases scope_missing_empty, scope_whitespace_split, scope_list_preserves_shapes,
+      scope_other_types_error_before_identity, admin_scope_exact, roles_unset_or_missing_default,
+      roles_null_retained, roles_dot_path_errors, user_role_any_exact_member,
+      role_string_character_semantics, role_dict_key_semantics, role_noniterable_and_unhashable_errors,
+      rbac_admin_team_user_mapping_precedence, nonnull_empty_identity_counts,
+      user_identity_bypasses_allowed_roles, role_mapping_order_and_exactness,
+      litellm_role_map_configuration_order, fnmatch_case_slash_question_brackets,
+      empty_maps_and_roles_none and no_mapping_none exercise every projection branch.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
   - text: Every named setting loads through the production config boundary with its pinned default, precedence
       and invalid-value behavior.
     proof:
       - config-tests
       - config-corpus
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
-    proof:
-      - stage-wiring-tests
-      - behavior-tests
 checks:
   optional:
     - mutants
@@ -173,21 +166,17 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*")"
         && grep -rlq "admin_jwt_scope" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-    - id: stage-wiring-tests
-      why: The server does not register this production auth stage or discards its failure.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_role_claims::tests::/)
-        - test(/replays_the_/)'
 oracle_cases:
   - tools/oracle/cases/helpers/jwt-role-claims/role-map.yaml
   - tools/oracle/cases/helpers/jwt-role-claims/scope-string-list.yaml
   - tools/oracle/cases/helpers/jwt-role-claims/unknown-role.yaml
-  - tools/oracle/cases/auth/jwt-role-claims/role-map.yaml
-  - tools/oracle/cases/auth/jwt-role-claims/scope-string-list.yaml
-  - tools/oracle/cases/auth/jwt-role-claims/unknown-role.yaml
+  - tools/oracle/cases/helpers/jwt-role-claims/precedence.yaml
+  - tools/oracle/cases/helpers/jwt-role-claims/malformed-role-shapes.yaml
+  - tools/oracle/cases/helpers/jwt-role-claims/fnmatch-role-mapping.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B869 owns settings validation, B760 owns identity extraction and trusted normalized claims,
+    B213 owns dot-path grammar, and B765 owns role-sync database writes.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -242,9 +231,9 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Scope strings and lists retain source semantics; a normalized trust marker is accepted only from JwtVerifier
-    provenance.
+  - A roles string iterates characters; only scope strings split into words.
+  - role_mappings is exact RBAC selection, while jwt_litellm_role_map uses wildcard matching for sync.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

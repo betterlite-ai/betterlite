@@ -1,0 +1,9 @@
+id: B1431
+milestone: M3 providers
+title: AIML and CometAPI image generation and image-count pricing
+status: todo
+depends_on: [B002, B193, B997, B171]
+file: tasks/B1431-compatible-image-hosts.yaml
+covers:
+  - "litellm/llms/{aiml,cometapi}/image_generation/**"
+  - "litellm/types/llms/aiml.py"

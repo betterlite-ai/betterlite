@@ -2,8 +2,9 @@ id: B881
 milestone: M4 keys, spend and management
 title: SSO readiness and model request context utilities
 status: todo
-depends_on: [B001, B002, B003, B302, B732, B746, B856, B860, B882]
+depends_on: [B001, B002, B003, B007, B192, B302, B732, B733, B737, B746, B856, B882, B1100]
 file: tasks/B881-auth-context-sources.yaml
 covers:
+  - "litellm/proxy/proxy_server.py"
   - "litellm/proxy/auth/auth_utils.py"
   - "litellm/proxy/auth/user_api_key_auth.py"

@@ -2,7 +2,7 @@ id: B767
 milestone: M4 keys, spend and management
 title: JWT key mapping management routes
 status: todo
-depends_on: [B001, B003, B052, B171, B722, B732, B734, B738, B742, B770, B856, B860, B878]
+depends_on: [B001, B003, B052, B726, B732, B738, B770, B860, B878, B2314]
 file: tasks/B767-jwt-mapping-api.yaml
 covers:
   - "litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py"

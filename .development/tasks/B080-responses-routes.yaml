@@ -31,7 +31,15 @@ description: >-
   dispatch through SdkHttpCall::ResponsesPublicDispatch; do not invoke FastAPI handlers as helpers.
   No parser is added above B1100/B902. Source count is 336 nonblank/non-comment lines including
   route/dispatch declarations and package exports; estimate 260 composition, 185 tests, 170 HTTP
-  fixtures, 90 SDK adapters and 40 wiring, 745 total under 800.
+  fixtures, 90 SDK adapters and 40 wiring, 745 total, plus 80 for the OpenAI binding below: 825 under 830.
+
+  Bind the OpenAI provider's Responses create operation into the dispatcher this task extends: the openai
+  target uses B507 input preparation and B508 reply and event decoding, which B932's create call executes,
+  and keeps response item IDs, tool metadata and streaming event order. The binding lives here, not in the
+  OpenAI provider umbrella B024, because the Responses variant only exists once this task adds it and a
+  provider task must not depend on a route task. Test function openai_provider_operation under
+  api::responses_routes::tests drives POST /v1/responses with an openai/ model through the booted proxy and
+  asserts the captured upstream /v1/responses request and the returned item IDs and stream events.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -141,11 +149,19 @@ dod:
     public calls each make one mock POST and preserve B1078/B932 results. __wrapped__/documentation
     signature compatibility is exposed through B158, without implementing excluded rust_bridge code.
   proof: [public-dispatch, oracle, python-sdk]
+- text: >-
+    openai_provider_operation posts {model:openai/gpt-4o,input:hello} to /v1/responses with valid auth. Expect
+    HTTP 200 and exactly one upstream POST /v1/responses whose body carries B507's prepared input; the returned
+    item IDs, tool metadata and stream events match the upstream reply unchanged.
+  proof: [openai-operation, oracle]
 - text: New public-dispatch SDK seeds and route fixtures exercise production composition rather than helper handlers.
   proof: [sdk-corpus, oracle, python-sdk]
 checks:
   optional: []
   commands:
+  - id: openai-operation
+    why: the OpenAI Responses binding never reaches the upstream request or changes its items
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::openai_provider_operation($|::)/)'
   - id: route-http
     why: an alias, chat branch or interception port fails in the booted proxy
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::create_route_aliases($|::)/)'
@@ -174,6 +190,7 @@ checks:
     why: the public SDK operation lacks a newly added decoder seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
+- tools/oracle/cases/api/responses-routes/openai-provider-operation.yaml
 - tools/oracle/cases/api/responses-routes/create-route-aliases.yaml
 - tools/oracle/cases/api/responses-routes/create-auth-and-required-input.yaml
 - tools/oracle/cases/api/responses-routes/polling-admission-and-owner.yaml
@@ -201,5 +218,5 @@ pitfalls:
 - Every create alias enables responses_stream_errors on the data generator; omitting it loses response.failed framing.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 830
   max_new_expects: 0

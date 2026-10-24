@@ -1,48 +1,80 @@
 id: B707
 title: Postgres migrations for routing state
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  Add the 36 routing-state migration files after B706, preserving byte checksums, full directory
+  identities and order. schema_routing_state tests cover actual catalog/default/data effects while
+  B873 owns deployment and ledger handling. Retain all directories sharing 20260717000000; a timestamp
+  alone is not a migration identity. Some CREATE/ADD statements are unguarded, so this cohort is not
+  generally replayable without the deploy ledger.
+
+  AdaptiveRouterState has composite (router_name,request_type,model_name) primary key, required DOUBLE
+  PRECISION alpha/beta without defaults, total_samples INTEGER 0 and last_updated_at now. AdaptiveRouterSession
+  has composite (session_id,router_name,model_name), required classified_type, seven INTEGER 0 counters
+  misalignment/stagnation/disengagement/satisfaction/failure/loop/exhaustion_count, nullable last user/
+  assistant content, required tool_call_history JSONB [], pending_tool_calls {}, turn_count=0,
+  last_processed_turn=-1, clean_credit_awarded=false, nullable terminal_status and last_activity_at now.
+  Index last_activity_at. These CREATE TABLE/INDEX statements are unguarded; a second execution fails
+  with duplicate_table 42P07 rather than resetting learned state.
+
+  MemoryTable requires memory_id/key/value TEXT, timestamp defaults now, nullable metadata/user_id/
+  team_id/actors, globally unique key and separate user/team indexes. Uniqueness is not tenant-scoped.
+  TeamMembership.total_spend becomes required DOUBLE PRECISION 0; ObjectPermission.search_tools is
+  nullable TEXT[] default []. WorkflowRun requires run_id/unique session_id/workflow_type, status='pending',
+  created_at now/updated_at without default and nullable created_by/input/output/metadata. WorkflowEvent
+  requires event_id/run_id/event_type/step_name/INTEGER sequence_number, nullable data and created_at now.
+  WorkflowMessage requires message_id/run_id/role/content/sequence_number, nullable session_id and
+  created_at now. Each child has unique (run_id,sequence_number), a run_id index and a run reference
+  that deletes RESTRICT/updates CASCADE. Run indexes cover workflow_type+status, session_id, created_at
+  and created_by. Preserve the unguarded DDL and the distinction between globally unique run session
+  and optional message session.
+
+  ManagedFile/ManagedObject/singular ManagedVectorStore gain nullable team_id and (team_id,created_at
+  DESC) indexes. Existing rows keep team_id NULL; no inferred ownership backfill is allowed. This
+  leaves legacy rows without a team owner for team-only runtime listings, whose hook activation remains
+  B087's open decision. ProxyModel.blocked, MCP.delegate_auth_to_upstream and MCP.oauth_passthrough are
+  required false. MCP env_vars is nullable JSONB default []; MCPUserEnvVars requires id/user_id/server_id/
+  values_b64 TEXT and both timestamps now, with unique (user_id,server_id) and user/server indexes.
+  This SQL does not decrypt or re-encrypt values_b64, nor add user/server foreign keys.
+
+  MCP oauth2_flow, token_exchange_endpoint/audience/subject_token_type/token_exchange_profile/issuer
+  are nullable TEXT without defaults. timeout is nullable DOUBLE PRECISION; max_concurrent_requests
+  nullable INTEGER; dcr_bridge and ObjectPermission.mcp_tool_search_enabled nullable BOOLEAN. The
+  timeout/concurrency/dcr/tool-search ADD COLUMN statements are unguarded and repeat with duplicate_column
+  42701. Both live/deleted keys gain nullable key_type through unguarded ADD, required budget_fallbacks
+  JSONB {} through guarded ADD, and later nullable settings_updated_at TIMESTAMP(3), with no automatic
+  timestamp backfill. DailyTeamSpend.ptu_flat_cost defaults required DOUBLE PRECISION 0.
+
+  DailyUser/Organization/EndUser/Agent/Team/TagSpend each gain required BIGINT compression_saved_tokens=0
+  and DOUBLE PRECISION compression_savings_spend/prompt_caching_savings_spend/autorouter_savings_spend=0.
+  Existing counter/spend values survive. MCPServerOAuthClient has TEXT server_id primary key, nullable
+  credentials JSONB and timestamp defaults now. SSOIdentityAssertion has TEXT user_id primary key,
+  required assertion_b64 and timestamp defaults now. Neither table infers a user/server foreign key or
+  transforms stored credentials. JWTKeyMapping.token's old RESTRICT foreign key is dropped and recreated
+  with DELETE CASCADE/UPDATE CASCADE: key deletion now removes mappings, while other keys' mappings remain.
+
+  Add SpendLogToolIndex.start_time index. DailyToolSpend has composite (date,tool_name), spend DOUBLE
+  PRECISION 0, BIGINT total_tokens/request_count=0, created_at now and required updated_at. Config gains
+  nullable last_run_at and required BIGINT reload_revision=0. ManagedObject gains nullable api_key and
+  request_tags JSONB []; no existing key attribution is synthesized. DailyGatewayRequests has composite
+  (date,category,route), successful_requests/failed_requests BIGINT 0, created_at now, required updated_at
+  and a date index. BudgetWindowSpend has composite (entity_type,entity_id,window_duration), required
+  window_start without default, spend=0, created_at now and required updated_at. window_start is not
+  part of its key, so a second row for the same entity/duration conflicts even at another start time.
+
+  AutoRouterSession has composite (api_key,session_id,router_name); router_type/first_turn_at/last_turn_at/
+  last_model are required without defaults. models and later tier_turns are required JSONB {};
+  INTEGER turns/unordered_turns/covered_turns/cache_hits/same_model_turns/same_model_hits/
+  first_visit_turns/first_visit_hits/return_turns/return_hits/return_expired_misses/
+  return_within_ttl_misses/ttl_5m_turns/ttl_1h_turns default 0, total_tokens BIGINT 0 and spend/saved_spend
+  DOUBLE PRECISION 0. Index last_turn_at. No default turns these database rows into a scheduled job.
 
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
-
-
-  Build the production schema_routing_state module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 346 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  346 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 521 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Use B860's independent temporary databases, backed by POSTGRES_TEST_URL or testcontainers when unset,
+  and B700 sessions to compare catalog facts against separately applied upstream SQL. Failure to obtain
+  Postgres is a failing test, not a skip. Check state before/after each destructive or unguarded boundary
+  and clean up fixtures after failures. Static migration bytes add no decoder or HTTP helper. Count
+  253 nonblank, noncomment SQL lines and 407 physical production lines; reserve 340 tests plus 30
+  registration lines, 777 within 800, with adjacent test modules below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/schema_routing_state.rs
@@ -161,13 +193,28 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260810000000_add_verificationtoken_settings_updated_at/migration.sql#L1-L5
     why: Pinned implementation and exact ownership boundary for schema_routing_state.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: pinned_sql_checksums verifies all 36 source files including equal-timestamp identities; postgres_catalog compares column types/defaults/nullability, complete keys, index direction and FK actions.
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_routing_state covers adaptive_required_alpha_beta, adaptive_seven_zero_counters,
+      adaptive_negative_last_turn_false_credit_and_json_defaults, adaptive_repeat_42p07,
+      memory_globally_unique_key_and_nullable_owners, member_total_spend_zero,
+      workflow_pending_and_required_updated_at, workflow_session_uniqueness,
+      child_sequence_uniqueness_and_run_delete_restrict, child_run_update_cascade,
+      managed_team_owner_stays_null_and_descending_indexes and proxy_model_false_blocked.'
+    proof: [postgres-tests]
+  - text: 'postgres_mcp_key_history covers delegation_and_oauth_false,
+      env_var_definitions_array_and_raw_user_values, mcp_user_env_unique_pair_and_indexes,
+      nullable_oauth_exchange_issuer_fields, unguarded_nullable_columns_repeat_42701,
+      key_type_nullable_both_tables, budget_fallbacks_empty_both_tables,
+      settings_updated_at_nullable_no_backfill, oauth_client_raw_json_and_timestamp_defaults,
+      sso_assertion_raw_text_and_timestamp_defaults and jwt_key_delete_now_cascades_only_its_mappings.'
+    proof: [postgres-tests]
+  - text: 'postgres_usage_rollups covers team_ptu_zero, six_compression_token_defaults,
+      six_three_savings_defaults_preserve_existing_spend, spend_tool_start_index,
+      daily_tool_zero_counters_and_composite_key, config_revision_zero_last_run_null,
+      managed_object_key_null_tags_array, gateway_zero_counters_and_date_index,
+      budget_window_key_excludes_start and autorouter_fourteen_integer_counters_tokens_spend_models_tiers.'
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -176,20 +223,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_routing_state::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_routing_state::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_routing_state::tests::postgres_failure_effects$/)'
+      why: Routing state, ownership defaults or key-deletion effects do not match the SQL history.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_routing_state::tests::postgres_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B706 supplies prior SQL, B708/B709 subsequent SQL, B701 final schema facts and B873 ledger/deploy behavior.
+  - MCP/SSO credential persistence is B136/B063; *_b64 and credentials columns here are opaque stored values.
+  - B087 retains the managed file/batch hook decision; these migrations neither infer tenant ownership nor activate the hook.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - BudgetWindowSpend excludes window_start from its primary key, so rolling the window updates one row instead of adding another.
+  - Memory keys are globally unique even when two rows name different teams or users.
+  - AutoRouterSession defaults last_processed_turn nowhere; that -1 field belongs to AdaptiveRouterSession.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

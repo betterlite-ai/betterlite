@@ -2,7 +2,7 @@ id: B852
 milestone: M4 keys, spend and management
 title: Offline spend backfill operations
 status: todo
-depends_on: [B171, B700, B701, B714, B856, B860, B1232]
+depends_on: [B700, B701, B860, B1232]
 file: tasks/B852-spend-backfills.yaml
 covers:
   - "db_scripts/backfill_daily_tool_spend.sql"

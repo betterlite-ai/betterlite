@@ -2,7 +2,7 @@ id: B816
 milestone: M4 keys, spend and management
 title: Object permission writes and cache coherence
 status: todo
-depends_on: [B003, B171, B725, B732, B733, B734, B770, B817, B856, B860, B878]
+depends_on: [B003, B171, B192, B725, B732, B733, B770, B817, B856, B860, B878]
 file: tasks/B816-object-permissions.yaml
 covers:
   - "litellm/types/object_permission.py"

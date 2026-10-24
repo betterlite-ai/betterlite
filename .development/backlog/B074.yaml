@@ -2,7 +2,7 @@ id: B074
 milestone: M4 keys, spend and management
 title: Usage, daily activity and analytics API
 status: todo
-depends_on: [B070]
+depends_on: [B070, B2312]
 file: null
 covers:
   - "litellm/proxy/management_endpoints/usage_endpoints/**"

@@ -1,0 +1,92 @@
+id: B1537
+title: Prepare Runway video tasks and report creation usage
+description: >-
+  Implement api::runway::video_create for video transformation.py through _parse_runway_timestamp
+  and get_error_class. Reuse B525 VideoObject and B672 tagged IDs. Extend B1534 decode_runway_task
+  with video timestamps, string-or-array output, progress and estimatedCost.credits, replacing both
+  source JSON parse wrappers with that boundary. Add video_* malformed/numeric seeds to its existing
+  fuzz corpus and replay; use Decimal for duration, credit arithmetic and progress rounding.
+
+  Map input_reference to promptImage even when null, replace every lowercase x in size by colon,
+  and truncate finite seconds toward zero, including numeric strings. Failed conversions omit
+  duration. Preserve non-advertised fields after these mappings so explicit provider parameters win;
+  advertised model/prompt/user/extra_headers do not pass through this map. Credentials prefer explicit
+  key, typed litellm_params key, litellm.api_key, RUNWAYML_API_SECRET, then RUNWAYML_API_KEY; reject only
+  a final null, retaining the source's empty-last-environment-value behavior. Reuse B1534's version,
+  add JSON Content-Type, and default a null base to https://api.dev.runwayml.com/v1. This URL method
+  does not consult RUNWAYML_API_BASE and preserves an explicitly empty base.
+
+  Construct model/promptText then overlay optional fields. Non-null promptVideo or videoUri selects
+  video_to_video before non-null promptImage selects image_to_video; otherwise use text_to_video.
+  Remove promptImage from every body except image_to_video, return no multipart files, and append the
+  selected endpoint. URL references are provider fields here and trigger no gateway downloads.
+
+  Creation responses map status case-insensitively, with unknown/THROTTLED queued and CANCELLED failed.
+  Decode ISO timestamps as the source does, substituting zero on missing/invalid values; preserve
+  completion-field presence, first output and failure-field presence. Copy model/ratio/duration from
+  request_data, replacing colons by x for size, and tag nonempty IDs only when a provider was supplied.
+  Usage includes parseable duration_seconds, area-based resolution with strict thresholds 600000,
+  1500000 and 4000000, and credits times Decimal 0.01 when credits are numeric, including Python bool
+  coercion. Provide shared half-even progress rounding times 100 clamped to 0..100 for B1538.
+
+  call.runway_video_create compares source methods for endpoint_priority, provider_overlay,
+  duration_truncation, empty_base_and_key, failure_presence, resolution_threshold and credit_usage.
+  Cover timezone offsets and bad timestamps with a fixed clock/timezone. The 294 owned source lines
+  support 260 implementation, 230 tests and 170 oracle/corpus lines under 750 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/video_create.rs
+    - crates/betterlite-core/src/api/runway/video_create/**
+    - crates/betterlite-core/src/api/runway/tasks.rs
+    - crates/betterlite-core/src/api/runway/tasks/**
+    - crates/betterlite-core/fuzz/fuzz_targets/runway_task.rs
+    - crates/betterlite-core/fuzz/corpus/runway_task/video_*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/runway_video_create.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/runway_video_create.py
+    - tools/oracle/cases/helpers/runway-video-create/**
+    - tools/oracle/fuzz/corpus/helper_case/runway_video_create*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L37-L396
+    why: Video-only credentials, endpoint selection, creation projection and shared numeric/time helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L709-L714
+    why: Runway video error retains HTTP status and response headers.
+dod:
+  - text: Runway video creation chooses the correct endpoint and preserves source request/authentication precedence.
+    proof: [runway-create-tests, oracle, runway-create-python]
+  - text: Video replies retain identity, optional errors, timestamps and exact usage calculations at the tested thresholds.
+    proof: [runway-create-tests, runway-video-corpus, oracle, runway-create-python]
+checks:
+  optional: []
+  commands:
+    - id: runway-create-tests
+      why: video request selection or reply projection is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::runway::video_create::/) - test(replays_the_runway_task_corpus)'
+    - id: runway-video-corpus
+      why: the extended shared task decoder has no new video input coverage
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-core/fuzz/corpus/runway_task/video_*')" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_runway_task_corpus)'
+    - id: runway-create-python
+      why: video create mapping has no independent source comparison
+      run: grep -qE '^[[:space:]]+runway_video_create:' tools/oracle/fuzz/corpus/helper_case/runway_video_create* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/runway_video_create.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/runway-video-create/endpoint-priority.yaml
+  - tools/oracle/cases/helpers/runway-video-create/provider-overlay.yaml
+  - tools/oracle/cases/helpers/runway-video-create/duration-truncation.yaml
+  - tools/oracle/cases/helpers/runway-video-create/empty-base-and-key.yaml
+  - tools/oracle/cases/helpers/runway-video-create/failure-presence.yaml
+  - tools/oracle/cases/helpers/runway-video-create/resolution-threshold.yaml
+  - tools/oracle/cases/helpers/runway-video-create/credit-usage.yaml
+deviations: []
+out_of_scope:
+  - B1538 owns video content, cancellation, retrieval and unsupported request methods at 397-708; their common parsers and helpers belong here.
+pitfalls:
+  - An empty promptVideo still selects video_to_video because selection checks nullness rather than truthiness.
+  - Exactly 600000 pixels is 720p under Runway's strict area thresholds.
+  - A present empty failureCode creates an error object without forcing a failed status.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1

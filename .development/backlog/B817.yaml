@@ -2,7 +2,7 @@ id: B817
 milestone: M4 keys, spend and management
 title: Canonical MCP server identifiers in grants
 status: todo
-depends_on: [B003, B171, B700, B721, B732, B856]
+depends_on: [B136, B137, B171, B721, B725, B726, B770, B856, B860]
 file: tasks/B817-mcp-permission-ids.yaml
 covers:
   - "litellm/proxy/management_helpers/object_permission_utils.py"

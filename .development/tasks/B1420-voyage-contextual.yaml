@@ -1,0 +1,94 @@
+id: B1420
+title: Voyage text and contextual embedding requests
+description: >-
+  Add voyage_embedding to betterlite-openai for VoyageEmbeddingConfig and
+  VoyageContextualEmbeddingConfig, including their error classes. Ordinary requests use
+  input unchanged; contextual requests use inputs, wrapping only a scalar string.
+  Contextual flat input means a string or an iterable whose every item is a string,
+  including the empty list. Unless input_type is exactly query, flat input receives
+  enable_auto_chunking=true, chunk_size=32000 and input_type=document. Nested document
+  chunks receive no automatic defaults. Apply caller options last, so false, zero,
+  alternate input_type and replacement inputs/model override generated values.
+
+  Both variants map dimensions to output_dimension and forward encoding_format even
+  when null. A truthy base receives /embeddings or /contextualizedembeddings unless it
+  already ends in that exact suffix; do not trim a trailing slash first. Defaults are
+  https://api.voyageai.com/v1/embeddings and the same origin's /v1/contextualizedembeddings.
+  is_contextualized_embeddings matches context anywhere after lowercasing the model.
+  Only a None key triggers VOYAGE_API_KEY, VOYAGE_AI_API_KEY, VOYAGE_AI_TOKEN in truthy
+  order. Replace all supplied headers with Authorization; absent credentials yield
+  Bearer None, and an explicit empty string yields Bearer followed by a space. The
+  voyage_credentials loader test covers all three env aliases and this precedence.
+
+  Implement decode_voyage_embedding_reply with a typed variant controlling the synthetic
+  POST error URL. JSON failures preserve the upstream HTTP status. Assign response model,
+  data and object using .get semantics, taking absent values as null rather than the
+  requested model; usage.total_tokens supplies both prompt_tokens and total_tokens,
+  default zero. Do not validate HTTP status within these transform methods. Expose the
+  shared parsed-response projection and credential resolution for the multimodal leaf.
+  Fuzz voyage_embedding_reply with malformed JSON, absent fields and usage variants.
+
+  Helper voyage_contextual exercises both pinned configs, preserving caller option
+  order and exception categories. Add fresh call.voyage_contextual seeds with a tag
+  assertion in the adapter tests; pair them with native auto-chunking and loader tests.
+  The two files contain 271 nonblank/noncomment lines. Reserve 260 production, 215 tests,
+  125 adapters, 55 decoder harness and 75 settings/export lines, capped at 775.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,voyage_embedding}.rs
+    - crates/betterlite-openai/src/voyage_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/voyage_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/voyage_embedding_reply/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,voyage}.rs
+    - crates/betterlite-config/tests/voyage_credentials.rs
+    - tools/oracle/src/helpers/{mod,voyage_contextual}.rs
+    - tools/oracle/helpers/{dispatch,voyage_contextual}.py
+    - tools/oracle/cases/helpers/voyage-contextual/**
+    - tools/oracle/fuzz/corpus/helper_case/voyage_contextual*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation.py#L13-L140
+    why: Ordinary input, key aliases, endpoint suffix and usage projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_contextual.py#L19-L170
+    why: Flat-versus-nested document detection and caller-overridable auto-chunking defaults.
+dod:
+  - text: Contextual auto-chunking distinguishes flat documents from queries and nested chunks without overwriting explicit options.
+    proof: [voyage-context-tests, voyage-context-python, oracle]
+  - text: Both text embedding variants preserve nullable reply fields, usage and exact credential fallback.
+    proof: [voyage-context-tests, voyage-credentials, voyage-context-python, oracle]
+  - text: New Voyage wire and helper seeds exercise the decoder and contextual variant.
+    proof: [voyage-embedding-corpus, voyage-context-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: voyage-context-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^voyage_embedding::/) - test(replays_the_voyage_embedding_reply_corpus)'
+      why: Contextual defaults must be tested at the request builder before HTTP dispatch.
+    - id: voyage-credentials
+      run: cargo nextest run --locked -p betterlite-config --test voyage_credentials --no-tests=fail
+      why: All credential aliases need acceptance and precedence assertions through Config loading.
+    - id: voyage-context-python
+      run: test -f tools/oracle/helpers/voyage_contextual.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Contextual tests must invoke _auto_chunk_params rather than emulate its defaults in fixtures.
+    - id: voyage-embedding-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/voyage_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/voyage_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_voyage_embedding_reply_corpus)'
+      why: The shared Voyage decoder needs new malformed and nullable-field examples.
+    - id: voyage-context-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voyage_contextual*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::voyage_contextual::/)'
+      why: Each new helper seed must parse as voyage_contextual and the collection cannot be empty.
+oracle_cases:
+  - tools/oracle/cases/helpers/voyage-contextual/flat-empty-and-nested-documents.yaml
+  - tools/oracle/cases/helpers/voyage-contextual/query-and-explicit-chunk-overrides.yaml
+  - tools/oracle/cases/helpers/voyage-contextual/suffix-and-key-aliases.yaml
+  - tools/oracle/cases/helpers/voyage-contextual/null-output-and-total-usage.yaml
+deviations: []
+out_of_scope:
+  - B1421 adds multimodal content normalization and Voyage reranking; B037 installs embedding dispatch using the existing shared selector.
+pitfalls:
+  - The empty contextual input list qualifies as flat and receives document chunking defaults.
+  - A base ending in a slash can produce a double slash before embeddings.
+  - A missing Voyage text-embedding key is serialized as Bearer None instead of failing locally.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

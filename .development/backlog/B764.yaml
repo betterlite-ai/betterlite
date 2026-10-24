@@ -2,7 +2,8 @@ id: B764
 milestone: M4 keys, spend and management
 title: Select an authorized JWT team and request header
 status: todo
-depends_on: [B001, B002, B003, B171, B732, B737, B742, B743, B748, B760, B856, B860, B869, B871, B883, B886]
+depends_on: [B001, B002, B003, B171, B732, B737, B742, B757, B760, B761, B856, B860, B869, B871, B883, B886]
 file: tasks/B764-jwt-team-selection.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
+  - "litellm/proxy/agent_endpoints/identity.py"
