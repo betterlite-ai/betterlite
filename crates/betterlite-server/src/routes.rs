@@ -1,6 +1,5 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
+use crate::auth::{AuthState, authenticate};
+use crate::error_body::not_found_error;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
@@ -10,10 +9,8 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use secrecy::SecretString;
 use serde::Serialize;
-
-use crate::auth::{AuthState, authenticate};
-use crate::error_body::not_found_error;
-
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<AtomicBool>) -> Router {
     let state = AuthState { master_key };
     Router::new()
@@ -23,7 +20,6 @@ pub(crate) fn router(master_key: Option<SecretString>, shutting_down: Arc<Atomic
         .with_state(shutting_down)
         .layer(middleware::from_fn_with_state(state, authenticate))
 }
-
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {
         return (
@@ -36,7 +32,6 @@ async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Resp
     }
     Json("I'm alive!").into_response()
 }
-
 #[derive(Serialize)]
 struct ShutdownBody {
     status: &'static str,

@@ -1,15 +1,14 @@
 #![cfg(test)]
 use serde::Deserialize;
 use std::env;
-use std::fs;
-use std::future::Future;
-use std::io::{Read as _, Write as _};
-use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::process::{self, Command, Stdio};
+use std::process::{self, ExitStatus, Stdio};
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::fs;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::process::{Child, Command};
+use tokio::time::{sleep, timeout};
 #[derive(Deserialize)]
 struct LogEvent {
     timestamp: String,
@@ -18,46 +17,102 @@ struct LogEvent {
 }
 #[tokio::test]
 async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
-    let directory = test_directory();
-    fs::create_dir_all(&directory).unwrap();
-    let config_path = directory.join("config.yaml");
-    fs::write(
-        &config_path,
-        "general_settings:\n  master_key: test-master\n",
-    )
-    .unwrap();
-    let port = free_port();
-    let mut child = spawn_server(&config_path, port);
+    let port = free_port().await;
+    let (directory, config_path) =
+        fixture(port, "general_settings:\n  master_key: test-master\n").await;
+    let server = spawn_server(&config_path, port);
     wait_until_ready(port, 100).await;
-    let mut request = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
         .write_all(
             b"GET /not-served HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-master\r\nConnection: close\r\n\r\n",
         )
+        .await
         .unwrap();
-    send_sigterm(child.id());
+    send_sigterm(server.id()).await;
     let mut response = Vec::new();
-    request.read_to_end(&mut response).unwrap();
-    let status = child.wait().unwrap();
+    request.read_to_end(&mut response).await.unwrap();
+    let (status, stderr) = server.wait().await;
     assert!(status.success());
     assert!(response.starts_with(b"HTTP/1.1 404"));
-    let mut stderr = Vec::new();
-    child
-        .stderr
-        .take()
-        .unwrap()
-        .read_to_end(&mut stderr)
+    assert_json_logs(&stderr);
+    fs::remove_dir_all(directory).await.unwrap();
+}
+#[tokio::test]
+async fn incomplete_headers_are_closed_by_the_header_read_deadline() {
+    let port = free_port().await;
+    let (directory, config_path) =
+        fixture(port, "general_settings:\n  master_key: test-master\n").await;
+    let mut server = spawn_server(&config_path, port);
+    wait_until_ready(port, 100).await;
+    let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    request
+        .write_all(b"GET /not-served HTTP/1.1\r\nHost: localhost\r\n")
+        .await
         .unwrap();
-    String::from_utf8(stderr).unwrap().lines().for_each(|line| {
+    timeout(Duration::from_secs(3), request.read_to_end(&mut Vec::new()))
+        .await
+        .unwrap()
+        .unwrap();
+    server.stop().await;
+    fs::remove_dir_all(directory).await.unwrap();
+}
+#[tokio::test]
+async fn malformed_config_logs_no_secret() {
+    let port = free_port().await;
+    let secret = "config-secret-must-not-be-logged";
+    let (directory, config_path) = fixture(
+        port,
+        &format!("general_settings:\n  master_key: {secret}\n  broken: [\n"),
+    )
+    .await;
+    let output = Command::new(binary_path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains(secret));
+    fs::remove_dir_all(directory).await.unwrap();
+}
+#[tokio::test]
+async fn server_guard_drop_kills_and_reaps_the_child() {
+    let port = free_port().await;
+    let (directory, config_path) =
+        fixture(port, "general_settings:\n  master_key: test-master\n").await;
+    let server = spawn_server(&config_path, port);
+    wait_until_ready(port, 100).await;
+    let process_id = server.id();
+    drop(server);
+    assert!(wait_until_gone(process_id, 100).await);
+    fs::remove_dir_all(directory).await.unwrap();
+}
+fn assert_json_logs(stderr: &[u8]) {
+    let text = String::from_utf8(stderr.to_owned()).unwrap();
+    for line in text.lines() {
         let event: LogEvent = serde_json::from_str(line).unwrap();
         assert!(!event.timestamp.is_empty(), "{line}");
         assert!(!event.level.is_empty(), "{line}");
         assert!(!event.message.is_empty(), "{line}");
-    });
-    fs::remove_dir_all(directory).unwrap();
+    }
 }
-fn test_directory() -> PathBuf {
-    env::temp_dir().join(format!("betterlite-b003-{}", process::id()))
+fn test_directory(port: u16) -> PathBuf {
+    env::temp_dir().join(format!("betterlite-b003-{}-{port}", process::id()))
+}
+async fn fixture(port: u16, source: &str) -> (PathBuf, PathBuf) {
+    let directory = test_directory(port);
+    fs::create_dir_all(&directory).await.unwrap();
+    let config_path = directory.join("config.yaml");
+    fs::write(&config_path, source).await.unwrap();
+    (directory, config_path)
 }
 fn binary_path() -> PathBuf {
     let test_binary = env::current_exe().unwrap();
@@ -68,12 +123,14 @@ fn binary_path() -> PathBuf {
         .unwrap()
         .join("betterlite")
 }
-fn free_port() -> u16 {
-    let socket = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    socket.local_addr().unwrap().port()
+async fn free_port() -> u16 {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    listener.local_addr().unwrap().port()
 }
-fn spawn_server(config_path: &Path, port: u16) -> process::Child {
-    Command::new(binary_path())
+fn spawn_server(config_path: &Path, port: u16) -> ServerGuard {
+    let child = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
         .args([
             "--config",
             config_path.to_str().unwrap(),
@@ -85,26 +142,79 @@ fn spawn_server(config_path: &Path, port: u16) -> process::Child {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap()
+        .unwrap();
+    ServerGuard { child: Some(child) }
 }
-fn wait_until_ready(port: u16, attempts: u16) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async move {
-        if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
+async fn wait_until_ready(port: u16, attempts: u16) {
+    for _ in 0..attempts {
+        if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)).await {
             stream
-                .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .write_all(
+                    b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                )
+                .await
                 .unwrap();
             return;
         }
-        assert!(attempts > 0, "betterlite did not start on port {port}");
         sleep(Duration::from_millis(10)).await;
-        let remaining = attempts.checked_sub(1).unwrap();
-        wait_until_ready(port, remaining).await;
-    })
+    }
+    panic!("betterlite did not start on port {port}");
 }
-fn send_sigterm(process_id: u32) {
+async fn send_sigterm(process_id: u32) {
     let status = Command::new("kill")
         .args(["-TERM", &process_id.to_string()])
         .status()
+        .await
         .unwrap();
     assert!(status.success());
+}
+async fn wait_until_gone(process_id: u32, attempts: u16) -> bool {
+    for _ in 0..attempts {
+        let status = Command::new("kill")
+            .args(["-0", &process_id.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .unwrap();
+        if !status.success() {
+            return true;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    false
+}
+struct ServerGuard {
+    child: Option<Child>,
+}
+impl ServerGuard {
+    async fn wait(mut self) -> (ExitStatus, Vec<u8>) {
+        let mut child = self.child.take().unwrap();
+        let status = child.wait().await.unwrap();
+        let mut stderr = Vec::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_end(&mut stderr)
+            .await
+            .unwrap();
+        (status, stderr)
+    }
+    async fn stop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            child.start_kill().unwrap();
+        }
+        let child = self.child.take().unwrap();
+        child.wait_with_output().await.unwrap();
+    }
+    fn id(&self) -> u32 {
+        self.child.as_ref().unwrap().id().unwrap()
+    }
+}
+impl Drop for ServerGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            let _result = child.start_kill();
+        }
+    }
 }
