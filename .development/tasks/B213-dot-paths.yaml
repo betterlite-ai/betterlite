@@ -1,0 +1,96 @@
+id: B213
+title: Bounded dot-path lookup and deletion
+description: >-
+  Implement separate get and delete dot-notation grammars from all functions in dot_notation_indexing.py in a leaf
+  betterlite-paths crate, usable by both provider controls and JWT auth. Preserve escaping, array index and wildcard
+  differences, missing path outcomes and deletion order. Operate on the existing named opaque metadata field; bound
+  input bytes, depth, selectors and output work. Add control_paths parser fuzzing. Budget 230 parser, 100 adapters,
+  310 tests/fuzz and 70 manifests (710 total). Add the control_paths cargo-fuzz target, call the production parser,
+  and commit/replay malformed and boundary seeds. Write the behavior rstest functions b213_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations dot_paths in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-paths/Cargo.toml
+  - crates/betterlite-paths/src/lib.rs
+  - crates/betterlite-paths/src/error.rs
+  - crates/betterlite-paths/src/paths.rs
+  - crates/betterlite-paths/src/paths/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/dot-paths/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-paths/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L1-L242
+  why: All lookup/delete helper functions.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - control_paths-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-paths --no-tests=fail -E 'test(/::b213_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'dot_paths' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: control_paths-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-paths/fuzz/corpus/control_paths)"
+      && test -f crates/betterlite-paths/fuzz/fuzz_targets/control_paths.rs && test -n "$(ls -A crates/betterlite-paths/fuzz/corpus/control_paths)"
+      && cargo nextest run --locked -p betterlite-paths --no-tests=fail -E 'test(replays_the_control_paths_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/dot-paths/escaped-dot.yaml
+- tools/oracle/cases/helpers/dot-paths/array-read.yaml
+- tools/oracle/cases/helpers/dot-paths/array-delete.yaml
+- tools/oracle/cases/helpers/dot-paths/wildcard-delete.yaml
+- tools/oracle/cases/helpers/dot-paths/missing-path.yaml
+- tools/oracle/cases/helpers/dot-paths/invalid-index.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B176 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
