@@ -162,10 +162,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-http"
+version = "0.1.0"
+dependencies = [
+ "percent-encoding",
+ "rstest",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-http",
  "clap",
  "reqwest",
  "rstest",

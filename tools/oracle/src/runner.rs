@@ -6,9 +6,10 @@ use std::process::ExitCode;
 
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::Case;
+use crate::case::{Case, LoadedCase};
 use crate::cli::Options;
 use crate::compare;
+use crate::helpers;
 use crate::http::{self, Response};
 use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
@@ -16,19 +17,36 @@ use crate::process::Gateway;
 
 use super::gateway::{GatewayInput, start as start_gateway};
 
-pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode, OracleError> {
+pub(crate) fn run_cases(
+    options: &Options,
+    cases: Vec<LoadedCase>,
+) -> Result<ExitCode, OracleError> {
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
-    for case in cases {
-        let group_key = format!("{}\n{:?}", case.config, case.env);
-        groups.entry(group_key).or_default().push(case);
+    let mut helper_outcome = helpers::HelperRun::Match;
+    for loaded_case in cases {
+        match loaded_case {
+            LoadedCase::Http(http_case) => {
+                let group_key = format!("{}\n{:?}", http_case.config, http_case.env);
+                groups.entry(group_key).or_default().push(http_case);
+            }
+            LoadedCase::Helper(helper_case) => {
+                let result = helpers::run_case(&helper_case, options.self_check)?;
+                if matches!(result, helpers::HelperRun::Difference) {
+                    helper_outcome = helpers::HelperRun::Difference;
+                }
+            }
+        }
     }
     let root = artifact_root()?;
     let mut outcomes = Vec::new();
     for (_, group) in groups {
         outcomes.extend(run_group(options, &root, &group)?);
+    }
+    if matches!(helper_outcome, helpers::HelperRun::Difference) {
+        return Ok(exit_status(true));
     }
     Ok(exit_status(outcomes.contains(&true)))
 }

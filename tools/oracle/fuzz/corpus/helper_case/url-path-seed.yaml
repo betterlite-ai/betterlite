@@ -1,0 +1,10 @@
+kind: helper
+name: fuzz-seed
+call:
+  url_path:
+    function: segment
+    value: "a/b"
+    field_name: path parameter
+env: {}
+compare:
+  ignore: []

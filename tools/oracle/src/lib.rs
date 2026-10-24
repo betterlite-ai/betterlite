@@ -8,6 +8,16 @@ pub mod case;
 mod cli;
 mod compare;
 mod gateway;
+#[expect(
+    clippy::mod_module_files,
+    clippy::too_many_lines,
+    clippy::disallowed_methods,
+    clippy::absolute_paths,
+    clippy::map_err_ignore,
+    clippy::shadow_unrelated,
+    reason = "B171's bounded helper process runner owns these CLI and pipe operations."
+)]
+mod helpers;
 pub mod http;
 pub mod mock;
 mod paths;
@@ -93,6 +103,31 @@ pub enum OracleError {
     Json(#[source] serde_json::Error),
     #[error("system clock error: {0}")]
     Clock(#[source] SystemTimeError),
+    #[error("helper input is invalid: {message}")]
+    HelperInput { message: String },
+    #[error("cannot start helper: {0}")]
+    HelperSpawn(#[source] io::Error),
+    #[error("cannot write helper input: {0}")]
+    HelperIo(#[source] io::Error),
+    #[error("helper stdin is unavailable")]
+    HelperStdin,
+    #[error("helper stdout is unavailable")]
+    HelperStdout,
+    #[error("helper stderr is unavailable")]
+    HelperStderr,
+    #[error("helper reader thread panicked")]
+    HelperJoin,
+    #[error("helper timed out and was reaped")]
+    HelperTimeout,
+    #[error("helper output exceeded 1 MiB")]
+    HelperOutputTooLarge,
+    #[error("helper exited with {status}: {diagnostic}")]
+    HelperExited {
+        status: ExitStatus,
+        diagnostic: String,
+    },
+    #[error("helper output is not valid JSON: {0}")]
+    HelperJson(#[source] serde_json::Error),
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
