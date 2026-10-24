@@ -96,7 +96,7 @@ tasks:
     milestone: M1 openai data plane
     title: Provider framework, provider resolution and parameter mapping
     status: todo
-    depends_on: [B005, B009, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183]
+    depends_on: [B005, B009, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B006]
     file: null
     covers:
       - "litellm/llms/{__init__,base,README}.*"
@@ -1909,7 +1909,7 @@ tasks:
     title: Bounded inline media conversion
     status: todo
     depends_on: [B179, B009]
-    file: null
+    file: tasks/B183-inline-media.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/{image_handling,common_utils}.py"
   - id: B184
