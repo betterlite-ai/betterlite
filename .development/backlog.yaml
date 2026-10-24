@@ -116,7 +116,7 @@ tasks:
     milestone: M1 openai data plane
     title: Logging pipeline, callback registry and redaction
     status: todo
-    depends_on: [B004, B187, B188, B189, B190, B191, B192]
+    depends_on: [B004, B187, B188, B189, B190, B191, B192, B006]
     file: null
     covers:
       - "litellm/_logging.py"
@@ -1941,7 +1941,7 @@ tasks:
     title: Secret and internal-detail redaction
     status: todo
     depends_on: [B004, B171]
-    file: null
+    file: tasks/B187-secret-redaction.yaml
     covers:
       - "litellm/litellm_core_utils/{secret_redaction,sensitive_data_masker,sentry_scrubbing}.py"
   - id: B188
@@ -1968,7 +1968,7 @@ tasks:
     milestone: M1 openai data plane
     title: Typed request logging payloads
     status: todo
-    depends_on: [B188, B011, B005]
+    depends_on: [B188, B011, B005, B175]
     file: null
     covers:
       - "litellm/litellm_core_utils/{litellm_logging,logging_utils,classifier_logging,served_output_texts}.py"
@@ -1987,7 +1987,7 @@ tasks:
     milestone: M1 openai data plane
     title: Private JSON serialization and atomic files
     status: todo
-    depends_on: [B187]
+    depends_on: [B187, B188]
     file: null
     covers:
       - "litellm/litellm_core_utils/{safe_json_dumps,safe_json_loads,private_json}.py"
