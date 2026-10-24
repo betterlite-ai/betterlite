@@ -1,0 +1,100 @@
+id: B3061
+title: Normalize and serialize FOCUS usage records
+description: >-
+  Build typed FOCUS rows, metadata tags, CSV and Snappy Parquet serialization in betterlite-logging,
+  preserving the FOCUS schema, nullable fields, UTC timestamp strings and Decimal(18,6) monetary values.
+  The schema includes all 37 standard FOCUS columns for cloud cost attribution and the Tags column holds
+  JSON metadata (team_id, user_id, api_key_alias, model, etc.) consumed downstream. Empty DataFrames
+  adopt the 37-column schema; non-empty frames inherit all available tag columns and return 44 columns total,
+  adding seven computed fields not in the base schema (BillingAccountType, InvoiceId, AvailabilityZone,
+  PricingCurrency, PricingCurrencyContractedUnitPrice, PricingCurrencyEffectiveCost, PricingCurrencyListUnitPrice).
+  CSV encodes Decimal columns as floating-point to match standard CSV parsers; Parquet uses native Decimal(18,6)
+  with Snappy compression. FocusTimeWindow represents export windows with start, end and frequency fields.
+  The FocusDestination protocol receives serialized bytes and filename for delivery. Preserve the
+  source's JSON serialization behavior for Tags, nested tag-building, UTC datetime formatting
+  (%Y-%m-%dT%H:%M:%SZ) and Decimal precision of 18 total significant digits with 6 after the decimal point
+  (12 before, 6 after). The CSV serializer casts Decimals to Float64; Parquet respects empty-DataFrame
+  schema preservation and Snappy compression. Do not alter tag column precedence, timestamp precision
+  (microseconds), null handling for unmapped columns or date-to-period conversion.
+scope:
+  paths:
+    - "litellm/integrations/focus/schema.py"
+    - "litellm/integrations/focus/transformer.py"
+    - "litellm/integrations/focus/serializers/**"
+    - "litellm/integrations/focus/destinations/base.py"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/schema.py#L1-L58
+    why: FOCUS_NORMALIZED_SCHEMA declaration, 37 typed columns with Tags as String to hold JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L13-L24
+    why: _TAG_KEYS tuple defines metadata columns for JSON tag building and tag filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L27-L40
+    why: _build_tags_expr using pl.struct and map_elements for vectorized JSON serialization with _struct_to_json callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L48-L128
+    why: FocusTransformer.transform handles empty-frame schema, tag JSON building, date parsing, period derivation, and column projection with fmt and dec helper functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/base.py#L10-L18
+    why: FocusSerializer abstract base class with serialize contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/csv.py#L13-L28
+    why: FocusCsvSerializer.serialize casts Decimals to Float64 for CSV output without fixed-point strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/parquet.py#L13-L23
+    why: FocusParquetSerializer.serialize preserves schema for empty DataFrames and applies Snappy compression.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/base.py#L10-L30
+    why: FocusTimeWindow dataclass and FocusDestination protocol defining the delivery contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/__init__.py#L1-L7
+    why: Serializer package exports.
+dod:
+  - text: Empty FOCUS frames have exactly 37 columns matching the schema declaration with correct types and Decimal precision; a named case verifies the column count.
+    proof: [schema-values-tests]
+  - text: Nonempty FOCUS frames have exactly 44 columns from transform(), with the 37 schema columns plus seven additional computed fields (BillingAccountType, InvoiceId, AvailabilityZone, PricingCurrency, PricingCurrencyContractedUnitPrice, PricingCurrencyEffectiveCost, PricingCurrencyListUnitPrice); a named case verifies this output column list.
+    proof: [transformer-mapping-tests, transformer-nonempty-schema-tests]
+  - text: Transformer builds JSON tags from available metadata with null values excluded, formats UTC timestamps as %Y-%m-%dT%H:%M:%SZ with microsecond precision, and projects output columns correctly.
+    proof: [transformer-mapping-tests]
+  - text: CSV serializer casts Decimal(18,6) to Float64 for output; Parquet serializer respects empty-frame schema and applies Snappy compression.
+    proof: [serialization-codec-tests]
+  - text: FocusTimeWindow holds start_time, end_time and frequency fields; FocusDestination.deliver protocol accepts content, time_window and filename.
+    proof: [destination-contract-tests]
+checks:
+  optional: []
+  commands:
+    - id: schema-values-tests
+      why: The FOCUS schema declaration is missing, has wrong column types, wrong column count (not 37), or Tags is not a String.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_records::schema::/)'
+    - id: transformer-mapping-tests
+      why: The transformer fails on tag building, timestamp formatting, or column projection.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_records::transformer::/) - test(/nonempty_schema/)'
+    - id: transformer-nonempty-schema-tests
+      why: Nonempty transform output does not have exactly 44 columns or lacks the seven additional computed fields.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_records::transformer::.*nonempty_schema/)'
+    - id: serialization-codec-tests
+      why: CSV or Parquet serialization fails on Decimal encoding, compression or empty frames.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_records::serializers::/)'
+    - id: destination-contract-tests
+      why: FocusTimeWindow or FocusDestination protocol is missing or does not match downstream usage.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_records::destinations::/)'
+oracle_cases: []
+deviations:
+  - what: "Empty-frame FOCUS export and nonempty FOCUS export produce structurally different column sets: empty frames have 37 columns from FOCUS_NORMALIZED_SCHEMA, while nonempty frames have 44 columns including seven additional computed fields (BillingAccountType, InvoiceId, AvailabilityZone, PricingCurrency, PricingCurrencyContractedUnitPrice, PricingCurrencyEffectiveCost, PricingCurrencyListUnitPrice) from FocusTransformer.transform()'s select() call."
+    why: "LiteLLM computes these seven fields during transform to meet downstream system requirements, but they are not part of the FOCUS specification baseline. Empty frames are returned early from transform() with the base schema only, while nonempty frames materialize all computed fields, creating this intentional schema divergence."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L48-L128"
+  - what: Tags column holds JSON string of {key:string} with null values omitted, returning "{}" for no tags, rather than null or an empty object list.
+    why: LiteLLM source uses json.dumps with None-filtered keys; betterlite preserves this for Vantage token allocation and downstream JSON parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/transformer.py#L36-L38
+  - what: CSV serializer casts Decimal(18,6) columns to Float64 before writing, producing standard floating-point notation (e.g. "1.5") instead of fixed-point strings ("1.500000").
+    why: Some CSV parsers reject fixed-point Decimal string output; floating-point notation matches common parsers while Parquet preserves the exact Decimal type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/serializers/csv.py#L20-L25
+out_of_scope:
+  - "litellm/integrations/focus/database.py: FocusLiteLLMDatabase methods and usage-data queries are owned by B3060."
+  - "litellm/integrations/focus/export_engine.py: Engine composition, file naming and delivery orchestration are owned by B3065."
+  - "litellm/integrations/focus/destinations/s3_destination.py, gcs_destination.py, mavvrik_destination.py, vantage_destination.py: Delivery implementations owned by B3062, B3063, B3064."
+  - "litellm/integrations/focus/focus_logger.py: Scheduling and entry points owned by B3066."
+pitfalls:
+  - The Tags column must preserve {} for no tags and null-filter all tag values, not produce null or empty arrays.
+  - CSV Float64 casting loses Decimal precision for serialization only; Parquet retains native Decimal(18,6) and must apply Snappy compression.
+  - Empty DataFrames return with 37 columns from FOCUS_NORMALIZED_SCHEMA; nonempty frames return 44 columns including seven additional computed fields. These are different by design and code that round-trips empty and nonempty exports cannot assume identical column sets.
+  - Decimal(18, 6) means precision=18 total significant digits with scale=6 after the decimal point, resulting in 12 digits before and 6 after, not 18 integer digits plus 6 fractional (which would be 24 total).
+  - FocusTimeWindow.frequency is an unconstrained string field; observed values in the codebase are "hourly", "daily", "interval" and "all". Do not model it as a two-variant enum or restrict it to a fixed set.
+  - Timestamp formatting uses %Y-%m-%dT%H:%M:%SZ format with microsecond precision cast to microseconds, not seconds.
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0
+review_level: standard

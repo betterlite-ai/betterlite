@@ -1,0 +1,244 @@
+id: B3181
+title: Provider form catalog from Bedrock Mantle through Azure AI Studio
+description: >-
+  Create the ordered catalog fragment for the public provider form endpoint, covering eight provider definitions from BedrockMantle through Azure AI Studio.
+  This fragment holds credential field metadata, display names, and model placeholders for each provider, consumed by B3190's get_provider_fields function as part of its assembled catalog.
+  Preserve every credential field name, label, placeholder, tooltip, required flag, field_type and options value exactly as LiteLLM defines them at the pinned commit, including Bedrock Mantle's bearer/SigV4 authentication choice, Anthropic's BYOK guidance, and Azure's service-principal fields.
+  Store this fragment in its own asset path crates/betterlite-server/assets/provider_create_fields_mantle_azure.json so parallel workers do not rewrite a shared file; B3190 later assembles all fragments in source order.
+scope:
+  paths:
+    - crates/betterlite-server/assets/provider_create_fields_mantle_azure.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L300-L676
+    why: The complete provider record definitions for BedrockMantle, Anthropic, ANTHROPIC_TEXT, AssemblyAI, AUTO_ROUTER, SageMaker, Azure and Azure_AI_Studio with their credential fields and model placeholders.
+dod:
+  - text: The eight provider records (BedrockMantle through Azure_AI_Studio) are preserved byte-for-byte from the LiteLLM source at the pinned commit.
+    proof: [provider-records-preserved]
+  - text: Every credential field for all eight providers has the exact required, field_type, label and placeholder values from LiteLLM, matching LiteLLM's field order.
+    proof: [provider-records-preserved, provider-field-exact-values]
+  - text: Bedrock Mantle's api_key tooltip distinguishes bearer token authentication from AWS SigV4 credentials when no API key is set.
+    proof: [provider-records-preserved, bedrock-mantle-auth-choice]
+  - text: Anthropic's api_key tooltip documents BYOK (bring-your-own-key) flow requirements and header forwarding settings.
+    proof: [provider-records-preserved, anthropic-byok-guidance]
+  - text: Azure's service-principal fields (tenant_id, client_id, client_secret) are all present with their shared tooltip about Entra ID auth and are positioned after azure_ad_token.
+    proof: [provider-records-preserved, azure-service-principal-fields]
+  - text: AssemblyAI's api_base field is a select dropdown with two valid options and is required.
+    proof: [provider-records-preserved, assemblyai-region-select]
+  - text: The JSON file parses correctly with serde_json and yields eight provider records in the expected order.
+    proof: [provider-json-parses]
+checks:
+  optional: []
+  commands:
+    - id: provider-records-preserved
+      why: the provider records differ from LiteLLM or a record is missing
+      run: |
+        cat > /tmp/check_providers.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+        expected = ['BedrockMantle', 'Anthropic', 'ANTHROPIC_TEXT', 'AssemblyAI', 'AUTO_ROUTER', 'SageMaker', 'Azure', 'Azure_AI_Studio']
+        actual = [p.get('provider') for p in data]
+        if actual != expected:
+            print(f"Provider mismatch: expected {expected}, got {actual}")
+            exit(1)
+        if len(data) != 8:
+            print(f"Expected 8 providers, got {len(data)}")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_providers.py
+    - id: provider-field-exact-values
+      why: a credential field label, tooltip, type or required flag does not match LiteLLM for any of the eight providers
+      run: |
+        cat > /tmp/check_fields.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+
+        # BedrockMantle: api_key comes first with bearer token tooltip
+        bedrock_mantle = next(p for p in data if p['provider'] == 'BedrockMantle')
+        api_key_field = next((f for f in bedrock_mantle['credential_fields'] if f['key'] == 'api_key'), None)
+        if not api_key_field or api_key_field['label'] != 'Bedrock Mantle API Key':
+            print(f"BedrockMantle api_key label mismatch: {api_key_field}")
+            exit(1)
+        if 'Bearer token' not in (api_key_field.get('tooltip') or ''):
+            print(f"BedrockMantle api_key tooltip missing bearer token reference")
+            exit(1)
+        aws_access_key = next((f for f in bedrock_mantle['credential_fields'] if f['key'] == 'aws_access_key_id'), None)
+        if not aws_access_key or aws_access_key.get('field_type') != 'password':
+            print(f"BedrockMantle aws_access_key_id field_type mismatch")
+            exit(1)
+
+        # Anthropic: api_key has BYOK guidance
+        anthropic = next(p for p in data if p['provider'] == 'Anthropic')
+        anthropic_api_key = next((f for f in anthropic['credential_fields'] if f['key'] == 'api_key'), None)
+        if not anthropic_api_key or 'BYOK' not in (anthropic_api_key.get('tooltip') or ''):
+            print(f"Anthropic api_key tooltip missing BYOK reference")
+            exit(1)
+        if not anthropic_api_key.get('placeholder', '').startswith('sk-'):
+            print(f"Anthropic api_key placeholder does not start with sk-")
+            exit(1)
+
+        # ANTHROPIC_TEXT: simple two-field provider
+        anthropic_text = next(p for p in data if p['provider'] == 'ANTHROPIC_TEXT')
+        if len(anthropic_text['credential_fields']) != 2:
+            print(f"ANTHROPIC_TEXT should have 2 credential fields")
+            exit(1)
+
+        # AssemblyAI: api_base is required select with two options
+        assemblyai = next(p for p in data if p['provider'] == 'AssemblyAI')
+        api_base_field = next((f for f in assemblyai['credential_fields'] if f['key'] == 'api_base'), None)
+        if not api_base_field or api_base_field.get('field_type') != 'select' or not api_base_field.get('required'):
+            print(f"AssemblyAI api_base field_type or required mismatch")
+            exit(1)
+        if api_base_field.get('options') != ["https://api.assemblyai.com", "https://api.eu.assemblyai.com"]:
+            print(f"AssemblyAI api_base options mismatch: {api_base_field.get('options')}")
+            exit(1)
+
+        # AUTO_ROUTER: simple two-field provider
+        auto_router = next(p for p in data if p['provider'] == 'AUTO_ROUTER')
+        if len(auto_router['credential_fields']) != 2:
+            print(f"AUTO_ROUTER should have 2 credential fields")
+            exit(1)
+
+        # SageMaker: three AWS fields
+        sagemaker = next(p for p in data if p['provider'] == 'SageMaker')
+        sagemaker_fields = [f['key'] for f in sagemaker['credential_fields']]
+        if 'aws_access_key_id' not in sagemaker_fields or 'aws_region_name' not in sagemaker_fields:
+            print(f"SageMaker missing expected AWS fields")
+            exit(1)
+
+        # Azure: seven fields including service principal
+        azure = next(p for p in data if p['provider'] == 'Azure')
+        azure_fields = [f['key'] for f in azure['credential_fields']]
+        expected_azure = ['api_base', 'api_version', 'base_model', 'api_key', 'azure_ad_token', 'tenant_id', 'client_id', 'client_secret']
+        if azure_fields != expected_azure:
+            print(f"Azure field order mismatch: expected {expected_azure}, got {azure_fields}")
+            exit(1)
+        tenant_field = next((f for f in azure['credential_fields'] if f['key'] == 'tenant_id'), None)
+        if not tenant_field or 'Entra ID' not in (tenant_field.get('tooltip') or ''):
+            print(f"Azure tenant_id tooltip missing Entra ID reference")
+            exit(1)
+
+        # Azure_AI_Studio: two required fields
+        azure_ai = next(p for p in data if p['provider'] == 'Azure_AI_Studio')
+        api_base_ai = next((f for f in azure_ai['credential_fields'] if f['key'] == 'api_base'), None)
+        if not api_base_ai or not api_base_ai.get('required'):
+            print(f"Azure_AI_Studio api_base should be required")
+            exit(1)
+        api_key_ai = next((f for f in azure_ai['credential_fields'] if f['key'] == 'api_key'), None)
+        if not api_key_ai or not api_key_ai.get('required'):
+            print(f"Azure_AI_Studio api_key should be required")
+            exit(1)
+
+        CHECKER
+        uv run --with pyyaml python /tmp/check_fields.py
+    - id: bedrock-mantle-auth-choice
+      why: Bedrock Mantle tooltip does not distinguish bearer token from SigV4 authentication paths
+      run: |
+        cat > /tmp/check_mantle.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+        mantle = next(p for p in data if p['provider'] == 'BedrockMantle')
+        api_key_field = next((f for f in mantle['credential_fields'] if f['key'] == 'api_key'), None)
+        tooltip = api_key_field.get('tooltip', '')
+        if 'Bearer token' not in tooltip or 'AWS SigV4' not in tooltip or 'no API key is set' not in tooltip:
+            print(f"BedrockMantle api_key tooltip missing authentication choice guidance")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_mantle.py
+    - id: anthropic-byok-guidance
+      why: Anthropic api_key tooltip does not document BYOK flow and header forwarding
+      run: |
+        cat > /tmp/check_anthropic.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+        anthropic = next(p for p in data if p['provider'] == 'Anthropic')
+        api_key_field = next((f for f in anthropic['credential_fields'] if f['key'] == 'api_key'), None)
+        tooltip = api_key_field.get('tooltip', '')
+        if 'BYOK' not in tooltip or 'x-api-key header' not in tooltip:
+            print(f"Anthropic api_key tooltip missing BYOK and header forwarding guidance")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_anthropic.py
+    - id: azure-service-principal-fields
+      why: Azure is missing tenant_id, client_id or client_secret fields or they are out of order
+      run: |
+        cat > /tmp/check_azure.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+        azure = next(p for p in data if p['provider'] == 'Azure')
+        field_keys = [f['key'] for f in azure['credential_fields']]
+        # Verify service principal fields are all present after azure_ad_token
+        sp_start = field_keys.index('tenant_id') if 'tenant_id' in field_keys else -1
+        if sp_start < 0:
+            print(f"Azure missing tenant_id field")
+            exit(1)
+        expected_sp_order = ['tenant_id', 'client_id', 'client_secret']
+        actual_sp_order = field_keys[sp_start:sp_start+3]
+        if actual_sp_order != expected_sp_order:
+            print(f"Azure service principal field order mismatch: expected {expected_sp_order}, got {actual_sp_order}")
+            exit(1)
+        # Verify shared Entra ID tooltip
+        for field_key in expected_sp_order:
+            field = next((f for f in azure['credential_fields'] if f['key'] == field_key), None)
+            if not field or 'Entra ID' not in (field.get('tooltip') or ''):
+                print(f"Azure {field_key} tooltip missing Entra ID reference")
+                exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_azure.py
+    - id: assemblyai-region-select
+      why: AssemblyAI api_base is not a required select with the two region options
+      run: |
+        cat > /tmp/check_assemblyai.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_mantle_azure.json') as f:
+            data = json.load(f)
+        assemblyai = next(p for p in data if p['provider'] == 'AssemblyAI')
+        api_base_field = next((f for f in assemblyai['credential_fields'] if f['key'] == 'api_base'), None)
+        if not api_base_field or not api_base_field.get('required'):
+            print(f"AssemblyAI api_base should be required")
+            exit(1)
+        if api_base_field.get('field_type') != 'select':
+            print(f"AssemblyAI api_base field_type should be select, got {api_base_field.get('field_type')}")
+            exit(1)
+        expected_options = ["https://api.assemblyai.com", "https://api.eu.assemblyai.com"]
+        if api_base_field.get('options') != expected_options:
+            print(f"AssemblyAI api_base options mismatch")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_assemblyai.py
+    - id: provider-json-parses
+      why: the JSON file does not parse or does not yield eight records
+      run: |
+        cat > /tmp/check_parse.rs << 'CHECKER'
+        use std::fs;
+        fn main() {
+            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_mantle_azure.json")
+                .expect("failed to read json file");
+            let _: Vec<serde_json::Value> = serde_json::from_str(&content)
+                .expect("failed to parse json");
+        }
+        CHECKER
+        rustc /tmp/check_parse.rs -o /tmp/check_parse && /tmp/check_parse
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Consuming or assembling this fragment into a larger catalog. B3190 loads all fragments in source order.
+  - Network behavior or credential validation. This task only preserves the form metadata.
+  - Provider resolution or model execution. The task provides data only.
+pitfalls:
+  - The JSON file must be a plain array, not an object with a key. B3190's loader expects JSON.load(file) to yield a list directly.
+  - Every null value in options, placeholder or tooltip must be preserved exactly; missing the null and writing an empty string changes the wire format.
+  - Bedrock Mantle's api_key field has a tooltip that explains both bearer token and AWS SigV4 authentication choices; this distinguishes it from the regular Bedrock provider.
+  - Anthropic's api_key can be left empty for BYOK flows where clients provide their own key via the x-api-key header; the tooltip documents this behavior.
+  - Azure's service-principal fields (tenant_id, client_id, client_secret) share a tooltip about Entra ID auth and come after the azure_ad_token field.
+  - AssemblyAI's api_base is a required select dropdown with exactly two region options, not a free-form text field.
+  - Azure_AI_Studio is distinct from the regular Azure provider and requires both api_base and api_key; api_base includes a full deployment URL with query parameters.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

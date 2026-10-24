@@ -1,0 +1,116 @@
+id: B3013
+title: Reset team budgets and keyset-paged budget windows
+description: >-
+  Implement `betterlite-db::team_window_reset` to reset expired team budgets and
+  update keyset-paged budget windows for keys and teams. Reset team spending and
+  budget_reset_at timestamps using B3009's shared reset helpers and cache
+  invalidation. Handle individual budget windows stored as JSON in budget_limits
+  columns for keys and teams, resetting expired windows and advancing their
+  reset timestamps without cascading rollover to linked rows (window resets
+  are independent, not tied to the key/team budget cascade). Preserve the
+  window reset path's order: cache write for carry-over spend, maintained-window-row
+  roll via B1735, budget_limits JSON rewrite, with all Redis/maintained-row failures
+  treated as warnings without stopping the reset.
+
+  Config keys: `budget_duration` and `max_budget` in window objects.
+  Cache keys: `spend:key:*:window:*`, `spend:team:*:window:*` for window counters.
+  DB tables: LiteLLM_VerificationToken (keys), LiteLLM_TeamTable (teams).
+scope:
+  paths:
+    - crates/betterlite-db/**
+    - crates/betterlite-auth/**
+    - crates/betterlite-config/**
+    - tools/oracle/cases/team-window-reset/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L382-L442
+    why: "Window source definitions, page query for keyset iteration and entity-specific window write functions."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L989-L1009
+    why: "Team reset updates: _write_team_reset_updates and _write_team_reset_updates_once."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1262-L1374
+    why: "Team reset phase: reset_budget_for_litellm_teams and _reset_budget_for_litellm_teams_chunk."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1376-L1410
+    why: "Single window reset logic: _reset_expired_window with cache and DB row updates."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1413-L1449
+    why: "Window maintenance row update via B1735: _roll_window_spend_row."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1451-L1470
+    why: "Carry-over spend calculation for rollover: _window_carried_spend."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1471-L1485
+    why: "Window reset orchestration: reset_budget_windows and per-source iteration."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1486-L1517
+    why: "Keyset pagination and termination: _reset_windows_for with cursor-driven table walk."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1518-L1559
+    why: "Single page processing and row write: _reset_window_page with JSON persistence."
+dod:
+  - text: reset_budget_for_litellm_teams iterates teams due for reset in chunks, calls B3009's _reset_budget_for_team for each, persists spend/budget_reset_at updates via _write_team_reset_updates, and invalidates spend counters keyed as spend:team:{team_id}.
+    proof: [team-resets]
+  - text: Team reset updates write only spend decrements and budget_reset_at advances through the spend_reset_unit_of_work, matching the architecture of B3012's key/user resets.
+    proof: [team-writes]
+  - text: Reset-at time computation calls B2317's compute_budget_reset_at with the budget_duration and current reset settings to set the next window expiry.
+    proof: [reset-at-computation]
+  - text: Window reset path reads budget_limits JSON (list of {budget_duration, max_budget, reset_at}) for each row, checks each window's reset_at <= now, and resets only expired windows without touching others.
+    proof: [window-expiry-check]
+  - text: Expired window reset writes new carry-over spend to both in-memory and Redis caches with warning-only failures, updates the window's reset_at timestamp in the JSON, and rolls the window spend row via B1735's roll_window_spend_row.
+    proof: [window-cache-roll]
+  - text: Window carry-over spend is computed from the current counter value and the rollover cap if rollover is enabled; reads that fail or return non-float fall back to zero.
+    proof: [carry-over-cases]
+  - text: "Malformed window input (non-string reset_at or missing budget_duration) raises and aborts the remaining pages for that entity source this tick, caught and logged by reset_budget_windows; healthy windows are reset independently."
+    proof: [json-persist-cases]
+  - text: Keyset pagination for keys and teams walks rows in primary-key order with a SQL cursor, processes one page per _reset_window_page call, and terminates when fewer rows than RESET_BUDGET_JOB_BATCH_SIZE are returned.
+    proof: [keyset-pagination]
+checks:
+  optional: []
+  commands:
+    - id: team-resets
+      why: Team reset orchestration tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::team_resets/)'
+    - id: team-writes
+      why: Team update write tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::team_writes/)'
+    - id: reset-at-computation
+      why: Reset-at timestamp calculation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::reset_at/)'
+    - id: window-expiry-check
+      why: Window expiry detection and selective reset tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::window_expiry/)'
+    - id: window-cache-roll
+      why: Window counter reset and maintenance row roll tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::window_cache_roll/)'
+    - id: carry-over-cases
+      why: Carry-over spend computation and cache read failure tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::carry_over/)'
+    - id: json-persist-cases
+      why: JSON parsing and persistence tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::json_persist/)'
+    - id: keyset-pagination
+      why: Keyset pagination and termination tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_window_reset::pagination/)'
+oracle_cases: []
+deviations:
+  - what: Window counter resets fail gracefully on Redis write with a warning; the in-memory counter is set regardless. Subsequent requests see the new counter value.
+    why: The maintained window row is best-effort for optimization; counter reset must not fail the entire window reset. The cache is the source of truth until the next read rehydrates from Redis.
+  - what: "Malformed budget_duration in a window (unparseable by duration_in_seconds) is logged as a warning and the window's row roll is skipped in _roll_window_spend_row; the reset_at was already advanced to the fallback value before the roll call, so only the database row optimization is lost."
+    why: Reset-at advancement happens before the roll attempt, so a failed roll leaves the JSON reset_at at its new fallback value. The row will be retried on the next sweep; stopping the entire page on one bad entry would pin that window's carry-over pending repair.
+  - what: A window with non-string reset_at or missing budget_duration raises and aborts the remaining pages for that entity source this tick, caught and logged by reset_budget_windows with source name and exception.
+    why: These corruptions occur at counter-key construction or expiry parsing (before the reset attempt), so they abort the walk. Healthy windows on other pages are skipped until the next tick; manual repair or retrying the corrupted batch is required.
+  - what: Keyset pagination never terminates early due to a page limit; it walks to the end of the table because process lease release prevents inter-process position memory and an artificial cap would starve tail rows indefinitely.
+    why: LiteLLM's design requires unbounded walks per sweep tick; artificial caps introduce windows pinned at budget limit forever. The strict cursor advancement guarantees termination without bound.
+out_of_scope:
+  - "Team reset calculation (_reset_budget_for_team) is owned by B3009; this task only writes the updated rows and resets budget windows."
+  - "B2317 owns compute_budget_reset_at; this task uses it as supplied."
+  - "B1735 owns roll_window_spend_row; this task calls it as a helper for window maintenance."
+  - "Redis counter write and TTL operations are owned by B360; this task receives the DualCache interface."
+  - "Local cache get/set operations are owned by B2226; in-memory counter writes use it."
+  - "Service event emission is owned by B1690; failure handling uses the injected contract."
+pitfalls:
+  - "Window reset_at is stored in JSON as ISO format string (isoformat()); parsing must handle both 'Z' and '+00:00' suffixes for UTC."
+  - "Carry-over spend depends on _rollover_enabled() and the rollover cap from max_budget; neither check applies to windows without a max_budget field."
+  - "Keyset pagination uses raw SQL for budget_limits reads because prisma-client-python cannot filter on Json? columns; table and column names are module constants, never input or user-derived."
+  - "Failed Redis writes in _reset_expired_window are logged as warnings only; process proceeds to maintain the row and rewrite JSON, so the counter may not sync."
+  - "Multiple windows per row are processed in order; a failure on one window does not stop others in the same row, but a DB write failure stops the entire page."
+  - "Team reset phase calls B3009's _reset_budget_for_team helper, which is distinct from the window reset operations even though both may update the same row."
+  - "In _reset_expired_window, reset_at is unconditionally advanced to the new value (line 1402) before _roll_window_spend_row is called (line 1403); duration parsing failures inside the roll log a warning and skip only the row update, not the JSON reset_at advancement."
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2
