@@ -283,6 +283,7 @@ tasks:
     - B350
     - B352
     - B353
+    - B354
     file: null
     covers:
     - router_plugins.json
@@ -2548,3 +2549,16 @@ tasks:
     - litellm/router_strategy/complexity_router/llm_v2.py
     - litellm/router_strategy/complexity_router/fuse_presets.py
     - litellm/router_strategy/complexity_router/fuse_presets.json
+
+  - id: B354
+    milestone: M2 routing
+    title: Adaptive soft-floor placement for complexity tiers
+    status: todo
+    depends_on:
+    - B339
+    - B340
+    - B334
+    - B335
+    file: tasks/B354-complexity-adaptive-placement.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py

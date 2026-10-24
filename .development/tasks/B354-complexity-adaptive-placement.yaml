@@ -1,0 +1,84 @@
+id: B354
+title: Adaptive soft-floor placement for complexity tiers
+description: Compose B339's adaptive model sampler with B334's tier selection and B335's transient constraints.
+  Add typed candidate provenance, cold-start observation and per-tier distance penalties while retaining
+  hard policy constraints at the final placement boundary. Reuse the adaptive cells and update lifecycle
+  rather than creating another learner or random-number implementation. Use the existing Rust crate boundaries
+  from B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
+  unsupported keys still fail by full path. Keep the implementation, adapters and tests within 800 changed
+  lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/complexity-adaptive-placement/**
+  - tools/oracle/src/router_probes/complexity-adaptive-placement/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/complexity_adaptive_placement.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2933-L3148
+  why: Adaptive initialization, cold start, candidate restrictions and weighted distance score.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(complexity_adaptive_placement)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/complexity-adaptive-placement/cold-start-classified-tier-only.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/configured-versus-default-preferences.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/cost-params-over-model-info.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/classified-tier-eligible-mode.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/all-tiers-distance-penalty.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/plan-hard-floor.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/housekeeping-hard-ceiling.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/context-fit-applies-cold-start.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/no-eligible-fitting-fallback.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/chosen-model-attribution.yaml
+deviations: []
+out_of_scope:
+- New learning rules or persistence tables.
+pitfalls:
+- A model in several tiers is eligible if at least one membership satisfies each bound; preserve the source's
+  membership test.
+- Normalization uses the broader eligible cost set even when the final floor removes a candidate.
+- The numerical sampling decision for B339 must be resolved before this task runs.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
