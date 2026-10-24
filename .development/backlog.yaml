@@ -2457,12 +2457,13 @@ tasks:
     - B334
     - B068
     - B075
+    - B013
     - B012
+    - B301
     file: tasks/B342-routing-baselines.yaml
     covers:
     - litellm/router_strategy/savings_baseline.py
     - litellm/proxy/hooks/autorouter_baseline_cache.py
-
   - id: B343
     milestone: M2 routing
     title: Auto-router identity, member permissions and inference checks
