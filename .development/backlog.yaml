@@ -2570,11 +2570,12 @@ tasks:
     depends_on:
     - B016
     - B301
+    - B361
+    - B002
     file: tasks/B350-lar1-routing.yaml
     covers:
     - litellm/router_strategy/lar1_routing.py
     - litellm/types/lar1.py
-
   - id: B351
     milestone: M2 routing
     title: Pinned complexity evaluation corpus and bundled presets
