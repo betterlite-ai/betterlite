@@ -28,6 +28,25 @@ pub(crate) struct Invocation<'paths> {
 #[derive(Debug, Deserialize)]
 struct ClaudeResult {
     structured_output: Option<Value>,
+    result: Option<String>,
+}
+
+pub(crate) fn claude_answer(text: &str) -> Result<Option<String>, GateError> {
+    let parsed: ClaudeResult = serde_json::from_str(text).map_err(|source| GateError::Json {
+        what: "Claude's result".to_owned(),
+        source,
+    })?;
+    match parsed.structured_output {
+        Some(value) => serde_json::to_string(&value)
+            .map(Some)
+            .map_err(|source| GateError::Json {
+                what: "Claude's structured output".to_owned(),
+                source,
+            }),
+        None => Ok(parsed
+            .result
+            .filter(|answer| answer.trim_start().starts_with('{'))),
+    }
 }
 
 fn expand(
@@ -81,19 +100,7 @@ fn answer(mode: OutputMode, output: &Path, stdout: &Path) -> Result<Option<Strin
                 path: stdout.to_owned(),
                 source,
             })?;
-            let result: ClaudeResult =
-                serde_json::from_str(&text).map_err(|source| GateError::Json {
-                    what: "Claude's result".to_owned(),
-                    source,
-                })?;
-            result
-                .structured_output
-                .map(|value| serde_json::to_string(&value))
-                .transpose()
-                .map_err(|source| GateError::Json {
-                    what: "Claude's structured output".to_owned(),
-                    source,
-                })
+            claude_answer(&text)
         }
     }
 }
