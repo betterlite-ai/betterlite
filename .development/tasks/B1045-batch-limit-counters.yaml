@@ -1,0 +1,172 @@
+id: B1045
+title: Batch limit counters
+description: >-
+  Reserve enqueued tokens or increment per-window batch counters through B022/B126, using the split descriptors.
+  Preserve rate-limit error fields, TPD window-aware refunds and rollback when a later quota fails; no money/token
+  arithmetic uses floating point.
+
+
+  Implement crates/betterlite-core/src/api/batch_limit_counters.rs. Use BatchLimitCountersInput and BatchLimitCountersResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions batch_rpm_limit, batch_tpm_limit, batch_enqueued_limit, tpd_window_refund,
+  counter_partial_failure under api::batch_limit_counters::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::BatchLimitCounters in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_limit_counters: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._reserve_batch_enqueued_tokens
+  (L565-L589); litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._raise_enqueued_limit_error (L591-L616);
+  litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._raise_rate_limit_error (L618-L717); litellm/proxy/hooks/batch_rate_limiter.py:
+  _PROXY_BatchRateLimiter._check_and_increment_batch_counters (L719-L788); litellm/proxy/hooks/batch_rate_limiter.py:
+  _PROXY_BatchRateLimiter._read_tpd_window_start (L790-L804); litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._build_tpd_refund_ops
+  (L806-L841). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 214 owned nonblank/non-comment/non-docstring Python lines (244 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 234 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 484 total within the 490-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B022 (Per-worker admission and in-flight tracking), B126 (Redis, Redis Cluster and Valkey),
+  B171 (Direct helper oracle and URL path encoding), B1042 (Batch enqueued reserve), B1044 (Batch limit descriptors),
+  B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_limit_counters.rs
+  - crates/betterlite-core/src/api/batch_limit_counters/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_limit_counters.rs
+  - tools/oracle/src/helpers/batch_limit_counters/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_limit_counters.py
+  - tools/oracle/helpers/batch_limit_counters/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_limit_counters-*
+  - tools/oracle/cases/helpers/batch-limit-counters/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L565-L841
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'batch rpm limit: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-rpm-limit
+  - oracle
+- text: 'batch tpm limit: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-tpm-limit
+  - oracle
+- text: 'batch enqueued limit: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-enqueued-limit
+  - oracle
+- text: 'tpd window refund: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tpd-window-refund
+  - oracle
+- text: 'counter partial failure: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-counter-partial-failure
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::/)
+      - test(/::replays_corpus$/)'
+  - id: case-batch-rpm-limit
+    why: the batch-rpm-limit behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::tests::batch_rpm_limit($|::)/)'
+  - id: case-batch-tpm-limit
+    why: the batch-tpm-limit behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::tests::batch_tpm_limit($|::)/)'
+  - id: case-batch-enqueued-limit
+    why: the batch-enqueued-limit behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::tests::batch_enqueued_limit($|::)/)'
+  - id: case-tpd-window-refund
+    why: the tpd-window-refund behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::tests::tpd_window_refund($|::)/)'
+  - id: case-counter-partial-failure
+    why: the counter-partial-failure behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_counters::tests::counter_partial_failure($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_limit_counters.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_limit_counters-*)"
+      && grep -qE "^[[:space:]]+batch_limit_counters:" tools/oracle/fuzz/corpus/helper_case/batch_limit_counters-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-limit-counters)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-limit-counters/batch-rpm-limit.yaml
+- tools/oracle/cases/helpers/batch-limit-counters/batch-tpm-limit.yaml
+- tools/oracle/cases/helpers/batch-limit-counters/batch-enqueued-limit.yaml
+- tools/oracle/cases/helpers/batch-limit-counters/tpd-window-refund.yaml
+- tools/oracle/cases/helpers/batch-limit-counters/counter-partial-failure.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1044 owns _PROXY_BatchRateLimiter.__init__ L129-L149, _PROXY_BatchRateLimiter._get_file_bound_batch_model
+  L151-L180, _PROXY_BatchRateLimiter._get_batch_routing_model L182-L199, _PROXY_BatchRateLimiter._resolve_batch_provider
+  L201-L229, _PROXY_BatchRateLimiter._create_batch_rate_limit_descriptors L231-L285, _PROXY_BatchRateLimiter._project_has_any_io_token_limits
+  L288-L302, _PROXY_BatchRateLimiter._create_project_io_descriptors_for_models L304-L336, _PROXY_BatchRateLimiter._should_skip_batch_input_file_processing
+  L338-L403, _PROXY_BatchRateLimiter._warn_if_unsupported_model_skip_configured L405-L421, _PROXY_BatchRateLimiter._key_requires_batch_model_access_check
+  L424-L437, _PROXY_BatchRateLimiter._estimate_entry_output_tokens L439-L489, _PROXY_BatchRateLimiter._has_applicable_batch_rate_limits
+  L492-L503, _PROXY_BatchRateLimiter._resolve_batch_input_file_fetch_params L505-L563.'
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1046 owns _PROXY_BatchRateLimiter.count_input_file_usage L843-L1020,
+  _PROXY_BatchRateLimiter._enforce_batch_file_model_access L1022-L1126, _PROXY_BatchRateLimiter._fetch_managed_file_content
+  L1128-L1178.'
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1047 owns _PROXY_BatchRateLimiter.async_pre_call_hook L1180-L1279.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- data reads 'model' with default None; omission and an explicit value must not collapse into one case.
+- _PROXY_BatchRateLimiter._raise_enqueued_limit_error uses data.get('model'); retain its missing-value behavior
+  and field spelling in the typed projection.
+review_level: security
+budget:
+  max_changed_lines: 490
+  max_new_expects: 1

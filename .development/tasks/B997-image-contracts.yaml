@@ -1,0 +1,184 @@
+id: B997
+title: Image contracts
+description: >-
+  Define image-generation/edit/variation operation records and provider capability transforms over B010, including
+  file MIME detection and image-edit optional parameter projection. Use supplied upload bytes/B183 inline data,
+  keep masks distinct from image arrays and never fetch request image URLs.
+
+
+  ImageEditOptionalRequestParams fields are background, input_fidelity, mask, n, quality, response_format, size,
+  user and imageConfig. Capability records are below provider execution; B1120 owns MIME and option projection.
+  variation-unsupported-param uses the OpenAI variation configuration with an unsupported field and drop_params=false,
+  then true for the warning/drop result.
+
+
+  Implement crates/betterlite-core/src/api/image_contracts.rs, crates/betterlite-openai/src/api/image_contracts.rs,
+  crates/betterlite-provider/src/api/image_contracts.rs. Use ImageContractsInput and ImageContractsResult with typed
+  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
+  constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
+
+
+  Write adjacent tests.rs behavior functions variation_unsupported_param under api::image_contracts::tests. Each
+  named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ImageContracts in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {image_contracts: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.get_supported_openai_params
+  (L24-L25); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.map_openai_params
+  (L28-L35); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.get_complete_url
+  (L37-L53); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.validate_environment
+  (L55-L65); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.get_error_class
+  (L67-L72); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.transform_image_generation_request
+  (L74-L84); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.transform_image_generation_response
+  (L86-L101); litellm/llms/base_llm/image_generation/transformation.py: BaseImageGenerationConfig.use_multipart_form_data
+  (L103-L109); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.__init__ (L30-L31); litellm/llms/base_llm/image_edit/transformation.py:
+  BaseImageEditConfig.get_config (L34-L50); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_supported_openai_params
+  (L53-L54); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.map_openai_params (L57-L63);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.validate_environment (L66-L74); litellm/llms/base_llm/image_edit/transformation.py:
+  BaseImageEditConfig.get_complete_url (L77-L92); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_request
+  (L95-L104); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.async_transform_image_edit_request
+  (L106-L122); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.finalize_image_edit_request_data
+  (L124-L132); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.transform_image_edit_response
+  (L135-L141); litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.use_multipart_form_data (L143-L150);
+  litellm/llms/base_llm/image_edit/transformation.py: BaseImageEditConfig.get_error_class (L152-L161); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.get_supported_openai_params (L30-L31); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.get_complete_url (L33-L49); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.transform_request_image_variation (L52-L59); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.validate_environment (L61-L71); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.async_transform_response_image_variation (L74-L87); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.transform_response_image_variation (L90-L103); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.transform_request (L105-L115); litellm/llms/base_llm/image_variations/transformation.py:
+  BaseImageVariationConfig.transform_response (L117-L133). Abstract/protocol declarations map to native types and
+  synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
+  stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 319 owned nonblank/non-comment/non-docstring Python lines (349 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 339 implementation,
+  46 behavior tests, 12 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  46 wiring; 533 total within the 540-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B175 (Provider parameter capabilities and mapping), B183 (Bounded inline media
+  conversion), B1087 (Api boundaries), B1120 (Image edit parameters and MIME). These are callable/type/config owners,
+  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
+  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
+  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/image_contracts.rs
+  - crates/betterlite-core/src/api/image_contracts/**
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api/image_contracts.rs
+  - crates/betterlite-openai/src/api/image_contracts/**
+  - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api/image_contracts.rs
+  - crates/betterlite-provider/src/api/image_contracts/**
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/image_contracts.rs
+  - tools/oracle/src/helpers/image_contracts/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/image_contracts.py
+  - tools/oracle/helpers/image_contracts/**
+  - tools/oracle/fuzz/corpus/helper_case/image_contracts-*
+  - tools/oracle/cases/helpers/image-contracts/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_generation/transformation.py#L1-L109
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py#L1-L161
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_variations/transformation.py#L1-L133
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'variation unsupported param: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-variation-unsupported-param
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai -p betterlite-provider --no-tests=fail
+      -E 'test(/^api::image_contracts::/) - test(/::replays_corpus$/)'
+  - id: case-variation-unsupported-param
+    why: the variation-unsupported-param behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_contracts::tests::variation_unsupported_param($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/image_contracts.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/image_contracts-*)"
+      && grep -qE "^[[:space:]]+image_contracts:" tools/oracle/fuzz/corpus/helper_case/image_contracts-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/image-contracts)"
+oracle_cases:
+- tools/oracle/cases/helpers/image-contracts/variation-unsupported-param.yaml
+deviations: []
+out_of_scope:
+- 'litellm/images/utils.py: B1120 owns ImageEditRequestUtils.get_optional_params_image_edit L14-L61, ImageEditRequestUtils.get_requested_image_edit_optional_param
+  L64-L81, ImageEditRequestUtils.get_image_content_type L84-L147.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within BaseImageEditConfig.get_complete_url\'s api_base is None branch, preserve raise ValueError('api_base is
+  required') and its nested guards.
+- ImageEditOptionalRequestParams includes imageConfig but no stream field; do not reuse generation streaming flags
+  for edit capability records.
+review_level: standard
+budget:
+  max_changed_lines: 540
+  max_new_expects: 1

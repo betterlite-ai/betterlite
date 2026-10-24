@@ -1,0 +1,177 @@
+id: B1042
+title: Batch enqueued reserve
+description: >-
+  Resolve positive admin-set batch_enqueued_token_limit metadata and reserve key/team allowances atomically with
+  B126 Redis or source memory fallback. Preserve exact key formats, TTL, warnings for invalid limits and rollback
+  after partial scope reservation. batch_enqueued_token_limit lives in admin-controlled key/team metadata, defaults
+  absent; invalid/nonpositive values warn and disable that scope. Reservation TTL is BATCH_ENQUEUED_TOKEN_TTL_SECONDS=691200
+  seconds.
+
+
+  Implement crates/betterlite-core/src/api/batch_enqueued_reserve.rs. Use BatchEnqueuedReserveInput and BatchEnqueuedReserveResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions key_team_reserve, enqueued_limit_exceeded, invalid_limit_warning, partial_reserve_rollback,
+  redis_fallback_memory under api::batch_enqueued_reserve::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::BatchEnqueuedReserve in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_enqueued_reserve: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/hooks/batch_enqueued_tokens.py: _ScriptRunner.__call__ (L111-L111); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  _read_metadata_limit (L114-L128); litellm/proxy/hooks/batch_enqueued_tokens.py: resolve_batch_enqueued_token_scopes
+  (L131-L144); litellm/proxy/hooks/batch_enqueued_tokens.py: canonical_provider_batch_id (L147-L159); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  batch_response_view (L170-L174); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore.__init__
+  (L193-L214); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._counter_key (L217-L218); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  BatchEnqueuedTokenStore._record_key (L221-L222); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore.reserve
+  (L224-L244); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._reserve_via_redis (L246-L267);
+  litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._run_reserve_script (L269-L285); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  BatchEnqueuedTokenStore._rollback_partial_reserve (L287-L299); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._refund_via_redis
+  (L301-L308); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._reserve_in_memory (L310-L326);
+  litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._get_local_counter (L452-L458); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  BatchEnqueuedTokenStore._set_local_counter (L460-L467). Abstract/protocol declarations map to native types and
+  synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
+  stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 194 owned nonblank/non-comment/non-docstring Python lines (207 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 214 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 464 total within the 470-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B126 (Redis, Redis Cluster and Valkey), B171 (Direct helper oracle and URL path encoding),
+  B198 (Injected call context and shared settings), B1019 (File routing ids), B1087 (Api boundaries), B732 (Typed
+  authentication principals and grant resolution). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_enqueued_reserve.rs
+  - crates/betterlite-core/src/api/batch_enqueued_reserve/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_enqueued_reserve.rs
+  - tools/oracle/src/helpers/batch_enqueued_reserve/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_enqueued_reserve.py
+  - tools/oracle/helpers/batch_enqueued_reserve/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_enqueued_reserve-*
+  - tools/oracle/cases/helpers/batch-enqueued-reserve/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L111-L326
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L452-L458
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L460-L467
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'key team reserve: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-key-team-reserve
+  - oracle
+- text: 'enqueued limit exceeded: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-enqueued-limit-exceeded
+  - oracle
+- text: 'invalid limit warning: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-invalid-limit-warning
+  - oracle
+- text: 'partial reserve rollback: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-partial-reserve-rollback
+  - oracle
+- text: 'redis fallback memory: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-redis-fallback-memory
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::/)
+      - test(/::replays_corpus$/)'
+  - id: case-key-team-reserve
+    why: the key-team-reserve behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::tests::key_team_reserve($|::)/)'
+  - id: case-enqueued-limit-exceeded
+    why: the enqueued-limit-exceeded behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::tests::enqueued_limit_exceeded($|::)/)'
+  - id: case-invalid-limit-warning
+    why: the invalid-limit-warning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::tests::invalid_limit_warning($|::)/)'
+  - id: case-partial-reserve-rollback
+    why: the partial-reserve-rollback behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::tests::partial_reserve_rollback($|::)/)'
+  - id: case-redis-fallback-memory
+    why: the redis-fallback-memory behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_reserve::tests::redis_fallback_memory($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_enqueued_reserve.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_enqueued_reserve-*)"
+      && grep -qE "^[[:space:]]+batch_enqueued_reserve:" tools/oracle/fuzz/corpus/helper_case/batch_enqueued_reserve-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-enqueued-reserve)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-enqueued-reserve/key-team-reserve.yaml
+- tools/oracle/cases/helpers/batch-enqueued-reserve/enqueued-limit-exceeded.yaml
+- tools/oracle/cases/helpers/batch-enqueued-reserve/invalid-limit-warning.yaml
+- tools/oracle/cases/helpers/batch-enqueued-reserve/partial-reserve-rollback.yaml
+- tools/oracle/cases/helpers/batch-enqueued-reserve/redis-fallback-memory.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/hooks/batch_enqueued_tokens.py: B1043 owns BatchEnqueuedTokenStore.refund L328-L350, BatchEnqueuedTokenStore._refund_redis_reservation
+  L352-L364, BatchEnqueuedTokenStore.save_reservation L366-L396, BatchEnqueuedTokenStore.pop_reservation L398-L421,
+  BatchEnqueuedTokenStore._pop_redis_record L423-L438, BatchEnqueuedTokenStore._pop_local_record L440-L450.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- batch_enqueued_tokens.py:123 emits the diagnostic 'Ignoring invalid %s value %r; expected a positive integer';
+  retain its level and fallback instead of turning it into a hard error.
+- 'batch_enqueued_tokens.py:296 emits the diagnostic ''Rollback of partially reserved enqueued tokens failed; leaked
+  increments expire with the TTL: %s''; retain its level and fallback instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 470
+  max_new_expects: 1

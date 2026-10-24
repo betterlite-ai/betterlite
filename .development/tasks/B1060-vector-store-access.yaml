@@ -1,0 +1,226 @@
+id: B1060
+title: Vector store access
+description: >-
+  Build vector-store object/team/admin permission and list visibility predicates using B052/B058. Authorize index
+  lifecycle operations separately from data search, and never let a supplied vector store ID grant access to its
+  credentials.
+
+
+  user_id is never checked. A store with no team_id is accessible to every key, though list filtering hides it without
+  grants; _is_proxy_admin accepts PROXY_ADMIN only. Index mutations denied to non-admin return 403 detail Only proxy
+  admins can {operation} vector store indexes. Use B137 ui_session_utils for team auth contexts.
+
+
+  Pure policy/helper parity stays here; the consuming route tasks own HTTP auth/status/header integration. Do not
+  call a FastAPI handler from a helper adapter or add a dependency on the later family composer.
+
+
+  Implement crates/betterlite-core/src/api/vector_store_access.rs. Use VectorStoreAccessInput and VectorStoreAccessResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): utils.py:55 status_code=403, exception_detail=FastAPI detail string. Compare the actual source
+  status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions vector_object_grant, team_store_visibility, admin_index_management,
+  unauthorized_index_lifecycle, list_visible_only, no_team_store_open, no_team_list_hidden, view_only_index_denied
+  under api::vector_store_access::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::vector_store_access::decode_vector_store_access(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input litellm_params at litellm/proxy/vector_store_endpoints/utils.py:32.
+  Place its implementation in crates/betterlite-core/src/api/vector_store_access.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs passes arbitrary
+  bounded bytes to that exact decoder; api::vector_store_access::tests::replays_corpus replays newly committed seeds
+  through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::VectorStoreAccess in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_access: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/vector_store_endpoints/utils.py: _normalize_litellm_params (L25-L37); litellm/proxy/vector_store_endpoints/utils.py:
+  _is_proxy_admin (L40-L44); litellm/proxy/vector_store_endpoints/utils.py: assert_proxy_admin_for_vector_store_index_management
+  (L47-L58); litellm/proxy/vector_store_endpoints/utils.py: _suffix_after_index_name (L61-L66); litellm/proxy/vector_store_endpoints/utils.py:
+  _is_vector_store_index_lifecycle_request (L69-L99); litellm/proxy/vector_store_endpoints/utils.py: _object_permission_allows_vector_store
+  (L102-L112); litellm/proxy/vector_store_endpoints/utils.py: _get_object_permission_for_id (L115-L145); litellm/proxy/vector_store_endpoints/utils.py:
+  can_user_access_vector_store (L148-L175); litellm/proxy/vector_store_endpoints/utils.py: _is_vector_store_granted
+  (L178-L196); litellm/proxy/vector_store_endpoints/utils.py: _team_auth_context (L199-L222); litellm/proxy/vector_store_endpoints/utils.py:
+  _vector_store_auth_contexts (L225-L235); litellm/proxy/vector_store_endpoints/utils.py: _is_vector_store_granted_to_any
+  (L238-L245); litellm/proxy/vector_store_endpoints/utils.py: filter_listable_vector_stores (L248-L257). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 164 owned nonblank/non-comment/non-docstring Python lines (190 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 184 implementation,
+  88 behavior tests, 96 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 548 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B058 (Organizations, projects, access groups and object permissions), B171 (Direct helper
+  oracle and URL path encoding), B1087 (Api boundaries), B137 (MCP auth, OAuth flows, BYOK and outbound credentials),
+  B732 (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget
+  handoff), B756 (Authentication header selection and mode dispatch). These are callable/type/config owners, not
+  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_store_access.rs
+  - crates/betterlite-core/src/api/vector_store_access/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs
+  - crates/betterlite-core/fuzz/corpus/vector_store_access/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_store_access.rs
+  - tools/oracle/src/helpers/vector_store_access/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_store_access.py
+  - tools/oracle/helpers/vector_store_access/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_store_access-*
+  - tools/oracle/cases/helpers/vector-store-access/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L25-L257
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector object grant: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-object-grant
+  - oracle
+- text: 'team store visibility: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-team-store-visibility
+  - oracle
+- text: 'admin index management: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-admin-index-management
+  - oracle
+- text: 'unauthorized index lifecycle: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-unauthorized-index-lifecycle
+  - oracle
+- text: 'list visible only: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-list-visible-only
+  - oracle
+- text: 'no team store open: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-no-team-store-open
+  - oracle
+- text: 'no team list hidden: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-no-team-list-hidden
+  - oracle
+- text: 'view only index denied: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-view-only-index-denied
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::/) -
+      test(/::replays_corpus$/)'
+  - id: case-vector-object-grant
+    why: the vector-object-grant behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::vector_object_grant($|::)/)'
+  - id: case-team-store-visibility
+    why: the team-store-visibility behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::team_store_visibility($|::)/)'
+  - id: case-admin-index-management
+    why: the admin-index-management behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::admin_index_management($|::)/)'
+  - id: case-unauthorized-index-lifecycle
+    why: the unauthorized-index-lifecycle behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::unauthorized_index_lifecycle($|::)/)'
+  - id: case-list-visible-only
+    why: the list-visible-only behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::list_visible_only($|::)/)'
+  - id: case-no-team-store-open
+    why: the no-team-store-open behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::no_team_store_open($|::)/)'
+  - id: case-no-team-list-hidden
+    why: the no-team-list-hidden behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::no_team_list_hidden($|::)/)'
+  - id: case-view-only-index-denied
+    why: the view-only-index-denied behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::view_only_index_denied($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/vector_store_access)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs && grep -qF "decode_vector_store_access"
+      crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::vector_store_access::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_store_access.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_access-*)"
+      && grep -qE "^[[:space:]]+vector_store_access:" tools/oracle/fuzz/corpus/helper_case/vector_store_access-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-access)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-store-access/vector-object-grant.yaml
+- tools/oracle/cases/helpers/vector-store-access/team-store-visibility.yaml
+- tools/oracle/cases/helpers/vector-store-access/admin-index-management.yaml
+- tools/oracle/cases/helpers/vector-store-access/unauthorized-index-lifecycle.yaml
+- tools/oracle/cases/helpers/vector-store-access/list-visible-only.yaml
+- tools/oracle/cases/helpers/vector-store-access/no-team-store-open.yaml
+- tools/oracle/cases/helpers/vector-store-access/no-team-list-hidden.yaml
+- tools/oracle/cases/helpers/vector-store-access/view-only-index-denied.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/vector_store_endpoints/utils.py: B1061 owns get_litellm_managed_vector_store L260-L321, assert_user_can_access_vector_store
+  L324-L331, assert_user_can_access_vector_store_id L334-L351, _does_endpoint_match L354-L361, check_vector_store_permission
+  L364-L411, is_allowed_to_call_vector_store_endpoint L414-L502, is_allowed_to_call_vector_store_files_endpoint
+  L505-L559.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'utils.py:140 emits the diagnostic ''Failed to load object_permission id=%s: %s''; retain its level and fallback
+  instead of turning it into a hard error.'
+- utils.py:55 uses status_code=403, detail=f'Only proxy admins can {operation} vector store indexes. Contact your
+  LiteLLM administrator.'; preserve this envelope rather than a family-wide error default.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

@@ -1,0 +1,192 @@
+id: B990
+title: Claude gateway settings
+description: >-
+  Serve managed Claude Code gateway settings and accepted OTLP metrics/logs/traces endpoints. Add typed general_settings.claude_code_gateway_managed_settings
+  with the source absent behavior, reuse the gateway enable/auth dependencies and accept opaque bounded OTLP bodies
+  without inventing a telemetry exporter.
+
+
+  Implement crates/betterlite-server/src/api/claude_gateway_settings.rs, crates/betterlite-core/src/api/claude_gateway_settings.rs.
+  Use ClaudeGatewaySettingsInput and ClaudeGatewaySettingsResult with typed nested records; inject only the clock,
+  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
+  do not introduce ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /claude_code_gateway/managed/settings; POST /claude_code_gateway/v1/metrics;
+  POST /claude_code_gateway/v1/logs; POST /claude_code_gateway/v1/traces. Each alias is exercised through the booted
+  proxy. Every route factory is mounted once; a family composer mounts its child factories without re-registering
+  their methods/paths.
+
+
+  Route input projections: request.headers.If-None-Match (absent None).
+
+
+  Write adjacent tests.rs behavior functions managed_settings_present, managed_settings_absent, gateway_auth_required,
+  otlp_body_accepted, route_aliases, auth_missing, auth_invalid under api::claude_gateway_settings::tests. Each
+  named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/gateway_endpoints.py: managed_settings (L356-L370); litellm/proxy/anthropic_endpoints/gateway_endpoints.py:
+  _skip_otlp_body_parsing (L373-L374); litellm/proxy/anthropic_endpoints/gateway_endpoints.py: _accept_otlp (L380-L382);
+  litellm/proxy/anthropic_endpoints/gateway_endpoints.py: otlp_metrics (L386-L387); litellm/proxy/anthropic_endpoints/gateway_endpoints.py:
+  otlp_logs (L391-L392); litellm/proxy/anthropic_endpoints/gateway_endpoints.py: otlp_traces (L396-L397). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 29 owned nonblank/non-comment/non-docstring Python lines (29 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 49 implementation,
+  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 253 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B171 (Direct helper oracle and URL
+  path encoding), B1087 (Api boundaries), B1132 (Claude gateway enable and settings policy), B732 (Typed authentication
+  principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756 (Authentication
+  header selection and mode dispatch), B1100 (Shared request body decoding), B003 (HTTP server, health routes and
+  master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres test
+  fixture). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
+  ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/claude_gateway_settings.rs
+  - crates/betterlite-server/src/api/claude_gateway_settings/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/claude_gateway_settings.rs
+  - crates/betterlite-core/src/api/claude_gateway_settings/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/api/claude-gateway-settings/**
+  - tools/oracle/fixtures/claude-gateway-settings/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L355-L397
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'managed settings present: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-settings-present
+  - oracle
+- text: 'managed settings absent: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-settings-absent
+  - oracle
+- text: 'gateway auth required: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-gateway-auth-required
+  - oracle
+- text: 'otlp body accepted: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-otlp-body-accepted
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::claude_gateway_settings::/)
+      - test(/::replays_corpus$/)'
+  - id: case-managed-settings-present
+    why: the managed-settings-present behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::managed_settings_present($|::)/)'
+  - id: case-managed-settings-absent
+    why: the managed-settings-absent behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::managed_settings_absent($|::)/)'
+  - id: case-gateway-auth-required
+    why: the gateway-auth-required behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::gateway_auth_required($|::)/)'
+  - id: case-otlp-body-accepted
+    why: the otlp-body-accepted behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::otlp_body_accepted($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_settings::tests::auth_invalid($|::)/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/claude-gateway-settings)"
+oracle_cases:
+- tools/oracle/cases/api/claude-gateway-settings/managed-settings-present.yaml
+- tools/oracle/cases/api/claude-gateway-settings/managed-settings-absent.yaml
+- tools/oracle/cases/api/claude-gateway-settings/gateway-auth-required.yaml
+- tools/oracle/cases/api/claude-gateway-settings/otlp-body-accepted.yaml
+- tools/oracle/cases/api/claude-gateway-settings/route-aliases.yaml
+- tools/oracle/cases/api/claude-gateway-settings/auth-missing.yaml
+- tools/oracle/cases/api/claude-gateway-settings/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B1132 owns _general_settings L101-L104, _is_gateway_enabled
+  L107-L108, ensure_gateway_enabled L111-L115, _managed_settings L118-L122.'
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B989 owns _oauth_error_response L132-L134, oauth_authorization_server
+  L161-L176, device_authorization L180-L230, _validate_login L233-L258, _mint_access_token L261-L271, _claim_device_code
+  L274-L284, _handle_device_code_grant L287-L324, oauth_token L328-L352.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- request.headers reads 'If-None-Match' with default None; omission and an explicit value must not collapse into
+  one case.
+- Within managed_settings\'s settings is None branch, preserve return Response(status_code=404) and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

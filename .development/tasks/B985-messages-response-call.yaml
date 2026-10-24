@@ -1,0 +1,185 @@
+id: B985
+title: Messages response call
+description: >-
+  Build and execute the Messages-to-Responses call through responses-create-call using explicit forwarding of params
+  and encrypted-reasoning capability. Return native Anthropic response or translated stream, keeping call context
+  and normalized errors from B014.
+
+
+  Implement crates/betterlite-core/src/api/messages_response_call.rs. Use MessagesResponseCallInput and MessagesResponseCallResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions messages_responses_request, encrypted_task_required, native_responses_error,
+  stream_responses_adapter under api::messages_response_call::tests. Each named function drives production code
+  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
+  defaults to 4096. No environment reads occur outside betterlite-config. Test api::messages_response_call::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::MessagesResponseCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_response_call: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/anthropic/pass_through/responses_adapters/handler.py: _forwarded_kwargs (L33-L35);
+  litellm/llms/anthropic/pass_through/responses_adapters/handler.py: _provider_returns_encrypted_reasoning (L38-L44);
+  litellm/llms/anthropic/pass_through/responses_adapters/handler.py: _build_responses_kwargs (L47-L158); litellm/llms/anthropic/pass_through/responses_adapters/handler.py:
+  LiteLLMMessagesToResponsesAPIHandler.async_anthropic_messages_handler (L169-L221); litellm/llms/anthropic/pass_through/responses_adapters/handler.py:
+  LiteLLMMessagesToResponsesAPIHandler.anthropic_messages_handler (L224-L303). Abstract/protocol declarations map
+  to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
+  preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 248 owned nonblank/non-comment/non-docstring Python lines (261 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 268 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 533 total within the 540-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
+  (Direct helper oracle and URL path encoding), B932 (Responses create call), B983 (Messages responses input), B984
+  (Messages responses output), B986 (Messages response stream), B1087 (Api boundaries), B962 (Messages thinking),
+  B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_response_call.rs
+  - crates/betterlite-core/src/api/messages_response_call/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/messages_response_call.rs
+  - crates/betterlite-config/src/api/messages_response_call/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/messages-response-call-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_response_call.rs
+  - tools/oracle/src/helpers/messages_response_call/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_response_call.py
+  - tools/oracle/helpers/messages_response_call/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_response_call-*
+  - tools/oracle/cases/helpers/messages-response-call/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
+  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L1-L303
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'messages responses request: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-messages-responses-request
+  - oracle
+- text: 'encrypted task required: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-encrypted-task-required
+  - oracle
+- text: 'native responses error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-responses-error
+  - oracle
+- text: 'stream responses adapter: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-stream-responses-adapter
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_response_call::/)
+      - test(/::replays_corpus$/)'
+  - id: case-messages-responses-request
+    why: the messages-responses-request behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_call::tests::messages_responses_request($|::)/)'
+  - id: case-encrypted-task-required
+    why: the encrypted-task-required behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_call::tests::encrypted_task_required($|::)/)'
+  - id: case-native-responses-error
+    why: the native-responses-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_call::tests::native_responses_error($|::)/)'
+  - id: case-stream-responses-adapter
+    why: the stream-responses-adapter behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_response_call::tests::stream_responses_adapter($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_response_call::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-response-call-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_response_call.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_response_call-*)"
+      && grep -qE "^[[:space:]]+messages_response_call:" tools/oracle/fuzz/corpus/helper_case/messages_response_call-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-response-call)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-response-call/messages-responses-request.yaml
+- tools/oracle/cases/helpers/messages-response-call/encrypted-task-required.yaml
+- tools/oracle/cases/helpers/messages-response-call/native-responses-error.yaml
+- tools/oracle/cases/helpers/messages-response-call/stream-responses-adapter.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- _build_responses_kwargs uses responses_kwargs.get('reasoning'); retain its missing-value behavior and field spelling
+  in the typed projection.
+- _build_responses_kwargs uses forwarded_kwargs.get('prompt_cache_key'); retain its missing-value behavior and field
+  spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 540
+  max_new_expects: 1

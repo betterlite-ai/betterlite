@@ -1,0 +1,194 @@
+id: B1023
+title: File batch guardrails
+description: >-
+  Build typed batch guardrail scan records, source call-type resolution, custom_id fingerprints and per-row metadata
+  using B104 and B207. Preserve the original row's endpoint/model authorization context and return rejection/report
+  outcomes without publishing partially scanned input.
+
+
+  Implement crates/betterlite-core/src/api/file_batch_guardrails.rs. Use FileBatchGuardrailsInput and FileBatchGuardrailsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): batch_guardrails.py:190 status_code=400, exception_detail=FastAPI detail object. Compare
+  the actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions batch_url_call_type, batch_body_call_type, unsupported_row_operation,
+  guardrail_row_block, row_metadata_fingerprint under api::file_batch_guardrails::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::file_batch_guardrails::decode_file_batch_guardrails(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input raw_line at litellm/proxy/openai_files_endpoints/batch_guardrails.py:280.
+  Place its implementation in crates/betterlite-core/src/api/file_batch_guardrails.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/file_batch_guardrails.rs passes arbitrary
+  bounded bytes to that exact decoder; api::file_batch_guardrails::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::FileBatchGuardrails in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_batch_guardrails: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/openai_files_endpoints/batch_guardrails.py: BatchScanResult.submitted_records
+  (L155-L156); litellm/proxy/openai_files_endpoints/batch_guardrails.py: BatchScanResult.summary (L158-L166); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  BatchScanResult.report (L168-L180); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _rejected (L189-L190);
+  litellm/proxy/openai_files_endpoints/batch_guardrails.py: raise_public (L193-L213); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  raise_nothing_to_submit (L216-L220); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _is_content_block
+  (L223-L243); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _naming_guardrail (L246-L253); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  _describe (L256-L260); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _iter_lines (L263-L274); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  _iter_records (L277-L280); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _call_type_from_url (L283-L302);
+  litellm/proxy/openai_files_endpoints/batch_guardrails.py: _call_type_from_body (L305-L307); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  _scannable_call_type (L310-L319); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _custom_id_of (L322-L334);
+  litellm/proxy/openai_files_endpoints/batch_guardrails.py: _fingerprint (L337-L348); litellm/proxy/openai_files_endpoints/batch_guardrails.py:
+  build_scan_metadata (L351-L358); litellm/proxy/openai_files_endpoints/batch_guardrails.py: _scan_record (L361-L425).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 160 owned nonblank/non-comment/non-docstring Python lines (212 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 180 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 490 total within the 490-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B104 (Guardrail framework, registry and guardrail API), B171 (Direct helper oracle and
+  URL path encoding), B207 (Route and call-type metadata matching), B1022 (File upload validation), B1087 (Api boundaries).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/file_batch_guardrails.rs
+  - crates/betterlite-core/src/api/file_batch_guardrails/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/file_batch_guardrails.rs
+  - crates/betterlite-core/fuzz/corpus/file_batch_guardrails/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/file_batch_guardrails.rs
+  - tools/oracle/src/helpers/file_batch_guardrails/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/file_batch_guardrails.py
+  - tools/oracle/helpers/file_batch_guardrails/**
+  - tools/oracle/fuzz/corpus/helper_case/file_batch_guardrails-*
+  - tools/oracle/cases/helpers/file-batch-guardrails/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L155-L425
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'batch url call type: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-url-call-type
+  - oracle
+- text: 'batch body call type: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-body-call-type
+  - oracle
+- text: 'unsupported row operation: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-unsupported-row-operation
+  - oracle
+- text: 'guardrail row block: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-guardrail-row-block
+  - oracle
+- text: 'row metadata fingerprint: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-row-metadata-fingerprint
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::/)
+      - test(/::replays_corpus$/)'
+  - id: case-batch-url-call-type
+    why: the batch-url-call-type behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::batch_url_call_type($|::)/)'
+  - id: case-batch-body-call-type
+    why: the batch-body-call-type behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::batch_body_call_type($|::)/)'
+  - id: case-unsupported-row-operation
+    why: the unsupported-row-operation behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::unsupported_row_operation($|::)/)'
+  - id: case-guardrail-row-block
+    why: the guardrail-row-block behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::guardrail_row_block($|::)/)'
+  - id: case-row-metadata-fingerprint
+    why: the row-metadata-fingerprint behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::row_metadata_fingerprint($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_batch_guardrails)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/file_batch_guardrails.rs && grep -qF "decode_file_batch_guardrails"
+      crates/betterlite-core/fuzz/fuzz_targets/file_batch_guardrails.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::file_batch_guardrails::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/file_batch_guardrails.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_batch_guardrails-*)"
+      && grep -qE "^[[:space:]]+file_batch_guardrails:" tools/oracle/fuzz/corpus/helper_case/file_batch_guardrails-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-batch-guardrails)"
+oracle_cases:
+- tools/oracle/cases/helpers/file-batch-guardrails/batch-url-call-type.yaml
+- tools/oracle/cases/helpers/file-batch-guardrails/batch-body-call-type.yaml
+- tools/oracle/cases/helpers/file-batch-guardrails/unsupported-row-operation.yaml
+- tools/oracle/cases/helpers/file-batch-guardrails/guardrail-row-block.yaml
+- tools/oracle/cases/helpers/file-batch-guardrails/row-metadata-fingerprint.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/openai_files_endpoints/batch_guardrails.py: B1024 owns _scan_window L428-L439, _spool L442-L453,
+  _worst L456-L459, scan_batch_input_file L462-L527, _read_spooled L530-L532, rewrite_batch_input_file L535-L568.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'batch_guardrails.py:190 uses status_code=400, detail={''error'': message}; preserve this envelope rather than
+  a family-wide error default.'
+- Within _is_content_block\'s isinstance(exc, GuardrailRaisedException) branch, preserve return exc.blocked_content
+  and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 490
+  max_new_expects: 1

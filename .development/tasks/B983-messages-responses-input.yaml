@@ -1,0 +1,172 @@
+id: B983
+title: Messages responses input
+description: >-
+  Translate Anthropic messages, documents, images, tool results and grouped thinking into Responses input. Reuse
+  B183 media and the existing Responses shapes; preserve encrypted thinking and assistant-group boundaries without
+  fetching request URLs.
+
+
+  Implement crates/betterlite-core/src/api/messages_responses_input.rs. Use MessagesResponsesInputInput and MessagesResponsesInputResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions document_file_data, image_url_pass_through, tool_result_output, thinking_summary_group,
+  midturn_system_responses under api::messages_responses_input::tests. Each named function drives production code
+  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::MessagesResponsesInput in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_responses_input: <typed
+  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
+  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
+  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
+  route tasks.
+
+
+  Callable ownership: litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter.translate_responses_api_usage_to_anthropic_usage
+  (L63-L78); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._translate_anthropic_image_source_to_url
+  (L85-L96); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._translate_anthropic_document_block_to_file_part
+  (L99-L128); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._tool_result_output_value
+  (L131-L139); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._translate_midturn_system_content_to_responses
+  (L142-L154); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._summary_part_text
+  (L157-L161); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._thinking_block_from_reasoning_item
+  (L164-L186); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._assistant_block_group_key
+  (L189-L192); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter._assistant_group_to_input_items
+  (L195-L212); litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: LiteLLMAnthropicToResponsesAPIAdapter.translate_messages_to_responses_input
+  (L214-L384). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 273 owned nonblank/non-comment/non-docstring Python lines (299 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 293 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 543 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B183 (Bounded inline media conversion),
+  B902 (Responses shapes), B958 (Messages errors), B1087 (Api boundaries), B906 (Responses usage), B966 (Messages
+  chat output). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
+  retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_responses_input.rs
+  - crates/betterlite-core/src/api/messages_responses_input/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_responses_input.rs
+  - tools/oracle/src/helpers/messages_responses_input/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_responses_input.py
+  - tools/oracle/helpers/messages_responses_input/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_responses_input-*
+  - tools/oracle/cases/helpers/messages-responses-input/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/transformation.py#L63-L384
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'document file data: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-document-file-data
+  - oracle
+- text: 'image url pass through: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-image-url-pass-through
+  - oracle
+- text: 'tool result output: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tool-result-output
+  - oracle
+- text: 'thinking summary group: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-thinking-summary-group
+  - oracle
+- text: 'midturn system responses: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-midturn-system-responses
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::/)
+      - test(/::replays_corpus$/)'
+  - id: case-document-file-data
+    why: the document-file-data behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::tests::document_file_data($|::)/)'
+  - id: case-image-url-pass-through
+    why: the image-url-pass-through behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::tests::image_url_pass_through($|::)/)'
+  - id: case-tool-result-output
+    why: the tool-result-output behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::tests::tool_result_output($|::)/)'
+  - id: case-thinking-summary-group
+    why: the thinking-summary-group behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::tests::thinking_summary_group($|::)/)'
+  - id: case-midturn-system-responses
+    why: the midturn-system-responses behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_responses_input::tests::midturn_system_responses($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_responses_input.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_responses_input-*)"
+      && grep -qE "^[[:space:]]+messages_responses_input:" tools/oracle/fuzz/corpus/helper_case/messages_responses_input-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-responses-input)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-responses-input/document-file-data.yaml
+- tools/oracle/cases/helpers/messages-responses-input/image-url-pass-through.yaml
+- tools/oracle/cases/helpers/messages-responses-input/tool-result-output.yaml
+- tools/oracle/cases/helpers/messages-responses-input/thinking-summary-group.yaml
+- tools/oracle/cases/helpers/messages-responses-input/midturn-system-responses.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/anthropic/pass_through/responses_adapters/transformation.py: B984 owns LiteLLMAnthropicToResponsesAPIAdapter.translate_tools_to_responses_api
+  L386-L412, LiteLLMAnthropicToResponsesAPIAdapter.translate_tool_choice_to_responses_api L415-L426, LiteLLMAnthropicToResponsesAPIAdapter.translate_context_management_to_responses_api
+  L429-L457, LiteLLMAnthropicToResponsesAPIAdapter.translate_thinking_to_reasoning L460-L496, LiteLLMAnthropicToResponsesAPIAdapter.translate_request
+  L498-L621, LiteLLMAnthropicToResponsesAPIAdapter.translate_response L627-L737.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within LiteLLMAnthropicToResponsesAPIAdapter.translate_responses_api_usage_to_anthropic_usage\'s raw_usage is
+  None branch, preserve return AnthropicUsage(input_tokens=0, output_tokens=0) and its nested guards.
+- Within LiteLLMAnthropicToResponsesAPIAdapter._translate_anthropic_image_source_to_url\'s not isinstance(source,
+  dict) branch, preserve return None and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

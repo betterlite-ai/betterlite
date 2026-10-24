@@ -1,0 +1,233 @@
+id: B1049
+title: Executed batch runner
+description: >-
+  Run proxy-executed batches with bounded concurrency, owned tasks, source cancellation/heartbeat/stale deadlines
+  and 24-hour completion window. Dispatch rows through B014, persist heartbeats/status through B726 typed repositories,
+  and upload result/error JSONL via file-storage-service; abandon stale runs explicitly and preserve per-row errors.
+  Resolve LITELLM_EXECUTED_BATCH_CONCURRENCY=max(1, parsed integer), default 4. Keep cancellation polling 1 second,
+  heartbeat 30 seconds, stale age 180 seconds, files probe timeout 5 seconds and completion window 86400 seconds.
+
+
+  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
+  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
+  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
+  out of scope.
+
+
+  Implement crates/betterlite-core/src/api/executed_batch_runner.rs. Use ExecutedBatchRunnerInput and ExecutedBatchRunnerResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions executed_batch_success, partial_row_failure, batch_cancel_race, stale_runner_failed,
+  completion_window_expired, result_files_published under api::executed_batch_runner::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.LITELLM_EXECUTED_BATCH_CONCURRENCY
+  defaults to '4'. No environment reads occur outside betterlite-config. Test api::executed_batch_runner::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ExecutedBatchRunner in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {executed_batch_runner: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner.__init__
+  (L412-L436); litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner.create (L438-L495);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner.cancel (L497-L511); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  LiteLLMExecutedBatchRunner.fail_abandoned (L513-L528); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  LiteLLMExecutedBatchRunner._body_rejection (L530-L543); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  LiteLLMExecutedBatchRunner._download_input (L545-L559); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  LiteLLMExecutedBatchRunner._run (L561-L576); litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._heartbeat
+  (L578-L584); litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._touch (L586-L587);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._execute (L589-L615);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._run_row (L617-L629);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._row_outcome (L631-L638);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._dispatch (L640-L644);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._router_call (L646-L650);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._row_metadata (L652-L659);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._upload_results (L661-L682);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: LiteLLMExecutedBatchRunner._advance (L684-L699);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _record_batch_created (L702-L712). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 282 owned nonblank/non-comment/non-docstring Python lines (282 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 302 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 603 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B014 (Call dispatch across providers
+  and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding), B1027 (File storage
+  service), B1041 (Batch managed records), B1048 (Executed batch input), B1087 (Api boundaries), B726 (Managed resources
+  and transaction repositories), B858 (Typed managed-resource and analytics rows), B1106 (Principal metadata and
+  tags). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
+  ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/executed_batch_runner.rs
+  - crates/betterlite-core/src/api/executed_batch_runner/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/executed_batch_runner.rs
+  - crates/betterlite-config/src/api/executed_batch_runner/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/executed-batch-runner-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/executed_batch_runner.rs
+  - tools/oracle/src/helpers/executed_batch_runner/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/executed_batch_runner.py
+  - tools/oracle/helpers/executed_batch_runner/**
+  - tools/oracle/fuzz/corpus/helper_case/executed_batch_runner-*
+  - tools/oracle/cases/helpers/executed-batch-runner/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1741-L1741
+  why: Setting env.LITELLM_EXECUTED_BATCH_CONCURRENCY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/litellm_executed_batches.py#L412-L712
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'executed batch success: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-executed-batch-success
+  - oracle
+- text: 'partial row failure: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-partial-row-failure
+  - oracle
+- text: 'batch cancel race: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-cancel-race
+  - oracle
+- text: 'stale runner failed: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-stale-runner-failed
+  - oracle
+- text: 'completion window expired: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-completion-window-expired
+  - oracle
+- text: 'result files published: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-result-files-published
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::executed_batch_runner::/)
+      - test(/::replays_corpus$/)'
+  - id: case-executed-batch-success
+    why: the executed-batch-success behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::executed_batch_success($|::)/)'
+  - id: case-partial-row-failure
+    why: the partial-row-failure behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::partial_row_failure($|::)/)'
+  - id: case-batch-cancel-race
+    why: the batch-cancel-race behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::batch_cancel_race($|::)/)'
+  - id: case-stale-runner-failed
+    why: the stale-runner-failed behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::stale_runner_failed($|::)/)'
+  - id: case-completion-window-expired
+    why: the completion-window-expired behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::completion_window_expired($|::)/)'
+  - id: case-result-files-published
+    why: the result-files-published behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::result_files_published($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::executed_batch_runner::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/executed-batch-runner-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/executed_batch_runner.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/executed_batch_runner-*)"
+      && grep -qE "^[[:space:]]+executed_batch_runner:" tools/oracle/fuzz/corpus/helper_case/executed_batch_runner-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/executed-batch-runner)"
+oracle_cases:
+- tools/oracle/cases/helpers/executed-batch-runner/executed-batch-success.yaml
+- tools/oracle/cases/helpers/executed-batch-runner/partial-row-failure.yaml
+- tools/oracle/cases/helpers/executed-batch-runner/batch-cancel-race.yaml
+- tools/oracle/cases/helpers/executed-batch-runner/stale-runner-failed.yaml
+- tools/oracle/cases/helpers/executed-batch-runner/completion-window-expired.yaml
+- tools/oracle/cases/helpers/executed-batch-runner/result-files-published.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/batches_endpoints/litellm_executed_batches.py: B1048 owns InvalidBatchInput.describe L120-L121,
+  ManagedBatchStore.get_unified_batch_id L151-L151, ManagedBatchStore.get_unified_file_id L153-L155, ManagedBatchStore.store_unified_object_id
+  L157-L168, _StorageBackendFactory.__call__ L172-L172, _ResultFileUploader.__call__ L176-L185, _RouterCall.__call__
+  L190-L190, litellm_executed_provider_of L193-L198, _HttpGetter.get L202-L204, FilesApiProbe.__call__ L208-L208,
+  BodyRejection.__call__ L212-L212, upstream_lacks_files_api L215-L225, _upstream_of L228-L243, litellm_executed_provider_for
+  L246-L255, resolve_litellm_executed_provider L258-L265, _provider_of L268-L274, _validation_reason L277-L281,
+  _accept_every_body L284-L285, _parse_line L288-L302, parse_batch_input L305-L320, batch_error L323-L325, _validate_endpoint
+  L328-L332, _status_code_of L335-L337, _error_body L340-L344, _line_response L347-L355, _line_error L358-L362,
+  _result_line L365-L372, _dump L375-L378, _resolve_transition L381-L384, executed_batch_runner_lost L387-L390,
+  _StopWatch.__init__ L394-L398, _StopWatch.stopped L400-L408.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'litellm_executed_batches.py:584 emits the diagnostic ''LiteLLM-executed batch %s heartbeat failed: %s''; retain
+  its level and fallback instead of turning it into a hard error.'
+- 'Within LiteLLMExecutedBatchRunner.create\''s isinstance(parsed, InvalidBatchInput) branch, preserve raise batch_error(400,
+  f''Invalid batch input file: {parsed.describe()}'') and its nested guards.'
+review_level: security
+budget:
+  max_changed_lines: 610
+  max_new_expects: 1

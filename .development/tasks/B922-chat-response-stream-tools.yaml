@@ -1,0 +1,192 @@
+id: B922
+title: Chat response stream tools
+description: >-
+  Build the tool-event half of chat-to-Responses streaming: allocate output indexes, namespace fields, reserve web-search
+  indexes and emit tool delta/done events. Keep accumulated arguments and provider IDs in per-stream typed state
+  and never share indexes between streams.
+
+
+  Implement crates/betterlite-core/src/api/chat_response_stream_tools.rs. Use ChatResponseStreamToolInput and ChatResponseStreamToolResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions parallel_tool_output_indices, tool_arguments_delta, web_search_event_order,
+  signed_thinking_boundary, namespace_call_fields under api::chat_response_stream_tools::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ChatResponseStreamTools in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {chat_response_stream_tools: <typed
+  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
+  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
+  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
+  route tasks.
+
+
+  Callable ownership: litellm/responses/litellm_completion_transformation/streaming_iterator.py: _index_of_output_item_type
+  (L56-L60); litellm/responses/litellm_completion_transformation/streaming_iterator.py: _output_items_with_id (L63-L73);
+  litellm/responses/litellm_completion_transformation/streaming_iterator.py: _delta_has_signed_thinking_block (L76-L78);
+  litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.__init__
+  (L86-L149); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._get_or_assign_tool_output_index
+  (L151-L158); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._normalize_tool_call_index
+  (L160-L167); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._responses_namespace_tool_call_fields
+  (L169-L174); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._tool_call_item_kwargs
+  (L176-L182); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._is_reasoning_end
+  (L184-L195); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._reserve_web_search_indexes
+  (L197-L217); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._tool_call_id
+  (L219-L232); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._queue_tool_call_delta_events
+  (L234-L296); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._queue_final_tool_call_done_events
+  (L298-L396); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._queue_web_search_events
+  (L398-L439). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 318 owned nonblank/non-comment/non-docstring Python lines (332 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 338 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 588 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B912 (Responses
+  tool results), B913 (Responses tool namespaces), B1087 (Api boundaries), B907 (Responses codex tools). These are
+  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
+  provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/chat_response_stream_tools.rs
+  - crates/betterlite-core/src/api/chat_response_stream_tools/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/chat_response_stream_tools.rs
+  - tools/oracle/src/helpers/chat_response_stream_tools/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/chat_response_stream_tools.py
+  - tools/oracle/helpers/chat_response_stream_tools/**
+  - tools/oracle/fuzz/corpus/helper_case/chat_response_stream_tools-*
+  - tools/oracle/cases/helpers/chat-response-stream-tools/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L56-L439
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'parallel tool output indices: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-parallel-tool-output-indices
+  - oracle
+- text: 'tool arguments delta: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tool-arguments-delta
+  - oracle
+- text: 'web search event order: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-web-search-event-order
+  - oracle
+- text: 'signed thinking boundary: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-signed-thinking-boundary
+  - oracle
+- text: 'namespace call fields: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-namespace-call-fields
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::/)
+      - test(/::replays_corpus$/)'
+  - id: case-parallel-tool-output-indices
+    why: the parallel-tool-output-indices behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::tests::parallel_tool_output_indices($|::)/)'
+  - id: case-tool-arguments-delta
+    why: the tool-arguments-delta behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::tests::tool_arguments_delta($|::)/)'
+  - id: case-web-search-event-order
+    why: the web-search-event-order behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::tests::web_search_event_order($|::)/)'
+  - id: case-signed-thinking-boundary
+    why: the signed-thinking-boundary behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::tests::signed_thinking_boundary($|::)/)'
+  - id: case-namespace-call-fields
+    why: the namespace-call-fields behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream_tools::tests::namespace_call_fields($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/chat_response_stream_tools.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/chat_response_stream_tools-*)"
+      && grep -qE "^[[:space:]]+chat_response_stream_tools:" tools/oracle/fuzz/corpus/helper_case/chat_response_stream_tools-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/chat-response-stream-tools)"
+oracle_cases:
+- tools/oracle/cases/helpers/chat-response-stream-tools/parallel-tool-output-indices.yaml
+- tools/oracle/cases/helpers/chat-response-stream-tools/tool-arguments-delta.yaml
+- tools/oracle/cases/helpers/chat-response-stream-tools/web-search-event-order.yaml
+- tools/oracle/cases/helpers/chat-response-stream-tools/signed-thinking-boundary.yaml
+- tools/oracle/cases/helpers/chat-response-stream-tools/namespace-call-fields.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: B923 owns LiteLLMCompletionStreamingIterator._adopt_response_id_from_chunk
+  L441-L446, LiteLLMCompletionStreamingIterator._aprime_response_id L448-L465, LiteLLMCompletionStreamingIterator._prime_response_id
+  L467-L480, LiteLLMCompletionStreamingIterator._take_buffered_chunk L482-L485, LiteLLMCompletionStreamingIterator._with_encoded_response_id
+  L487-L492, LiteLLMCompletionStreamingIterator._default_response_created_event_data L494-L538, LiteLLMCompletionStreamingIterator.create_response_created_event
+  L540-L552, LiteLLMCompletionStreamingIterator.create_response_in_progress_event L554-L563, LiteLLMCompletionStreamingIterator.create_content_part_added_event
+  L586-L599, LiteLLMCompletionStreamingIterator._queue_message_item_added_events L601-L627, LiteLLMCompletionStreamingIterator._merge_provider_specific_fields
+  L629-L639, LiteLLMCompletionStreamingIterator.create_litellm_model_response L641-L655, LiteLLMCompletionStreamingIterator._snapshot_chunk_for_stream_chunk_builder
+  L658-L675, LiteLLMCompletionStreamingIterator.create_reasoning_summary_text_done_event L677-L703, LiteLLMCompletionStreamingIterator.create_reasoning_summary_part_done_event
+  L705-L739, LiteLLMCompletionStreamingIterator.create_output_text_done_event L741-L751, LiteLLMCompletionStreamingIterator.create_output_content_part_done_event
+  L753-L778, LiteLLMCompletionStreamingIterator.create_output_item_done_event L780-L811, LiteLLMCompletionStreamingIterator.create_reasoning_output_item_done_event
+  L813-L855, LiteLLMCompletionStreamingIterator.return_default_done_events L857-L878, LiteLLMCompletionStreamingIterator.return_default_initial_events
+  L880-L889, LiteLLMCompletionStreamingIterator.is_stream_finished L891-L898.'
+- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.create_output_item_added_event
+  L565-L584 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: B924 owns LiteLLMCompletionStreamingIterator.common_done_event_logic
+  L900-L930, LiteLLMCompletionStreamingIterator._ensure_output_item_for_chunk L932-L974, LiteLLMCompletionStreamingIterator.__anext__
+  L976-L1079, LiteLLMCompletionStreamingIterator.__iter__ L1081-L1082, LiteLLMCompletionStreamingIterator.__next__
+  L1084-L1139, LiteLLMCompletionStreamingIterator._transform_chat_completion_chunk_to_response_api_chunk L1141-L1232,
+  LiteLLMCompletionStreamingIterator._get_delta_string_from_streaming_choices L1234-L1246, LiteLLMCompletionStreamingIterator._output_with_streamed_item_ids
+  L1248-L1264, LiteLLMCompletionStreamingIterator._emit_response_completed_event L1266-L1291.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within _output_items_with_id\'s item_id is None branch, preserve return items and its nested guards.
+- Within _output_items_with_id\'s target_index is None branch, preserve return items and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 590
+  max_new_expects: 1

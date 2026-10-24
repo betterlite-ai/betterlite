@@ -1,0 +1,225 @@
+id: B1107
+title: Team model aliases and credentials
+description: >-
+  Resolve team aliases then key aliases, keeping the pre-alias model for team/project credential overrides. Apply
+  credentials after constructing the safe diagnostic view.
+
+
+  Implement crates/betterlite-core/src/api/request_model_overrides.rs. Use RequestModelOverridesInput and RequestModelOverridesResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions team_then_key_alias, prealias_credential_override, enforced_params_missing
+  under api::request_model_overrides::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.enable_model_config_credential_overrides
+  defaults to False; general_settings.enforced_params defaults to None. No environment reads occur outside betterlite-config.
+  Test api::request_model_overrides::tests::loads_settings uses the production Config loader and an injected environment
+  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
+  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
+  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
+  parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::RequestModelOverrides in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {request_model_overrides: <typed input>};
+  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
+  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/litellm_pre_call_utils.py: _warn_stale_team_alias_once (L2583-L2589); litellm/proxy/litellm_pre_call_utils.py:
+  _update_model_if_team_alias_exists (L2592-L2667); litellm/proxy/litellm_pre_call_utils.py: _update_model_if_key_alias_exists
+  (L2670-L2693); litellm/proxy/litellm_pre_call_utils.py: _apply_credential_overrides_from_model_config (L2696-L2781);
+  litellm/proxy/litellm_pre_call_utils.py: _resolve_provider_from_deployment (L2784-L2821); litellm/proxy/litellm_pre_call_utils.py:
+  _resolve_credential_from_model_config (L2824-L2876); litellm/proxy/litellm_pre_call_utils.py: _extract_credential_from_entry
+  (L2879-L2905); litellm/proxy/litellm_pre_call_utils.py: _get_enforced_params (L2908-L2925); litellm/proxy/litellm_pre_call_utils.py:
+  check_if_token_is_service_account (L2928-L2939); litellm/proxy/litellm_pre_call_utils.py: _enforced_params_check
+  (L2942-L2978). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 239 owned nonblank/non-comment/non-docstring Python lines (314 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 259 implementation,
+  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds and
+  30 wiring; 509 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B732 (Typed authentication principals and grant resolution), B302 (Deployment catalog,
+  aliases and wildcard routes), B303 (Deployment client reuse and parallel request guards), B171 (Direct helper
+  oracle and URL path encoding), B1087 (Api boundaries), B1105 (Untrusted request controls), B002 (Load LiteLLM
+  config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/request_model_overrides.rs
+  - crates/betterlite-core/src/api/request_model_overrides/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/request_model_overrides.rs
+  - crates/betterlite-config/src/api/request_model_overrides/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/request-model-overrides-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/request_model_overrides.rs
+  - tools/oracle/src/helpers/request_model_overrides/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/request_model_overrides.py
+  - tools/oracle/helpers/request_model_overrides/**
+  - tools/oracle/fuzz/corpus/helper_case/request_model_overrides-*
+  - tools/oracle/cases/helpers/request-model-overrides/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L385-L385
+  why: Setting litellm_settings.enable_model_config_credential_overrides and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2911-L2911
+  why: Setting general_settings.enforced_params and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2583-L2980
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'team then key alias: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-team-then-key-alias
+  - oracle
+- text: 'prealias credential override: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-prealias-credential-override
+  - oracle
+- text: 'enforced params missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-enforced-params-missing
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::request_model_overrides::/)
+      - test(/::replays_corpus$/)'
+  - id: case-team-then-key-alias
+    why: the team-then-key-alias behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_model_overrides::tests::team_then_key_alias($|::)/)'
+  - id: case-prealias-credential-override
+    why: the prealias-credential-override behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_model_overrides::tests::prealias_credential_override($|::)/)'
+  - id: case-enforced-params-missing
+    why: the enforced-params-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_model_overrides::tests::enforced_params_missing($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::request_model_overrides::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-model-overrides-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/request_model_overrides.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/request_model_overrides-*)"
+      && grep -qE "^[[:space:]]+request_model_overrides:" tools/oracle/fuzz/corpus/helper_case/request_model_overrides-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/request-model-overrides)"
+oracle_cases:
+- tools/oracle/cases/helpers/request-model-overrides/team-then-key-alias.yaml
+- tools/oracle/cases/helpers/request-model-overrides/prealias-credential-override.yaml
+- tools/oracle/cases/helpers/request-model-overrides/enforced-params-missing.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns _trace_id_from_traceparent L101-L110, _trace_id_from_otel_span
+  L113-L124, add_otel_trace_id_to_request L127-L141, _session_id_from_baggage L144-L151, parse_cache_control L225-L236,
+  clean_headers L1173-L1223, _is_credential_header L1226-L1228, redact_credential_headers L1231-L1247, LiteLLMProxyRequestSetup._get_timeout_from_request
+  L1252-L1274, LiteLLMProxyRequestSetup._get_stream_timeout_from_request L1277-L1284, LiteLLMProxyRequestSetup._get_keepalive_seconds_from_request
+  L1287-L1297, LiteLLMProxyRequestSetup._get_num_retries_from_request L1300-L1307, LiteLLMProxyRequestSetup._get_spend_logs_metadata_from_request_headers
+  L1310-L1319, LiteLLMProxyRequestSetup._get_forwardable_headers L1322-L1341, LiteLLMProxyRequestSetup._get_case_insensitive_header
+  L1344-L1351, LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping L1354-L1371, LiteLLMProxyRequestSetup.get_user_from_headers
+  L1374-L1392, LiteLLMProxyRequestSetup.get_openai_org_id_from_headers L1395-L1405, LiteLLMProxyRequestSetup.add_headers_to_llm_call
+  L1408-L1435, LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group L1438-L1462, LiteLLMProxyRequestSetup.get_internal_user_header_from_mapping
+  L1465-L1478, LiteLLMProxyRequestSetup.add_litellm_data_for_backend_llm_call L1481-L1535, LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers
+  L1538-L1612, add_provider_specific_headers_to_request L3489-L3513, _add_otel_traceparent_to_data L3516-L3536.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1105 owns _stampable_key_hash L154-L165, _sanitize_for_log L171-L184,
+  _invalid_metadata_type_error L443-L450, _normalized_metadata_object L453-L465, _normalized_metadata_slot L468-L482,
+  _strip_untrusted_request_header_controls L485-L497, _is_false_like L500-L505, _key_or_team_metadata_flag_is_true
+  L508-L515, _key_or_team_allows_client_mock_response L518-L524, _key_or_team_allows_client_message_redaction_opt_out
+  L527-L533, _key_or_team_allows_client_pricing_override L536-L542, _strip_client_message_redaction_opt_out L545-L560,
+  _strip_client_callback_credentials L563-L593, _strip_client_pricing_overrides L596-L624, _strip_router_reserved_metadata
+  L627-L638, _get_metadata_variable_name L641-L652, metadata_variable_name_for_route L655-L662, _promoted_trace_control_fields
+  L665-L674, _extract_generic_session_id_from_headers L677-L699, _extract_codex_session_id_from_headers L702-L728,
+  _extract_bare_session_id_from_headers L731-L743, get_chain_id_from_headers L746-L773, _get_anthropic_session_id_from_metadata
+  L776-L797, _is_llm_inference_route L800-L804, apply_missing_session_id_policy L807-L858, refresh_proxy_server_request_body_snapshot
+  L1951-L1990.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1102 owns _reject_url_valued_destinations L394-L408, reject_url_valued_destination
+  L411-L435.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1109 owns apply_missing_session_id_policy L807-L858, should_auto_drop_params_for_agentic_cli
+  L861-L875, safe_add_api_version_from_query_params L878-L887, convert_key_logging_metadata_to_callback L890-L940,
+  _get_validated_callback_metadata L943-L952, KeyAndTeamLoggingSettings.get_key_dynamic_logging_settings L961-L964,
+  KeyAndTeamLoggingSettings.get_team_dynamic_logging_settings L967-L970, _get_dynamic_logging_metadata L973-L1031,
+  _tenant_otel_params L1037-L1041, _dynamically_disabled_backends L1047-L1072, resolve_tenant_otel_destinations
+  L1075-L1150, _tenant_service_name L1153-L1170, clean_headers L1173-L1223.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1106 owns LiteLLMProxyRequestSetup.get_logged_api_key L1615-L1618,
+  LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key L1621-L1650, LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata
+  L1653-L1703, LiteLLMProxyRequestSetup.add_management_endpoint_metadata_to_request_metadata L1706-L1732, LiteLLMProxyRequestSetup.add_key_level_controls
+  L1735-L1778, LiteLLMProxyRequestSetup._merge_tags L1781-L1802, LiteLLMProxyRequestSetup.add_team_based_callbacks_from_config
+  L1805-L1831, LiteLLMProxyRequestSetup.add_request_tag_to_metadata L1834-L1852, LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route
+  L1855-L1873, LiteLLMProxyRequestSetup.apply_key_tags_pre_auth L1876-L1896, LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth
+  L1899-L1948.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1103 owns add_litellm_data_to_request L1993-L2580.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1137 owns add_litellm_data_to_request L1993-L2580.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1108 owns _add_guardrails_from_key_or_team_metadata L2981-L3026, _add_guardrails_from_policies_in_metadata
+  L3029-L3134, add_guardrails_from_auth_metadata L3137-L3156, move_guardrails_to_metadata L3159-L3231, _is_policy_version_id
+  L3234-L3238, _extract_policy_id L3241-L3247, _match_and_track_policies L3250-L3311, _apply_resolved_guardrails_to_metadata
+  L3314-L3366, add_guardrails_from_policy_engine L3369-L3475.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- litellm_pre_call_utils.py:2777 emits the diagnostic "Applied credential override '%s' for model '%s'"; retain
+  its level and fallback instead of turning it into a hard error.
+- litellm_pre_call_utils.py:2764 emits the diagnostic "model_config references credential '%s' but it was not found
+  or has no values"; retain its level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 510
+  max_new_expects: 1

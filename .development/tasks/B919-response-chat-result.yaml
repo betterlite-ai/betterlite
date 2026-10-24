@@ -1,0 +1,220 @@
+id: B919
+title: Response chat result
+description: >-
+  Convert native Responses outputs to chat choices and recover output items from captured SSE when the completed
+  payload lacks them. Keep the SSE accumulator keyed by output/content index, reuse B005 framing, and expose typed
+  refusal, tool-call, annotation and incomplete outcomes.
+
+
+  LiteLLMResponsesTransformationHandler._map_responses_status_to_finish_reason (litellm/completion_extras/litellm_responses_transformation/transformation.py:L1313-L1325)
+  has no MIT runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and
+  no behavior case exercises that unused entry point.
+
+
+  Implement crates/betterlite-core/src/api/response_chat_result.rs. Use ResponseChatResultInput and ResponseChatResultResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions completed_output_choices, empty_incomplete_response, sse_output_item_recovery,
+  text_delta_recovery, refusal_finish_reason under api::response_chat_result::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::response_chat_result::decode_response_chat_result(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input stripped_chunk at litellm/responses/sse_output_recovery.py:36.
+  Place its implementation in crates/betterlite-core/src/api/response_chat_result.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/response_chat_result.rs passes arbitrary
+  bounded bytes to that exact decoder; api::response_chat_result::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ResponseChatResult in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_chat_result: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._convert_response_output_to_choices
+  (L662-L802); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._build_empty_incomplete_choice
+  (L805-L823); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._extract_output_from_completed_event
+  (L826-L833); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._recover_output_items_from_raw_sse
+  (L836-L882); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._recover_output_items_from_logging
+  (L885-L888); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.transform_response
+  (L890-L981); litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler.get_model_response_iterator
+  (L983-L989); litellm/responses/sse_output_recovery.py: parse_sse_json_chunk (L21-L41); litellm/responses/sse_output_recovery.py:
+  _chunk_index (L44-L51); litellm/responses/sse_output_recovery.py: record_output_item_chunk (L54-L65); litellm/responses/sse_output_recovery.py:
+  record_output_text_chunk (L68-L125). Abstract/protocol declarations map to native types and synchronous/async
+  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
+  above, with typed values passed to the following stage.
+
+
+  Sizing: 332 owned nonblank/non-comment/non-docstring Python lines (361 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 352 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 662 total within the 670-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B005 (Streaming chat completions), B171 (Direct helper oracle and URL path encoding),
+  B902 (Responses shapes), B906 (Responses usage), B1087 (Api boundaries), B917 (Response chat history), B1136 (Responses
+  chat content projection), B912 (Responses tool results). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/response_chat_result.rs
+  - crates/betterlite-core/src/api/response_chat_result/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/response_chat_result.rs
+  - crates/betterlite-core/fuzz/corpus/response_chat_result/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/response_chat_result.rs
+  - tools/oracle/src/helpers/response_chat_result/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/response_chat_result.py
+  - tools/oracle/helpers/response_chat_result/**
+  - tools/oracle/fuzz/corpus/helper_case/response_chat_result-*
+  - tools/oracle/cases/helpers/response-chat-result/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L662-L989
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1312-L1312
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L1-L125
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'completed output choices: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-completed-output-choices
+  - oracle
+- text: 'empty incomplete response: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-empty-incomplete-response
+  - oracle
+- text: 'sse output item recovery: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-sse-output-item-recovery
+  - oracle
+- text: 'text delta recovery: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-text-delta-recovery
+  - oracle
+- text: 'refusal finish reason: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-refusal-finish-reason
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::/)
+      - test(/::replays_corpus$/)'
+  - id: case-completed-output-choices
+    why: the completed-output-choices behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::tests::completed_output_choices($|::)/)'
+  - id: case-empty-incomplete-response
+    why: the empty-incomplete-response behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::tests::empty_incomplete_response($|::)/)'
+  - id: case-sse-output-item-recovery
+    why: the sse-output-item-recovery behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::tests::sse_output_item_recovery($|::)/)'
+  - id: case-text-delta-recovery
+    why: the text-delta-recovery behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::tests::text_delta_recovery($|::)/)'
+  - id: case-refusal-finish-reason
+    why: the refusal-finish-reason behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_result::tests::refusal_finish_reason($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/response_chat_result)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/response_chat_result.rs && grep -qF "decode_response_chat_result"
+      crates/betterlite-core/fuzz/fuzz_targets/response_chat_result.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::response_chat_result::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/response_chat_result.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_chat_result-*)"
+      && grep -qE "^[[:space:]]+response_chat_result:" tools/oracle/fuzz/corpus/helper_case/response_chat_result-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-chat-result)"
+oracle_cases:
+- tools/oracle/cases/helpers/response-chat-result/completed-output-choices.yaml
+- tools/oracle/cases/helpers/response-chat-result/empty-incomplete-response.yaml
+- tools/oracle/cases/helpers/response-chat-result/sse-output-item-recovery.yaml
+- tools/oracle/cases/helpers/response-chat-result/text-delta-recovery.yaml
+- tools/oracle/cases/helpers/response-chat-result/refusal-finish-reason.yaml
+deviations: []
+out_of_scope:
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B917 owns _provider_metadata L81-L88,
+  _upstream_response_id L91-L94, _get_reasoning_items L109-L116, _reasoning_input_items L119-L132, _build_reasoning_item
+  L135-L160, _reasoning_item_from_output_item L163-L178, _reasoning_items_from_output_items L181-L186, _as_chat_reasoning_items
+  L189-L194, _map_incomplete_reason_to_finish_reason L200-L203, _incomplete_reason_from_response_payload L216-L223,
+  tool_call_dict_from_output_item L230-L262, _reasoning_item_to_response_input L271-L283, LiteLLMResponsesTransformationHandler.__init__
+  L291-L292, LiteLLMResponsesTransformationHandler._handle_raw_dict_response_item L315-L358, LiteLLMResponsesTransformationHandler.convert_chat_completion_messages_to_responses_api
+  L360-L487.'
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B1136 owns _input_file_from_file_value
+  L206-L213, _flat_responses_tool_choice L265-L268, LiteLLMResponsesTransformationHandler._normalize_tool_choice_for_responses_api
+  L294-L313, LiteLLMResponsesTransformationHandler._convert_content_str_to_input_text L991-L995, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format_image
+  L997-L1023, LiteLLMResponsesTransformationHandler._convert_content_to_responses_format L1025-L1115, LiteLLMResponsesTransformationHandler._convert_annotations_to_chat_format
+  L1278-L1311.'
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B918 owns LiteLLMResponsesTransformationHandler._map_optional_params_to_responses_api_request
+  L489-L526, LiteLLMResponsesTransformationHandler._merge_text L529-L539, LiteLLMResponsesTransformationHandler._build_sanitized_litellm_params
+  L541-L558, LiteLLMResponsesTransformationHandler._merge_responses_api_request_into_request_data L560-L579, LiteLLMResponsesTransformationHandler.transform_request
+  L581-L659, LiteLLMResponsesTransformationHandler._convert_tools_to_responses_format L1117-L1149, LiteLLMResponsesTransformationHandler._extract_extra_body_params
+  L1151-L1178, LiteLLMResponsesTransformationHandler._map_reasoning_effort L1180-L1197, LiteLLMResponsesTransformationHandler._add_web_search_tool
+  L1199-L1225, LiteLLMResponsesTransformationHandler.transform_response_format_to_text_format L1227-L1228, LiteLLMResponsesTransformationHandler._transform_response_format_to_text_format
+  L1230-L1275.'
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: LiteLLMResponsesTransformationHandler._map_responses_status_to_finish_reason
+  L1313-L1325 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/completion_extras/litellm_responses_transformation/transformation.py: B920 owns OpenAiResponsesToChatCompletionStreamIterator.__init__
+  L1329-L1338, OpenAiResponsesToChatCompletionStreamIterator._handle_string_chunk L1340-L1355, OpenAiResponsesToChatCompletionStreamIterator._sequential_tool_call_index
+  L1358-L1373, OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream L1376-L1636,
+  OpenAiResponsesToChatCompletionStreamIterator.chunk_parser L1638-L1656, OpenAiResponsesToChatCompletionStreamIterator._remember_served_service_tier
+  L1658-L1664, OpenAiResponsesToChatCompletionStreamIterator._with_served_service_tier L1666-L1669, OpenAiResponsesToChatCompletionStreamIterator._with_stream_scoped_id
+  L1671-L1676.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- transformation.py:922 emits the diagnostic 'Recovered empty Responses API output from raw SSE for model=%s'; retain
+  its level and fallback instead of turning it into a hard error.
+- LiteLLMResponsesTransformationHandler._convert_response_output_to_choices uses s.get('text'); retain its missing-value
+  behavior and field spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 670
+  max_new_expects: 1

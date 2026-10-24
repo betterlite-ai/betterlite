@@ -1,0 +1,223 @@
+id: B1040
+title: Batch cost finalize
+description: >-
+  Fetch authorized managed input/output/error files and finalize batch cost/usage through B068/B069 using batch-output-usage.
+  Preserve pending-versus-final cost semantics and failed request counts; credential extraction uses file-credentials
+  and never trusts embedded IDs alone.
+
+
+  calculate_batch_cost_and_usage (litellm/batches/batch_utils.py:L71-L95) has no MIT runtime caller at the pin (only
+  its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that unused entry
+  point.
+
+
+  _get_file_content_as_dictionary (litellm/batches/batch_utils.py:L554-L559) has no MIT runtime caller at the pin
+  (only its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that unused
+  entry point.
+
+
+  Cost-finalization tests call the reachable per-provider cost/usage routines with injected file content; the unused
+  calculate_batch_cost_and_usage wrapper and _get_file_content_as_dictionary are not copied. Preserve MIT callable
+  cost utilities even though the enterprise scheduler is absent.
+
+
+  Implement crates/betterlite-core/src/api/batch_cost_finalize.rs. Use BatchCostFinalizeInput and BatchCostFinalizeResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions batch_cost_not_final, completed_batch_cost, error_file_request_count,
+  managed_output_file_crede_f598, missing_output_file under api::batch_cost_finalize::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.disable_vertex_batch_output_transformation
+  defaults to False. No environment reads occur outside betterlite-config. Test api::batch_cost_finalize::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::BatchCostFinalize in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_cost_finalize: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/batches/batch_utils.py: _uses_native_vertex_output (L39-L48); litellm/batches/batch_utils.py:
+  batch_cost_is_final (L54-L68); litellm/batches/batch_utils.py: _handle_completed_batch (L98-L161); litellm/batches/batch_utils.py:
+  _provider_output_file_id (L409-L432); litellm/batches/batch_utils.py: _fetch_batch_managed_file_content (L435-L462);
+  litellm/batches/batch_utils.py: _fetch_batch_output_file_content (L465-L484); litellm/batches/batch_utils.py:
+  count_error_file_failed_requests (L487-L508); litellm/batches/batch_utils.py: _extract_file_access_credentials
+  (L511-L551). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 142 owned nonblank/non-comment/non-docstring Python lines (196 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 162 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 445 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B068 (Cost calculation for every call type), B069 (Spend tracking and spend logs), B171
+  (Direct helper oracle and URL path encoding), B1020 (File credentials), B1030 (File content stream), B1039 (Batch
+  output usage), B1087 (Api boundaries), B1019 (File routing ids), B002 (Load LiteLLM config.yaml into typed config).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_cost_finalize.rs
+  - crates/betterlite-core/src/api/batch_cost_finalize/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/batch_cost_finalize.rs
+  - crates/betterlite-config/src/api/batch_cost_finalize/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/batch-cost-finalize-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_cost_finalize.rs
+  - tools/oracle/src/helpers/batch_cost_finalize/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_cost_finalize.py
+  - tools/oracle/helpers/batch_cost_finalize/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_cost_finalize-*
+  - tools/oracle/cases/helpers/batch-cost-finalize/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L348-L348
+  why: Setting litellm_settings.disable_vertex_batch_output_transformation and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L39-L70
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L96-L161
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L409-L553
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'batch cost not final: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-cost-not-final
+  - oracle
+- text: 'completed batch cost: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-completed-batch-cost
+  - oracle
+- text: 'error file request count: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-error-file-request-count
+  - oracle
+- text: 'managed output file credentials: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-managed-output-file-credentials
+  - oracle
+- text: 'missing output file: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-missing-output-file
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::batch_cost_finalize::/)
+      - test(/::replays_corpus$/)'
+  - id: case-batch-cost-not-final
+    why: the batch-cost-not-final behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::batch_cost_not_final($|::)/)'
+  - id: case-completed-batch-cost
+    why: the completed-batch-cost behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::completed_batch_cost($|::)/)'
+  - id: case-error-file-request-count
+    why: the error-file-request-count behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::error_file_request_count($|::)/)'
+  - id: case-managed-output-file-credentials
+    why: the managed-output-file-credentials behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::managed_output_file_crede_f598($|::)/)'
+  - id: case-missing-output-file
+    why: the missing-output-file behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::missing_output_file($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_cost_finalize::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-cost-finalize-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_cost_finalize.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_cost_finalize-*)"
+      && grep -qE "^[[:space:]]+batch_cost_finalize:" tools/oracle/fuzz/corpus/helper_case/batch_cost_finalize-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-cost-finalize)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-cost-finalize/batch-cost-not-final.yaml
+- tools/oracle/cases/helpers/batch-cost-finalize/completed-batch-cost.yaml
+- tools/oracle/cases/helpers/batch-cost-finalize/error-file-request-count.yaml
+- tools/oracle/cases/helpers/batch-cost-finalize/managed-output-file-credentials.yaml
+- tools/oracle/cases/helpers/batch-cost-finalize/missing-output-file.yaml
+deviations: []
+out_of_scope:
+- 'litellm/batches/batch_utils.py: calculate_batch_cost_and_usage L71-L95, _get_file_content_as_dictionary L554-L559
+  are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/batches/batch_utils.py: B1039 owns _classify_output_line_stats L184-L200, _safe_output_line_stats L203-L222,
+  _compute_output_line_stats L225-L255, _ocr_usage_info_from_response_body L258-L263, _output_line_cost L266-L293,
+  _aggregate_batch_cost_usage_models L296-L345, calculate_vertex_ai_batch_cost_and_usage L348-L406, _iter_batch_input_lines
+  L562-L577, _iter_batch_output_entries L580-L590, _parse_batch_output_line L593-L602, _estimate_batch_entry_tokens
+  L610-L614, _count_entry_tokens L617-L637, _count_prompt_or_input_tokens L640-L670, _get_batch_job_usage_from_response_body
+  L673-L713, _get_anthropic_result_from_batch_results_line L716-L723, _get_response_from_batch_job_output_file L726-L738,
+  _batch_response_was_successful L741-L756.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'batch_utils.py:431 emits the diagnostic ''Extracted LLM output file ID from unified file ID: %s''; retain its
+  level and fallback instead of turning it into a hard error.'
+- 'batch_utils.py:506 emits the diagnostic ''Failed to fetch batch error file %s: %s''; retain its level and fallback
+  instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 450
+  max_new_expects: 1

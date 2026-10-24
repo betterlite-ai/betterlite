@@ -1,0 +1,154 @@
+id: B916
+title: Responses chat call
+description: >-
+  Compose the split Responses-to-chat transformations into B014's statically dispatched completion executor. Carry
+  prepared context and provider metadata through one call, expose typed streaming/nonstreaming results and keep
+  sync Python wrappers as later bindings to the same native service.
+
+
+  Implement crates/betterlite-core/src/api/responses_chat_call.rs. Use ResponsesChatCallInput and ResponsesChatCallResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions chat_bridge_request_capture, chat_bridge_tools, chat_bridge_error,
+  stream_bridge_selection under api::responses_chat_call::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponsesChatCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_chat_call: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/litellm_completion_transformation/handler.py: LiteLLMCompletionTransformationHandler.response_api_handler
+  (L26-L95); litellm/responses/litellm_completion_transformation/handler.py: LiteLLMCompletionTransformationHandler.async_response_api_handler
+  (L97-L140). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 121 owned nonblank/non-comment/non-docstring Python lines (124 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 141 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 373 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
+  (Direct helper oracle and URL path encoding), B908 (Responses chat options), B909 (Responses input messages),
+  B910 (Responses reasoning merge), B911 (Responses tool repair), B912 (Responses tool results), B913 (Responses
+  tool namespaces), B914 (Responses chat output), B915 (Responses session history), B1087 (Api boundaries), B907
+  (Responses codex tools). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_chat_call.rs
+  - crates/betterlite-core/src/api/responses_chat_call/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_chat_call.rs
+  - tools/oracle/src/helpers/responses_chat_call/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_chat_call.py
+  - tools/oracle/helpers/responses_chat_call/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_chat_call-*
+  - tools/oracle/cases/helpers/responses-chat-call/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L1-L140
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'chat bridge request capture: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-chat-bridge-request-capture
+  - oracle
+- text: 'chat bridge tools: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-chat-bridge-tools
+  - oracle
+- text: 'chat bridge error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-chat-bridge-error
+  - oracle
+- text: 'stream bridge selection: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-stream-bridge-selection
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::/) -
+      test(/::replays_corpus$/)'
+  - id: case-chat-bridge-request-capture
+    why: the chat-bridge-request-capture behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::tests::chat_bridge_request_capture($|::)/)'
+  - id: case-chat-bridge-tools
+    why: the chat-bridge-tools behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::tests::chat_bridge_tools($|::)/)'
+  - id: case-chat-bridge-error
+    why: the chat-bridge-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::tests::chat_bridge_error($|::)/)'
+  - id: case-stream-bridge-selection
+    why: the stream-bridge-selection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::tests::stream_bridge_selection($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_chat_call.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_chat_call-*)"
+      && grep -qE "^[[:space:]]+responses_chat_call:" tools/oracle/fuzz/corpus/helper_case/responses_chat_call-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-chat-call)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-chat-call/chat-bridge-request-capture.yaml
+- tools/oracle/cases/helpers/responses-chat-call/chat-bridge-tools.yaml
+- tools/oracle/cases/helpers/responses-chat-call/chat-bridge-error.yaml
+- tools/oracle/cases/helpers/responses-chat-call/stream-bridge-selection.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within LiteLLMCompletionTransformationHandler.response_api_handler\'s isinstance(litellm_completion_response,
+  ModelResponse) branch, preserve return responses_api_response and its nested guards.
+- LiteLLMCompletionTransformationHandler.response_api_handler uses responses_api_request.get('tools'); retain its
+  missing-value behavior and field spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

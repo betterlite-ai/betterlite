@@ -1,0 +1,193 @@
+id: B981
+title: Messages agentic stream
+description: >-
+  Implement the native agentic stream buffer/rebuilder and follow-up control using a statically injected interceptor
+  outcome. Hold server-fulfilled tool calls until the interceptor runs, preserve pings and cancellation, and expose
+  the seam for B119's later web-search/code-interpreter implementation without depending on B119.
+
+
+  Implement crates/betterlite-core/src/api/messages_agentic_stream.rs. Use MessagesAgenticStreamInput and MessagesAgenticStreamResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions server_tool_held_back, ping_during_interceptor, followup_stream, leaked_server_tool_error,
+  cancel_drains_owned_task under api::messages_agentic_stream::tests. Each named function drives production code
+  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::messages_agentic_stream::decode_messages_agentic_strea(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input data_str at litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py:72;
+  json.loads input partial at litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py:146. Place
+  its implementation in crates/betterlite-core/src/api/messages_agentic_stream.rs and call it from the actual boundary.
+  The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/messages_agentic_stream.rs passes arbitrary bounded
+  bytes to that exact decoder; api::messages_agentic_stream::tests::replays_corpus replays newly committed seeds
+  through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::MessagesAgenticStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_agentic_stream: <typed input>};
+  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
+  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: is_server_fulfilled_tool_leak_error
+  (L40-L41); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _anext_or_none (L44-L48);
+  litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _parse_sse_events (L56-L78); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py:
+  _handle_message_start (L81-L91); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _handle_content_block_start
+  (L94-L118); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _handle_content_block_delta
+  (L121-L136); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _handle_content_block_stop
+  (L139-L148); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: _handle_message_delta
+  (L151-L166); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator.__init__
+  (L182-L218); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator.has_buffered_provider_output
+  (L221-L223); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator.__aiter__
+  (L225-L226); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator.__anext__
+  (L228-L248); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._drain_upstream
+  (L250-L255); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._completed_within_ping_interval
+  (L257-L262); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._anext_held_back
+  (L264-L298); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._next_follow_up_chunk
+  (L300-L309); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._buffer_holds_server_fulfilled_tool_use
+  (L311-L324); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._settle_task
+  (L327-L336); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator.aclose
+  (L338-L347); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._process_agentic_hooks
+  (L349-L403); litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py: AgenticAnthropicStreamingIterator._rebuild_anthropic_response_from_sse
+  (L406-L457). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 349 owned nonblank/non-comment/non-docstring Python lines (384 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 369 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 679 total within the 680-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B978 (Messages sse events), B979 (Messages
+  native stream), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_agentic_stream.rs
+  - crates/betterlite-core/src/api/messages_agentic_stream/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/messages_agentic_stream.rs
+  - crates/betterlite-core/fuzz/corpus/messages_agentic_stream/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_agentic_stream.rs
+  - tools/oracle/src/helpers/messages_agentic_stream/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_agentic_stream.py
+  - tools/oracle/helpers/messages_agentic_stream/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_agentic_stream-*
+  - tools/oracle/cases/helpers/messages-agentic-stream/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L1-L457
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'server tool held back: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-server-tool-held-back
+  - oracle
+- text: 'ping during interceptor: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-ping-during-interceptor
+  - oracle
+- text: 'followup stream: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-followup-stream
+  - oracle
+- text: 'leaked server tool error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-leaked-server-tool-error
+  - oracle
+- text: 'cancel drains owned task: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cancel-drains-owned-task
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::/)
+      - test(/::replays_corpus$/)'
+  - id: case-server-tool-held-back
+    why: the server-tool-held-back behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::server_tool_held_back($|::)/)'
+  - id: case-ping-during-interceptor
+    why: the ping-during-interceptor behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::ping_during_interceptor($|::)/)'
+  - id: case-followup-stream
+    why: the followup-stream behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::followup_stream($|::)/)'
+  - id: case-leaked-server-tool-error
+    why: the leaked-server-tool-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::leaked_server_tool_error($|::)/)'
+  - id: case-cancel-drains-owned-task
+    why: the cancel-drains-owned-task behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::cancel_drains_owned_task($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/messages_agentic_stream)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/messages_agentic_stream.rs && grep -qF "decode_messages_agentic_strea"
+      crates/betterlite-core/fuzz/fuzz_targets/messages_agentic_stream.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::messages_agentic_stream::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_agentic_stream.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_agentic_stream-*)"
+      && grep -qE "^[[:space:]]+messages_agentic_stream:" tools/oracle/fuzz/corpus/helper_case/messages_agentic_stream-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-agentic-stream)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-agentic-stream/server-tool-held-back.yaml
+- tools/oracle/cases/helpers/messages-agentic-stream/ping-during-interceptor.yaml
+- tools/oracle/cases/helpers/messages-agentic-stream/followup-stream.yaml
+- tools/oracle/cases/helpers/messages-agentic-stream/leaked-server-tool-error.yaml
+- tools/oracle/cases/helpers/messages-agentic-stream/cancel-drains-owned-task.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'agentic_streaming_iterator.py:361 emits the diagnostic ''AgenticStreamingIterator: Could not rebuild response
+  from SSE bytes''; retain its level and fallback instead of turning it into a hard error.'
+- 'agentic_streaming_iterator.py:392 emits the diagnostic ''AgenticStreamingIterator: Unexpected result type from
+  hooks: %s''; retain its level and fallback instead of turning it into a hard error.'
+review_level: standard
+budget:
+  max_changed_lines: 680
+  max_new_expects: 1

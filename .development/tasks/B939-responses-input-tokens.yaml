@@ -1,0 +1,288 @@
+id: B939
+title: Responses input tokens
+description: >-
+  Install /responses/compact and /responses/input_tokens (including the source v1 aliases) using responses-compact-call
+  and B013 token counting. Preserve input-to-message token projection and exact missing-param errors; endpoint schemas
+  and parser remain typed and never download tokenizer assets.
+
+
+  Register all six POST paths: /responses/compact, /v1/responses/compact, /openai/v1/responses/compact and the corresponding
+  /input_tokens paths. Empty string/list input returns 400 with param null and code missing_required_parameter;
+  invalid token input returns 400 with code null.
+
+
+  Open, waiting for Max: permit Hugging Face tokenizer downloads or retain the current offline OpenAI-tokenizer
+  fallback documented below; current successful requests still return 200, and validation retains its existing 400
+  codes.
+
+
+  Implement crates/betterlite-server/src/api/responses_input_tokens.rs, crates/betterlite-core/src/api/responses_input_tokens.rs.
+  Use ResponsesInputTokensInput and ResponsesInputTokensResult with typed nested records; inject only the clock,
+  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
+  do not introduce ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: POST /v1/responses/compact; POST /responses/compact; POST /openai/v1/responses/compact;
+  POST /v1/responses/input_tokens; POST /responses/input_tokens; POST /openai/v1/responses/input_tokens. Each alias
+  is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its child
+  factories without re-registering their methods/paths.
+
+
+  Route input projections: data.model (absent None); data.input (absent None); data.tools (absent None); data.instructions
+  (absent None).
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): endpoints.py:1099 status_code=400. Compare the actual source status, error type, param and
+  code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions compact_route, input_tokens_string, input_tokens_message_list, missing_model,
+  missing_input, unknown_model, empty_string_input, empty_list_input, invalid_token_request, openai_compact_alias,
+  openai_input_tokens_alias, route_aliases, auth_missing, auth_invalid under api::responses_input_tokens::tests.
+  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
+  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
+  inputs for unchanged behavior remain comparable.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: compact_response (L988-L1052); litellm/proxy/response_api_endpoints/endpoints.py:
+  _TokenCounter.__call__ (L1078-L1078); litellm/proxy/response_api_endpoints/endpoints.py: _proxy_token_counter
+  (L1081-L1084); litellm/proxy/response_api_endpoints/endpoints.py: _responses_invalid_request_response (L1090-L1099);
+  litellm/proxy/response_api_endpoints/endpoints.py: _missing_responses_param_response (L1102-L1107); litellm/proxy/response_api_endpoints/endpoints.py:
+  _responses_input_as_token_count_messages (L1110-L1125); litellm/proxy/response_api_endpoints/endpoints.py: responses_input_tokens
+  (L1143-L1198). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 165 owned nonblank/non-comment/non-docstring Python lines (193 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 185 implementation,
+  124 behavior tests, 168 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 515 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B003 (HTTP server, health routes and master key auth), B013 (Model cost map, provider
+  capability data and token counting), B171 (Direct helper oracle and URL path encoding), B909 (Responses input
+  messages), B934 (Responses compact call), B1087 (Api boundaries), B1100 (Shared request body decoding), B732 (Typed
+  authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756
+  (Authentication header selection and mode dispatch), B1139 (Stateful HTTP oracle scenarios). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/responses_input_tokens.rs
+  - crates/betterlite-server/src/api/responses_input_tokens/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_input_tokens.rs
+  - crates/betterlite-core/src/api/responses_input_tokens/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/api/responses-input-tokens/**
+  - tools/oracle/fixtures/responses-input-tokens/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L973-L1198
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'compact route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-compact-route
+  - oracle
+- text: 'input tokens string: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-input-tokens-string
+  - oracle
+- text: 'input tokens message list: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-input-tokens-message-list
+  - oracle
+- text: 'missing model: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-missing-model
+  - oracle
+- text: 'missing input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-missing-input
+  - oracle
+- text: 'unknown model: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unknown-model
+  - oracle
+- text: 'empty string input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-empty-string-input
+  - oracle
+- text: 'empty list input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-empty-list-input
+  - oracle
+- text: 'invalid token request: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-invalid-token-request
+  - oracle
+- text: 'openai compact alias: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-openai-compact-alias
+  - oracle
+- text: 'openai input tokens alias: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-openai-input-tokens-alias
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every explicit deviation has a native test for its documented status/code or fallback.
+  proof:
+  - deviation-tests
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::responses_input_tokens::/)
+      - test(/::replays_corpus$/)'
+  - id: case-compact-route
+    why: the compact-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::compact_route($|::)/)'
+  - id: case-input-tokens-string
+    why: the input-tokens-string behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::input_tokens_string($|::)/)'
+  - id: case-input-tokens-message-list
+    why: the input-tokens-message-list behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::input_tokens_message_list($|::)/)'
+  - id: case-missing-model
+    why: the missing-model behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::missing_model($|::)/)'
+  - id: case-missing-input
+    why: the missing-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::missing_input($|::)/)'
+  - id: case-unknown-model
+    why: the unknown-model behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::unknown_model($|::)/)'
+  - id: case-empty-string-input
+    why: the empty-string-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::empty_string_input($|::)/)'
+  - id: case-empty-list-input
+    why: the empty-list-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::empty_list_input($|::)/)'
+  - id: case-invalid-token-request
+    why: the invalid-token-request behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::invalid_token_request($|::)/)'
+  - id: case-openai-compact-alias
+    why: the openai-compact-alias behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::openai_compact_alias($|::)/)'
+  - id: case-openai-input-tokens-alias
+    why: the openai-input-tokens-alias behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::openai_input_tokens_alias($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::auth_invalid($|::)/)'
+  - id: deviation-tests
+    why: the documented compatibility difference lacks a native assertion
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_input_tokens::tests::compatibility_deviations($|::)/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/responses-input-tokens)"
+oracle_cases:
+- tools/oracle/cases/api/responses-input-tokens/compact-route.yaml
+- tools/oracle/cases/api/responses-input-tokens/input-tokens-string.yaml
+- tools/oracle/cases/api/responses-input-tokens/input-tokens-message-list.yaml
+- tools/oracle/cases/api/responses-input-tokens/missing-model.yaml
+- tools/oracle/cases/api/responses-input-tokens/missing-input.yaml
+- tools/oracle/cases/api/responses-input-tokens/unknown-model.yaml
+- tools/oracle/cases/api/responses-input-tokens/empty-string-input.yaml
+- tools/oracle/cases/api/responses-input-tokens/empty-list-input.yaml
+- tools/oracle/cases/api/responses-input-tokens/invalid-token-request.yaml
+- tools/oracle/cases/api/responses-input-tokens/openai-compact-alias.yaml
+- tools/oracle/cases/api/responses-input-tokens/openai-input-tokens-alias.yaml
+- tools/oracle/cases/api/responses-input-tokens/route-aliases.yaml
+- tools/oracle/cases/api/responses-input-tokens/auth-missing.yaml
+- tools/oracle/cases/api/responses-input-tokens/auth-invalid.yaml
+deviations:
+- what: With Hugging Face downloads disabled, cohere, llama2 and llama3 fall back to the OpenAI tokenizer. Successful
+    counts keep HTTP 200 and their usual count schema; input validation retains the source 400 code/param fields.
+  why: Current offline tokenizer policy; the download decision remains open.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2404-L2467
+out_of_scope:
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
+  L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant
+  L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth
+  L182-L191, cursor_model_list L471-L485, cursor_chat_completions L496-L674.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B938 owns get_response L695-L790, delete_response L811-L899,
+  get_response_input_items L920-L970, cancel_response L1216-L1313.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B941 owns _read_ws_model_from_first_frame L1316-L1384, _extract_model_from_first_ws_event
+  L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth
+  L1431-L1471, responses_websocket_endpoint L1476-L1620.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- data reads 'model' with default None; omission and an explicit value must not collapse into one case.
+- endpoints.py:1099 uses status_code=400; preserve this envelope rather than a family-wide error default.
+review_level: security
+budget:
+  max_changed_lines: 520
+  max_new_expects: 0

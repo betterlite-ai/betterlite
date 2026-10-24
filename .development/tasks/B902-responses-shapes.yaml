@@ -1,0 +1,213 @@
+id: B902
+title: Responses shapes
+description: >-
+  Define typed Responses input, output, usage, deletion and streaming event records alongside B004 OpenAI models,
+  and the base Responses operation contract used by B010 adapters. Reuse existing OpenAI records; model function/custom-tool,
+  web-search, code-interpreter, image-generation and commentary/final_answer variants. Abstract Python methods become
+  closed request/result enums and capability data, not runtime class registries.
+
+
+  Own Responses shape builders and compose the separate response-object, event-record and provider-contract parts;
+  expose wire types from betterlite-openai and provider contracts from betterlite-provider. B1113 owns the event
+  union and all event records, B1138 owns usage/response objects.
+
+
+  Implement crates/betterlite-core/src/api/responses_shapes.rs, crates/betterlite-openai/src/api/responses_shapes.rs.
+  Use ResponsesShapesInput and ResponsesShapesResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Write adjacent tests.rs behavior functions web_search_result_sources, code_interpreter_stderr, delete_null_fields,
+  output_phase under api::responses_shapes::tests. Each named function drives production code and asserts its case
+  result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-openai::api::responses_shapes::decode_responses_shapes(bytes:
+  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
+  in crates/betterlite-openai/src/api/responses_shapes.rs and call it from the actual boundary. The cargo-fuzz target
+  crates/betterlite-openai/fuzz/fuzz_targets/responses_shapes.rs passes arbitrary bounded bytes to that exact decoder;
+  api::responses_shapes::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
+  helpers reuse the already decoded records.
+
+
+  Register HelperCall::ResponsesShapes in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_shapes: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/types/responses/main.py: build_web_search_call (L44-L71); litellm/types/responses/main.py:
+  build_code_interpreter_log_outputs (L101-L116); litellm/types/responses/streaming_websocket.py: ResponsesClientWebSocket.send_text
+  (L13-L13); litellm/types/responses/streaming_websocket.py: ResponsesClientWebSocket.receive_text (L15-L15); litellm/types/responses/streaming_websocket.py:
+  ResponsesBackendWebSocket.recv (L21-L21); litellm/types/responses/streaming_websocket.py: ResponsesBackendWebSocket.send
+  (L23-L23); litellm/types/responses/streaming_websocket.py: ResponsesBackendWebSocket.close (L25-L25); litellm/types/responses/streaming_websocket.py:
+  PresidioGuardrailCallback.get_presidio_settings_from_request_data (L35-L35); litellm/types/responses/streaming_websocket.py:
+  PresidioGuardrailCallback.check_pii (L37-L43); litellm/types/responses/streaming_websocket.py: ResponsesWebSocketRequestDefaults.merged_into
+  (L53-L54). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 131 owned nonblank/non-comment/non-docstring Python lines (164 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 151 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 451 total within the 460-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B004 (OpenAI chat completions without streaming), B010 (Provider framework, provider resolution
+  and parameter mapping), B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1114 (Responses
+  provider contract), B1138 (Responses objects and usage), B1113 (Responses streaming event records). These are
+  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
+  provider and keys/data branches.
+
+
+  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
+  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
+  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
+
+
+  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
+  convert B1087 limits into it. This record has no dependency on the core crate.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_shapes.rs
+  - crates/betterlite-core/src/api/responses_shapes/**
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api/responses_shapes.rs
+  - crates/betterlite-openai/src/api/responses_shapes/**
+  - crates/betterlite-openai/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/responses_shapes.rs
+  - crates/betterlite-openai/fuzz/corpus/responses_shapes/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_shapes.rs
+  - tools/oracle/src/helpers/responses_shapes/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_shapes.py
+  - tools/oracle/helpers/responses_shapes/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_shapes-*
+  - tools/oracle/cases/helpers/responses-shapes/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1-L173
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/streaming_websocket.py#L1-L54
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'web search result sources: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-web-search-result-sources
+  - oracle
+- text: 'code interpreter stderr: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-code-interpreter-stderr
+  - oracle
+- text: 'delete null fields: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-delete-null-fields
+  - oracle
+- text: 'output phase: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-output-phase
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_shapes::/)
+      - test(/::replays_corpus$/)'
+  - id: case-web-search-result-sources
+    why: the web-search-result-sources behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_shapes::tests::web_search_result_sources($|::)/)'
+  - id: case-code-interpreter-stderr
+    why: the code-interpreter-stderr behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_shapes::tests::code_interpreter_stderr($|::)/)'
+  - id: case-delete-null-fields
+    why: the delete-null-fields behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_shapes::tests::delete_null_fields($|::)/)'
+  - id: case-output-phase
+    why: the output-phase behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_shapes::tests::output_phase($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/responses_shapes)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/responses_shapes.rs && grep -qF "decode_responses_shapes"
+      crates/betterlite-openai/fuzz/fuzz_targets/responses_shapes.rs && cargo nextest run --locked -p betterlite-openai
+      --no-tests=fail -E 'test(/^api::responses_shapes::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_shapes.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_shapes-*)"
+      && grep -qE "^[[:space:]]+responses_shapes:" tools/oracle/fuzz/corpus/helper_case/responses_shapes-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-shapes)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-shapes/web-search-result-sources.yaml
+- tools/oracle/cases/helpers/responses-shapes/code-interpreter-stderr.yaml
+- tools/oracle/cases/helpers/responses-shapes/delete-null-fields.yaml
+- tools/oracle/cases/helpers/responses-shapes/output-phase.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/base_llm/responses/transformation.py: B1114 owns BaseResponsesAPIConfig.__init__ L31-L32, BaseResponsesAPIConfig.custom_llm_provider
+  L36-L37, BaseResponsesAPIConfig.get_config L40-L56, BaseResponsesAPIConfig.supports_native_file_search L58-L64,
+  BaseResponsesAPIConfig.supports_encrypted_agent_messages L66-L67, BaseResponsesAPIConfig.sign_request L69-L87,
+  BaseResponsesAPIConfig.get_supported_openai_params L90-L91, BaseResponsesAPIConfig.map_openai_params L94-L100,
+  BaseResponsesAPIConfig.validate_environment L103-L104, BaseResponsesAPIConfig.get_complete_url L107-L121, BaseResponsesAPIConfig.transform_responses_api_request
+  L124-L132, BaseResponsesAPIConfig.async_transform_responses_api_request L134-L148, BaseResponsesAPIConfig.transform_response_api_response
+  L151-L157, BaseResponsesAPIConfig.transform_streaming_response L160-L168, BaseResponsesAPIConfig.transform_delete_response_api_request
+  L174-L181, BaseResponsesAPIConfig.transform_delete_response_api_response L184-L189, BaseResponsesAPIConfig.transform_get_response_api_request
+  L199-L206, BaseResponsesAPIConfig.transform_get_response_api_response L209-L214, BaseResponsesAPIConfig.transform_list_input_items_request
+  L220-L232, BaseResponsesAPIConfig.transform_list_input_items_response L235-L240, BaseResponsesAPIConfig.get_error_class
+  L246-L253, BaseResponsesAPIConfig.should_fake_stream L255-L262, BaseResponsesAPIConfig.supports_native_websocket
+  L264-L274, BaseResponsesAPIConfig.get_websocket_url L276-L289, BaseResponsesAPIConfig.model_in_websocket_url L291-L297,
+  BaseResponsesAPIConfig.transform_cancel_response_api_request L303-L310, BaseResponsesAPIConfig.transform_cancel_response_api_response
+  L313-L318, BaseResponsesAPIConfig.transform_compact_response_api_request L328-L337, BaseResponsesAPIConfig.transform_compact_response_api_response
+  L340-L345, BaseResponsesAPIConfig.strip_custom_tool_call_namespace_from_responses_input L352-L366, BaseResponsesAPIConfig.transform_extra_body
+  L368-L375, BaseResponsesAPIConfig.normalize_responses_api_request_dict L378-L385.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- ResponseAPIUsage and ResponsesAPIResponse are declared in types/llms/openai.py, not only types/responses/main.py.
+- build_web_search_call uses tool_input.get('query', ''); retain its missing-value behavior and field spelling in
+  the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 460
+  max_new_expects: 1

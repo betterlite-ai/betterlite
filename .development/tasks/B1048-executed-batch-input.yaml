@@ -1,0 +1,225 @@
+id: B1048
+title: Executed batch input
+description: >-
+  Define the proxy-executed batch provider decision, row schema and result/status transitions. Accept POST rows
+  only for /v1/chat/completions, /v1/completions, /v1/embeddings and /v1/responses, preserve row line numbers and
+  reject unsafe body controls using B052 before dispatch.
+
+
+  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
+  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
+  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
+  out of scope.
+
+
+  Implement crates/betterlite-core/src/api/executed_batch_input.rs. Use ExecutedBatchInputInput and ExecutedBatchInputResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): litellm_executed_batches.py:325 type=error_type, param=None, code=status_code. Compare the
+  actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions executed_provider_selection, batch_row_post_only, unsupported_row_url,
+  unsafe_row_body, cancelling_transition, row_error_envelope under api::executed_batch_input::tests. Each named
+  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
+  replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::executed_batch_input::decode_executed_batch_input(bytes:
+  &[u8], limits: &ApiLimits), for BatchInputLine.model_validate_json input raw at litellm/proxy/batches_endpoints/litellm_executed_batches.py:292.
+  Place its implementation in crates/betterlite-core/src/api/executed_batch_input.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/executed_batch_input.rs passes arbitrary
+  bounded bytes to that exact decoder; api::executed_batch_input::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ExecutedBatchInput in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {executed_batch_input: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/batches_endpoints/litellm_executed_batches.py: InvalidBatchInput.describe (L120-L121);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: ManagedBatchStore.get_unified_batch_id (L151-L151);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: ManagedBatchStore.get_unified_file_id (L153-L155);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: ManagedBatchStore.store_unified_object_id (L157-L168);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _StorageBackendFactory.__call__ (L172-L172); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _ResultFileUploader.__call__ (L176-L185); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _RouterCall.__call__
+  (L190-L190); litellm/proxy/batches_endpoints/litellm_executed_batches.py: litellm_executed_provider_of (L193-L198);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _HttpGetter.get (L202-L204); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  FilesApiProbe.__call__ (L208-L208); litellm/proxy/batches_endpoints/litellm_executed_batches.py: BodyRejection.__call__
+  (L212-L212); litellm/proxy/batches_endpoints/litellm_executed_batches.py: upstream_lacks_files_api (L215-L225);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _upstream_of (L228-L243); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  litellm_executed_provider_for (L246-L255); litellm/proxy/batches_endpoints/litellm_executed_batches.py: resolve_litellm_executed_provider
+  (L258-L265); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _provider_of (L268-L274); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _validation_reason (L277-L281); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _accept_every_body
+  (L284-L285); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _parse_line (L288-L302); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  parse_batch_input (L305-L320); litellm/proxy/batches_endpoints/litellm_executed_batches.py: batch_error (L323-L325);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _validate_endpoint (L328-L332); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _status_code_of (L335-L337); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _error_body (L340-L344);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _line_response (L347-L355); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _line_error (L358-L362); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _result_line (L365-L372);
+  litellm/proxy/batches_endpoints/litellm_executed_batches.py: _dump (L375-L378); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _resolve_transition (L381-L384); litellm/proxy/batches_endpoints/litellm_executed_batches.py: executed_batch_runner_lost
+  (L387-L390); litellm/proxy/batches_endpoints/litellm_executed_batches.py: _StopWatch.__init__ (L394-L398); litellm/proxy/batches_endpoints/litellm_executed_batches.py:
+  _StopWatch.stopped (L400-L408). Abstract/protocol declarations map to native types and synchronous/async wrappers
+  share one implementation; a partial function span is the explicit preparation/transition stage described above,
+  with typed values passed to the following stage.
+
+
+  Sizing: 224 owned nonblank/non-comment/non-docstring Python lines (224 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 244 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 572 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1035 (Batch records), B1087 (Api boundaries),
+  B732 (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget
+  handoff), B756 (Authentication header selection and mode dispatch). These are callable/type/config owners, not
+  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/executed_batch_input.rs
+  - crates/betterlite-core/src/api/executed_batch_input/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/executed_batch_input.rs
+  - crates/betterlite-core/fuzz/corpus/executed_batch_input/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/executed_batch_input.rs
+  - tools/oracle/src/helpers/executed_batch_input/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/executed_batch_input.py
+  - tools/oracle/helpers/executed_batch_input/**
+  - tools/oracle/fuzz/corpus/helper_case/executed_batch_input-*
+  - tools/oracle/cases/helpers/executed-batch-input/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/litellm_executed_batches.py#L120-L408
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'executed provider selection: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-executed-provider-selection
+  - oracle
+- text: 'batch row post only: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-row-post-only
+  - oracle
+- text: 'unsupported row url: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unsupported-row-url
+  - oracle
+- text: 'unsafe row body: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unsafe-row-body
+  - oracle
+- text: 'cancelling transition: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cancelling-transition
+  - oracle
+- text: 'row error envelope: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-row-error-envelope
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::/)
+      - test(/::replays_corpus$/)'
+  - id: case-executed-provider-selection
+    why: the executed-provider-selection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::executed_provider_selection($|::)/)'
+  - id: case-batch-row-post-only
+    why: the batch-row-post-only behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::batch_row_post_only($|::)/)'
+  - id: case-unsupported-row-url
+    why: the unsupported-row-url behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::unsupported_row_url($|::)/)'
+  - id: case-unsafe-row-body
+    why: the unsafe-row-body behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::unsafe_row_body($|::)/)'
+  - id: case-cancelling-transition
+    why: the cancelling-transition behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::cancelling_transition($|::)/)'
+  - id: case-row-error-envelope
+    why: the row-error-envelope behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::executed_batch_input::tests::row_error_envelope($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/executed_batch_input)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/executed_batch_input.rs && grep -qF "decode_executed_batch_input"
+      crates/betterlite-core/fuzz/fuzz_targets/executed_batch_input.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::executed_batch_input::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/executed_batch_input.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/executed_batch_input-*)"
+      && grep -qE "^[[:space:]]+executed_batch_input:" tools/oracle/fuzz/corpus/helper_case/executed_batch_input-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/executed-batch-input)"
+oracle_cases:
+- tools/oracle/cases/helpers/executed-batch-input/executed-provider-selection.yaml
+- tools/oracle/cases/helpers/executed-batch-input/batch-row-post-only.yaml
+- tools/oracle/cases/helpers/executed-batch-input/unsupported-row-url.yaml
+- tools/oracle/cases/helpers/executed-batch-input/unsafe-row-body.yaml
+- tools/oracle/cases/helpers/executed-batch-input/cancelling-transition.yaml
+- tools/oracle/cases/helpers/executed-batch-input/row-error-envelope.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/batches_endpoints/litellm_executed_batches.py: B1049 owns LiteLLMExecutedBatchRunner.__init__ L412-L436,
+  LiteLLMExecutedBatchRunner.create L438-L495, LiteLLMExecutedBatchRunner.cancel L497-L511, LiteLLMExecutedBatchRunner.fail_abandoned
+  L513-L528, LiteLLMExecutedBatchRunner._body_rejection L530-L543, LiteLLMExecutedBatchRunner._download_input L545-L559,
+  LiteLLMExecutedBatchRunner._run L561-L576, LiteLLMExecutedBatchRunner._heartbeat L578-L584, LiteLLMExecutedBatchRunner._touch
+  L586-L587, LiteLLMExecutedBatchRunner._execute L589-L615, LiteLLMExecutedBatchRunner._run_row L617-L629, LiteLLMExecutedBatchRunner._row_outcome
+  L631-L638, LiteLLMExecutedBatchRunner._dispatch L640-L644, LiteLLMExecutedBatchRunner._router_call L646-L650,
+  LiteLLMExecutedBatchRunner._row_metadata L652-L659, LiteLLMExecutedBatchRunner._upload_results L661-L682, LiteLLMExecutedBatchRunner._advance
+  L684-L699, _record_batch_created L702-L712.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- litellm_executed_batches.py:325 uses type=error_type, param=None, code=status_code; preserve this envelope rather
+  than a family-wide error default.
+- litellm_executed_provider_of uses credentials.get('custom_llm_provider'); retain its missing-value behavior and
+  field spelling in the typed projection.
+review_level: security
+budget:
+  max_changed_lines: 580
+  max_new_expects: 1
