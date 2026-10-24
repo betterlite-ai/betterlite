@@ -176,101 +176,139 @@ tasks:
     covers: []
   - id: B016
     milestone: M2 routing
-    title: Router core, deployment clients and router callbacks
-    status: todo
-    depends_on: [B008, B010]
-    file: null
-    covers:
-      - "litellm/router.py"
-      - "litellm/types/router.py"
-      - "litellm/router_strategy/base_routing_strategy.py"
-      - "litellm/router_utils/{common_utils,client_initalization_utils,clientside_credential_handler,handle_error,pattern_match_deployments,response_headers,add_retry_fallback_headers,routing_read_batch}.py"
-      - "litellm/router_utils/router_callbacks/**"
-  - id: B017
-    milestone: M2 routing
-    title: Retries, retry policies and timeouts
-    status: todo
-    depends_on: [B016]
-    file: null
-    covers:
-      - "litellm/timeout.py"
-      - "litellm/router_utils/get_retry_from_policy.py"
-      - "litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py"
-  - id: B018
-    milestone: M2 routing
-    title: Fallbacks, cooldowns and deployment health state
-    status: todo
-    depends_on: [B017]
-    file: null
-    covers:
-      - "litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py"
-      - "litellm/litellm_core_utils/{fallback_utils,fallback_generalizations}.py"
-      - "litellm/proxy/management_endpoints/fallback_management_endpoints.py"
-  - id: B019
-    milestone: M2 routing
-    title: Latency, cost, usage and least-busy routing strategies
-    status: todo
-    depends_on: [B016]
-    file: null
-    covers:
-      - "litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py"
-      - "litellm/router_utils/pre_call_checks/{model_rate_limit_check,io_token_rate_limit_check}.py"
-  - id: B020
-    milestone: M2 routing
-    title: Tag, budget, access window and affinity routing
-    status: todo
-    depends_on: [B016]
-    file: null
-    covers:
-      - "litellm/router_strategy/{tag_based_routing,budget_limiter}.py"
-      - "litellm/router_utils/{access_windows,routing_groups,prompt_caching_cache,reasoning_effort_capability}.py"
-      - "litellm/router_utils/pre_call_checks/{deployment_affinity_check,prompt_caching_deployment_check}.py"
-      - "litellm/caching/affinity_cache.py"
-  - id: B021
-    milestone: M2 routing
-    title: Auto, complexity, adaptive and quality routers
+    title: Router call pipeline and response metadata
     status: todo
     depends_on:
-    - B019
-    file: null
+    - B008
+    - B302
+    - B303
+    - B364
+    - B014
+    - B011
+    - B301
+    - B395
+    - B396
+    - B002
+    file: tasks/B016-router-core.yaml
     covers:
-    - router_plugins.json
-    - litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**
-    - litellm/router_strategy/{lar1_routing,savings_baseline}.py
-    - litellm/types/lar1.py
-    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
-    - litellm/proxy/hooks/autorouter_baseline_cache.py
-    - litellm/proxy/auth/auto_router_checks.py
-    - litellm/proxy/management_endpoints/auto_router_endpoints.py
-    - litellm/types/management_endpoints/auto_router_endpoints.py
-    - litellm/proxy/management_helpers/auto_router_*.py
-    - litellm/proxy/db/autorouter_session_rollup.py
-    - litellm/models/autorouter_session.py
-    - litellm/repositories/autorouter_session_repository.py
-    - litellm/proxy/public_endpoints/autorouter_presets.json
-    - docker/install_auto_router.sh
+    - litellm/router.py
+    - litellm/types/router.py
+    - litellm/router_utils/{common_utils,handle_error,response_headers,add_retry_fallback_headers}.py
+  - id: B017
+    milestone: M2 routing
+    title: Execute retries within the routing deadline
+    status: todo
+    depends_on:
+    - B016
+    - B305
+    - B306
+    - B005
+    - B012
+    - B301
+    file: tasks/B017-routing-retries.yaml
+    covers: []
+  - id: B018
+    milestone: M2 routing
+    title: Fallback management API and persistent configuration
+    status: todo
+    depends_on:
+    - B309
+    - B051
+    - B052
+    - B066
+    - B300
+    - B301
+    - B361
+    file: tasks/B018-fallback-management.yaml
+    covers:
+    - litellm/proxy/management_endpoints/fallback_management_endpoints.py
+  - id: B019
+    milestone: M2 routing
+    title: Input and output token reservations and reconciliation
+    status: todo
+    depends_on:
+    - B365
+    - B016
+    - B017
+    - B319
+    - B014
+    - B301
+    file: tasks/B019-io-token-limits.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
+  - id: B020
+    milestone: M2 routing
+    title: Budget-aware filtering and policy composition
+    status: todo
+    depends_on:
+    - B016
+    - B383
+    - B326
+    - B321
+    - B322
+    - B323
+    - B324
+    - B325
+    - B012
+    - B301
+    - B361
+    - B002
+    file: tasks/B020-routing-budgets.yaml
+    covers:
+    - litellm/router_strategy/budget_limiter.py
+  - id: B021
+    milestone: M2 routing
+    title: Compose automatic routing and its policy boundaries
+    status: todo
+    depends_on:
+    - B016
+    - B362
+    - B366
+    - B327
+    - B338
+    - B339
+    - B080
+    - B081
+    - B012
+    - B301
+    file: tasks/B021-automatic-router-pipeline.yaml
+    covers:
+    - litellm/router.py
+    - litellm/router_strategy/complexity_router/complexity_router.py
     - litellm/litellm_core_utils/classifier_logging.py
   - id: B022
     milestone: M2 routing
-    title: Request scheduler, priorities and admission control
+    title: Per-worker admission and in-flight tracking
     status: todo
-    depends_on: [B016]
-    file: null
+    depends_on:
+    - B003
+    - B005
+    - B002
+    - B300
+    - B301
+    file: tasks/B022-admission-control.yaml
     covers:
-      - "litellm/scheduler.py"
-      - "litellm/types/scheduler.py"
-      - "litellm/proxy/route_priority.py"
-      - "litellm/integrations/adaptive_concurrency.py"
-      - "litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py"
+    - litellm/proxy/route_priority.py
+    - litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py
   - id: B023
     milestone: M2 routing
-    title: Router settings and weights API
+    title: Scoped router weights validation and application
     status: todo
-    depends_on: [B016, B052]
-    file: null
+    depends_on:
+    - B008
+    - B302
+    - B051
+    - B052
+    - B055
+    - B057
+    - B060
+    - B066
+    - B301
+    - B361
+    - B002
+    file: tasks/B023-router-weights.yaml
     covers:
-      - "litellm/proxy/management_endpoints/{router_settings_endpoints,router_weights}.py"
-      - "litellm/types/management_endpoints/router_settings_endpoints.py"
+    - litellm/proxy/management_endpoints/router_weights.py
   - id: B024
     milestone: M3 providers
     title: OpenAI provider, every remaining endpoint
@@ -2864,3 +2902,1380 @@ tasks:
     file: tasks/B259-token-formatting.yaml
     covers:
     - litellm/litellm_core_utils/token_counter.py
+
+  - id: B300
+    milestone: M2 routing
+    title: Stateful HTTP scenarios for the routing oracle
+    status: todo
+    depends_on:
+    - B001
+    - B391
+    file: tasks/B300-routing-scenarios.yaml
+    covers: []
+  - id: B301
+    milestone: M2 routing
+    title: Component probes for deterministic routing oracle cases
+    status: todo
+    depends_on:
+    - B001
+    - B008
+    - B003
+    - B392
+    file: tasks/B301-routing-component-oracle.yaml
+    covers: []
+  - id: B302
+    milestone: M2 routing
+    title: Deployment catalog, aliases and wildcard routes
+    status: todo
+    depends_on:
+    - B368
+    - B367
+    - B006
+    - B301
+    - B401
+    - B002
+    file: tasks/B302-deployment-catalog.yaml
+    covers:
+    - litellm/router.py
+  - id: B303
+    milestone: M2 routing
+    title: Deployment client reuse and parallel request guards
+    status: todo
+    depends_on:
+    - B302
+    - B009
+    - B010
+    - B011
+    - B005
+    - B301
+    - B361
+    - B002
+    file: tasks/B303-deployment-clients.yaml
+    covers:
+    - litellm/router_utils/client_initalization_utils.py
+    - litellm/router_utils/clientside_credential_handler.py
+  - id: B304
+    milestone: M2 routing
+    title: Router counters, callback state and batched reads
+    status: todo
+    depends_on:
+    - B360
+    - B382
+    - B012
+    - B301
+    - B361
+    - B397
+    - B002
+    file: tasks/B304-routing-state.yaml
+    covers:
+    - litellm/router_strategy/base_routing_strategy.py
+    - litellm/router_utils/router_callbacks/**
+  - id: B305
+    milestone: M2 routing
+    title: Resolve router and provider timeouts
+    status: todo
+    depends_on:
+    - B009
+    - B002
+    - B005
+    - B011
+    - B301
+    file: tasks/B305-routing-timeouts.yaml
+    covers:
+    - litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py
+    - litellm/timeout.py
+  - id: B306
+    milestone: M2 routing
+    title: Retry policy selection and backoff decisions
+    status: todo
+    depends_on:
+    - B011
+    - B002
+    - B301
+    - B361
+    file: tasks/B306-retry-policy.yaml
+    covers:
+    - litellm/router_utils/get_retry_from_policy.py
+  - id: B307
+    milestone: M2 routing
+    title: Cooldown expiry and deployment health snapshots
+    status: todo
+    depends_on:
+    - B360
+    - B016
+    - B301
+    - B002
+    file: tasks/B307-cooldown-state.yaml
+    covers:
+    - litellm/router_utils/{cooldown_cache,health_state_cache}.py
+  - id: B308
+    milestone: M2 routing
+    title: Cooldown error policy and callback events
+    status: todo
+    depends_on:
+    - B369
+    - B307
+    - B304
+    - B012
+    - B301
+    file: tasks/B308-cooldown-policy.yaml
+    covers:
+    - litellm/router_utils/{cooldown_callbacks,cooldown_handlers}.py
+  - id: B309
+    milestone: M2 routing
+    title: Resolve fallback chains and attempt identities
+    status: todo
+    depends_on:
+    - B013
+    - B011
+    - B301
+    - B399
+    - B002
+    file: tasks/B309-fallback-plans.yaml
+    covers:
+    - litellm/router_utils/fallback_event_handlers.py
+  - id: B310
+    milestone: M2 routing
+    title: Execute authorized fallback attempts
+    status: todo
+    depends_on:
+    - B309
+    - B017
+    - B052
+    - B071
+    - B014
+    - B012
+    - B011
+    - B301
+    - B398
+    file: tasks/B310-fallback-attempts.yaml
+    covers:
+    - litellm/router_utils/fallback_event_handlers.py
+    - litellm/litellm_core_utils/fallback_utils.py
+  - id: B311
+    milestone: M2 routing
+    title: Fallback before generated chat output commits
+    status: todo
+    depends_on:
+    - B310
+    - B005
+    - B301
+    file: tasks/B311-chat-stream-fallback.yaml
+    covers:
+    - litellm/router.py
+  - id: B312
+    milestone: M2 routing
+    title: Responses and Messages stream fallback boundaries
+    status: todo
+    depends_on:
+    - B311
+    - B310
+    - B370
+    - B081
+    - B301
+    file: tasks/B312-native-stream-fallback.yaml
+    covers:
+    - litellm/router.py
+  - id: B313
+    milestone: M2 routing
+    title: Fallback provider and capability generalization rules
+    status: todo
+    depends_on:
+    - B010
+    - B013
+    - B301
+    - B361
+    - B002
+    file: tasks/B313-model-generalizations.yaml
+    covers:
+    - litellm/litellm_core_utils/fallback_generalizations.py
+  - id: B314
+    milestone: M2 routing
+    title: Least-busy selection and in-flight accounting
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    - B301
+    - B002
+    file: tasks/B314-least-busy.yaml
+    covers:
+    - litellm/router_strategy/least_busy.py
+  - id: B315
+    milestone: M2 routing
+    title: Latency and first-token latency selection
+    status: todo
+    depends_on:
+    - B016
+    - B389
+    - B013
+    - B301
+    - B002
+    - B361
+    file: tasks/B315-latency-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_latency.py
+  - id: B316
+    milestone: M2 routing
+    title: Cost-based routing with model price overrides
+    status: todo
+    depends_on:
+    - B016
+    - B013
+    - B304
+    - B301
+    - B002
+    file: tasks/B316-cost-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_cost.py
+  - id: B317
+    milestone: M2 routing
+    title: Legacy usage-based routing windows
+    status: todo
+    depends_on:
+    - B016
+    - B013
+    - B304
+    - B301
+    - B002
+    file: tasks/B317-usage-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm.py
+  - id: B318
+    milestone: M2 routing
+    title: Usage v2 batched reads and pre-call accounting
+    status: todo
+    depends_on:
+    - B016
+    - B371
+    - B382
+    - B013
+    - B301
+    - B002
+    file: tasks/B318-usage-routing-v2.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm_v2.py
+  - id: B319
+    milestone: M2 routing
+    title: Strategy-independent model RPM and TPM checks
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    - B013
+    - B011
+    - B301
+    - B002
+    file: tasks/B319-model-rate-limits.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/model_rate_limit_check.py
+  - id: B320
+    milestone: M2 routing
+    title: Typed tag selectors and bounded header patterns
+    status: todo
+    depends_on:
+    - B002
+    - B301
+    - B361
+    file: tasks/B320-tag-matchers.yaml
+    covers:
+    - litellm/router_strategy/tag_based_routing.py
+  - id: B321
+    milestone: M2 routing
+    title: Tag policy across aliases and fallback chains
+    status: todo
+    depends_on:
+    - B016
+    - B320
+    - B310
+    - B052
+    - B301
+    - B002
+    file: tasks/B321-tag-routing.yaml
+    covers:
+    - litellm/router_strategy/tag_based_routing.py
+  - id: B322
+    milestone: M2 routing
+    title: Team-scoped deployment access and reserved windows
+    status: todo
+    depends_on:
+    - B016
+    - B302
+    - B052
+    - B301
+    - B002
+    file: tasks/B322-access-windows.yaml
+    covers:
+    - litellm/router_utils/access_windows.py
+    - litellm/router_utils/common_utils.py
+  - id: B323
+    milestone: M2 routing
+    title: Routing groups, priority tiers and reasoning capabilities
+    status: todo
+    depends_on:
+    - B016
+    - B302
+    - B010
+    - B013
+    - B301
+    - B002
+    file: tasks/B323-routing-groups.yaml
+    covers:
+    - litellm/router_utils/{routing_groups,reasoning_effort_capability}.py
+  - id: B324
+    milestone: M2 routing
+    title: Atomic caller and session deployment affinity
+    status: todo
+    depends_on:
+    - B016
+    - B372
+    - B080
+    - B323
+    - B052
+    - B301
+    - B002
+    file: tasks/B324-deployment-affinity.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
+    - litellm/caching/affinity_cache.py
+  - id: B325
+    milestone: M2 routing
+    title: Prompt cache prefix affinity
+    status: todo
+    depends_on:
+    - B016
+    - B010
+    - B013
+    - B360
+    - B301
+    - B002
+    file: tasks/B325-prompt-affinity.yaml
+    covers:
+    - litellm/router_utils/prompt_caching_cache.py
+    - litellm/router_utils/pre_call_checks/prompt_caching_deployment_check.py
+  - id: B326
+    milestone: M2 routing
+    title: Router budget windows and lossless spend synchronization
+    status: todo
+    depends_on:
+    - B383
+    - B068
+    - B304
+    - B301
+    - B361
+    file: tasks/B326-routing-budget-state.yaml
+    covers:
+    - litellm/router_strategy/budget_limiter.py
+  - id: B327
+    milestone: M2 routing
+    title: Embedding-based auto routing
+    status: todo
+    depends_on:
+    - B014
+    - B012
+    - B006
+    - B301
+    - B361
+    - B002
+    file: tasks/B327-semantic-router.yaml
+    covers:
+    - litellm/router_strategy/auto_router/**
+    - docker/install_auto_router.sh
+  - id: B328
+    milestone: M2 routing
+    title: Local complexity scoring and default tiers
+    status: todo
+    depends_on:
+    - B012
+    - B301
+    - B361
+    - B002
+    file: tasks/B328-complexity-scoring.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{__init__,config,complexity_router}.py
+    - litellm/router_strategy/complexity_router/README.md
+  - id: B329
+    milestone: M2 routing
+    title: Custom complexity tiers and bounded dimensions
+    status: todo
+    depends_on:
+    - B374
+    - B373
+    - B010
+    - B301
+    - B002
+    file: tasks/B329-complexity-config.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B330
+    milestone: M2 routing
+    title: Build bounded classifier context from request messages
+    status: todo
+    depends_on:
+    - B384
+    - B010
+    - B080
+    - B081
+    - B301
+    - B002
+    file: tasks/B330-classifier-context.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B331
+    milestone: M2 routing
+    title: LLM, heuristic-first and hybrid complexity classifiers
+    status: todo
+    depends_on:
+    - B375
+    - B330
+    - B328
+    - B014
+    - B012
+    - B068
+    - B301
+    - B002
+    file: tasks/B331-llm-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{complexity_router,classification_rubrics}.py
+  - id: B332
+    milestone: M2 routing
+    title: Capability forecasts and calibrated routing thresholds
+    status: todo
+    depends_on:
+    - B394
+    - B331
+    - B330
+    - B329
+    - B301
+    - B002
+    file: tasks/B332-capability-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/capability_classifier.py
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B333
+    milestone: M2 routing
+    title: JEV classifier transport and attribution
+    status: todo
+    depends_on:
+    - B331
+    - B099
+    - B009
+    - B012
+    - B301
+    - B361
+    - B002
+    file: tasks/B333-jev-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/jev_classifier.py
+  - id: B334
+    milestone: M2 routing
+    title: Tier pools, request overrides and context placement
+    status: todo
+    depends_on:
+    - B374
+    - B323
+    - B372
+    - B386
+    - B010
+    - B301
+    - B002
+    file: tasks/B334-complexity-placement.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B335
+    milestone: M2 routing
+    title: Complexity session pins and user-turn lifecycle
+    status: todo
+    depends_on:
+    - B334
+    - B359
+    - B372
+    - B330
+    - B012
+    - B301
+    - B002
+    file: tasks/B335-complexity-sessions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B336
+    milestone: M2 routing
+    title: Complexity routing through context compaction
+    status: todo
+    depends_on:
+    - B385
+    - B386
+    - B100
+    - B080
+    - B081
+    - B068
+    - B012
+    - B301
+    - B002
+    file: tasks/B336-router-compaction.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/context_compaction.py
+  - id: B337
+    milestone: M2 routing
+    title: Cache-cost-aware complexity placement
+    status: todo
+    depends_on:
+    - B334
+    - B075
+    - B012
+    - B301
+    - B002
+    file: tasks/B337-cache-cost-routing.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B338
+    milestone: M2 routing
+    title: Quality-tier and keyword routing
+    status: todo
+    depends_on:
+    - B328
+    - B013
+    - B016
+    - B301
+    - B002
+    file: tasks/B338-quality-router.yaml
+    covers:
+    - litellm/router_strategy/quality_router/**
+  - id: B339
+    milestone: M2 routing
+    title: Adaptive request classification and bandit selection
+    status: todo
+    depends_on:
+    - B388
+    - B013
+    - B016
+    - B301
+    - B361
+    file: tasks/B339-adaptive-selection.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/{__init__,config,classifier,bandit}.py
+    - litellm/router_strategy/adaptive_router/adaptive_router.py
+    - litellm/router_strategy/adaptive_router/README.md
+  - id: B340
+    milestone: M2 routing
+    title: Adaptive feedback signals and caller attribution
+    status: todo
+    depends_on:
+    - B376
+    - B339
+    - B012
+    - B052
+    - B301
+    - B361
+    file: tasks/B340-adaptive-feedback.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/{signals,hooks}.py
+    - litellm/router_strategy/adaptive_router/adaptive_router.py
+  - id: B341
+    milestone: M2 routing
+    title: Adaptive learning persistence in the existing Postgres schema
+    status: todo
+    depends_on:
+    - B340
+    - B339
+    - B051
+    - B301
+    - B361
+    file: tasks/B341-adaptive-persistence.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/update_queue.py
+    - litellm/router_strategy/adaptive_router/adaptive_router.py
+  - id: B342
+    milestone: M2 routing
+    title: Auto-router savings baselines and cache observations
+    status: todo
+    depends_on:
+    - B334
+    - B068
+    - B075
+    - B013
+    - B012
+    - B301
+    file: tasks/B342-routing-baselines.yaml
+    covers:
+    - litellm/router_strategy/savings_baseline.py
+    - litellm/proxy/hooks/autorouter_baseline_cache.py
+  - id: B343
+    milestone: M2 routing
+    title: Auto-router identity, member permissions and inference checks
+    status: todo
+    depends_on:
+    - B377
+    - B378
+    - B052
+    - B060
+    - B301
+    - B361
+    file: tasks/B343-auto-router-access.yaml
+    covers:
+    - litellm/proxy/auth/auto_router_checks.py
+    - litellm/router_utils/auto_router_tuning_baseline.py
+  - id: B344
+    milestone: M2 routing
+    title: Atomic auto-router session rollups
+    status: todo
+    depends_on:
+    - B342
+    - B051
+    - B070
+    - B301
+    file: tasks/B344-auto-router-rollups.yaml
+    covers:
+    - litellm/proxy/db/autorouter_session_rollup.py
+    - litellm/models/autorouter_session.py
+    - litellm/repositories/autorouter_session_repository.py
+  - id: B345
+    milestone: M2 routing
+    title: Shadow evaluation request and access validation
+    status: todo
+    depends_on:
+    - B343
+    - B052
+    - B060
+    - B118
+    - B301
+    - B361
+    file: tasks/B345-shadow-eval-validation.yaml
+    covers:
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+  - id: B346
+    milestone: M2 routing
+    title: Priority queues and scheduled routing
+    status: todo
+    depends_on:
+    - B016
+    - B017
+    - B360
+    - B301
+    - B361
+    - B002
+    file: tasks/B346-request-scheduler.yaml
+    covers:
+    - litellm/scheduler.py
+    - litellm/types/scheduler.py
+  - id: B347
+    milestone: M2 routing
+    title: Adaptive concurrency permits
+    status: todo
+    depends_on:
+    - B301
+    - B361
+    file: tasks/B347-adaptive-concurrency.yaml
+    covers:
+    - litellm/integrations/adaptive_concurrency.py
+  - id: B348
+    milestone: M2 routing
+    title: Router settings and field metadata endpoints
+    status: todo
+    depends_on:
+    - B016
+    - B052
+    - B066
+    - B301
+    file: tasks/B348-router-settings.yaml
+    covers:
+    - litellm/proxy/management_endpoints/router_settings_endpoints.py
+    - litellm/types/management_endpoints/router_settings_endpoints.py
+  - id: B349
+    milestone: M2 routing
+    title: Validate and preview automatic-router configurations
+    status: todo
+    depends_on:
+    - B379
+    - B366
+    - B051
+    - B070
+    - B071
+    - B301
+    - B361
+    file: tasks/B349-auto-router-preview.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_availability.py
+  - id: B350
+    milestone: M2 routing
+    title: LAR-1 confidence routing
+    status: todo
+    depends_on:
+    - B016
+    - B301
+    - B361
+    - B002
+    file: tasks/B350-lar1-routing.yaml
+    covers:
+    - litellm/router_strategy/lar1_routing.py
+    - litellm/types/lar1.py
+  - id: B351
+    milestone: M2 routing
+    title: Pinned complexity evaluation corpus and bundled presets
+    status: todo
+    depends_on:
+    - B328
+    - B329
+    - B353
+    - B358
+    - B301
+    file: tasks/B351-complexity-evaluation.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/evals/**
+    - litellm/proxy/public_endpoints/autorouter_presets.json
+  - id: B352
+    milestone: M2 routing
+    title: Image and health gates for complexity placement
+    status: todo
+    depends_on:
+    - B334
+    - B335
+    - B016
+    - B308
+    - B319
+    - B020
+    - B301
+    - B002
+    file: tasks/B352-complexity-placement-gates.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B353
+    milestone: M2 routing
+    title: Two-solver forecasts and Fuse profile presets
+    status: todo
+    depends_on:
+    - B331
+    - B330
+    - B329
+    - B301
+    - B361
+    - B002
+    file: tasks/B353-two-solver-classifier.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/llm_v2.py
+    - litellm/router_strategy/complexity_router/fuse_presets.py
+    - litellm/router_strategy/complexity_router/fuse_presets.json
+  - id: B354
+    milestone: M2 routing
+    title: Adaptive soft-floor placement for complexity tiers
+    status: todo
+    depends_on:
+    - B339
+    - B340
+    - B334
+    - B335
+    - B301
+    - B361
+    - B002
+    file: tasks/B354-complexity-adaptive-placement.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B355
+    milestone: M2 routing
+    title: Benchmark and per-key session read APIs
+    status: todo
+    depends_on:
+    - B387
+    - B344
+    - B052
+    - B051
+    - B301
+    file: tasks/B355-auto-router-read-api.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B356
+    milestone: M2 routing
+    title: Start and stop automatic-router shadow evaluations
+    status: todo
+    depends_on:
+    - B345
+    - B380
+    - B118
+    - B051
+    - B052
+    - B301
+    - B361
+    file: tasks/B356-shadow-eval-lifecycle.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B357
+    milestone: M2 routing
+    title: Shadow evaluation listings and aggregate results
+    status: todo
+    depends_on:
+    - B381
+    - B380
+    - B052
+    - B051
+    - B301
+    - B361
+    file: tasks/B357-shadow-eval-results.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B358
+    milestone: M2 routing
+    title: Offline learned tier prediction
+    status: todo
+    depends_on:
+    - B328
+    - B388
+    - B301
+    - B361
+    - B002
+    file: tasks/B358-tier-artifact-predictor.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/tier_predictor.py
+    - litellm/router_strategy/complexity_router/artifacts/**
+  - id: B359
+    milestone: M2 routing
+    title: Keyword, plan-mode and stall overrides
+    status: todo
+    depends_on:
+    - B334
+    - B330
+    - B327
+    - B301
+    - B002
+    file: tasks/B359-complexity-turn-overrides.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+    - litellm/router_strategy/complexity_router/stall_detector.py
+  - id: B360
+    milestone: M2 routing
+    title: Typed local and Redis routing state
+    status: todo
+    depends_on:
+    - B390
+    - B393
+    - B002
+    - B301
+    file: tasks/B360-routing-state-store.yaml
+    covers:
+    - litellm/caching/redis_cache.py
+  - id: B361
+    milestone: M2 routing
+    title: Explicit numerical and deviation comparison contracts
+    status: todo
+    depends_on:
+    - B301
+    file: tasks/B361-oracle-comparison-contracts.yaml
+    covers: []
+  - id: B362
+    milestone: M2 routing
+    title: Tagged automatic-router registry and alias bindings
+    status: todo
+    depends_on:
+    - B016
+    - B327
+    - B334
+    - B338
+    - B339
+    - B321
+    - B343
+    - B360
+    - B301
+    - B400
+    - B002
+    file: tasks/B362-pre-routing-registry.yaml
+    covers:
+    - litellm/router.py
+    - litellm/types/router.py
+  - id: B363
+    milestone: M2 routing
+    title: Routing and classifier plugin bridge
+    status: todo
+    depends_on:
+    - B165
+    - B334
+    - B330
+    - B331
+    - B343
+    - B301
+    - B361
+    - B002
+    file: tasks/B363-routing-plugins.yaml
+    covers:
+    - router_plugins.json
+    - litellm/router.py
+    - litellm/types/router.py
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B364
+    milestone: M2 routing
+    title: Static deployment eligibility
+    status: todo
+    depends_on:
+    - B302
+    - B010
+    - B013
+    - B011
+    - B301
+    - B002
+    file: tasks/B364-static-eligibility.yaml
+    covers:
+    - litellm/router.py
+  - id: B365
+    milestone: M2 routing
+    title: Input and output token reservation primitives
+    status: todo
+    depends_on:
+    - B013
+    - B011
+    - B360
+    - B301
+    - B002
+    file: tasks/B365-io-token-reservations.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
+  - id: B366
+    milestone: M2 routing
+    title: Complexity classification and placement composition
+    status: todo
+    depends_on:
+    - B331
+    - B332
+    - B333
+    - B353
+    - B358
+    - B334
+    - B335
+    - B336
+    - B337
+    - B352
+    - B354
+    - B363
+    - B301
+    file: tasks/B366-complexity-pipeline.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B367
+    milestone: M2 routing
+    title: Wildcard deployment matching
+    status: todo
+    depends_on:
+    - B008
+    - B301
+    file: tasks/B367-wildcard-catalog.yaml
+    covers:
+    - litellm/router_utils/pattern_match_deployments.py
+  - id: B368
+    milestone: M2 routing
+    title: Transactional deployment catalog updates
+    status: todo
+    depends_on:
+    - B008
+    - B002
+    - B010
+    - B367
+    - B301
+    - B401
+    file: tasks/B368-catalog-updates.yaml
+    covers:
+    - litellm/router.py
+  - id: B369
+    milestone: M2 routing
+    title: Cooldown decision policy
+    status: todo
+    depends_on:
+    - B011
+    - B301
+    - B002
+    file: tasks/B369-cooldown-decisions.yaml
+    covers:
+    - litellm/router_utils/cooldown_handlers.py
+  - id: B370
+    milestone: M2 routing
+    title: Responses stream fallback and continuation
+    status: todo
+    depends_on:
+    - B311
+    - B310
+    - B080
+    - B301
+    file: tasks/B370-responses-stream-fallback.yaml
+    covers:
+    - litellm/router.py
+  - id: B371
+    milestone: M2 routing
+    title: Usage v2 reservation and callback accounting
+    status: todo
+    depends_on:
+    - B304
+    - B011
+    - B301
+    - B002
+    file: tasks/B371-usage-v2-accounting.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm_v2.py
+  - id: B372
+    milestone: M2 routing
+    title: Affinity identity and atomic pin claims
+    status: todo
+    depends_on:
+    - B360
+    - B052
+    - B301
+    - B361
+    file: tasks/B372-affinity-claims.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
+    - litellm/caching/affinity_cache.py
+  - id: B373
+    milestone: M2 routing
+    title: Bounded custom complexity dimensions
+    status: todo
+    depends_on:
+    - B328
+    - B301
+    - B002
+    file: tasks/B373-custom-dimensions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B374
+    milestone: M2 routing
+    title: Custom tier and pool schema
+    status: todo
+    depends_on:
+    - B328
+    - B010
+    - B301
+    - B002
+    file: tasks/B374-tier-definitions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B375
+    milestone: M2 routing
+    title: Classifier prompts and tier verdicts
+    status: todo
+    depends_on:
+    - B374
+    - B328
+    - B301
+    - B361
+    file: tasks/B375-classifier-verdict.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+    - litellm/router_strategy/complexity_router/classification_rubrics.py
+  - id: B376
+    milestone: M2 routing
+    title: Adaptive feedback signal detectors
+    status: todo
+    depends_on:
+    - B010
+    - B388
+    - B301
+    file: tasks/B376-feedback-signals.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/signals.py
+  - id: B377
+    milestone: M2 routing
+    title: Automatic router identity and dependency validation
+    status: todo
+    depends_on:
+    - B329
+    - B331
+    - B301
+    - B361
+    file: tasks/B377-router-dependencies.yaml
+    covers:
+    - litellm/router_utils/auto_router_model_naming.py
+  - id: B378
+    milestone: M2 routing
+    title: Member-owned automatic router writes
+    status: todo
+    depends_on:
+    - B377
+    - B052
+    - B057
+    - B058
+    - B060
+    - B301
+    - B361
+    file: tasks/B378-member-router-writes.yaml
+    covers:
+    - litellm/proxy/management_helpers/auto_router_permissions.py
+  - id: B379
+    milestone: M2 routing
+    title: Automatic router validation and availability endpoints
+    status: todo
+    depends_on:
+    - B329
+    - B343
+    - B051
+    - B052
+    - B060
+    - B301
+    - B361
+    file: tasks/B379-router-preview-validation.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_availability.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B380
+    milestone: M2 routing
+    title: Shadow evaluation lifecycle response models
+    status: todo
+    depends_on:
+    - B345
+    - B051
+    - B301
+    file: tasks/B380-shadow-eval-models.yaml
+    covers:
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B381
+    milestone: M2 routing
+    title: Shadow evaluation aggregate queries
+    status: todo
+    depends_on:
+    - B051
+    - B118
+    - B380
+    - B301
+    file: tasks/B381-shadow-result-aggregation.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B382
+    milestone: M2 routing
+    title: Request-scoped routing read batches
+    status: todo
+    depends_on:
+    - B360
+    - B301
+    file: tasks/B382-routing-read-batch.yaml
+    covers:
+    - litellm/router_utils/routing_read_batch.py
+  - id: B383
+    milestone: M2 routing
+    title: Router budget configuration and windows
+    status: todo
+    depends_on:
+    - B302
+    - B071
+    - B360
+    - B301
+    - B002
+    - B361
+    file: tasks/B383-budget-windows.yaml
+    covers:
+    - litellm/router_strategy/budget_limiter.py
+  - id: B384
+    milestone: M2 routing
+    title: Classifier message and reminder extraction
+    status: todo
+    depends_on:
+    - B010
+    - B301
+    - B002
+    file: tasks/B384-classifier-message-text.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B385
+    milestone: M2 routing
+    title: Compaction history partition and fit inputs
+    status: todo
+    depends_on:
+    - B010
+    - B013
+    - B100
+    - B301
+    file: tasks/B385-compaction-history.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/context_compaction.py
+  - id: B386
+    milestone: M2 routing
+    title: Complexity context-window placement
+    status: todo
+    depends_on:
+    - B374
+    - B013
+    - B010
+    - B301
+    - B002
+    file: tasks/B386-context-placement.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B387
+    milestone: M2 routing
+    title: Automatic router benchmark aggregates
+    status: todo
+    depends_on:
+    - B344
+    - B051
+    - B343
+    - B301
+    - B361
+    file: tasks/B387-benchmark-aggregates.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+  - id: B388
+    milestone: M2 routing
+    title: Adaptive routing configuration and request types
+    status: todo
+    depends_on:
+    - B010
+    - B301
+    - B002
+    - B361
+    file: tasks/B388-adaptive-classification.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/classifier.py
+    - litellm/router_strategy/adaptive_router/config.py
+  - id: B389
+    milestone: M2 routing
+    title: Latency and first-token observations
+    status: todo
+    depends_on:
+    - B304
+    - B012
+    - B301
+    - B002
+    - B361
+    file: tasks/B389-latency-observations.yaml
+    covers:
+    - litellm/router_strategy/lowest_latency.py
+  - id: B390
+    milestone: M2 routing
+    title: Typed routing values and bounded local store
+    status: todo
+    depends_on:
+    - B002
+    - B301
+    - B361
+    file: tasks/B390-routing-value-store.yaml
+    covers:
+    - litellm/caching/in_memory_cache.py
+  - id: B391
+    milestone: M2 routing
+    title: Scripted routing mock replies and trace capture
+    status: todo
+    depends_on:
+    - B001
+    file: tasks/B391-routing-mock-scripts.yaml
+    covers: []
+  - id: B392
+    milestone: M2 routing
+    title: Typed routing probe IPC and child lifecycle
+    status: todo
+    depends_on:
+    - B001
+    file: tasks/B392-routing-probe-ipc.yaml
+    covers: []
+  - id: B393
+    milestone: M2 routing
+    title: Routing Redis circuit and failure policy
+    status: todo
+    depends_on:
+    - B002
+    - B301
+    file: tasks/B393-redis-failure-policy.yaml
+    covers:
+    - litellm/caching/redis_cache.py
+  - id: B394
+    milestone: M2 routing
+    title: Capability forecast parsing and calibration
+    status: todo
+    depends_on:
+    - B301
+    - B361
+    - B002
+    file: tasks/B394-capability-forecast.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/capability_classifier.py
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B395
+    milestone: M2 routing
+    title: Native routing strategy dispatch
+    status: todo
+    depends_on:
+    - B008
+    - B301
+    - B002
+    file: tasks/B395-strategy-dispatch.yaml
+    covers:
+    - litellm/router.py
+  - id: B396
+    milestone: M2 routing
+    title: Pass-through deployment selection
+    status: todo
+    depends_on:
+    - B302
+    - B364
+    - B395
+    - B014
+    - B011
+    - B301
+    file: tasks/B396-passthrough-selection.yaml
+    covers:
+    - litellm/router.py
+  - id: B397
+    milestone: M2 routing
+    title: Router success and failure callback integration
+    status: todo
+    depends_on:
+    - B012
+    - B014
+    - B301
+    file: tasks/B397-router-observations.yaml
+    covers:
+    - litellm/router.py
+  - id: B398
+    milestone: M2 routing
+    title: Fallback events and response metadata
+    status: todo
+    depends_on:
+    - B012
+    - B011
+    - B301
+    file: tasks/B398-fallback-observations.yaml
+    covers:
+    - litellm/router_utils/common_utils.py
+    - litellm/router_utils/add_retry_fallback_headers.py
+    - litellm/router_utils/fallback_event_handlers.py
+  - id: B399
+    milestone: M2 routing
+    title: Fallback category and successor decisions
+    status: todo
+    depends_on:
+    - B011
+    - B013
+    - B301
+    file: tasks/B399-fallback-categories.yaml
+    covers:
+    - litellm/router.py
+  - id: B400
+    milestone: M2 routing
+    title: Automatic strategy construction and retirement
+    status: todo
+    depends_on:
+    - B327
+    - B334
+    - B338
+    - B339
+    - B331
+    - B335
+    - B363
+    - B301
+    - B328
+    - B330
+    file: tasks/B400-strategy-registration.yaml
+    covers:
+    - litellm/router.py
+    - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B401
+    milestone: M2 routing
+    title: Deployment construction and stable identity
+    status: todo
+    depends_on:
+    - B002
+    - B010
+    - B301
+    file: tasks/B401-deployment-identity.yaml
+    covers:
+    - litellm/router.py
+    - litellm/types/router.py

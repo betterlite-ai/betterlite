@@ -1,0 +1,129 @@
+id: B318
+title: Usage v2 batched reads and pre-call accounting
+description: 'Implement usage-based-routing-v2 candidate selection using B371 accounting and B382 request-scoped
+  batched reads. Rank by absolute TPM and preserve candidate/tie order with an injected random choice.
+  Wire the variant into B016 and consume B013 estimates; no callback or reservation logic is duplicated.
+  Configuration boundary keys introduced or consumed here: routing_strategy. Pinned declaration defaults:
+  routing_strategy=''simple-shuffle''. Resolve env values once in betterlite-config, never in router code.
+  Implement the owned native service in crates/betterlite-router/src/usage_routing_v2.rs. Add ProbeOperation::B318
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B318 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/lowest_tpm_rpm_v2.py:
+  LowestTPMLoggingHandler_v2._return_potential_deployments (L340-L391), LowestTPMLoggingHandler_v2._common_checks_available_deployment
+  (L393-L452), LowestTPMLoggingHandler_v2.usage_counter_keys (L454-L465), LowestTPMLoggingHandler_v2.async_get_available_deployments
+  (L467-L573), LowestTPMLoggingHandler_v2.get_available_deployments (L575-L672). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/usage_routing_v2.rs
+  - crates/betterlite-router/src/usage_routing_v2/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/usage_routing_v2.rs
+  - crates/betterlite-server/src/routing/usage_routing_v2/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/usage_routing_v2.rs
+  - tools/oracle/src/router_probes/usage_routing_v2/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/usage_routing_v2.py
+  - tools/oracle/cases/routing/usage-routing-v2/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/usage_routing_v2.rs
+  - crates/betterlite-config/src/usage_routing_v2/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b318-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L340-L672
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b318_behaviors and b318_boundaries under usage_routing_v2::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b318-behaviors
+  - b318-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b318-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b318-invalid.yaml;
+    the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b318-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b318-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b318_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b318-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b318_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/usage_routing_v2.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/usage_routing_v2.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b318-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b318-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b318-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b318-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/usage-routing-v2/batched-counter-read.yaml
+- tools/oracle/cases/routing/usage-routing-v2/lowest-tpm-random-tie-set.yaml
+- tools/oracle/cases/routing/usage-routing-v2/prefetch-not-reused.yaml
+deviations: []
+out_of_scope:
+- Optional strategy-independent limit enforcement (B319).
+- B371 owns usage v2 reservation and callback accounting; consume its tested public interface.
+- 'litellm/router_strategy/lowest_tpm_rpm_v2.py: B371 owns: LowestTPMLoggingHandler_v2.__init__ (L91-L99),
+  LowestTPMLoggingHandler_v2.pre_call_check (L101-L174), LowestTPMLoggingHandler_v2.async_pre_call_check
+  (L176-L250), LowestTPMLoggingHandler_v2.log_success_event (L252-L292), LowestTPMLoggingHandler_v2.async_log_success_event
+  (L294-L338).'
+- 'litellm/router_strategy/lowest_tpm_rpm_v2.py: B382 owns: PrefetchedUsage.covers (L51-L52), PrefetchedUsage.values_for
+  (L54-L57), PrefetchedUsage.scoped (L61-L66), PrefetchedUsage.active (L69-L70).'
+pitfalls:
+- V2 selection uses an RPM equality boundary that differs from its increment-after-selection check.
+- Fail-open storage behavior must be distinguished from an explicit RateLimitError.
+- Do not reuse a prefetched result across requests.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,212 @@
+id: B320
+title: Typed tag selectors and bounded header patterns
+description: 'Implement typed tag tokens, positive/required/excluded matching and configured header patterns
+  as a pure candidate matcher. Compile bounded configured patterns once using a maintained regex library;
+  warn once and skip syntactically invalid patterns. Keep trusted inherited constraints separate from
+  caller tags in the input type so B321 can apply policy without parsing the same strings twice. Use a
+  maintained Python-compatible regex implementation with an explicit work bound. Unsupported valid Python
+  constructs or exhausted work produce a named warning and skip the pattern; never silently reinterpret
+  it. Configuration boundary keys introduced or consumed here: tag_regex, tags. Pinned declaration defaults:
+  tag_regex=None; tags=None. Resolve env values once in betterlite-config, never in router code. Implement
+  the owned native service in crates/betterlite-router/src/tag_matchers.rs. Add ProbeOperation::B320 in
+  tools/oracle/src/router_probes/mod.rs and the corresponding B320 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/tag_based_routing.py:
+  _TagLitellmParamsLike.get (L30-L30), _TagLitellmParamsLike.get (L32-L32), _TagLitellmParamsLike.get
+  (L34-L34), _ModelInfoLike.get (L39-L39), _ModelInfoLike.get (L41-L41), _DeploymentLike.get (L46-L46),
+  _DeploymentLike.get (L48-L48), _DeploymentLike.get (L50-L50), _MetadataLike.get (L55-L55), _MetadataLike.get
+  (L57-L57), _MetadataLike.get (L59-L59), _MetadataLike.get (L61-L61), _MetadataLike.__contains__ (L62-L62),
+  _MetadataLike.__setitem__ (L63-L63), _NestedLitellmParamsLike.get (L67-L69), _RequestKwargsLike.get
+  (L74-L74), _RequestKwargsLike.get (L76-L76), _RequestKwargsLike.__contains__ (L77-L77), _RequestKwargsLike.__getitem__
+  (L79-L79), _RequestKwargsLike.__getitem__ (L81-L81), _is_valid_deployment_tag_regex (L87-L107), is_valid_deployment_tag
+  (L110-L135), _match_deployment (L138-L180), _bare_tag_value (L183-L191), _strip_routing_prefix (L194-L215),
+  _split_tags (L218-L222), _exclude_deployments (L225-L231), _require_all_tags (L234-L240), _default_tagged_pool
+  (L243-L247), _known_tag_values (L250-L253), _unknown_required_tag_hides_an_answer (L256-L277). Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors
+  reuse the same primitive instead of separate ports. Bound the tag_match outside-byte parser to 1048576
+  bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation consumers
+  keep their pinned warning/fallback path).'
+scope:
+  paths:
+  - crates/betterlite-router/src/tag_matchers.rs
+  - crates/betterlite-router/src/tag_matchers/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/tag_matchers.rs
+  - crates/betterlite-server/src/routing/tag_matchers/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/tag_matchers.rs
+  - tools/oracle/src/router_probes/tag_matchers/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/tag_matchers.py
+  - tools/oracle/cases/routing/tag-matchers/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/tag_matchers.rs
+  - crates/betterlite-config/src/tag_matchers/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b320-*
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-router/Cargo.toml
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/tag_match.rs
+  - crates/betterlite-router/fuzz/corpus/tag_match/b320-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
+  why: Tag and regex matching, required/excluded sets and routing prefixes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L30-L30
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L32-L32
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L34-L34
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L39-L39
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L41-L41
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L46-L46
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L48-L48
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L50-L50
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L55-L55
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L57-L57
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L59-L59
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L61-L61
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L62-L62
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L63-L63
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L67-L69
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L74-L74
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L76-L76
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L77-L77
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L79-L79
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L81-L81
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b320_behaviors and b320_boundaries under tag_matchers::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b320-behaviors
+  - b320-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b320-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b320-invalid.yaml;
+    the valid seed contains tag_regex. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b320-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/tag_match/b320-valid.json and crates/betterlite-router/fuzz/corpus/tag_match/b320-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target tag_match and normal replays_the_tag_match_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b320-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b320-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b320_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b320-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b320_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/tag_matchers.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/tag_matchers.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b320-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b320-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b320-" && grep -Fq 'tag_regex' crates/betterlite-config/fuzz/corpus/config_yaml/b320-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/tag_match/b320-valid.json && test -f crates/betterlite-router/fuzz/corpus/tag_match/b320-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/tag_match
+      | grep -Fq "/b320-" && test -f crates/betterlite-router/fuzz/fuzz_targets/tag_match.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tag_match_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/tag-matchers/any-versus-all.yaml
+- tools/oracle/cases/routing/tag-matchers/strict-tags-block-regex.yaml
+- tools/oracle/cases/routing/tag-matchers/user-agent-pattern.yaml
+- tools/oracle/cases/routing/tag-matchers/required-and-excluded.yaml
+- tools/oracle/cases/routing/tag-matchers/routing-prefix.yaml
+- tools/oracle/cases/routing/tag-matchers/empty-tags.yaml
+- tools/oracle/cases/routing/tag-matchers/default-tag.yaml
+- tools/oracle/cases/routing/tag-matchers/invalid-pattern-warning-skip.yaml
+- tools/oracle/cases/routing/tag-matchers/bounded-regex-warning.yaml
+- tools/oracle/cases/routing/tag-matchers/parser-byte-bound.yaml
+deviations:
+- what: A regex exceeding 2048 pattern bytes or 100000 match steps is warned about and skipped.
+  why: The pin has no execution bound; bounded-inputs requires one. Keep supported Python syntax and first-match
+    semantics within the bound.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L107
+- what: The tag_match byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
+out_of_scope:
+- Chain fail-open policy and metadata mutation (B321).
+- 'litellm/router_strategy/tag_based_routing.py: B321 owns: _chain_allows_fail_open (L280-L288), _trusted_only_pool
+  (L291-L320), _resolve_or_fail_open (L323-L349), _resolve_constraint_only_pool (L352-L377), _all_deployments_or_fallback
+  (L380-L388), _chain_tag_filtering_override (L391-L410), _inherited_constraint_sets (L413-L432), _tag_known_to_group
+  (L435-L450), _request_tags_after_router_consumption (L453-L474), get_deployments_for_tag (L477-L647),
+  _tags_in_metadata (L650-L665), _get_tags_from_request_kwargs (L668-L695).'
+pitfalls:
+- A header-regex match cannot bypass a failed strict all-tags constraint.
+- Caller input must not supply a new executable regex.
+- Report unsupported Python regex constructs rather than approximating them silently.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

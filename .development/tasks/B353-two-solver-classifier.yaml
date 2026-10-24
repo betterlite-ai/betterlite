@@ -1,0 +1,173 @@
+id: B353
+title: Two-solver forecasts and Fuse profile presets
+description: 'Add classifier_type llm_v2 to B331''s classifier transport and B330''s context builder.
+  Parse the strict two-solver verdict, resolve the pinned bundled model/harness profiles, and produce
+  a typed efficient-versus-capable decision with provenance. Use f64 ln/exp calibration with the pinned
+  clipping and epsilon; no hand-written transcendental approximation. Keep all prompt/verdict bodies out
+  of telemetry. Nonmonetary statistical arithmetic uses f64 only in solver_math; put one module-level
+  #[expect(clippy::float_arithmetic, reason = "pinned statistical routing arithmetic")] there, counted
+  in this task budget. Money, prices, spend and budgets stay rust_decimal::Decimal, including database
+  and wire boundaries. Reject nonfinite statistical input. Assert selected model/tier exactly; any opt-in
+  tolerance is for diagnostic scores only, never a different selection. Configuration boundary keys introduced
+  or consumed here: llm_v2_config. Pinned declaration defaults: llm_v2_config=None. Resolve env values
+  once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/two_solver_classifier.rs.
+  Add ProbeOperation::B353 in tools/oracle/src/router_probes/mod.rs and the corresponding B353 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/fuse_presets.py:
+  get_fuse_presets (L38-L41), resolve_fuse_profile (L44-L52). Implement these behaviors through the typed
+  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
+  separate ports. Function coverage in litellm/router_strategy/complexity_router/llm_v2.py: LLMV2ProbabilityCalibration.calibrate
+  (L120-L126), LLMV2Config.validate_profiles (L155-L157), LLMV2Config._profile_texts (L159-L169), LLMV2Config.system_prompt
+  (L171-L184), LLMV2Config.classify (L186-L195), LLMV2Decision.use_efficient (L207-L208), LLMV2Decision.signals
+  (L211-L224), llm_v2_response_format (L227-L231). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Bound the solver_json outside-byte parser to 1048576 bytes before decoding; on excess use its typed
+  invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback path). If
+  floating diagnostics differ, a case may use absolute_tolerance=0.000000000001 only on its explicitly
+  named score/probability pointer. Selection, tie order, counts, statuses, money and provider requests
+  remain exact. Six-decimal wire signals are compared after the source rounding, without widening tolerance.'
+scope:
+  paths:
+  - crates/betterlite-router/src/two_solver_classifier.rs
+  - crates/betterlite-router/src/two_solver_classifier/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/two_solver_classifier.rs
+  - crates/betterlite-server/src/routing/two_solver_classifier/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/two_solver_classifier.rs
+  - tools/oracle/src/router_probes/two_solver_classifier/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/two_solver_classifier.py
+  - tools/oracle/cases/routing/two-solver-classifier/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/two_solver_classifier.rs
+  - crates/betterlite-config/src/two_solver_classifier/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b353-*
+  - crates/betterlite-router/src/solver_math.rs
+  - crates/betterlite-router/src/solver_math/**
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/solver_json.rs
+  - crates/betterlite-router/fuzz/corpus/solver_json/b353-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
+  why: Prompt version, strict forecasts, quality gap and independent calibration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L9-L52
+  why: Bounded profile schemas and preset resolution.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.json#L1-L121
+  why: Pinned model and harness descriptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2571-L2626
+  why: Two-solver forecast call, fallback and tier decision.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1707-L1740
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b353_behaviors and b353_boundaries under two_solver_classifier::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b353-behaviors
+  - b353-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b353-invalid.yaml;
+    the valid seed contains llm_v2_config. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b353-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/solver_json/b353-valid.json and crates/betterlite-router/fuzz/corpus/solver_json/b353-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target solver_json and normal replays_the_solver_json_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b353-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b353-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b353_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b353-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b353_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/two_solver_classifier.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/two_solver_classifier.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b353-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b353-" && grep -Fq 'llm_v2_config' crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/solver_json/b353-valid.json && test -f crates/betterlite-router/fuzz/corpus/solver_json/b353-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/solver_json
+      | grep -Fq "/b353-" && test -f crates/betterlite-router/fuzz/fuzz_targets/solver_json.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_solver_json_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/two-solver-classifier/efficient-at-quality-gap-boundary.yaml
+- tools/oracle/cases/routing/two-solver-classifier/capable-has-lower-probability.yaml
+- tools/oracle/cases/routing/two-solver-classifier/independent-calibration.yaml
+- tools/oracle/cases/routing/two-solver-classifier/profiles-text-with-valid-preset.yaml
+- tools/oracle/cases/routing/two-solver-classifier/unknown-preset-even-with-text.yaml
+- tools/oracle/cases/routing/two-solver-classifier/profile-length-bound.yaml
+- tools/oracle/cases/routing/two-solver-classifier/json-object-versus-schema.yaml
+- tools/oracle/cases/routing/two-solver-classifier/unknown-verdict-field.yaml
+- tools/oracle/cases/routing/two-solver-classifier/nonfinite-probability.yaml
+- tools/oracle/cases/routing/two-solver-classifier/malformed-verdict-capable-fallback.yaml
+- tools/oracle/cases/routing/two-solver-classifier/six-decimal-signals.yaml
+- tools/oracle/cases/routing/two-solver-classifier/parser-byte-bound.yaml
+deviations:
+- what: The solver_json byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
+out_of_scope:
+- Training/calibrating forecasts, fetching changing profile presets or changing the pinned classifier
+  prompt.
+pitfalls:
+- Treat caller instructions as quoted evidence in the classifier prompt.
+- No public preset HTTP endpoint is added here; the public-endpoint task consumes this catalog.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

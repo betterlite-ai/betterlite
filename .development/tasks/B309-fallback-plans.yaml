@@ -1,0 +1,162 @@
+id: B309
+title: Resolve fallback chains and attempt identities
+description: 'Add typed ordinary, context-window and content-policy fallback plans, including request-local
+  overrides and parameterized targets. Resolve lookup names and wildcard chains, validate bounded configuration
+  and track canonical attempted targets in one request-owned set. This part returns a plan and successor
+  targets; B310 makes provider calls. Use B013 facts where capacity fallback selection needs model limits.
+  Configuration boundary keys introduced or consumed here: fallbacks, context_window_fallbacks, content_policy_fallbacks,
+  default_fallbacks, max_fallbacks, ROUTER_MAX_FALLBACKS. Pinned declaration defaults: fallbacks=[]; context_window_fallbacks=[].
+  Resolve env values once in betterlite-config, never in router code. max_fallbacks defaults to ROUTER_MAX_FALLBACKS=5
+  from the environment; fallbacks/context_window_fallbacks/content_policy_fallbacks default to empty lists
+  and default_fallbacks is absent. Preserve empty per-request chains and the pinned depth counter. Consume
+  B399 category/successor contracts and implement only chain lookup and canonical target identity. Implement
+  the owned native service in crates/betterlite-router/src/fallback_plans.rs. Add ProbeOperation::B309
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B309 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/fallback_event_handlers.py:
+  fallback_attempt_key (L157-L179), AttemptedFallbackTargets.__contains__ (L196-L197), AttemptedFallbackTargets.record
+  (L199-L200), has_unattempted_fallback_target (L203-L212), _check_stripped_model_group (L215-L237), _provider_prefixed_model_group
+  (L240-L244), record_pre_routing_selection (L251-L268), clear_pre_routing_selection (L271-L285), get_pre_routing_selection
+  (L288-L292), carry_over_pre_routing_selection (L295-L304), per_request_fallback_controls (L332-L335),
+  mid_stream_fallback_hop_kwargs (L338-L362), record_disable_fallbacks (L368-L385), fallbacks_disabled_for_request
+  (L388-L394), fallback_lookup_groups (L397-L413), _resolved_a_specific_chain (L416-L423), get_fallback_model_group_for_lookup_groups
+  (L426-L438), get_fallback_model_group (L441-L480). Implement these behaviors through the typed Rust
+  services above; synchronous facades and structural accessors reuse the same primitive instead of separate
+  ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/fallback_plans.rs
+  - crates/betterlite-router/src/fallback_plans/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/fallback_plans.rs
+  - crates/betterlite-server/src/routing/fallback_plans/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/fallback_plans.rs
+  - tools/oracle/src/router_probes/fallback_plans/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/fallback_plans.py
+  - tools/oracle/cases/routing/fallback-plans/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/fallback_plans.rs
+  - crates/betterlite-config/src/fallback_plans/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b309-*
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/chat.rs
+  - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
+  - crates/betterlite-openai/fuzz/corpus/chat_request/b309-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L157-L480
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b309_behaviors and b309_boundaries under fallback_plans::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b309-behaviors
+  - b309-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b309-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b309-invalid.yaml;
+    the valid seed contains fallbacks. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b309-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b309-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b309-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - chat-corpus
+  - b309-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b309-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b309_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b309-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b309_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/fallback_plans.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/fallback_plans.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b309-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b309-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b309-" && grep -Fq 'fallbacks' crates/betterlite-config/fuzz/corpus/config_yaml/b309-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: chat-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b309-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b309-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
+      | grep -Fq "/b309-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/fallback-plans/exact-before-wildcard.yaml
+- tools/oracle/cases/routing/fallback-plans/preselected-tier-before-alias.yaml
+- tools/oracle/cases/routing/fallback-plans/provider-stripped-name.yaml
+- tools/oracle/cases/routing/fallback-plans/empty-chain-disables.yaml
+- tools/oracle/cases/routing/fallback-plans/request-override.yaml
+- tools/oracle/cases/routing/fallback-plans/parameterized-target-identity.yaml
+- tools/oracle/cases/routing/fallback-plans/cycle-and-depth.yaml
+deviations: []
+out_of_scope:
+- Executing the plan or checking per-target authorization.
+- B399 owns fallback category and successor decisions; consume its tested public interface.
+- 'litellm/router_utils/fallback_event_handlers.py: B308 owns: _trigger_cooldown_for_failed_deployment
+  (L46-L154).'
+- 'litellm/router_utils/fallback_event_handlers.py: B310 owns: _get_fallback_target_model_group (L498-L502),
+  _is_fallback_target_authorized (L505-L526), _is_fallback_target_within_budget (L529-L545), references_provider_scoped_resource
+  (L548-L567), creates_provider_scoped_resource (L570-L579), run_async_fallback (L582-L719), _check_non_standard_fallback_format
+  (L778-L802), run_non_standard_fallback_format (L805-L806).'
+- 'litellm/router_utils/fallback_event_handlers.py: B398 owns: log_success_fallback_event (L722-L747),
+  log_failure_fallback_event (L750-L775).'
+pitfalls:
+- A wildcard must not shadow a later specifically keyed chain.
+- The same model with different target parameters can be a distinct attempt.
+- Validate graph size and request overrides before traversal.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

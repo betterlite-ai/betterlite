@@ -1,0 +1,236 @@
+id: B354
+title: Adaptive soft-floor placement for complexity tiers
+description: 'Compose B339''s adaptive model sampler with B334''s tier selection and B335''s transient
+  constraints. Add typed candidate provenance, cold-start observation and per-tier distance penalties
+  while retaining hard policy constraints at the final placement boundary. Reuse the adaptive cells and
+  update lifecycle rather than creating another learner or random-number implementation. Nonmonetary statistical
+  arithmetic uses f64 only in soft_floor_math; put one module-level #[expect(clippy::float_arithmetic,
+  reason = "pinned statistical routing arithmetic")] there, counted in this task budget. Money, prices,
+  spend and budgets stay rust_decimal::Decimal, including database and wire boundaries. Reject nonfinite
+  statistical input. Assert selected model/tier exactly; any opt-in tolerance is for diagnostic scores
+  only, never a different selection. Configuration boundary keys introduced or consumed here: adaptive,
+  adaptive_weights, tier_distance_penalty, adaptive_eligible. Pinned declaration defaults: adaptive=False;
+  adaptive_weights=lambda: AdaptiveRouterWeights(quality=0.3, cost=0.7); tier_distance_penalty=DEFAULT_TIER_DISTANCE_PENALTY;
+  adaptive_eligible=''all''. Resolve env values once in betterlite-config, never in router code. Implement
+  the owned native service in crates/betterlite-router/src/complexity_adaptive_placement.rs. Add ProbeOperation::B354
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B354 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/complexity_router.py:
+  ComplexityRouter._ensure_adaptive_router (L2933-L2997), ComplexityRouter._adaptive_candidate_models
+  (L2999-L3031), ComplexityRouter._soft_floor_pick (L3033-L3148), ComplexityRouter._fitting_tier_fallback
+  (L3150-L3154). Implement these behaviors through the typed Rust services above; synchronous facades
+  and structural accessors reuse the same primitive instead of separate ports. If floating diagnostics
+  differ, a case may use absolute_tolerance=0.000000000001 only on its explicitly named score/probability
+  pointer. Selection, tie order, counts, statuses, money and provider requests remain exact. Six-decimal
+  wire signals are compared after the source rounding, without widening tolerance.'
+scope:
+  paths:
+  - crates/betterlite-router/src/complexity_adaptive_placement.rs
+  - crates/betterlite-router/src/complexity_adaptive_placement/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/complexity_adaptive_placement.rs
+  - crates/betterlite-server/src/routing/complexity_adaptive_placement/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/complexity_adaptive_placement.rs
+  - tools/oracle/src/router_probes/complexity_adaptive_placement/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/complexity_adaptive_placement.py
+  - tools/oracle/cases/routing/complexity-adaptive-placement/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/complexity_adaptive_placement.rs
+  - crates/betterlite-config/src/complexity_adaptive_placement/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b354-*
+  - crates/betterlite-router/src/soft_floor_math.rs
+  - crates/betterlite-router/src/soft_floor_math/**
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2933-L3148
+  why: Adaptive initialization, cold start, candidate restrictions and weighted distance score.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3150-L3154
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b354_behaviors and b354_boundaries under complexity_adaptive_placement::tests.
+    The first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
+    bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
+    cannot satisfy either check.
+  proof:
+  - b354-behaviors
+  - b354-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b354-invalid.yaml;
+    the valid seed contains adaptive. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b354-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b354-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b354_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b354-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b354_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/complexity_adaptive_placement.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/complexity_adaptive_placement.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project
+      tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b354-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b354-" && grep -Fq 'adaptive' crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/complexity-adaptive-placement/cold-start-classified-tier-only.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/configured-versus-default-preferences.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/cost-params-over-model-info.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/classified-tier-eligible-mode.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/all-tiers-distance-penalty.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/plan-hard-floor.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/housekeeping-hard-ceiling.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/context-fit-applies-cold-start.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/no-eligible-fitting-fallback.yaml
+- tools/oracle/cases/routing/complexity-adaptive-placement/chosen-model-attribution.yaml
+deviations: []
+out_of_scope:
+- New learning rules or persistence tables.
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B328 owns: _tier_name (L151-L153),
+  _built_in_tier_or_none (L156-L158), DimensionScore.__init__ (L1028-L1031), _allowed (L1222-L1223), _RequestContextFit.accepts
+  (L1251-L1252), ComplexityRouter._estimate_tokens (L1555-L1560), ComplexityRouter._score_token_count
+  (L1562-L1572), ComplexityRouter._keyword_matches (L1574-L1593), ComplexityRouter._score_keyword_match
+  (L1595-L1625), ComplexityRouter._count_custom_hits (L1627-L1632), ComplexityRouter._score_custom_dimensions
+  (L1634-L1647), ComplexityRouter._score_multi_step (L1649-L1654), ComplexityRouter._score_question_complexity
+  (L1656-L1661), ComplexityRouter.classify (L1663-L1670), ComplexityRouter._score_and_classify (L1672-L1769),
+  ComplexityRouter._is_near_tier_boundary (L1771-L1778), ComplexityRouter._effective_reasoning_override_min_score
+  (L1780-L1790), ComplexityRouter._effective_tier_boundaries (L1792-L1803), ComplexityRouter._build_routing_decision
+  (L1805-L1890).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B330 owns: _truncate (L854-L869), _iter_context_turns_newest_first
+  (L872-L892), _turns_within_budget (L895-L920), _extract_prior_turns (L923-L965), ComplexityRouter._classifier_image_parts
+  (L2019-L2044), ComplexityRouter._classifier_caller_constraints (L2391-L2403), ComplexityRouter._classifier_context_payload
+  (L2405-L2442), ComplexityRouter._native_classifier_payload (L2702-L2727), ComplexityRouter._build_classifier_user_payload
+  (L2730-L2789).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B331 owns: _ClassifierCircuitBreaker.__init__
+  (L1164-L1170), _ClassifierCircuitBreaker.acquire_permit (L1172-L1187), _ClassifierCircuitBreaker.record_success
+  (L1189-L1195), _ClassifierCircuitBreaker.record_failure (L1197-L1209), _is_classifier_timeout (L1212-L1219),
+  ComplexityRouter._build_classifier_system_prompt (L1481-L1516), ComplexityRouter._classify_heuristic_first
+  (L1958-L1989), ComplexityRouter._classify_hybrid (L1991-L2017), ComplexityRouter._classifier_failure_outcome
+  (L2254-L2299), ComplexityRouter._classify_with_llm (L2444-L2500), ComplexityRouter._call_classifier_model
+  (L2628-L2700).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B332 owns: _with_llm_v2_forecast (L1092-L1111),
+  _with_classifier_forecast (L1114-L1148), ComplexityRouter._capability_classifier_outcome (L2046-L2081),
+  ComplexityRouter._capability_classifier_failure_outcome (L2083-L2104), ComplexityRouter._classify_with_capability_llm
+  (L2502-L2569).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B333 owns: ComplexityRouter._build_jev_client
+  (L1311-L1322), ComplexityRouter._jev_classifier_outcome (L2159-L2252).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B334 owns: ComplexityRouter.get_model_for_tier
+  (L2791-L2813), ComplexityRouter._litellm_params_for_model (L2815-L2824), ComplexityRouter._pick_from_tier_value
+  (L2827-L2832), ComplexityRouter._tier_pools (L2834-L2835), ComplexityRouter._pin_model_for_tier (L2837-L2880).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B335 owns: _decision_is_pinnable (L968-L1020),
+  _parse_session_affinity_pin (L1269-L1288), _session_affinity_cache_value (L1291-L1293), ComplexityRouter._tier_for_model
+  (L3451-L3462), ComplexityRouter._escalate_tier (L3464-L3482), ComplexityRouter._escalated_pin (L3484-L3498),
+  ComplexityRouter._iter_metadata_dicts (L4110-L4117), ComplexityRouter._get_session_id_from_request_kwargs
+  (L4120-L4126), ComplexityRouter._get_user_api_key_hash_from_request_kwargs (L4129-L4137), ComplexityRouter._get_session_affinity_cache_key
+  (L4139-L4145), ComplexityRouter._uses_tier_pin (L4148-L4153), ComplexityRouter._uses_deployment_pin
+  (L4156-L4160), ComplexityRouter._with_session_deployment_affinity (L4162-L4167), ComplexityRouter.async_pre_routing_hook
+  (L4169-L4425).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B337 owns: ComplexityRouter._apply_prompt_cache_routing
+  (L4427-L4472).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B342 owns: ComplexityRouter._hardest_tier_models
+  (L1518-L1534), ComplexityRouter.savings_baseline (L1537-L1553).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B352 owns: ComplexityRouter._vision_verdicts
+  (L3500-L3533), ComplexityRouter._vision_verdicts.model_verdict (L3519-L3522), ComplexityRouter._vision_verdicts.deployment_verdict
+  (L3524-L3528), ComplexityRouter._model_accepts_image_input (L3535-L3542), ComplexityRouter._model_declares_vision_support
+  (L3544-L3546), ComplexityRouter._modality_eligible_models (L3548-L3553), ComplexityRouter._gate_response_modality
+  (L3555-L3670), ComplexityRouter._modality_default_model_usable (L3672-L3689), ComplexityRouter._model_group_can_serve
+  (L3691-L3746), ComplexityRouter._gate_response_health (L3748-L3892), ComplexityRouter._gate_response_health.recover_tier
+  (L3785-L3848), ComplexityRouter._placed_default_model (L3894-L3900), ComplexityRouter._restamp_adaptive_choice
+  (L3903-L3913).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B353 owns: ComplexityRouter._classify_with_llm_v2
+  (L2571-L2626).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B358 owns: ComplexityRouter._classify_with_heuristic_v2
+  (L1931-L1956).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B359 owns: ComplexityRouter._resolve_plan_mode_floor
+  (L3156-L3162), ComplexityRouter._active_tier_severity (L3164-L3168), ComplexityRouter._matched_plan_mode_signal
+  (L3170-L3186), ComplexityRouter._matched_housekeeping_sentinel (L3188-L3212), ComplexityRouter._cheapest_configured_tier
+  (L3214-L3224), ComplexityRouter._apply_plan_mode_floor (L3423-L3428), ComplexityRouter._plan_mode_floor_is_top_tier
+  (L3430-L3438), ComplexityRouter._matched_escalation_keyword (L3440-L3449), ComplexityRouter._lexical_tier_override
+  (L3915-L3937), ComplexityRouter._get_or_create_semantic_routelayer (L3939-L3976), ComplexityRouter._ensure_semantic_routelayer
+  (L3978-L3992), ComplexityRouter._semantic_tier_override (L3994-L4042), ComplexityRouter._resolve_keyword_tier_override
+  (L4044-L4066).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B363 owns: ComplexityRouter._classify_with_plugin
+  (L2301-L2358), ComplexityRouter._default_model_fallback_outcome (L2360-L2389), ComplexityRouter._pick_model_for_tier
+  (L2882-L2931).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B366 owns: _with_signal (L1088-L1089),
+  ComplexityRouter.aclassify (L1892-L1929), ComplexityRouter._classify_and_route (L4474-L4811).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B375 owns: _tier_bullets (L218-L223),
+  _built_in_criteria (L226-L228), _built_in_prompt (L231-L252), _tier_classification_model (L255-L261),
+  _closing_line (L271-L272), _sectioned_prompt (L275-L290), _operator_examples_section (L293-L294), built_in_tier_classification_prompt
+  (L297-L331), custom_tier_classification_prompt (L334-L356), classification_system_prompt (L359-L396),
+  _append_custom_keywords (L399-L404), _parent_session_kwargs (L407-L409), _response_cost_or_none (L412-L419),
+  _effective_turn_off_message_logging (L422-L429), _classifier_reply_is_private (L432-L447), _validation_problem
+  (L450-L452), _log_rejected_classifier_verdict (L455-L464), ComplexityRouter._llm_classifier_outcome
+  (L2106-L2157).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B384 owns: _message_text (L487-L498),
+  _reminder_block_spans (L501-L515), _strip_reminder_blocks (L518-L544), _inline_image_part (L547-L561),
+  _human_text (L564-L573), _encrypted_classifier_task (L576-L609), _iter_human_asks_newest_first (L612-L621),
+  _conversation_is_continuing (L624-L655), _newest_turn_ask (L658-L671), _extract_current_ask_and_system_prompt
+  (L674-L693), _last_human_ask_index (L696-L714), _is_reminder_only_turn (L717-L726), _newest_turn_is_human_ask
+  (L729-L755), _iter_system_scope_texts (L758-L780), _matched_plan_mode_sentinel (L783-L851), ComplexityRouter._resolve_messages
+  (L4068-L4083), ComplexityRouter._extract_user_message_and_system_prompt (L4086-L4095), ComplexityRouter._reminder_markers_for_request
+  (L4097-L4107).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B386 owns: _apply_context_placement
+  (L1226-L1234), _window_can_hold (L1237-L1238), _group_provably_fits (L1241-L1243), ComplexityRouter._deployment_window
+  (L3226-L3227), ComplexityRouter._deployment_limit (L3229-L3255), ComplexityRouter._group_deployments
+  (L3257-L3260), ComplexityRouter._group_output_ceiling (L3262-L3272), ComplexityRouter._group_window_facts
+  (L3274-L3284), ComplexityRouter._out_of_band_request_text (L3287-L3308), ComplexityRouter._request_byte_upper_bound
+  (L3310-L3316), ComplexityRouter._counted_request_tokens (L3318-L3334), ComplexityRouter._request_context_fit
+  (L3336-L3357), ComplexityRouter._context_window_placement (L3359-L3384), ComplexityRouter._placement_for_tokens
+  (L3386-L3421).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B400 owns: ComplexityRouter.__init__
+  (L1324-L1479).'
+pitfalls:
+- A model in several tiers is eligible if at least one membership satisfies each bound; preserve the source's
+  membership test.
+- Normalization uses the broader eligible cost set even when the final floor removes a candidate.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

@@ -1,0 +1,132 @@
+id: B018
+title: Fallback management API and persistent configuration
+description: 'Serve POST /fallback and GET/DELETE /fallback/{model} using B309''s typed plans and B066''s
+  settings persistence. Reuse B052 authorization and B051''s existing schema; no new schema or table is
+  needed. Persist before publishing the new immutable router snapshot, and retain the old snapshot when
+  the write fails. Use B300 scenarios for create/read/replace/delete sequences and B301 adapters with
+  a typed repository fixture when database setup is not expressible as an HTTP case. Keep the three fallback
+  categories independent and include parser fuzzing for the management request body. Implement the owned
+  native service in crates/betterlite-server/src/fallback_management.rs. Add ProbeOperation::B018 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B018 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/fallback_management_endpoints.py:
+  create_fallback (L48-L189), get_fallback (L198-L246), delete_fallback (L255-L357). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports. Bound the fallback outside-byte parser to 1048576 bytes before decoding;
+  on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
+  path).'
+scope:
+  paths:
+  - crates/betterlite-server/src/fallback_management.rs
+  - crates/betterlite-server/src/fallback_management/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/fallback_management.rs
+  - crates/betterlite-server/src/routing/fallback_management/**
+  - tools/oracle/src/router_probes/fallback_management.rs
+  - tools/oracle/src/router_probes/fallback_management/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/fallback_management.py
+  - tools/oracle/cases/routing/fallback-management/**
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/fallback.rs
+  - crates/betterlite-server/fuzz/corpus/fallback/b018-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L42-L246
+  why: Create/update validation and database requirement.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L207-L357
+  why: Read and delete contracts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L1-L67
+  why: Fallback request and response types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L198-L246
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b018_behaviors and b018_boundaries under fallback_management::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b018-behaviors
+  - b018-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-server/fuzz/corpus/fallback/b018-valid.json and crates/betterlite-server/fuzz/corpus/fallback/b018-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target fallback and normal replays_the_fallback_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b018-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b018-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b018_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b018-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b018_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/fallback_management.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/fallback_management.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-server/fuzz/corpus/fallback/b018-valid.json && test -f crates/betterlite-server/fuzz/corpus/fallback/b018-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/fallback
+      | grep -Fq "/b018-" && test -f crates/betterlite-server/fuzz/fuzz_targets/fallback.rs && cargo nextest
+      run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_fallback_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/fallback-management/create-read-replace-delete.yaml
+- tools/oracle/cases/routing/fallback-management/three-independent-types.yaml
+- tools/oracle/cases/routing/fallback-management/unknown-primary.yaml
+- tools/oracle/cases/routing/fallback-management/unknown-target.yaml
+- tools/oracle/cases/routing/fallback-management/self-fallback.yaml
+- tools/oracle/cases/routing/fallback-management/storage-disabled.yaml
+- tools/oracle/cases/routing/fallback-management/write-failure-keeps-live-state.yaml
+- tools/oracle/cases/routing/fallback-management/unauthenticated.yaml
+- tools/oracle/cases/routing/fallback-management/parser-byte-bound.yaml
+deviations:
+- what: The fallback byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L42-L246
+out_of_scope:
+- General settings API (B066/B348).
+- Budget or role changes.
+pitfalls:
+- A write requires STORE_MODEL_IN_DB and a database; an in-memory-only API would not match the pin.
+- Do not assume every error uses the inference error envelope; management detail bodies have their own
+  cases.
+- Scope is limited to server adapters over the B051/B066 repository interfaces.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

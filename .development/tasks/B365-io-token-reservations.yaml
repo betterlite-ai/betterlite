@@ -1,0 +1,133 @@
+id: B365
+title: Input and output token reservation primitives
+description: 'Implement IoLimits, IoReservation and UsageTokens with minute-key ownership, input estimates,
+  effective output caps and atomic input/output reservations. Reuse B013 token counts and B360 typed counters;
+  implement both rollback paths through the same Rust primitive. Return the exact RateLimitError fields
+  and reservation rather than executing calls. Configuration boundary keys introduced or consumed here:
+  itpm, otpm. Pinned declaration defaults: itpm=None; otpm=None. Resolve env values once in betterlite-config,
+  never in router code. Implement the owned native service in crates/betterlite-router/src/io_token_reservations.rs.
+  Add ProbeOperation::B365 in tools/oracle/src/router_probes/mod.rs and the corresponding B365 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py:
+  set_io_token_rate_limit_request_kwargs (L48-L62), get_io_token_rate_limit_request_kwargs (L65-L66),
+  seconds_until_minute_reset (L69-L71), get_deployment_io_token_limits (L74-L89), deployment_has_io_token_limits
+  (L92-L94), _get_cache_keys (L97-L106), _estimate_input_tokens (L109-L122), _model_max_output_tokens
+  (L125-L133), _resolve_max_tokens (L136-L153), _get_usage_tokens (L156-L177), _extract_response_usage
+  (L180-L183), _usage_is_present (L186-L200), _resolve_reconcile_usage_tokens (L203-L234), _stash_reservation_in_metadata
+  (L237-L258), _extract_reservation (L261-L269), _as_mutable_mapping (L272-L274), _reservation_channels
+  (L277-L290), _read_reservation_from_kwargs (L293-L297), _clear_reservation_from_kwargs (L300-L309),
+  _reservation_value (L312-L322), _rate_limit_error (L325-L343), _sync_increment_with_rollback (L346-L367),
+  _increment_with_rollback (L370-L394), io_token_pre_call_check (L397-L456), async_io_token_pre_call_check
+  (L459-L525). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/io_token_reservations.rs
+  - crates/betterlite-router/src/io_token_reservations/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/io_token_reservations.rs
+  - crates/betterlite-server/src/routing/io_token_reservations/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/io_token_reservations.rs
+  - tools/oracle/src/router_probes/io_token_reservations/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/io_token_reservations.py
+  - tools/oracle/cases/routing/io-token-reservations/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/io_token_reservations.rs
+  - crates/betterlite-config/src/io_token_reservations/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b365-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L69-L525
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L48-L62
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L65-L66
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b365_behaviors and b365_boundaries under io_token_reservations::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b365-behaviors
+  - b365-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b365-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b365-invalid.yaml;
+    the valid seed contains itpm. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b365-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b365-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b365_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b365-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b365_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/io_token_reservations.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/io_token_reservations.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b365-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b365-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b365-" && grep -Fq 'itpm' crates/betterlite-config/fuzz/corpus/config_yaml/b365-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/io-token-reservations/input-reserve-output-rollback.yaml
+- tools/oracle/cases/routing/io-token-reservations/explicit-zero-output-cap.yaml
+- tools/oracle/cases/routing/io-token-reservations/model-output-cap.yaml
+deviations: []
+out_of_scope:
+- B019 owns final integration and the remaining functions listed in its implementation boundary.
+- 'litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py: B019 owns: io_token_reconcile_success
+  (L528-L576), async_io_token_reconcile_success (L579-L637), io_token_refund_failure (L640-L661), refund_stale_reservation_before_retry
+  (L664-L688), async_io_token_refund_failure (L691-L716), build_io_token_rate_limit_headers (L719-L738).'
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

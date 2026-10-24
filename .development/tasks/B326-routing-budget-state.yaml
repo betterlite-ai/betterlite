@@ -1,0 +1,130 @@
+id: B326
+title: Router budget windows and lossless spend synchronization
+description: 'Implement Decimal router spend increments and synchronization over B383 budget windows using
+  B068 normalized cost and B304 callbacks. Preserve the budget limiter''s pinned detach/requeue behavior,
+  which differs from the generic B304 counter failure path. Retain in-flight increments and flush server-owned
+  work on shutdown; B020 owns filtering. Implement the owned native service in crates/betterlite-router/src/routing_budget_state.rs.
+  Add ProbeOperation::B326 in tools/oracle/src/router_probes/mod.rs and the corresponding B326 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/budget_limiter.py: _sum_increments_by_key
+  (L98-L103), RouterBudgetLimiting._increment_spend_in_current_window (L392-L412), RouterBudgetLimiting._get_redis_increment_queue_lock
+  (L414-L415), RouterBudgetLimiting._detach_queued_increment_operations (L417-L426), RouterBudgetLimiting._clear_detached_increment_operations
+  (L428-L430), RouterBudgetLimiting._requeue_detached_increment_operations (L432-L453), RouterBudgetLimiting._flush_queued_increment_operations
+  (L455-L457), RouterBudgetLimiting._await_flush_task (L459-L469), RouterBudgetLimiting._write_queued_increment_operations
+  (L471-L489), RouterBudgetLimiting.async_log_success_event (L491-L546), RouterBudgetLimiting._increment_spend_for_key
+  (L548-L595), RouterBudgetLimiting.periodic_sync_in_memory_spend_with_redis (L597-L613), RouterBudgetLimiting._push_in_memory_increments_to_redis
+  (L615-L629), RouterBudgetLimiting._flush_queued_increments_with_lock (L631-L633), RouterBudgetLimiting._sync_in_memory_spend_with_redis
+  (L635-L655), RouterBudgetLimiting._flush_increments_then_copy_redis_spend (L657-L695). Implement these
+  behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
+  the same primitive instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/routing_budget_state.rs
+  - crates/betterlite-router/src/routing_budget_state/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/routing_budget_state.rs
+  - crates/betterlite-server/src/routing/routing_budget_state/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/routing_budget_state.rs
+  - tools/oracle/src/router_probes/routing_budget_state/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/routing_budget_state.py
+  - tools/oracle/cases/routing/routing-budget-state/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L392-L695
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L98-L103
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b326_behaviors and b326_boundaries under routing_budget_state::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b326-behaviors
+  - b326-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b326-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b326_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b326-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b326_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/routing_budget_state.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/routing_budget_state.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-budget-state/decimal-small-increments.yaml
+- tools/oracle/cases/routing/routing-budget-state/provider-and-deployment-cost.yaml
+- tools/oracle/cases/routing/routing-budget-state/tag-cost-once-per-tag-entry.yaml
+- tools/oracle/cases/routing/routing-budget-state/flush-failure-requeues.yaml
+- tools/oracle/cases/routing/routing-budget-state/increments-during-flush.yaml
+- tools/oracle/cases/routing/routing-budget-state/shutdown-flush.yaml
+- tools/oracle/cases/routing/routing-budget-state/websocket-wrapper-no-double-cost.yaml
+deviations: []
+out_of_scope:
+- Key/team spend database writes (B069/B070).
+- Selection filtering (B020).
+- B383 owns router budget configuration and windows; consume its tested public interface.
+- 'litellm/router_strategy/budget_limiter.py: B020 owns: _LiteLLMParamsDictView.__init__ (L61-L62), _LiteLLMParamsDictView.__getattr__
+  (L64-L65), _LiteLLMParamsDictView.__getitem__ (L67-L68), _LiteLLMParamsDictView.__contains__ (L70-L71),
+  _LiteLLMParamsDictView.get (L73-L74), _LiteLLMParamsDictView.keys (L76-L77), _LiteLLMParamsDictView.values
+  (L79-L80), _LiteLLMParamsDictView.items (L82-L83), _LiteLLMParamsDictView.__iter__ (L85-L86), _LiteLLMParamsDictView.__len__
+  (L88-L89), _LiteLLMParamsDictView.dict (L91-L92), _LiteLLMParamsDictView.model_dump (L94-L95), RouterBudgetLimiting.async_filter_deployments
+  (L130-L204), RouterBudgetLimiting._filter_out_deployments_above_budget (L206-L288), RouterBudgetLimiting._get_budget_config_for_deployment
+  (L697-L703), RouterBudgetLimiting._get_budget_config_for_provider (L705-L708), RouterBudgetLimiting._get_budget_config_for_tag
+  (L710-L713), RouterBudgetLimiting._get_llm_provider_for_deployment (L715-L736), RouterBudgetLimiting._track_provider_remaining_budget_prometheus
+  (L738-L751), RouterBudgetLimiting._get_current_provider_spend (L753-L777), RouterBudgetLimiting._get_current_provider_budget_reset_at
+  (L779-L793), RouterBudgetLimiting._init_tag_budgets (L915-L935).'
+- 'litellm/router_strategy/budget_limiter.py: B383 owns: RouterBudgetLimiting.__init__ (L107-L128), RouterBudgetLimiting._async_get_cache_keys_for_router_budget_limiting
+  (L290-L353), RouterBudgetLimiting._get_or_set_budget_start_time (L355-L366), RouterBudgetLimiting._handle_new_budget_window
+  (L368-L390), RouterBudgetLimiting._init_provider_budget_in_cache (L795-L816), RouterBudgetLimiting.should_init_router_budget_limiter
+  (L819-L844), RouterBudgetLimiting._init_provider_budgets (L846-L867), RouterBudgetLimiting._init_deployment_budgets
+  (L869-L897), RouterBudgetLimiting.register_deployment_budget (L899-L906), RouterBudgetLimiting.unregister_deployment_budget
+  (L908-L913).'
+pitfalls:
+- Money remains Decimal through serialization and Redis operations; do not use float-based INCRBYFLOAT
+  blindly.
+- Cancellation after detaching a batch must not lose that batch.
+- The zero-budget behavior is a separate filter concern, not an accounting default.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

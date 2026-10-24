@@ -1,0 +1,181 @@
+id: B327
+title: Embedding-based auto routing
+description: 'Implement the semantic auto_router marker using B014 embedding dispatch and a bounded immutable
+  route index loaded from inline JSON or a configured file. Build the index once per configuration, share
+  an in-progress build across callers and clear a failed build so another call can retry. Retain caller
+  attribution, redaction and parent session metadata on internal embedding calls. Compare fixed embedding
+  vectors and selected route names against the semantic-router version locked by the oracle.  Nonmonetary
+  statistical arithmetic uses f64 only in semantic_math; put one module-level #[expect(clippy::float_arithmetic,
+  reason = "pinned statistical routing arithmetic")] there, counted in this task budget. Money, prices,
+  spend and budgets stay rust_decimal::Decimal, including database and wire boundaries. Reject nonfinite
+  statistical input. Assert selected model/tier exactly; any opt-in tolerance is for diagnostic scores
+  only, never a different selection. The accepted config keys are auto_router_config_path, auto_router_config,
+  default_model, embedding_model and max_input_chars (default DEFAULT_AUTO_ROUTER_MAX_INPUT_CHARS=2000,
+  no env lookup). Inline routes contain name, description, utterances and score_threshold; path configuration
+  wins if both are supplied. No URL fetch is added. Configuration boundary keys introduced or consumed
+  here: auto_router_config_path, auto_router_config, default_model, embedding_model, max_input_chars.
+  Pinned declaration defaults: auto_router_config_path=None; auto_router_config=None; default_model=None;
+  embedding_model=None. Resolve env values once in betterlite-config, never in router code. Keep the oracle
+  semantic-router version from its uv lock; use local embedded vectors to assert threshold boundaries
+  and selected route names. Implement the owned native service in crates/betterlite-router/src/semantic_router.rs.
+  Add ProbeOperation::B327 in tools/oracle/src/router_probes/mod.rs and the corresponding B327 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/auto_router/auto_router.py:
+  AutoRouter.__init__ (L46-L89), AutoRouter._load_semantic_routing_routes (L91-L99), AutoRouter._load_auto_router_routes_from_config_json
+  (L101-L119), AutoRouter._build_routelayer (L121-L134), AutoRouter._clear_build_task_on_failure (L136-L139),
+  AutoRouter._ensure_routelayer (L141-L158), AutoRouter._extract_text_from_messages (L161-L181), AutoRouter.async_pre_routing_hook
+  (L183-L215), AutoRouter._matched_route_name (L217-L255). Implement these behaviors through the typed
+  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
+  separate ports. Function coverage in litellm/router_strategy/auto_router/litellm_encoder.py: litellm_to_list
+  (L16-L24), CustomDenseEncoder.__init__ (L30-L36), LiteLLMRouterEncoder.__init__ (L49-L79), LiteLLMRouterEncoder._clamp
+  (L81-L95), LiteLLMRouterEncoder.__call__ (L97-L102), LiteLLMRouterEncoder.acall (L104-L109), LiteLLMRouterEncoder.encode_queries
+  (L111-L120), LiteLLMRouterEncoder.encode_documents (L122-L131), LiteLLMRouterEncoder.aencode_queries
+  (L133-L142), LiteLLMRouterEncoder.aencode_documents (L144-L153). Implement these behaviors through the
+  typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
+  of separate ports. Bound the route_index outside-byte parser to 1048576 bytes before decoding; on excess
+  use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
+  path). If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001 only on its
+  explicitly named score/probability pointer. Selection, tie order, counts, statuses, money and provider
+  requests remain exact. Six-decimal wire signals are compared after the source rounding, without widening
+  tolerance.'
+scope:
+  paths:
+  - crates/betterlite-router/src/semantic_router.rs
+  - crates/betterlite-router/src/semantic_router/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/semantic_router.rs
+  - crates/betterlite-server/src/routing/semantic_router/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/semantic_router.rs
+  - tools/oracle/src/router_probes/semantic_router/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/semantic_router.py
+  - tools/oracle/cases/routing/semantic-router/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/semantic_router.rs
+  - crates/betterlite-config/src/semantic_router/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b327-*
+  - crates/betterlite-router/src/semantic_math.rs
+  - crates/betterlite-router/src/semantic_math/**
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-router/Cargo.toml
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/Cargo.toml
+  - crates/betterlite-router/fuzz/fuzz_targets/route_index.rs
+  - crates/betterlite-router/fuzz/corpus/route_index/b327-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L46-L255
+  why: Config loading, initialization sharing, last-user extraction and default route.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L153
+  why: Embedding conversion, clamping and metadata forwarding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/install_auto_router.sh#L1-L4
+  why: The shell script now only documents dependency installation; no runtime subprocess is required.
+dod:
+- text: Write tests named b327_behaviors and b327_boundaries under semantic_router::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b327-behaviors
+  - b327-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b327-invalid.yaml;
+    the valid seed contains auto_router_config_path. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b327-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/route_index/b327-valid.json and crates/betterlite-router/fuzz/corpus/route_index/b327-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target route_index and normal replays_the_route_index_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b327-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b327-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b327_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b327-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b327_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/semantic_router.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/semantic_router.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b327-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b327-" && grep -Fq 'auto_router_config_path' crates/betterlite-config/fuzz/corpus/config_yaml/b327-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-router/fuzz/corpus/route_index/b327-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_index/b327-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/route_index
+      | grep -Fq "/b327-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_index.rs && cargo
+      nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_index_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/semantic-router/route-threshold.yaml
+- tools/oracle/cases/routing/semantic-router/no-match-default.yaml
+- tools/oracle/cases/routing/semantic-router/embedding-failure-default.yaml
+- tools/oracle/cases/routing/semantic-router/last-user-text-blocks.yaml
+- tools/oracle/cases/routing/semantic-router/unicode-character-clamp.yaml
+- tools/oracle/cases/routing/semantic-router/query-attribution.yaml
+- tools/oracle/cases/routing/semantic-router/concurrent-single-index-build.yaml
+- tools/oracle/cases/routing/semantic-router/failed-build-retry.yaml
+- tools/oracle/cases/routing/semantic-router/parser-byte-bound.yaml
+deviations:
+- what: The route_index byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L46-L255
+out_of_scope:
+- Python package installation at gateway runtime.
+- Semantic response caching (B128).
+pitfalls:
+- The semantic-router dependency version is part of the oracle lock and must not be selected independently.
+- Use synthetic embeddings so tests need no paid model calls.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
