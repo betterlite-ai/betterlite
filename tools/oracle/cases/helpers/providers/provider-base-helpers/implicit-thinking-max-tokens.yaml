@@ -1,0 +1,11 @@
+kind: helper
+name: implicit-thinking-max-tokens
+call:
+  provider_base_helpers:
+    thinking_max_tokens:
+      requested: {thinking: {type: enabled}}
+      options: {thinking: {type: enabled, budget_tokens: 1024}, max_tokens: 9}
+      environment: {DEFAULT_MAX_TOKENS: "100"}
+env: {DEFAULT_MAX_TOKENS: "100"}
+compare:
+  ignore: []

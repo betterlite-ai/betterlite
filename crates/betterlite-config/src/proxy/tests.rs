@@ -101,7 +101,7 @@ fn http_proxies_proxy_policy_tests_behavior(
     }
     .load(settings)
     .unwrap();
-    let policy = ProxyPolicy::resolve(&config.litellm_settings, &environment);
+    let policy = ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment);
     fs::remove_dir_all(&home).unwrap();
     assert_eq!(render(&policy, target), expected);
     assert!(!format!("{policy:?}").contains("secret"));

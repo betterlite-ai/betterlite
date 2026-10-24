@@ -1,4 +1,7 @@
+mod bedrock_request_policy;
 mod catalog_generalizations;
+mod dot_paths;
+mod provider_base_helpers;
 mod provider_message_primitives;
 mod proxy_policy;
 mod url_path;
@@ -19,8 +22,14 @@ use crate::process::sync_litellm;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) enum HelperCall {
+    #[serde(rename = "bedrock_request_policy")]
+    BedrockRequestPolicy(bedrock_request_policy::BedrockRequestPolicyInput),
     #[serde(rename = "catalog_generalizations")]
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
+    #[serde(rename = "dot_paths")]
+    DotPaths(dot_paths::DotPathsInput),
+    #[serde(rename = "provider_base_helpers")]
+    ProviderBaseHelpers(provider_base_helpers::BaseCall),
     #[serde(rename = "provider_message_primitives")]
     ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
     #[serde(rename = "proxy_policy")]
@@ -83,7 +92,10 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 
 fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
+        HelperCall::BedrockRequestPolicy(input) => bedrock_request_policy::invoke(input),
         HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
+        HelperCall::DotPaths(input) => dot_paths::invoke(input),
+        HelperCall::ProviderBaseHelpers(input) => provider_base_helpers::invoke(input),
         HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
         HelperCall::ProxyPolicy(input) => proxy_policy::invoke(input),
         HelperCall::UrlPath(input) => url_path::invoke(input),

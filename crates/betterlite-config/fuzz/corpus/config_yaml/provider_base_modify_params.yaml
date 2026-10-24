@@ -1,0 +1,3 @@
+litellm_settings:
+  modify_params: true
+  drop_params: false

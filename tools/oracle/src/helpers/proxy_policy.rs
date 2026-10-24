@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
-use betterlite_config::types::LiteLlmSettings;
+use betterlite_config::types::ProxyTrust;
 use reqwest::Url;
 use secrecy::ExposeSecret as _;
 
@@ -17,14 +17,11 @@ pub(crate) struct ProxyPolicyInput {
 pub(crate) fn invoke(
     input: &ProxyPolicyInput,
 ) -> Result<serde_json::Value, Box<super::HelperError>> {
-    let settings = LiteLlmSettings {
-        num_retries: None,
-        request_timeout: None,
-        drop_params: None,
+    let trust = ProxyTrust {
         aiohttp_trust_env: input.aiohttp_trust_env,
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
     };
-    let policy = ProxyPolicy::resolve(&settings, &input.environment);
+    let policy = ProxyPolicy::resolve(&trust, &input.environment);
     let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
         Err(error) => error.to_string(),
         Ok(None) => return Ok(serde_json::json!({"proxy": null})),

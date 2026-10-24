@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::thread;
 
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::LiteLlmSettings;
+use betterlite_config::types::ProxyTrust;
 use reqwest::{ClientBuilder, Method, Request, Url};
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -69,8 +69,8 @@ async fn http_proxies_proxy_policy_tests_behavior(
         .with_writer(Arc::new(File::create(&log_path).unwrap()))
         .finish();
     let _guard = set_default(subscriber);
-    let settings = LiteLlmSettings::default();
-    let policy = Arc::new(ProxyPolicy::resolve(&settings, &environment));
+    let trust = ProxyTrust::default();
+    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment));
     let client = ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
     let url = Url::parse(&target.replace("LISTENER", &address)).unwrap();
     let request = Request::new(Method::GET, url);
@@ -104,8 +104,8 @@ fn replays_the_proxy_policy_corpus(#[files("fuzz/corpus/proxy_policy/*")] path: 
         ("HTTPS_PROXY".to_owned(), proxy.to_owned()),
         ("NO_PROXY".to_owned(), no_proxy.to_owned()),
     ]);
-    let settings = LiteLlmSettings::default();
-    let policy = Arc::new(ProxyPolicy::resolve(&settings, &environment));
+    let trust = ProxyTrust::default();
+    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment));
     let _route = policy.route(&Url::parse("https://api.example.com/v1").unwrap());
     ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
 }

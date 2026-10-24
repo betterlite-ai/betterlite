@@ -1,0 +1,8 @@
+task: B596
+deviations:
+  - what: litellm_settings.bedrock_request_metadata_fields must be a YAML list of strings, integers, booleans or nulls. A scalar, a mapping, a float member or a nested member fails the config load, where LiteLLM silently turns the feature off or runs str() on the member.
+    why: Rule no-silent-drops. A typo like a bare string would otherwise disable billing attribution without a word.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/request_metadata.py#L46-L56
+  - what: The resolver drops a requestMetadata key or value longer than 256 characters even when it ends in a newline. LiteLLM's re.match with $ lets a 257 character string ending in "\n" through _is_forwardable.
+    why: Bedrock rejects a 257 character key or value with a 400, and the resolver exists so that turning the setting on never causes one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/request_metadata.py#L31-L37

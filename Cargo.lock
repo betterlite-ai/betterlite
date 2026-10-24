@@ -165,6 +165,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-bedrock"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "indexmap",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
@@ -219,14 +232,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-openai"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-paths",
  "clap",
  "futures-util",
  "reqwest",
@@ -240,6 +267,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-paths"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

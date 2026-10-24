@@ -1,0 +1,10 @@
+kind: helper
+name: wildcard-delete
+call:
+  dot_paths:
+    delete:
+      data: {"tools": [{"name": "t1", "input_examples": ["a"]}, "text", {"name": "t2"}, [{"input_examples": 1}]], "keep": [1]}
+      path: tools[*].input_examples
+env: {}
+compare:
+  ignore: []

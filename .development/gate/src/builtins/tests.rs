@@ -20,6 +20,14 @@ fn a_double_star_crosses_directories() {
 }
 
 #[test]
+fn a_task_file_pattern_matches_only_that_task() {
+    let set = glob_set(&[".development/tasks/B208-*.yaml".to_owned()]).unwrap();
+    assert!(set.is_match(".development/tasks/B208-http-proxies.yaml"));
+    assert!(!set.is_match(".development/tasks/B2080-other.yaml"));
+    assert!(!set.is_match(".development/backlog/B208.yaml"));
+}
+
+#[test]
 fn the_expect_budget_counts_inner_and_outer_attributes() {
     let lines = [
         "#[expect(clippy::print_stdout, reason = \"the report is stdout\")]".to_owned(),

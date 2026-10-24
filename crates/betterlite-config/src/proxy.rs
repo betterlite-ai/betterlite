@@ -9,7 +9,7 @@ use percent_encoding::percent_decode_str;
 use secrecy::SecretString;
 use url::Url;
 
-use crate::types::LiteLlmSettings;
+use crate::types::ProxyTrust;
 
 #[derive(Debug, Clone)]
 pub struct ProxyPolicy {
@@ -47,7 +47,7 @@ pub enum ProxyWarning {
 
 impl ProxyPolicy {
     #[must_use]
-    pub fn resolve(settings: &LiteLlmSettings, environment: &BTreeMap<String, String>) -> Self {
+    pub fn resolve(trust: &ProxyTrust, environment: &BTreeMap<String, String>) -> Self {
         let is_true = |name: &str| {
             environment
                 .get(name)
@@ -61,11 +61,11 @@ impl ProxyPolicy {
             let route = parse_route(name, &format!("{prefix}{value}"), None);
             primary.insert(name.clone(), route);
         }
-        if settings.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV") {
+        if trust.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV") {
             primary.clear();
         }
         let mut warnings = Vec::new();
-        let fallback = if settings.aiohttp_trust_env || is_true("AIOHTTP_TRUST_ENV") {
+        let fallback = if trust.aiohttp_trust_env || is_true("AIOHTTP_TRUST_ENV") {
             fallback_routes(&proxies, environment, &mut warnings)
         } else {
             BTreeMap::new()

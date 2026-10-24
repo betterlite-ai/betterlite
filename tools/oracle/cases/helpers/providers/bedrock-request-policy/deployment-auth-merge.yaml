@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-deployment-auth-merge
+call:
+  bedrock_request_policy:
+    fields: []
+    step:
+      merge_params:
+        deployment:
+          aws_access_key_id: AKIA_DEPLOYMENT
+          aws_secret_access_key: deployment-secret
+          aws_region_name: us-east-1
+          aws_session_token: null
+          model: deployment-model
+        request:
+          aws_profile_name: admin
+          aws_session_token: request-token
+          aws_region_name: eu-west-1
+          aws_role_name: arn:aws:iam::1:role/other
+          aws_web_identity_token: token
+          aws_external_id: external
+          aws_session_tags: {team: other}
+          aws_bedrock_runtime_endpoint: https://runtime.example
+          model: request-model
+          temperature: 0.2
+env: {}
+compare:
+  ignore: []

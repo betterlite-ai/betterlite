@@ -1,0 +1,8 @@
+kind: helper
+name: nested-open-bracket
+call:
+  dot_paths:
+    delete: {data: {"[[0]": 1, "]": 2}, path: "[[0]]"}
+env: {}
+compare:
+  ignore: []

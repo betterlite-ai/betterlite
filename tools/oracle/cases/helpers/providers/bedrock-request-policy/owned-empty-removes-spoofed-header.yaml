@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-owned-empty-removes-spoofed-header
+call:
+  bedrock_request_policy:
+    fields: [user_api_key_hash]
+    step:
+      merge:
+        headers:
+          - [X-Amzn-Bedrock-Request-Metadata, spoof]
+          - ["x-amzn-bedroc\U0000212A-request-metadata", kelvin]
+          - [Host, bedrock-runtime.us-east-1.amazonaws.com]
+        guardrail: []
+        litellm_params:
+          metadata: {user_api_key_hash: "bad!", user_api_key_alias: alias}
+          litellm_metadata: {user_api_key_hash: hash}
+env: {}
+compare:
+  ignore: []
