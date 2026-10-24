@@ -131,7 +131,7 @@ pub(crate) fn invoke(input: &SecretCodecInput) -> HelperOutput {
     let results = input
         .steps
         .iter()
-        .map(|step| run_step(&config.cipher, &bytes, step));
+        .map(|step| run_step(&config.general_settings.cipher, &bytes, step));
     HelperOutput {
         ok: true,
         value: Some(Value::Array(results.collect())),

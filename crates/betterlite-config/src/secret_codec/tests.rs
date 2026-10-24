@@ -35,7 +35,7 @@ fn encrypt_hello(salt: Option<&str>, yaml: &str, override_key: Option<&str>) -> 
         .collect();
     let config = ConfigLoader { lookup }.load(yaml).unwrap();
     let cipher = StoredCipher {
-        settings: config.cipher,
+        settings: config.general_settings.cipher,
         nonces: CountingNonces,
         diagnostics: TracingDiagnostics,
     };

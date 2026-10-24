@@ -11,7 +11,6 @@ pub struct Config {
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
-    pub cipher: CipherSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -40,8 +39,9 @@ pub struct ModelInfo {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GeneralSettings {
+    pub cipher: CipherSettings,
     pub master_key: Option<SecretString>,
 }
 

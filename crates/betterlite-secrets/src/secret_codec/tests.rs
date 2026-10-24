@@ -14,7 +14,7 @@ use secrecy::SecretString;
 use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
-use crate::secret_codec::sealing::seal_aes;
+use crate::secret_codec::sealing::seal;
 use crate::secret_codec::secret_map::{StoredMap, decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, MAX_ENCODED_BYTES,
@@ -121,7 +121,7 @@ fn decode_text(cipher: &Cipher, value: &str) -> String {
 
 fn utf8_bearer(cipher: &Cipher) -> Option<String> {
     let key = SecretString::from("salt-one");
-    let sealed = seal_aes(&key, &CountingNonces, &[0xff], PREFIX.as_bytes()).unwrap();
+    let sealed = seal(AES, &key, &CountingNonces, &[0xff], PREFIX.as_bytes()).unwrap();
     decrypt_bearer_token(
         cipher,
         &format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(sealed)),

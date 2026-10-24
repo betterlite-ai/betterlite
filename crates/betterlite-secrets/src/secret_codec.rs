@@ -13,7 +13,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::error::SecretError;
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
 use crate::secret_codec::python_base64::decode_lenient;
-use crate::secret_codec::sealing::{open_aes, open_legacy, seal_aes, seal_legacy};
+use crate::secret_codec::sealing::{open, seal};
 
 pub const CALLBACK_VAR_ENCRYPTED_PREFIX: &str = "litellm_enc::";
 pub const MAX_ENCODED_BYTES: usize = 0x0010_0000;
@@ -104,14 +104,11 @@ where
             .filter(|key| !key.expose_secret().is_empty())
             .or(self.settings.signing_key.as_ref())
             .ok_or(SecretError::MissingKey)?;
-        Ok(match self.settings.algorithm {
-            Algorithm::Aes256Gcm => {
-                let sealed = seal_aes(key, &self.nonces, text.as_bytes(), b"")?;
-                format!("{AES_PREFIX}{}", URL_SAFE.encode(sealed))
-            }
-            Algorithm::XSalsa20Poly1305 => {
-                URL_SAFE.encode(seal_legacy(key, &self.nonces, text.as_bytes())?)
-            }
+        let algorithm = self.settings.algorithm;
+        let sealed = URL_SAFE.encode(seal(algorithm, key, &self.nonces, text.as_bytes(), b"")?);
+        Ok(match algorithm {
+            Algorithm::Aes256Gcm => format!("{AES_PREFIX}{sealed}"),
+            Algorithm::XSalsa20Poly1305 => sealed,
         })
     }
 
@@ -156,10 +153,15 @@ where
 
 fn open_stored(text: &str, key: &SecretString) -> Result<String, SecretError> {
     if let Some(encoded) = text.strip_prefix(AES_PREFIX) {
-        return open_aes(key, &decode_lenient(encoded, true)?, b"");
+        return open(
+            Algorithm::Aes256Gcm,
+            key,
+            &decode_lenient(encoded, true)?,
+            b"",
+        );
     }
     let sealed = decode_lenient(text, true).or_else(|_url| decode_lenient(text, false))?;
-    open_legacy(key, &sealed)
+    open(Algorithm::XSalsa20Poly1305, key, &sealed, b"")
 }
 
 #[must_use]
