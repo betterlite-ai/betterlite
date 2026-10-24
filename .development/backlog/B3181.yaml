@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Provider form catalog from Bedrock Mantle through Azure AI Studio
 status: todo
 depends_on: []
-file: null
+file: tasks/B3181-provider-fields-mantle-azure.yaml
 covers:
   - "litellm/proxy/public_endpoints/provider_create_fields.json"
 parent: B077

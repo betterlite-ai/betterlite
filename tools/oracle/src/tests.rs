@@ -33,6 +33,7 @@ use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
 use crate::paths;
 use crate::process::{Gateway, GatewaySpec, sync_litellm};
+use crate::routing_mock_scripts::MockScript;
 use crate::runner;
 
 fn response(body: Value) -> Response {
@@ -199,6 +200,10 @@ fn wire_response(bytes: Vec<u8>) -> Result<Response, OracleError> {
     result
 }
 
+fn start_mock(answers: &[UpstreamAnswer]) -> MockProvider {
+    MockProvider::start(MockScript::try_from(answers).unwrap()).unwrap()
+}
+
 fn mock_response(mock: &MockProvider) -> Result<Response, OracleError> {
     let client = client()?;
     send(&client, &mock.base_url, &test_case().request)
@@ -261,7 +266,7 @@ fn http_ready_rejects_non_success_status_and_chunks_allow_the_limit() {
 
 #[test]
 fn http_write_request_sends_headers_and_body() {
-    let mock = MockProvider::start(&[answer()]).unwrap();
+    let mock = start_mock(&[answer()]);
     let mut outgoing = test_case().request;
     outgoing.method = "POST".to_owned();
     outgoing
@@ -269,18 +274,18 @@ fn http_write_request_sends_headers_and_body() {
         .insert("authorization".to_owned(), "key".to_owned());
     outgoing.body = value("{\"x\":1}");
     send(&client().unwrap(), &mock.base_url, &outgoing).unwrap();
-    let recorded = mock.finish().unwrap();
-    assert_eq!(&recorded[0].headers["authorization"], "key");
-    assert_eq!(recorded[0].body, outgoing.body);
-    assert_eq!(recorded[0].method, "POST");
-    assert_eq!(recorded[0].path, "/");
+    let recorded = &mock.finish().unwrap()[0].request;
+    assert!(recorded.headers["authorization"].starts_with("redacted:"));
+    assert_eq!(recorded.body, outgoing.body);
+    assert_eq!(recorded.method, "POST");
+    assert_eq!(recorded.path, "/");
 }
 
 #[test]
 fn mock_provider_records_requests_and_serves_model_probe() {
     let mut created = answer();
     created.status = 201;
-    let mock = MockProvider::start(&[created, answer()]).unwrap();
+    let mock = start_mock(&[created, answer()]);
     let client = client().unwrap();
     let mut outgoing = test_case().request;
     outgoing.path = "/v1/models".to_owned();
@@ -295,13 +300,12 @@ fn mock_provider_records_requests_and_serves_model_probe() {
 
 #[test]
 fn mock_wire_parses_and_writes_http() {
-    let mock = MockProvider::start(&[UpstreamAnswer {
+    let mock = start_mock(&[UpstreamAnswer {
         status: 200,
         headers: BTreeMap::from([("content-type".to_owned(), "text/event-stream".to_owned())]),
         body: None,
         events: Some(vec!["{\"event\":true}".to_owned()]),
-    }])
-    .unwrap();
+    }]);
     let response = mock_response(&mock).unwrap();
     assert_eq!(response.body, value("[{\"event\":true}]"));
     assert_eq!(mock.finish().unwrap().len(), 1);
@@ -309,7 +313,7 @@ fn mock_wire_parses_and_writes_http() {
 
 #[test]
 fn mock_drop_joins_server() {
-    let mut mock = MockProvider::start(&[]).unwrap();
+    let mut mock = start_mock(&[]);
     let address = mock.base_url.clone();
     let worker = mock.thread.take().unwrap();
     let joined = Arc::new(AtomicBool::new(false));
@@ -331,7 +335,7 @@ fn mock_drop_joins_server() {
 
 #[test]
 fn mock_server_handles_nonblocking_waits_and_failure_storage() {
-    let mock = MockProvider::start(&[]).unwrap();
+    let mock = start_mock(&[]);
     let reply = mock_response(&mock).unwrap();
     assert_eq!(reply.status, 500);
     mock.finish().unwrap_err();
@@ -430,10 +434,10 @@ fn process_starts_waits_and_stops_gateways() {
     let mut gateway = gateway_fixture("started", "exec sleep 10", 1);
     assert_eq!(gateway.base_url, "http://127.0.0.1:1");
     assert_eq!(gateway.log_path, temporary_case_path("started"));
-    let mock = MockProvider::start(&[answer()]).unwrap();
+    let mock = start_mock(&[answer()]);
     gateway.base_url.clone_from(&mock.base_url);
     gateway.wait_ready(&client().unwrap()).unwrap();
-    assert_eq!(mock.finish().unwrap()[0].path, "/health/liveliness");
+    assert_eq!(mock.finish().unwrap()[0].request.path, "/health/liveliness");
     gateway.base_url = ":".to_owned();
     assert!(matches!(
         gateway.wait_ready(&client().unwrap()),
@@ -545,8 +549,8 @@ fn compare_group_reports_each_case_and_writes_its_artifacts(
         second: vec![response(value("{\"a\":1}")), response(value("{\"a\":2}"))],
         first_log: root.join("first.log"),
         second_log: root.join("second.log"),
-        requests: Vec::new(),
-        midpoint: 0,
+        first_requests: Vec::new(),
+        second_requests: Vec::new(),
     };
     let outcomes = runner::compare_group(&root, &[same, differ], &captures).unwrap();
     assert_eq!(outcomes, vec![false, true]);
@@ -562,8 +566,8 @@ fn compare_group_reports_each_case_and_writes_its_artifacts(
 }
 
 #[test]
-fn compare_group_uses_empty_request_slices_for_an_invalid_midpoint() {
-    let root = env::temp_dir().join(format!("betterlite-midpoint-{}", process::id()));
+fn compare_group_slices_each_run_from_its_own_start() {
+    let root = env::temp_dir().join(format!("betterlite-runs-{}", process::id()));
     fs::create_dir_all(&root).unwrap();
     let first_log = root.join("first.log");
     let second_log = root.join("second.log");
@@ -574,12 +578,14 @@ fn compare_group_uses_empty_request_slices_for_an_invalid_midpoint() {
         second: vec![response(value("{}"))],
         first_log,
         second_log,
-        requests: Vec::new(),
-        midpoint: 1,
+        first_requests: vec![request(value("1"))],
+        second_requests: vec![request(value("2"))],
     };
+    let mut case = test_case();
+    case.upstream = vec![answer()];
     assert_eq!(
-        runner::compare_group(&root, &[test_case()], &captures).unwrap(),
-        vec![false]
+        runner::compare_group(&root, &[case], &captures).unwrap(),
+        vec![true]
     );
     fs::remove_dir_all(&root).unwrap();
 }
@@ -641,7 +647,7 @@ fn runner_selects_cases_and_gateways() {
 
 #[test]
 fn capture_gateway_collects_http_responses_and_stops_process() {
-    let mock = MockProvider::start(&[answer()]).unwrap();
+    let mock = start_mock(&[answer()]);
     let address: SocketAddr = mock
         .base_url
         .strip_prefix("http://")
@@ -662,7 +668,7 @@ fn capture_gateway_collects_http_responses_and_stops_process() {
 #[case::json(b"{\"x\":1}", true)]
 #[case::invalid_utf8(b"\xff123456", false)]
 fn mock_accepts_body_after_headers(#[case] body: &[u8], #[case] valid: bool) {
-    let mock = MockProvider::start(&[answer()]).unwrap();
+    let mock = start_mock(&[answer()]);
     let mut stream = TcpStream::connect(mock.base_url.strip_prefix("http://").unwrap()).unwrap();
     stream
         .write_all(
@@ -675,7 +681,7 @@ fn mock_accepts_body_after_headers(#[case] body: &[u8], #[case] valid: bool) {
     stream.read_to_string(&mut received).unwrap();
     let requests = mock.finish().unwrap();
     if valid {
-        assert_eq!(requests[0].body, value("{\"x\":1}"));
+        assert_eq!(requests[0].request.body, value("{\"x\":1}"));
     } else {
         assert!(requests.is_empty());
         assert!(received.starts_with("HTTP/1.1 400"));

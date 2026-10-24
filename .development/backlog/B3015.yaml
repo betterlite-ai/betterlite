@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Initialize and mutate reservation spend counters
 status: todo
 depends_on: [B360, B733, B1718, B1736, B2226]
-file: null
+file: tasks/B3015-reservation-counter-writes.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B071

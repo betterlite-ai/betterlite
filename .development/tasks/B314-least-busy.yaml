@@ -43,7 +43,10 @@ scope:
   - tools/oracle/litellm/probes/least_busy.py
   - tools/oracle/cases/routing/least-busy/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/least_busy.rs
   - crates/betterlite-config/src/least_busy/**

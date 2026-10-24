@@ -20,6 +20,8 @@ pub mod http;
 pub mod mock;
 mod paths;
 pub mod process;
+pub mod routing_mock_scripts;
+pub mod routing_probe_ipc;
 pub mod runner;
 
 mod tests;
@@ -28,8 +30,9 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus};
 use std::str::Utf8Error;
-use std::time::SystemTimeError;
+use std::time::{Duration, SystemTimeError};
 
+use axum::http::status::InvalidStatusCode;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -64,6 +67,26 @@ pub enum OracleError {
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]
     MockJoin,
+    #[error("mock script is {bytes} bytes, past the 16 MiB limit")]
+    ScriptTooLarge { bytes: usize },
+    #[error("cannot parse mock script: {0}")]
+    ScriptParse(#[source] serde_json::Error),
+    #[error("mock script has {count} replies, past the limit of 256")]
+    ScriptReplies { count: usize },
+    #[error("mock script deadline_ms {millis} is outside 1 to 30000")]
+    ScriptDeadline { millis: u64 },
+    #[error("mock script reply {index} waits {millis} ms, past the script deadline")]
+    ScriptDelay { index: usize, millis: u64 },
+    #[error("mock script reply {index} must contain exactly one of body or events")]
+    ScriptAnswer { index: usize },
+    #[error("mock script reply {index} has an invalid status: {source}")]
+    ScriptStatus {
+        index: usize,
+        #[source]
+        source: InvalidStatusCode,
+    },
+    #[error("mock script barrier {name} is held by fewer than two replies")]
+    ScriptBarrier { name: String },
     #[error("cannot open gateway log {path}: {source}")]
     ProcessLog {
         path: PathBuf,
@@ -101,6 +124,22 @@ pub enum OracleError {
     Json(#[source] serde_json::Error),
     #[error("system clock error: {0}")]
     Clock(#[source] SystemTimeError),
+    #[error("probe message exceeds the 1 MiB limit")]
+    ProbeTooLarge,
+    #[error("probe message is malformed: {0}")]
+    ProbeMalformed(#[source] serde_json::Error),
+    #[error("random sample {0} is not below 2^53")]
+    ProbeSample(u64),
+    #[error("cannot start probe: {0}")]
+    ProbeSpawn(#[source] io::Error),
+    #[error("probe was started without piped standard streams")]
+    ProbePipe,
+    #[error("probe I/O failed: {0}")]
+    ProbeIo(#[source] io::Error),
+    #[error("probe did not finish within {0:?}")]
+    ProbeTimeout(Duration),
+    #[error("probe exited with {status}")]
+    ProbeExited { status: ExitStatus, stderr: Vec<u8> },
     #[error("helper input is invalid: {message}")]
     HelperInput { message: String },
     #[error("cannot start helper: {0}")]

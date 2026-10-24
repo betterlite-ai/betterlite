@@ -40,7 +40,10 @@ scope:
   - tools/oracle/litellm/probes/custom_dimensions.py
   - tools/oracle/cases/routing/custom-dimensions/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/custom_dimensions.rs
   - crates/betterlite-config/src/custom_dimensions/**

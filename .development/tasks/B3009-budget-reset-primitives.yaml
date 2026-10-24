@@ -1,0 +1,85 @@
+id: B3009
+title: Share budget reset policy, retries and cache invalidation
+description: >-
+  Build `betterlite-db::budget_reset_policy`, the shared primitives and retry strategy for all reset phases in the budget sweep job.
+  Implement rollover arithmetic where spend beyond a cap carries to the next window and stays within it: when `litellm.budget_rollover` (default false) is true, any spend above the max_budget carries over, but in a zero-duration window or with a zero cap, everything carries. No-progress detection prevents re-reading stale chunks forever by tracking both rows fetched and rows advanced; when fewer than RESET_BUDGET_JOB_BATCH_SIZE (default 500) rows are fetched, or when zero rows advance past the reset cutoff, the phase is drained. Implement proven-safe database retries with reconnection and warning-only cache invalidation failures that are logged but don't stop the reset from landing.
+  Export the rollover-cap calculation, carried-spend arithmetic, row filtering constants, chunk outcome and no-progress sentinel, phase draining logic with RESET_BUDGET_JOB_MAX_CHUNKS_PER_RUN (default 100) as the per-run cap, UTC normalization, per-row failure collection, and the lazy JSON serialization that defers work to the logger.
+  The reset operation itself (zeroing and timestamp updates) stays distinct from cache invalidation to keep failure policy clear: the database write commits before any cache is dropped so a failed cache clear cannot leave a stale spending constraint in memory.
+scope:
+  paths:
+    - crates/betterlite-db/**
+    - Cargo.toml
+  lint_tables: true
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1-L89
+    why: Imports, _RowReset dataclass, linked-row protocol, filter constants, and database retry-safe error types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L130-L149
+    why: Rollover enablement, cap calculation, and carried-spend arithmetic for both rows and generic spend values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L312-L325
+    why: _InvalidatedCache literal type, _ChunkOutcome record for row processing, and _NO_PROGRESS sentinel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L328-L371
+    why: UTC normalization, progress counting across datetime objects, phase-drained predicate, chunked-phase driver, and lazy JSON wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L554-L659
+    why: Database retry methods with reconnection, spend-counter invalidation, global proxy cache drop, user_api_key_cache deletion, batch cache invalidation, and warning-only failure handling on cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1011-L1034
+    why: Phase failure reporting with event metadata delivery to the service-logging callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1560-L1628
+    why: "Reset budget common: in-place spend update with rollover carry, timestamp advance, and the three entity-specific reset helpers (key, user, team)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py
+    why: ServiceTypes.RESET_BUDGET_JOB constant used in failure hook invocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1815-L1816
+    why: RESET_BUDGET_JOB_BATCH_SIZE and RESET_BUDGET_JOB_MAX_CHUNKS_PER_RUN env var defaults (500, 100).
+dod:
+  - text: Rollover arithmetic preserves spend beyond the cap (carried spend) and enforces a cap on the next window; a 0s duration or zero cap carries everything over; rollover disabled carries nothing.
+    proof: [rollover-cases]
+  - text: "The chunk outcome reports rows that advanced past the reset cutoff as progress: a short chunk (fewer than 500 rows) or zero advances means the phase is drained; _run_phase_in_chunks caps one reset run at 100 chunks to prevent unbounded spinning."
+    proof: [chunk-draining-cases]
+  - text: Database write retries once on transport errors, and replays only when statements provably never reached the database; ambient connection loss reconnects before retrying.
+    proof: [retry-cases]
+  - text: Cache invalidation failures are logged as warnings and do not raise; one cache sink failing still invalidates the other.
+    proof: [cache-invalidation-cases]
+  - text: "Spend counter invalidation happens only after the database commit so get_current_spend cannot read a stale spending constraint; when invalidation fails, the cached value expires naturally."
+    proof: [invalidation-order-cases]
+  - text: Phase failure reporting passes start_time, end_time, call_type and event_metadata to the service failure hook for observability.
+    proof: [phase-failure-cases]
+  - text: UTC conversion handles both timezone-aware and naive datetimes; naive datetimes are treated as UTC.
+    proof: [utc-conversion-cases]
+checks:
+  optional: []
+  commands:
+    - id: rollover-cases
+      why: rollover arithmetic is missing, wrong or contradicts the enabled flag
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::rollover/)'
+    - id: chunk-draining-cases
+      why: chunk outcome or phase draining logic is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::(chunk_outcome|phase_draining)/)'
+    - id: retry-cases
+      why: database retry logic is missing, does not handle transport errors, or retries unsafely
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::retry/)'
+    - id: cache-invalidation-cases
+      why: cache invalidation does not fail gracefully or one cache failing stops the other
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::cache_invalidation/)'
+    - id: invalidation-order-cases
+      why: cache is invalidated before the database commits or spend counter invalidation raises on error
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::invalidation_order/)'
+    - id: phase-failure-cases
+      why: phase failure reporting is missing timing, call type or event metadata
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::phase_failure/)'
+    - id: utc-conversion-cases
+      why: timezone-aware or naive datetime conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_reset_policy::utc/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Actual phase implementations (key reset, user reset, team reset, budget cascade, window reset) are owned by B3010-B3013; this task only exports the shared machinery."
+  - "Budget reset settings parsing and storage; B3000 owns those and this task reads them through the constructor."
+pitfalls:
+  - "Spend counter invalidation must happen after the database commits, not before. If the cache is cleared before the database write succeeds, a stale DB row with pre-reset spend could be read alongside an empty cache, allowing budget checks to incorrectly permit requests."
+  - "Cache invalidation failures are logged as warnings, not exceptions; one failing sink (spend counter or user_api_key_cache) must still invalidate the other. Catch and log each sink separately."
+  - "The _LazyJson wrapper only works inside a logging call; passing its __str__ result to a formatted string invokes __str__ immediately and defeats the defer."
+  - "UTC conversion must handle both timezone-aware datetimes and naive ones (treat as UTC); mix the two when comparing reset_at to now without normalizing both."
+  - "Phase failure reporting takes a ServiceTypes enum from litellm/types/services.py; this constant is provided by B012 and hardcoded in the failure hook invocation."
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

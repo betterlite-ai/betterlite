@@ -2,8 +2,8 @@ id: B3009
 milestone: M4 keys, spend and management
 title: Share budget reset policy, retries and cache invalidation
 status: todo
-depends_on: [B3000, B002, B360, B700, B733, B872, B1690, B2226]
-file: null
+depends_on: [B3000, B002, B012, B360, B700, B733, B872, B1690, B2226]
+file: tasks/B3009-budget-reset-primitives.yaml
 covers:
   - "litellm/proxy/common_utils/reset_budget_job.py"
 parent: B071

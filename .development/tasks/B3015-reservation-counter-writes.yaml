@@ -1,0 +1,160 @@
+id: B3015
+title: Initialize and mutate reservation spend counters
+description: >-
+  Extract betterlite-auth::spend_writes for warm-counter detection, initial floors, TTL renewal, increments and invalidation through separate raw and invalidate-on-error pipelines. Implement initialization, mutation and cleanup of spend counters across Redis and in-memory layers with deferred post-call settlement.
+
+  _ensure_spend_counter_initialized and _ensure_window_spend_counter_initialized warm counters by checking active batches and Redis first, falling back to database coalesced reads. When a counter's database has no row, _ensure_spend_counter_initialized falls back to the source cache's spend field. _is_spend_counter_cache_warm checks active batch (returning immediately), then Redis, then in-memory, returning true only when a value is found.
+
+  _get_source_cache_base_spend retrieves the spend field from user_api_key_cache (both dict and object attribute access), returning 0.0 when all sources are absent.
+
+  increment_spend_counter is the public entry point for budget domains outside entity scopes (e.g. shadow eval per-leg spend), sharing the same invalidation and read semantics with the entity counters.
+
+  refresh_spend_counter_ttl extends Redis TTL and returns true on success or false on error, logging the failure as debug level so TTL failures do not break request flow. Preserve debug-level logging for both TTL refresh and invalidation Redis-delete failures, since these are defensive cleanups.
+
+  _increment_spend_counter_cache applies an increment with Redis INCRBYFLOAT+TTL refresh, updating in-memory and recording the value; on Redis failure it invalidates the counter and propagates the error. run_spend_counter_pipeline increments a batch without calling invalidation, returning values in order; the caller chooses cleanup. increment_spend_counters_pipeline wraps the pipeline and invalidates all counters before re-raising on failure, providing two-tier choice: raw pipeline (no cleanup) for settlement, validating pipeline (invalidate-all) for admission.
+
+  _apply_spend_counter_increments routes post-call increments to the deferred settlement path (post-call batch) when available, otherwise to increment_spend_counters_pipeline (the validating pipeline). _defer_spend_counter_increments queues increments to the post-call Redis batch with _settle_spend_counter_increment callbacks. _settle_spend_counter_increment is the settlement callback that syncs each counter's final value to in-memory on success, retries in-memory increment on batch cancellation, and invalidates the counter with a warning if the batch operation raised an exception; this warning is the only logger.warning in the pipeline path.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/spend_writes.rs
+    - crates/betterlite-auth/src/spend_writes/**
+    - crates/betterlite-auth/src/lib.rs
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3620-L3638"
+    why: "_ensure_spend_counter_initialized: detect warm counter, seed from database or source cache."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3640-L3651"
+    why: "_get_source_cache_base_spend: retrieve starting balance from auth cache."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3654-L3680"
+    why: "_ensure_window_spend_counter_initialized: warm window counter with database lookup."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3683-L3711"
+    why: "_is_spend_counter_cache_warm: check for existing value in active batch, Redis, or in-memory."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3714-L3718"
+    why: "increment_spend_counter: public entry point for raw counter increment (shadow eval per-leg spend)."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3721-L3728"
+    why: "refresh_spend_counter_ttl: renew counter TTL in Redis, logging debug on failure."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3731-L3751"
+    why: "_increment_spend_counter_cache: Redis INCRBYFLOAT with TTL refresh, fallback to in-memory, auto-invalidate on Redis failure."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3754-L3765"
+    why: "_invalidate_spend_counter: clear counter from all layers (batch, in-memory, Redis) with debug-level logging on Redis delete failure."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3768-L3776"
+    why: "_apply_spend_counter_increments: route post-call increments to deferred or raw pipeline."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3779-L3792"
+    why: "_defer_spend_counter_increments: queue increments to post-call Redis batch with settlement callbacks."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3795-L3811"
+    why: "_settle_spend_counter_increment: post-batch settlement callback syncing counter to in-memory, handling cancellation, and invalidating on failure with warning."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3814-L3823"
+    why: "increment_spend_counters_pipeline: batch increment with invalidation-on-error for atomic consistency."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3826-L3850"
+    why: "run_spend_counter_pipeline: raw pipeline execution without error-driven invalidation; caller decides cleanup."
+dod:
+  - text: "_ensure_spend_counter_initialized reads active batch first, then Redis, then falls back to database seeding (coalesced read with per-counter lock) and source cache base spend, initializing the in-memory cache on success."
+    proof: [counter-init-tests]
+  - text: "_ensure_window_spend_counter_initialized warms the counter by reading the coalesced window spend from the database and returns true only when window spend is available."
+    proof: [window-init-tests]
+  - text: "_is_spend_counter_cache_warm checks active batch (returns true/false immediately), then Redis (setting in-memory cache on success), falling back to in-memory (returning true if present, false if None), and logs debug on Redis exceptions."
+    proof: [warmth-detection-tests]
+  - text: "_get_source_cache_base_spend retrieves the spend value from user_api_key_cache using one or more source cache keys, handling both dict (get) and object (getattr) access patterns, returning 0.0 if all sources are None or missing."
+    proof: [source-spend-tests]
+  - text: "increment_spend_counter is a public entry point that calls _increment_spend_counter_cache and is consumed by shadow_eval_logger and other domains outside entity scope, sharing the same invalidation semantics."
+    proof: [public-entry-tests]
+  - text: "refresh_spend_counter_ttl calls Redis async_refresh_ttl and returns true on success or false on exception, logging the exception at debug level."
+    proof: [ttl-refresh-tests]
+  - text: "_increment_spend_counter_cache performs Redis INCRBYFLOAT with refresh_ttl=true, updates in-memory cache, records spend counter value, and invalidates the counter before raising on Redis exception; falls back to SpendCounterReseed.increment_in_memory when Redis is unavailable."
+    proof: [counter-increment-tests]
+  - text: "_invalidate_spend_counter forgets the counter from the active batch, deletes from in-memory cache, and attempts Redis delete with debug-level logging on exception (the invalidation failure path does not raise)."
+    proof: [counter-invalidation-tests]
+  - text: "_apply_spend_counter_increments routes pending increments to _defer_spend_counter_increments if a post-call batch is available; otherwise calls increment_spend_counters_pipeline and swallows RedisCircuitBreakerOpenError and Redis timeout failures."
+    proof: [apply-increments-tests]
+  - text: "_defer_spend_counter_increments routes pending increments to the active post-call batch, scheduling _settle_spend_counter_increment as the settlement callback for each counter, and returns true if a batch was available (indicating deferral)."
+    proof: [defer-increments-tests]
+  - text: "_settle_spend_counter_increment is a callback factory that syncs the counter's final value to in-memory on success, retries in-memory increment on cancellation, and invalidates the counter with a warning if the batch operation raised an exception."
+    proof: [settle-callback-tests]
+  - text: "increment_spend_counters_pipeline executes the raw pipeline and invalidates all pending counters before raising on exception, ensuring no reader trusts a partially applied batch."
+    proof: [pipeline-invalidation-tests]
+  - text: "run_spend_counter_pipeline executes each PendingSpendIncrement as an INCRBYFLOAT+EXPIRE operation in a single Redis pipeline or as individual in-memory increments when Redis is unavailable, returning the new counter values in order; on failure it propagates the exception without cleanup."
+    proof: [raw-pipeline-tests]
+pitfalls:
+  - "Window counter initialization only succeeds if coalesced_window returns a spend value; if None is returned a warning is logged and the function returns false, leaving the counter uninitialized."
+  - "Active batch checks in _is_spend_counter_cache_warm return immediately true/false without falling back to other layers if the batch has a value (None or actual); only on absence does the function proceed to Redis and in-memory checks."
+  - "_increment_spend_counter_cache records spend_counter_value immediately after incrementing, using the new value returned from Redis or calculated in-memory; this recording is synchronous and must complete before the function returns."
+  - "_increment_spend_counter_cache calls _invalidate_spend_counter and then re-raises on any Redis exception; the caller (admission or settlement) decides whether to use increment_spend_counters_pipeline (invalidates on error) or run_spend_counter_pipeline (no cleanup)."
+  - "_invalidate_spend_counter calls forget_spend_counter (which notifies active batch) before in-memory and Redis deletes; this order ensures the batch is notified even if the in-memory or Redis delete fails."
+  - "_invalidate_spend_counter logs Redis delete failure at debug level because the counter value is still authoritative (the in-memory and batch invalidation prevent reads from trusting stale data)."
+  - "refresh_spend_counter_ttl failure also logs at debug level (not warning), since TTL refresh is defensive and the counter value gates admission, not the TTL."
+  - "_apply_spend_counter_increments swallows RedisCircuitBreakerOpenError and is_redis_timeout_failure exceptions without re-raising, since these are transient; other exceptions propagate."
+  - "_defer_spend_counter_increments checks for None batch (not empty batch) and returns false immediately if no batch is available; do not defer an empty list by default."
+  - "_settle_spend_counter_increment returns a callback function, not a coroutine; this factory pattern allows each pending item to capture its own counter_key and increment value."
+  - "_settle_spend_counter_increment's warning at line 3806-3808 is the only logger.warning in the pipeline path; TTL refresh (line 3727) and Redis delete (line 3761) failures both use logger.debug."
+  - "run_spend_counter_pipeline records each spend_counter_value immediately after the pipeline completes, not inside the pipeline construction; these recordings happen before the tuple is returned."
+out_of_scope:
+  - B360 owns Redis async_get_cache, async_increment, async_refresh_ttl, async_increment_pipeline and TTL configuration.
+  - B733 owns UserApiKeyCache.async_get_cache and auth cache operations.
+  - B1718 owns read_batched_spend_counter, forget_spend_counter and active spend counter batch API.
+  - B1736 owns SpendCounterReseed.coalesced, SpendCounterReseed.coalesced_window, SpendCounterReseed.increment_in_memory and database floor reads.
+  - B2226 owns spend_counter_cache local in-memory store (set/get/delete/increment).
+  - B3014 owns read paths and repair logic; this task owns only writes and initialization.
+  - Counter seeding and repair during budget reads; owned by B3014.
+  - Reconcile and settlement logic; owned by B3003.
+deviations: []
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+checks:
+  optional: []
+  commands:
+    - id: counter-init-tests
+      why: Counter initialization tests are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_initialization(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: window-init-tests
+      why: Window counter initialization tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_window(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: warmth-detection-tests
+      why: Warm detection logic tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_warm_detection(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: source-spend-tests
+      why: Source cache base spend tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_source_cache(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: public-entry-tests
+      why: Public increment_spend_counter tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_public(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: ttl-refresh-tests
+      why: TTL refresh tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_ttl(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: counter-increment-tests
+      why: Counter increment tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_increment(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: counter-invalidation-tests
+      why: Counter invalidation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_invalidation(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: apply-increments-tests
+      why: Apply increments routing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_apply(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: defer-increments-tests
+      why: Deferred increment tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_defer(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: settle-callback-tests
+      why: Settlement callback tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_settle(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: pipeline-invalidation-tests
+      why: Pipeline invalidation-on-error tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_pipeline_invalidate(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: raw-pipeline-tests
+      why: Raw pipeline execution tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_writes_raw_pipeline(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+oracle_cases: []

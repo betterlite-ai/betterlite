@@ -1,0 +1,114 @@
+id: B3010
+title: Collect and commit linked budget reset cascades
+description: >-
+  Implement `betterlite-db::budget_cascade` to collect the rows linked to expiring budget tiers
+  and commit zero/decrement/window-advance operations in a single transaction with rollover semantics.
+
+  For each expiring budget tier, fetch all linked rows (team members, keys, organizations, tags,
+  model access groups, projects, and end users). Calculate the carry-over spend for rollover-enabled
+  budgets, preserving the ordering: zero rows under the cap before decrementing rows over the cap,
+  so that the zero can recapture rows the decrement just moved back into range. Commit all linked
+  table resets and budget_reset_at advances in one transaction so a mid-cascade failure leaves the
+  tiers due for the next run. Queue end users by their budget link only (not enumerated customer IDs)
+  to avoid exceeding PostgreSQL's per-statement bind parameter ceiling at scale. Invalidate spend
+  counters and cache keys only after the transaction commits.
+
+scope:
+  paths:
+    - crates/betterlite-db/**
+    - Cargo.toml
+  lint_tables: true
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L92-L127"
+    why: Linked-row protocol properties (budget_id, spend) shared across all seven entity types.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L152-L209"
+    why: Counter and cache-key helpers for team memberships, keys, orgs, tags, model access groups, projects, end users.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L211-L269"
+    why: "_budget_link_where, _enduser_invalidation_where, _queue_budget_linked_resets, _queue_enduser_resets for building spend-reset queries."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L272-L310"
+    why: "_BudgetCascade record, _EndUserWalk cursor state, committed/failed outcome records."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L661-L678"
+    why: "_fetch_linked_rows with warning-only exception handling."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L732-L816"
+    why: "_collect_budget_cascade fetches all linked rows, computes rollover caps and carry-over spend, builds counter and cache-key tuples."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L818-L850"
+    why: "_commit_budget_cascade wraps _commit_budget_cascade_once in database-write retry; _commit_budget_cascade_once queues all linked resets and window advances in one UoW."
+
+dod:
+  - text: "Seven counter/cache-key helper pairs are implemented, one for each linked entity type (team_membership, key, org, tag, model_access_group, project, enduser), with counter keys, cache keys, and correct formatting per the source."
+    proof: [counter-helper-tests]
+  - text: "Linked-row protocol properties (budget_id, spend) are used to select rows owned by expiring budget tiers, skipping keys with their own budget_duration."
+    proof: [cascade-collection-tests]
+  - text: "Budget reset-at timestamps are computed using existing B3000 settings and the budget tier's budget_duration."
+    proof: [cascade-collection-tests]
+  - text: "Rollover carry-over spend is calculated correctly: nothing carries if rollover is disabled, everything carries if the cap is null, and (spend - cap) carries if cap is finite."
+    proof: [rollover-carry-tests]
+  - text: "Cascade records include budgets, budget IDs, budget resets, counter resets with carry-over, cache keys, and rollover caps."
+    proof: [cascade-collection-tests]
+  - text: "End users are matched by budget link (budget_id IN list) or NULL budget_id (default tier) without enumerating customer IDs in bind parameters."
+    proof: [enduser-invalidation-tests]
+  - text: "Under-cap rows are zeroed before over-cap rows are decremented; rollover-disabled rows are zeroed with no carry-over."
+    proof: [rollover-order-tests]
+  - text: "Cascaded resets and budget window advances are committed in one transaction; a mid-cascade failure leaves the tiers due for the next run."
+    proof: [transaction-atomicity-tests]
+  - text: "Spend counters for non-enduser entities (team membership, key, org, tag, model access group, project) are invalidated only after the database commit succeeds."
+    proof: [cache-invalidation-order-tests]
+  - text: "A fetch failure for one linked table (team membership, key, org, tag, model access group, or project) logs a warning and returns an empty tuple for that table only; the cascade still commits that table's reset operations by budget_id and collects the other tables' rows normally."
+    proof: [fetch-failure-tests]
+
+pitfalls:
+  - "Linked rows are fetched only for expiring budget tiers (budget_ids with budget_id != None); return an empty cascade and skip all operations if no tiers are due."
+  - "Keys with budget_duration != None are excluded from the cascade because they reset on their own schedule (B3012); include only keys where budget_duration is None."
+  - "Rollover carry-over spend for a row is _row_carried_spend(row, rollover_caps), which returns 0.0 if the caps map is empty and max(0.0, spend - cap) otherwise; never negate."
+  - "End users matched by default tier (NULL budget_id) must match the configured litellm.max_end_user_budget_id; query with budget_id IS NULL only if that tier is in the batch."
+  - "Under-cap zeroing must run before over-cap decrementing in the same transaction; the zero re-matches rows that the decrement shifts back into (0, cap] and erases their carry-over."
+  - "Cache invalidation happens after the commit succeeds; skipping or failing cache drops still returns success if the DB commits, but the old constraint persists in memory until TTL."
+
+out_of_scope:
+  - "Paged end-user cache-invalidation walk (_invalidate_enduser_caches, _invalidate_enduser_page, _fetch_enduser_page); owned by B3011."
+  - "Actual reset writes for keys, users, and teams; those are owned by B3012-B3013."
+  - "Service-logging callback invocation on failure; that is owned by B3009."
+  - "Budget reset settings and timezone handling; those are owned by B3000."
+  - "Write-retry strategy wrapping _commit_budget_cascade_once and transport implementations for spend-counter invalidation; those are owned by B3009."
+
+deviations:
+  - what: "Enduser cache invalidation walks all customers linked to expiring tiers without enumerating them into bind parameters, using budget_id IN (...) OR budget_id IS NULL for the default tier."
+    why: "Enumerating all customer IDs would exceed PostgreSQL's per-statement bind limit at scale (past ~32,700 customers). Keyset pagination on user_id and matching on budget link keeps statement size O(num_tiers)."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L250-L269"
+
+review_level: security
+
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+
+checks:
+  optional: []
+  commands:
+    - id: counter-helper-tests
+      why: Counter and cache-key helpers are missing, have wrong names, or return incorrect formats
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::(team_membership|key_|org_|tag_|model_access_group|project|enduser)_(?:counter_key|cache_keys)/)'
+    - id: cascade-collection-tests
+      why: Cascade collection is missing, fails to include required entities, or loses budget/reset info
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::collect_/)'
+    - id: rollover-carry-tests
+      why: Rollover carry-over spend is missing, negated, or does not respect the cap and enabled flag
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::rollover_carry/)'
+    - id: enduser-invalidation-tests
+      why: End users are enumerated into bind parameters, match only budget_id without default tier, or do not use keyset pagination
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::enduser_invalidation/)'
+    - id: rollover-order-tests
+      why: Under-cap rows are not zeroed before over-cap rows are decremented, or rollover-disabled rows carry spend
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::rollover_order/)'
+    - id: transaction-atomicity-tests
+      why: Cascaded resets and window advances are not in the same transaction or one failure still commits partial writes
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::transaction/)'
+    - id: cache-invalidation-order-tests
+      why: Caches are invalidated before the commit or invalidation failures stop the phase
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::cache_invalidation/)'
+    - id: fetch-failure-tests
+      why: Fetch failures for one linked table stop the cascade, do not log warnings, or do not return empty tuples
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_cascade::fetch_failure/)'
+
+oracle_cases: []

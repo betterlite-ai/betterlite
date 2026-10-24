@@ -1,0 +1,58 @@
+id: B3000
+title: Budget counter descriptors and numeric coercion helpers
+description: >-
+  Add betterlite-auth::budget_counter for the budget counter descriptor dataclass and entity-type mapping, plus three tolerant numeric-conversion helper functions used by reservation cost estimation and counter collection.
+
+  _BudgetCounter is a dataclass recording the counter's name, entity type (one of Key, Team, TeamMember, User, EndUser, Tag, Model access group, Organization, Project), maximum budget it enforces, fallback spend (the database floor on a miss or error), and optional metadata about cache keys and window bounds. Preserve the nine entity types and their mapping from LiteLLM's names (including space-separated "Model access group").
+
+  _to_float, _to_int and _get_value are helper functions for tolerant decoding. _to_float accepts SupportsFloat/SupportsIndex types, strings, bytes and bytearray, returning None on any conversion failure. _to_int accepts SupportsInt/SupportsIndex types, strings, bytes and bytearray, returning None on any conversion failure. _get_value takes an object and key, returning obj.get(key) for mappings or getattr(obj, key, None) for other types; it does not convert values, only retrieves them with fallback.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/budget_counter.rs
+    - crates/betterlite-auth/src/budget_counter/**
+    - crates/betterlite-auth/src/lib.rs
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L47-L70"
+    why: _BudgetCounter dataclass and _COUNTER_ENTITY_TYPES mapping.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1695-L1716"
+    why: _to_float, _to_int, _get_value coercion functions.
+dod:
+  - text: BudgetCounter is a record with counter_key, entity_type, max_budget, fallback_spend, entity_id and optional source_cache_key, spend_log_entity_id, window_duration, window_start fields.
+    proof: [counter-structure-tests]
+  - text: The nine entity types (Key, Team, TeamMember, User, EndUser, Tag, Model access group, Organization, Project) map to their enum values and the mapping handles the space in "Model access group".
+    proof: [counter-entity-tests]
+  - text: _to_float accepts SupportsFloat/SupportsIndex/str/bytes/bytearray and returns None on conversion failure.
+    proof: [coercion-tests]
+  - text: _to_int accepts SupportsInt/SupportsIndex/str/bytes/bytearray and returns None on conversion failure.
+    proof: [coercion-tests]
+  - text: _get_value(obj, key) returns obj.get(key) for mappings or getattr(obj, key, None) otherwise.
+    proof: [coercion-tests]
+pitfalls:
+  - "The entity type mapping includes the space-separated key 'Model access group' directly from LiteLLM; use the mapping as-is, never try-from or split on space."
+  - "_to_float and _to_int both accept bool (via SupportsInt for bool), so the source's numeric policy determines whether to reject bool separately."
+  - "_get_value does not convert its result; it only retrieves the value. For numeric lookup, call _to_float or _to_int on the result separately."
+out_of_scope:
+  - Window coercion (_coerce_window), datetime coercion and window-start computation; these are owned by B2325/B2361.
+  - Budget throttle decisions and config settings reading; owned by B2325.
+  - Reset-time settings and configuration normalization; owned by B2317.
+  - Budget snapshot types, metadata encoding/decoding and snapshot carry logic; owned by B2313.
+deviations: []
+review_level: security
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0
+checks:
+  optional: []
+  commands:
+    - id: counter-structure-tests
+      why: BudgetCounter structure or field names do not match the source
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*structure)'
+    - id: counter-entity-tests
+      why: Entity type mapping is missing, does not cover all nine types, or fails on "Model access group"
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*entity)' && grep -q '"Model access group"' crates/betterlite-auth/src/budget_counter.rs
+    - id: coercion-tests
+      why: Coercion functions are missing, fail on valid inputs, or do not return None on type mismatches
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_counter::.*to_float/) | test(/^budget_counter::.*to_int/) | test(/^budget_counter::.*get_value/)'
+oracle_cases: []

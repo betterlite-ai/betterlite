@@ -143,7 +143,10 @@ scope:
     - tools/oracle/cases/auth/oauth-tokens/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/oauth_tokens.rs
     - crates/betterlite-config/src/oauth_tokens/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*

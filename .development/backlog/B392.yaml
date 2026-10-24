@@ -1,13 +1,13 @@
 id: B392
 milestone: M2 routing
 title: Typed routing probe IPC and child lifecycle
-status: in-progress
+status: done
 depends_on: [B001]
 file: tasks/B392-routing-probe-ipc.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 62

@@ -110,7 +110,10 @@ scope:
     - tools/oracle/cases/auth/budget-admission-handoff/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/budget_admission_handoff.rs
     - crates/betterlite-config/src/budget_admission_handoff/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-admission-handoff-*

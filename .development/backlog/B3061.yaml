@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Normalize and serialize FOCUS usage records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3061-focus-records.yaml
 covers:
   - "litellm/integrations/focus/{schema,transformer}.py"
   - "litellm/integrations/focus/serializers/**"
