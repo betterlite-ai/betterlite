@@ -1,0 +1,78 @@
+id: B391
+title: Scripted routing mock replies and trace capture
+description: 'Extend the existing B001 mock server with typed delay, barrier and connection-close replies
+  and an ordered per-run provider trace. Bound scripts to 256 replies, trace to 1024 calls and each wait
+  to the case deadline. Keep the two gateway runs isolated and redact credentials. Exercise changed path/order/retry
+  counts and cancellation in mock-level tests. Implement the owned native service in tools/oracle/src/routing_mock_scripts.rs
+  (oracle tooling). Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140
+  Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use
+  only the existing checks.yaml exclusions. Reuse predecessor services instead of copying their algorithms.'
+scope:
+  paths:
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/main.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/routing_mock_scripts.rs
+  - tools/oracle/src/routing_mock_scripts/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/mock_script.rs
+  - tools/oracle/fuzz/corpus/mock_script/b391-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7677-L7873
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b391_behaviors and b391_boundaries under routing_mock_scripts::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b391-behaviors
+  - b391-boundaries
+- text: Add tools/oracle/fuzz/corpus/mock_script/b391-valid.json and tools/oracle/fuzz/corpus/mock_script/b391-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target mock_script and normal replays_the_mock_script_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b391-boundaries
+checks:
+  optional: []
+  commands:
+  - id: b391-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b391_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b391-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b391_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f tools/oracle/fuzz/corpus/mock_script/b391-valid.json && test -f tools/oracle/fuzz/corpus/mock_script/b391-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/mock_script | grep
+      -Fq "/b391-" && test -f tools/oracle/fuzz/fuzz_targets/mock_script.rs && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(replays_the_mock_script_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- B300 owns final integration and the remaining functions listed in its implementation boundary.
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

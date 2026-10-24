@@ -1,0 +1,123 @@
+id: B211
+title: OpenAI-compatible defaults B
+description: >-
+  Implement the pure configured-base/credential precedence table for _get_openai_compatible_provider_info branches
+  from mistral through gigachat (lines 759-936) under src/provider_defaults_b.rs. Follow each called XConfig._get_openai_compatible_provider_info
+  at the pin, representing default URLs, environment-key precedence and model/provider rewrites as typed entries
+  over B209 ProviderId. Inject values already resolved by config; never read environment here or instantiate a provider.
+  Each branch gets one helper case and a named rstest row, with explicit overrides and missing credentials covered.
+  Generate one operation invocation per YAML case rather than packing multiple providers into one input. JSON registry
+  identities use pinned MIT registry data; executable adapters are separate. Exclude github_copilot/chatgpt OAuth
+  providers from executable oracle cases. Budget 280 table/resolution, 140 adapters, 300 tests and 40 wiring (760
+  total). Write the behavior rstest functions b211_behavior_tests_behavior in adjacent tests.rs files, with a named
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  provider_defaults_b in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has
+  its own Rust and Python adapter file and corpus seed. The listed provider-specific files each invoke this operation
+  once; JSON table entries use named rstest rows plus representative registry-precedence cases.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/provider_defaults_b.rs
+  - crates/betterlite-provider/src/provider_defaults_b/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-defaults-b/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L759-L936
+  why: Exact default table branch ownership.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::b211_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'provider_defaults_b' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-defaults-b/explicit-overrides.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/environment-precedence.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/missing-key.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/model-rewrite.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/aiml.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/clarifai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/dashscope.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/docker-model-runner.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/edenai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/fal-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/featherless-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/friendliai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/galadriel.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/gigachat.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/gradient-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/heroku.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/hyperbolic.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/inception.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/jina-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/lambda-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/langgraph.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/lemonade.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/manus.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/mistral.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/modelscope.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/moonshot.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/morph.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/novita.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/nscale.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/qwen-ai-platform.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/qwencloud.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/ragflow.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/snowflake.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/together-ai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/v0.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/vercel-ai-gateway.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/wandb.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/xai.yaml
+- tools/oracle/cases/helpers/provider-defaults-b/zai.yaml
+deviations: []
+out_of_scope:
+- >-
+  Identity and prefix parsing B209; final get_llm_provider integration B174; github_copilot/chatgpt authentication
+  flows B045, never called by these tests.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

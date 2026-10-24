@@ -1,0 +1,185 @@
+id: B023
+title: Scoped router weights validation and application
+description: 'Finish router settings compatibility with typed scoped weights and reference validation
+  in B055/B057 key/team writes and B066 config updates. Resolve deployment references against B051/B060
+  stored rows plus B302 configured entries, respecting authenticated team scope and canonical public model
+  names. Apply the validated effective weights through B008''s existing simple-shuffle input and strip
+  internal routing controls before provider dispatch. Do not rewrite the weighted-choice algorithm or
+  add an endpoint absent from the pin. Fuzz the weights payload parser and seed the config and management
+  corpora. Configuration boundary keys introduced or consumed here: weights. Pinned declaration defaults:
+  weights=None. Resolve env values once in betterlite-config, never in router code. Implement the owned
+  native service in crates/betterlite-server/src/router_weights.rs. Add ProbeOperation::B023 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B023 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/router_weights.py:
+  _StoredModel.model_id (L15-L16), _ModelDb.litellm_proxymodeltable (L22-L23), _PrismaClient.db (L29-L30),
+  _Router.get_deployment (L35-L36), _router_weight_model_info (L49-L52), _validate_router_weight_reference
+  (L60-L87), validate_router_settings_weights (L90-L129). Implement these behaviors through the typed
+  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
+  separate ports. Bound the weights outside-byte parser to 1048576 bytes before decoding; on excess use
+  its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
+  path).'
+scope:
+  paths:
+  - crates/betterlite-server/src/router_weights.rs
+  - crates/betterlite-server/src/router_weights/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/router_weights.rs
+  - crates/betterlite-server/src/routing/router_weights/**
+  - tools/oracle/src/router_probes/router_weights.rs
+  - tools/oracle/src/router_probes/router_weights/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/router_weights.py
+  - tools/oracle/cases/routing/router-weights/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/router_weights.rs
+  - crates/betterlite-config/src/router_weights/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b023-*
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/chat.rs
+  - crates/betterlite-openai/src/request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
+  - crates/betterlite-openai/fuzz/corpus/chat_request/b023-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/weights.rs
+  - crates/betterlite-server/fuzz/corpus/weights/b023-*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L129
+  why: Reference and team validation with mandatory DB checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L7-L30
+  why: Identifier and positive-group validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
+  why: Existing scoped-weight selection precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L15-L16
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L22-L23
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L29-L30
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L35-L36
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L49-L52
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L60-L87
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b023_behaviors and b023_boundaries under router_weights::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b023-behaviors
+  - b023-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b023-invalid.yaml;
+    the valid seed contains weights. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b023-boundaries
+- text: Add crates/betterlite-server/fuzz/corpus/weights/b023-valid.json and crates/betterlite-server/fuzz/corpus/weights/b023-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target weights and normal replays_the_weights_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b023-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b023-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b023-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - chat-corpus
+  - b023-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b023-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b023_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b023-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b023_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/router_weights.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/router_weights.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b023-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b023-" && grep -Fq 'weights' crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-server/fuzz/corpus/weights/b023-valid.json && test -f crates/betterlite-server/fuzz/corpus/weights/b023-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/weights
+      | grep -Fq "/b023-" && test -f crates/betterlite-server/fuzz/fuzz_targets/weights.rs && cargo nextest
+      run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_weights_corpus)'
+  - id: chat-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b023-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b023-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
+      | grep -Fq "/b023-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/router-weights/negative-nonfinite-bool-weight.yaml
+- tools/oracle/cases/routing/router-weights/all-zero-nonempty-group.yaml
+- tools/oracle/cases/routing/router-weights/empty-clears-override.yaml
+- tools/oracle/cases/routing/router-weights/unknown-deployment.yaml
+- tools/oracle/cases/routing/router-weights/wrong-group.yaml
+- tools/oracle/cases/routing/router-weights/cross-team-id.yaml
+- tools/oracle/cases/routing/router-weights/stale-db-model-not-config-fallback.yaml
+- tools/oracle/cases/routing/router-weights/database-unavailable-503.yaml
+- tools/oracle/cases/routing/router-weights/scoped-weights-drive-shuffle.yaml
+- tools/oracle/cases/routing/router-weights/parser-byte-bound.yaml
+deviations:
+- what: The weights byte parser rejects inputs over 1048576 bytes before allocation.
+  why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+    limit. Existing structural field limits remain unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L129
+out_of_scope:
+- Key/team CRUD from scratch.
+- Settings endpoints already delivered by B348.
+pitfalls:
+- router_weights.py is a validation helper used by other APIs, not a standalone /router/weights route.
+- A database-backed deployment missing from storage cannot be resurrected from stale router memory.
+- B008 remains the sole implementation of weighted selection.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

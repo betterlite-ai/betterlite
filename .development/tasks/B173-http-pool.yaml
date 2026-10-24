@@ -1,0 +1,133 @@
+id: B173
+title: Pooled outbound requests and response limits
+description: >-
+  Refine B004's betterlite-http into the shared transport all provider adapters call. Keep one async reqwest implementation
+  and injected policy/client ownership, replacing the Python httpx/aiohttp backend distinction with the same observable
+  request contract. Pool by immutable TLS/proxy/HTTP policy and keep authorization per request; bound the pool to
+  configured deployments and retain client ownership through each streamed body. Provide typed method, headers,
+  query, body and deadline inputs for JSON, bytes and multipart callers, without implementing endpoint-specific
+  transformations from llm_http_handler.py or container_handler.py. Disable implicit retries and cookies, keep network
+  and source errors typed, enforce separate connect/read and total deadlines, and cap buffered success/error bodies
+  and headers, including decompressed bytes. Use constructor limits (16 MiB buffered body, 64 KiB aggregate headers
+  unless the existing stricter limit applies); streaming stays incremental with bounded buffers. Wire the existing
+  OpenAI adapter and server shutdown to the pool, and test connection reuse, cancellation, malformed length/encoding,
+  TLS policy isolation, drain and no retry.  On a key collision between URL query and explicit params, the URL value
+  wins. Preserve repeated entries only within a single source, and document the retained duplicate behavior as a
+  deviation from dict conversion. Support litellm_settings.disable_aiohttp_transport and DISABLE_AIOHTTP_TRANSPORT
+  as accepted no-ops. Explicitly call .retry(reqwest::retry::never()). Enforce the 64 KiB aggregate response-header
+  acceptance limit by checked summation of decoded header names and values immediately after headers, before reading
+  a body; configure the HTTP/2 header-list cap too. HTTP/1 parser allocation uses the bounded upstream library parser
+  ceiling, not an invented reqwest 64 KiB setting; document and test that ceiling independently. Keep multipart
+  to transport body serialization only. Budget 280 transport, 140 integration and 350 tests (770 total); there are
+  no helper adapters in this task. Write the behavior rstest functions b173_http_pool_tests_behavior, b173_chat_regression_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-http/**
+  - crates/betterlite-openai/**
+  - crates/betterlite-server/**
+  - crates/betterlite-config/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
+  why: Client ownership, stream anchoring and blocked cookies.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+  why: Bounded response reads and closure on every exit.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
+  why: Cache identity and reuse.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L442-L540
+  why: Common async/sync send boundary, distinct from per-endpoint conversion.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L101-L139
+  why: Path and query construction consumed by future container endpoints.
+- url: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html
+  why: Pooling, limits and retry/redirect configuration.
+dod:
+- text: >-
+    Repeated calls reuse a local connection, different security policies remain isolated, and concurrent deployments
+    never exchange authorization or cookies.
+  proof:
+  - http-pool-tests
+- text: >-
+    Deadlines, decompression/body/header limits, read failure and cancellation release capacity and close resources
+    without retrying.
+  proof:
+  - http-pool-tests
+- text: >-
+    JSON, bytes and multipart transport behavior, body ownership and query collisions are exercised against local
+    servers.
+  proof:
+  - http-pool-tests
+- text: The existing chat stream remains incremental and shutdown waits for tracked work with a bounded deadline.
+  proof:
+  - http-pool-tests
+  - chat-regression
+- text: Only betterlite-http builds production outbound clients and deny.toml retains its layering rule.
+  proof:
+  - clippy
+  - deny
+  - layering
+- text: URL query wins collisions with explicit params, while repeated entries within one source keep their order.
+  proof:
+  - http-pool-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: http-pool-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/::b173_http_pool_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: chat-regression
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/::b173_chat_regression_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: layering
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-http/src)" && grep -qE 'crate = "reqwest",
+      wrappers = \[[^]]*"betterlite-http"' deny.toml
+oracle_cases:
+- tools/oracle/cases/chat/openai-basic.yaml
+- tools/oracle/cases/chat/openai-stream.yaml
+deviations:
+- what: litellm_settings.disable_aiohttp_transport and DISABLE_AIOHTTP_TRANSPORT are accepted no-ops.
+  why: The selected Python engine has no Rust equivalent; B208 explicitly owns environment proxy semantics.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
+- what: Repeated query values from one source remain ordered; URL values still win collisions with explicit params.
+  why: Avoid silent loss within a caller-provided sequence while matching source precedence.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1459-L1469
+- what: Buffered bodies have a 16 MiB limit and decoded response headers a 64 KiB acceptance limit.
+  why: Bound untrusted provider responses; HTTP/1 parser allocation is governed by its separate library ceiling.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+out_of_scope:
+- >-
+  Endpoint request/response schemas in the large HTTP handler belong to B024-B050 and B080-B099; this part owns
+  only their shared transport.
+- >-
+  Retries and backoff are B017, WebSocket protocols are their endpoint tasks, and synchronous Python wrappers are
+  B157-B161.
+pitfalls:
+- A request timeout must still cover body consumption after headers have arrived.
+- Do not derive a cache key by concatenating arbitrary parameter strings.
+- No detached client cleanup task may survive server shutdown.
+- Reqwest retries protocol NACKs by default; disabling router retries alone is insufficient.
+- >-
+  Reqwest redirect policy cannot mutate headers and its built-in stripping does not cover provider API-key headers;
+  B009 owns explicit redirect replay.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

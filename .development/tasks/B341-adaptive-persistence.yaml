@@ -1,0 +1,145 @@
+id: B341
+title: Adaptive learning persistence in the existing Postgres schema
+description: 'Implement B051 repository adapters for LiteLLM_AdaptiveRouterState and LiteLLM_AdaptiveRouterSession
+  using B340 typed deltas/snapshots and the existing compound keys. Load persisted deltas over cold priors
+  and atomically increment rows in sorted order. Flush every 10 seconds, matching _ADAPTIVE_ROUTER_FLUSH_INTERVAL_SECONDS
+  (no env override); log and discard failed drained rows, without retrying an ambiguous commit. Use server-owned
+  shutdown and bounded aggregators. No schema change or deduplication protocol is needed. Cap each state/session
+  aggregator at 1024 distinct keys. An existing key still coalesces at capacity; for a new key flush once
+  within the active deadline, then warn/drop it on failure without failing a served provider response.
+  Nonmonetary statistical arithmetic uses f64 only in learning_math; put one module-level #[expect(clippy::float_arithmetic,
+  reason = "pinned statistical routing arithmetic")] there, counted in this task budget. Money, prices,
+  spend and budgets stay rust_decimal::Decimal, including database and wire boundaries. Reject nonfinite
+  statistical input. Assert selected model/tier exactly; any opt-in tolerance is for diagnostic scores
+  only, never a different selection. Learning alpha/beta and samples follow the existing schema; only
+  posterior statistics may use f64. Monetary columns stay Decimal. Use a 5-second shutdown drain deadline
+  matching CACHE_WRITE_SHUTDOWN_FLUSH_TIMEOUT_SECONDS for owned cache writes; a remaining failed batch
+  is warned and discarded. Implement the owned native service in crates/betterlite-router/src/adaptive_persistence.rs.
+  Add ProbeOperation::B341 in tools/oracle/src/router_probes/mod.rs and the corresponding B341 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/adaptive_router/adaptive_router.py:
+  AdaptiveRouter.load_state_from_db (L126-L165). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Function coverage in litellm/router_strategy/adaptive_router/update_queue.py: AdaptiveRouterUpdateQueue.__init__
+  (L41-L46), AdaptiveRouterUpdateQueue.add_state_delta (L50-L72), AdaptiveRouterUpdateQueue.add_session_state
+  (L76-L91), AdaptiveRouterUpdateQueue.flush_state_to_db (L95-L149), AdaptiveRouterUpdateQueue.flush_session_to_db
+  (L151-L201), AdaptiveRouterUpdateQueue.queue_size (L205-L212). Implement these behaviors through the
+  typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
+  of separate ports. If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001
+  only on its explicitly named score/probability pointer. Selection, tie order, counts, statuses, money
+  and provider requests remain exact. Six-decimal wire signals are compared after the source rounding,
+  without widening tolerance.'
+scope:
+  paths:
+  - crates/betterlite-router/src/adaptive_persistence.rs
+  - crates/betterlite-router/src/adaptive_persistence/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/adaptive_persistence.rs
+  - crates/betterlite-server/src/routing/adaptive_persistence/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/adaptive_persistence.rs
+  - tools/oracle/src/router_probes/adaptive_persistence/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/adaptive_persistence.py
+  - tools/oracle/cases/routing/adaptive-persistence/**
+  - crates/betterlite-router/src/learning_math.rs
+  - crates/betterlite-router/src/learning_math/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/update_queue.py#L41-L212
+  why: Delta aggregation and session upserts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L126-L165
+  why: Reload adds deltas to priors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1595-L1635
+  why: The unchanged adaptive-state and adaptive-session compound-key tables.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4469-L4500
+  why: Adaptive flush interval and failure logging.
+dod:
+- text: Write tests named b341_behaviors and b341_boundaries under adaptive_persistence::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b341-behaviors
+  - b341-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b341-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b341_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b341-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b341_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/adaptive_persistence.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/adaptive_persistence.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/adaptive-persistence/cold-prior-plus-one-sided-delta.yaml
+- tools/oracle/cases/routing/adaptive-persistence/atomic-two-writer-deltas.yaml
+- tools/oracle/cases/routing/adaptive-persistence/session-last-snapshot.yaml
+- tools/oracle/cases/routing/adaptive-persistence/primary-key-not-updated.yaml
+- tools/oracle/cases/routing/adaptive-persistence/restart-restores-selection.yaml
+- tools/oracle/cases/routing/adaptive-persistence/flush-empty.yaml
+- tools/oracle/cases/routing/adaptive-persistence/snapshot-private-fields-absent.yaml
+- tools/oracle/cases/routing/adaptive-persistence/failed-flush-warns-and-discards.yaml
+- tools/oracle/cases/routing/adaptive-persistence/queue-full-coalesces-existing.yaml
+- tools/oracle/cases/routing/adaptive-persistence/queue-full-warning.yaml
+- tools/oracle/cases/routing/adaptive-persistence/ten-second-flush.yaml
+deviations:
+- what: Adaptive state/session aggregators each hold at most 1024 distinct keys; overflow attempts one
+    bounded flush then warns and drops the new observation.
+  why: The pinned dictionaries are unbounded. Keep failure recovery and 10-second cadence while bounding
+    memory.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/update_queue.py#L41-L96
+out_of_scope:
+- Creating new database tables or silently changing numeric column types.
+- Rolling schema migrations (B051).
+- 'litellm/router_strategy/adaptive_router/adaptive_router.py: B339 owns: _default_prefs (L70-L72), AdaptiveRouter.__init__
+  (L89-L115), AdaptiveRouter._init_cold_start_cells (L119-L124), AdaptiveRouter.async_pre_routing_hook
+  (L169-L218), AdaptiveRouter.pick_model (L222-L239), AdaptiveRouter.get_state_snapshot (L241-L278), AdaptiveRouter._extract_min_quality_tier
+  (L281-L309), AdaptiveRouter._eligible_models (L311-L318).'
+- 'litellm/router_strategy/adaptive_router/adaptive_router.py: B340 owns: AdaptiveRouter.get_or_create_session_state
+  (L322-L347), AdaptiveRouter._evict_expired_session_states (L349-L355), AdaptiveRouter.record_turn (L357-L487),
+  AdaptiveRouter._persistable_session_snapshot (L490-L499), AdaptiveRouter._compute_bandit_delta (L502-L515).'
+pitfalls:
+- A retry after an ambiguous database commit can duplicate deltas, so B051 must provide transaction outcome
+  handling or an idempotent batch mechanism without schema changes.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

@@ -1,0 +1,106 @@
+id: B208
+title: Environment proxy selection and authentication
+description: >-
+  Build ProxyPolicy in betterlite-config/src/proxy.rs and apply it in betterlite-http/src/proxy.rs. Resolve litellm_settings.aiohttp_trust_env
+  (false) and AIOHTTP_TRUST_ENV (false); either true enables environment proxies. Resolve HTTP_PROXY, HTTPS_PROXY,
+  ALL_PROXY, NO_PROXY and lowercase forms from the injected environment, including lowercase precedence and CGI
+  REQUEST_METHOD suppression of uppercase HTTP_PROXY. Match the default aiohttp path: use aiohttp.helpers.get_env_proxy_for_url
+  in the Python adapter for effective per-URL decisions; add separate urllib.request.getproxies_environment and
+  httpx._utils.get_environment_proxies projections to expose CGI/normalization without confusing HTTPX mounts with
+  the default transport. Preserve aiohttp treatment of unsupported proxy schemes and ALL_PROXY, including warnings.
+  Disable reqwest environment discovery; only the resolved policy selects a proxy. Proxy URL passwords are SecretString
+  and local forwarding/CONNECT tests prove authentication and bypass behavior. Add proxy_policy fuzz parsing with
+  bounded proxy URL and NO_PROXY seeds; extend config_yaml.  Write the behavior rstest functions b208_proxy_policy_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations proxy_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Budget 230 proxy policy, 110 adapters,
+  250 tests and 110 config/replay wiring (700 total).
+scope:
+  paths:
+  - crates/betterlite-config/**
+  - crates/betterlite-http/src/{lib,proxy,error}.rs
+  - crates/betterlite-http/src/proxy/**
+  - crates/betterlite-http/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/proxy-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1283-L1295
+  why: Default transport trust_env gate.
+- url: https://github.com/encode/httpx/blob/0.28.1/httpx/_utils.py#L30-L76
+  why: HTTPX environment normalization used only by the comparison projection.
+- url: https://github.com/python/cpython/blob/v3.13.0/Lib/urllib/request.py#L2480-L2530
+  why: getproxies_environment implements lowercase precedence and the CGI rule.
+- url: https://docs.aiohttp.org/en/stable/client_advanced.html#proxy-support
+  why: Default transport proxy selection and authentication.
+dod:
+- text: >-
+    Effective proxy, CGI and bypass decisions match each listed helper case; local HTTP and CONNECT tests confirm
+    routing and credentials without exposing secrets.
+  proof:
+  - oracle
+  - proxy-policy-tests
+  - helper-python
+- text: Configuration and proxy URL parsers replay seeds for the newly supported keys and malformed inputs.
+  proof:
+  - config-yaml-corpus
+  - proxy-policy-corpus
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'aiohttp_trust_env' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'proxy_policy' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: proxy-policy-tests
+    why: the required new behavior or its evidence is missing
+    run: >-
+      cargo nextest run --locked -p betterlite-http -p betterlite-config --no-tests=fail -E 'test(/::b208_proxy_policy_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: proxy-policy-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/proxy_policy)"
+      && test -f crates/betterlite-http/fuzz/fuzz_targets/proxy_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/proxy_policy)"
+      && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_proxy_policy_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/proxy-policy/disabled-default.yaml
+- tools/oracle/cases/helpers/proxy-policy/enabled-setting.yaml
+- tools/oracle/cases/helpers/proxy-policy/enabled-env.yaml
+- tools/oracle/cases/helpers/proxy-policy/lowercase-precedence.yaml
+- tools/oracle/cases/helpers/proxy-policy/cgi.yaml
+- tools/oracle/cases/helpers/proxy-policy/no-proxy.yaml
+- tools/oracle/cases/helpers/proxy-policy/proxy-auth.yaml
+- tools/oracle/cases/helpers/proxy-policy/all-proxy-default-path.yaml
+- tools/oracle/cases/helpers/proxy-policy/unsupported-proxy-scheme.yaml
+deviations: []
+out_of_scope:
+- TLS verification, certificates, HTTP/2 and User-Agent are B172; pool lifetime is B173.
+pitfalls:
+- HTTPX proxy mounts are the non-default LiteLLM path; do not enable proxies merely because HTTP_PROXY exists.
+- Never inherit the host environment or print proxy credentials.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

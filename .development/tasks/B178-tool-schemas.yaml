@@ -1,0 +1,108 @@
+id: B178
+title: Tool argument parsing and schema transforms
+description: >-
+  Complete tool schema normalization with common_utils.py 1166-1436: all _schema_properties/_schema_branches/_schema_required_names,
+  combinator/local-ref helpers, top-level flattening, Python regex filtering, flatten_combinators_and_drop_non_python_regex_patterns
+  and tool_with_sanitized_parameters. Compose B217 definitions and B216 argument/tool helpers without implementing
+  a general schema validator. Preserve bounded schema passthrough and output-work limits; tool_schema fuzzing calls
+  this production normalizer. Budget 250 normalization, 100 adapters, 320 tests/fuzz and 50 wiring (720 total).
+  Write the behavior rstest functions b178_tool_schema_tests_behavior in adjacent tests.rs files, with a named case
+  for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  tool_schema in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own
+  Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/schema.rs
+  - crates/betterlite-prompts/src/schema/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/tool-schema/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L922-L1156
+  why: Bounded local definitions expansion and Anthropic schema sanitization.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1166-L1436
+  why: Combinator flattening and regex handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2324-L2561
+  why: JSON repair and concatenated tool arguments.
+dod:
+- text: Schema combinator and regex-filter helper cases match the Python helpers without ignoring structural fields.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Cycles, expansion bombs, invalid selectors and external references fail within explicit limits without network
+    or file access.
+  proof:
+  - tool-schema-tests
+- text: >-
+    The schema parser has new corpus seeds for combinators and regex filtering, replayed through the production
+    parser.
+  proof:
+  - tool-schema-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: tool-schema-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b178_tool_schema_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: tool-schema-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/tool_schema)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/tool_schema.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/tool_schema)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_tool_schema_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'tool_schema' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/tool-schema/top-level-combinators.yaml
+- tools/oracle/cases/helpers/tool-schema/non-python-regex.yaml
+- tools/oracle/cases/helpers/tool-schema/required-branch-merge.yaml
+- tools/oracle/cases/helpers/tool-schema/unmergeable-branch.yaml
+- tools/oracle/cases/helpers/tool-schema/nested-regex.yaml
+deviations: []
+out_of_scope:
+- Full JSON response validation is B200.
+- Schemas remain provider data; this task does not implement a general-purpose JSON Schema engine.
+- >-
+  Argument repair and common tool shape helpers are B216; definition expansion is B217; get_file_ids_from_messages
+  is B183.
+pitfalls:
+- >-
+  The repository's untyped-JSON exception applies only to the schema/argument passthrough field, never the surrounding
+  wire record.
+- A naive split at closing braces corrupts strings containing braces.
+- An expansion cap must count expanded output, not just input recursion depth.
+- >-
+  B216 matches only trailing-comma removal plus bracket closing; broader JSON repair changes the accepted language.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2

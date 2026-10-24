@@ -1,0 +1,118 @@
+id: B181
+title: Bedrock message and tool conversion helpers
+description: >-
+  Finish _bedrock_converse_messages_pt (factory.py 4716-4963) under betterlite-prompts/bedrock using B227 image/MIME
+  blocks, B228 tool results, B229 ordering/continuation, B230 Converse processor and B231 tool/cache blocks. Integrate
+  pure typed projections, injected model flags and per-call name maps; no dependency on B180 Anthropic assembly
+  is needed. Use B178 argument/schema helpers, B179 normalization and B183 inline media directly. prompt_bedrock
+  fuzzing exercises this typed assembly boundary. Budget 250 assembly, 100 adapters, 330 tests/fuzz and 50 wiring
+  (730 total). Write the behavior rstest functions b181_bedrock_prompt_tests_behavior in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations bedrock_prompt in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/bedrock.rs
+  - crates/betterlite-prompts/src/bedrock/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/bedrock-prompt/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3389-L3616
+  why: Image input forms for Bedrock.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3619-L4309
+  why: Tool/result media, deduplication, document names and content ordering.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4312-L4963
+  why: Converse message processor.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4966-L5160
+  why: Tool-name mapping, native blocks and cache points.
+dod:
+- text: Bedrock message/tool/caching output and per-call reverse names match listed helper cases.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Parallel conversions cannot exchange reverse-name mappings, duplicate content decisions are observable, and
+    source inputs are unchanged.
+  proof:
+  - bedrock-prompt-tests
+- text: Malformed native blocks and over-limit inputs fail through the parser exercised by the corpus.
+  proof:
+  - prompt-bedrock-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: bedrock-prompt-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b181_bedrock_prompt_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: prompt-bedrock-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/prompt_bedrock)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/prompt_bedrock.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/prompt_bedrock)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_prompt_bedrock_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'bedrock_prompt' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/bedrock-prompt/converse-text.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/role-continuation.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/tool-result-media.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/document-only.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/duplicate-content.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/duplicate-document-name.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/thinking-order.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/tool-name-roundtrip.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/native-tool-block.yaml
+- tools/oracle/cases/helpers/bedrock-prompt/cache-point-ttl.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: keep inline-only conversion without remote-image fetching, or fetch public media through
+    the shared SSRF policy.
+  why: >-
+    LiteLLM BedrockImageProcessor fetches HTTP(S) via safe_get; keep the current plan and build no remote downloader
+    until Max decides.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3431-L3586
+out_of_scope:
+- SigV4, credentials, model discovery and Converse/Invoke execution are B028-B030.
+- Remote images are governed by B009/B183 and are never fetched here.
+- >-
+  Image/MIME helpers B227, tool results and Bedrock ID sanitizer B228, content/order helpers B229, processor B230,
+  tool/cache blocks B231.
+pitfalls:
+- Keep the first authoritative Bedrock duplicate block; do not reuse Anthropic's last-result repair blindly.
+- A global reverse-name cache leaks state between requests and is forbidden.
+- Cache TTL eligibility is a model capability, not a property of every Bedrock model.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

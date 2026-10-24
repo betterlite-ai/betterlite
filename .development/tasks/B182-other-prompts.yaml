@@ -1,0 +1,114 @@
+id: B182
+title: Gemini, Cohere and Azure message helpers
+description: >-
+  Finish Azure and Cohere message conversion under betterlite-prompts/azure and /cohere. Own factory.py 1062-1105
+  (_azure_tool_call_invoke_helper, _azure_image_url_helper, _azure_file_helper, convert_to_azure_openai_messages),
+  2881-3153 (all Cohere result/invoke/history helpers), 3316-3347 (azure_text_pt and stringify_json_tool_call_content).
+  Integrate B232/B233 Gemini tool helpers without rebuilding them. Reuse B178 arguments, B179 messages and B183
+  media. Preserve ordering and Cohere final-message/history separation without shared mutation; provider_messages
+  fuzzing handles the typed result boundary. Budget 280 conversion/types, 100 adapters, 300 tests/fuzz and 60 wiring
+  (740 total). Write the behavior rstest functions b182_provider_message_tests_behavior in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations provider_messages in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each
+  operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/azure.rs
+  - crates/betterlite-prompts/src/azure/**
+  - crates/betterlite-prompts/src/gemini.rs
+  - crates/betterlite-prompts/src/gemini/**
+  - crates/betterlite-prompts/src/cohere.rs
+  - crates/betterlite-prompts/src/cohere/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-messages/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1062-L1520
+  why: Azure forms and Gemini tool invocation/results with signatures.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2881-L3153
+  why: Cohere tool results, final message and preceding history.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3207-L3347
+  why: Gemini text/image and Azure text prompt helpers.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L47-L63
+  why: azure_text_pt remains reachable.
+dod:
+- text: >-
+    Each provider-specific helper matches the listed oracle cases without ignoring message ordering or signature
+    fields.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Malformed signature/argument input fails within limits and source messages survive repeated conversions unchanged.
+  proof:
+  - provider-message-tests
+  - provider-messages-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-message-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b182_provider_message_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: provider-messages-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/provider_messages)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/provider_messages.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/provider_messages)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_provider_messages_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'provider_messages' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-messages/azure-tools.yaml
+- tools/oracle/cases/helpers/provider-messages/azure-file-image.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-last-user.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-last-tool.yaml
+- tools/oracle/cases/helpers/provider-messages/cohere-role-merging.yaml
+- tools/oracle/cases/helpers/provider-messages/azure-text.yaml
+- tools/oracle/cases/helpers/provider-messages/json-tool-content.yaml
+deviations: []
+out_of_scope:
+- Provider credentials and HTTP endpoints are B025, B031, B035 and B037.
+- Provider API schema extensions not consumed by these helpers remain in their provider tasks.
+- Gemini invocation/signature functions are B232 and tool results B233.
+- >-
+  _load_image_from_url, _gemini_vision_convert_messages and gemini_text_image_pt (3182-3313) are dead at this pin:
+  no live caller passes custom_llm_provider=gemini to prompt_factory; Gemini native provider transformation uses
+  its own path.
+pitfalls:
+- >-
+  Cohere's Python helper pops the last message; compare its returned value without reproducing shared-input mutation.
+- Gemini thought signatures cannot be regenerated from tool names.
+- Do not apply Gemini's content ordering to Azure or Cohere.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

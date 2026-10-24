@@ -1,0 +1,150 @@
+id: B324
+title: Atomic caller and session deployment affinity
+description: 'Compose B372 affinity identities/claims with B080 previous-response IDs and B323 priority-group
+  flags in the B016 candidate filter. Preserve previous-response, session and key precedence; replace
+  expired or ineligible pins without reviving filtered deployments. Wire the deployment pre-call hook
+  through the server''s authenticated routing context. Configuration boundary keys introduced or consumed
+  here: optional_pre_call_checks, model_group_affinity_config, deployment_affinity_ttl_seconds. Pinned
+  declaration defaults: optional_pre_call_checks=None; model_group_affinity_config=None. Resolve env values
+  once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/deployment_affinity.rs.
+  Add ProbeOperation::B324 in tools/oracle/src/router_probes/mod.rs and the corresponding B324 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/deployment_affinity_check.py:
+  warn_on_unknown_model_group_affinity_flags (L45-L60), DeploymentAffinityCheck.__init__ (L74-L91), DeploymentAffinityCheck.async_filter_deployments
+  (L348-L476), DeploymentAffinityCheck.async_pre_call_deployment_hook (L478-L617). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/deployment_affinity.rs
+  - crates/betterlite-router/src/deployment_affinity/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/deployment_affinity.rs
+  - crates/betterlite-server/src/routing/deployment_affinity/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/deployment_affinity.rs
+  - tools/oracle/src/router_probes/deployment_affinity/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/deployment_affinity.py
+  - tools/oracle/cases/routing/deployment-affinity/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/deployment_affinity.rs
+  - crates/betterlite-config/src/deployment_affinity/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b324-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L348-L617
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L45-L60
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L74-L91
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2255-L2298
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2256-L2267
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2300-L2321
+  why: Previously uncovered helper owned by this task.
+dod:
+- text: Write tests named b324_behaviors and b324_boundaries under deployment_affinity::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b324-behaviors
+  - b324-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b324-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b324-invalid.yaml;
+    the valid seed contains optional_pre_call_checks. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b324-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b324-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b324_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b324-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b324_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/deployment_affinity.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/deployment_affinity.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b324-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b324-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b324-" && grep -Fq 'optional_pre_call_checks' crates/betterlite-config/fuzz/corpus/config_yaml/b324-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/deployment-affinity/previous-response-before-session.yaml
+- tools/oracle/cases/routing/deployment-affinity/session-before-key.yaml
+- tools/oracle/cases/routing/deployment-affinity/group-specific-flags.yaml
+- tools/oracle/cases/routing/deployment-affinity/priority-group-bypass.yaml
+- tools/oracle/cases/routing/deployment-affinity/expired-and-ineligible-pin.yaml
+deviations: []
+out_of_scope:
+- Provider-affinity HTTP headers already owned by B010.
+- Encrypted-content response affinity outside this backlog slice.
+- B372 owns affinity identity and atomic pin claims; consume its tested public interface.
+- 'litellm/caching/affinity_cache.py: B372 owns: set_local_affinity_pin (L50-L53), _legacy_pin_matches
+  (L56-L59), claim_affinity_pin_in_memory (L62-L78), _decode_pin (L81-L85), claim_affinity_pin (L88-L125).'
+- 'litellm/router_utils/pre_call_checks/deployment_affinity_check.py: B372 owns: DeploymentAffinityCheck._get_effective_flags
+  (L93-L112), DeploymentAffinityCheck._looks_like_sha256_hex (L115-L122), DeploymentAffinityCheck._hash_user_key
+  (L125-L137), DeploymentAffinityCheck._get_model_map_key_from_litellm_model_name (L140-L165), DeploymentAffinityCheck._get_model_map_key_from_deployment
+  (L168-L199), DeploymentAffinityCheck._get_stable_model_map_key_from_deployments (L202-L224), DeploymentAffinityCheck._shorten_for_logs
+  (L227-L230), DeploymentAffinityCheck.get_affinity_cache_key (L233-L235), DeploymentAffinityCheck.get_session_affinity_cache_key
+  (L238-L244), DeploymentAffinityCheck._get_session_id_from_metadata_dict (L247-L251), DeploymentAffinityCheck._iter_metadata_dicts
+  (L254-L265), DeploymentAffinityCheck._first_metadata_value (L268-L270), DeploymentAffinityCheck.get_user_key_from_request_kwargs
+  (L273-L291), DeploymentAffinityCheck._get_session_id_from_request_kwargs (L294-L299), DeploymentAffinityCheck._get_marker_session_affinity_ttl
+  (L302-L311), DeploymentAffinityCheck._pinned_model_id (L314-L322), DeploymentAffinityCheck._set_local_pin
+  (L324-L325), DeploymentAffinityCheck._claim_pin (L327-L329), DeploymentAffinityCheck._claim_pin_in_memory
+  (L331-L335), DeploymentAffinityCheck._find_deployment_by_model_id (L338-L346).'
+pitfalls:
+- Affinity never restores a deployment removed by earlier health or access filters.
+- Do not hash a value twice merely because it arrived through a different metadata channel.
+- The pin decoder must cap bytes before deserialization.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

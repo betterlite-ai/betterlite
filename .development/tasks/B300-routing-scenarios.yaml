@@ -1,0 +1,102 @@
+id: B300
+title: Stateful HTTP scenarios for the routing oracle
+description: 'Add typed Scenario, HttpStep, ConcurrentStep and JoinPoint to B001 case dispatch using B391
+  mock scripts/traces. Limit scenarios to 256 steps and 32 concurrent requests, with a 30-second default
+  step deadline bounded by the existing case timeout. Keep one gateway per run, reset script cursors independently
+  and compare all ordered provider requests as well as per-step responses. Preserve legacy case parsing
+  and CLI behavior. Seed two-request and barrier-controlled concurrent scenarios; fuzz scenario YAML.
+  Implement the owned native service in tools/oracle/src/routing_scenarios.rs (oracle tooling). Budget
+  allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines
+  and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms.'
+scope:
+  paths:
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/main.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/routing_scenarios.rs
+  - tools/oracle/src/routing_scenarios/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - tools/oracle/cases/routing/harness/**
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/scenario.rs
+  - tools/oracle/fuzz/corpus/scenario/b300-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7887
+  why: Retries require more than one observed provider call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/client_initalization_utils.py#L16-L78
+  why: Concurrent calls must be held at a barrier to test deployment saturation.
+dod:
+- text: Write tests named b300_behaviors and b300_boundaries under routing_scenarios::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b300-behaviors
+  - b300-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: Add tools/oracle/fuzz/corpus/scenario/b300-valid.json and tools/oracle/fuzz/corpus/scenario/b300-invalid.json;
+    the valid seed contains the new operation data. The cargo-fuzz target scenario and normal replays_the_scenario_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - parser-corpus
+  - b300-boundaries
+- text: New two-step and barrier scenarios pass self-check and detect an altered second response or provider
+    trace.
+  proof:
+  - scenario-self-check
+  - b300-behaviors
+checks:
+  optional: []
+  commands:
+  - id: b300-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b300_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b300-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b300_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: parser-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f tools/oracle/fuzz/corpus/scenario/b300-valid.json && test -f tools/oracle/fuzz/corpus/scenario/b300-invalid.json
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/scenario | grep
+      -Fq "/b300-" && test -f tools/oracle/fuzz/fuzz_targets/scenario.rs && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scenario_corpus)'
+  - id: scenario-self-check
+    why: new scenarios fail the pinned self-check
+    run: test -f tools/oracle/cases/routing/harness/two-requests.yaml && git diff --name-only --diff-filter=A
+      "$GATE_BASE" -- tools/oracle/cases/routing/harness | grep -q . && cargo run --locked --quiet -p
+      betterlite-oracle -- --self-check tools/oracle/cases/routing/harness
+oracle_cases:
+- tools/oracle/cases/routing/harness/two-requests.yaml
+- tools/oracle/cases/routing/harness/concurrent-requests.yaml
+deviations: []
+out_of_scope:
+- Injecting test state into the production HTTP server.
+- Direct component probes, implemented by B301.
+- B391 owns scripted routing mock replies and trace capture; consume its tested public interface.
+pitfalls:
+- Never share a canned-response cursor between the two gateway runs.
+- Use barriers and short bounded waits instead of timing assertions based on process startup.
+- The new schema is a harness schema under tools/oracle, not a change to .development/schema.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

@@ -1,0 +1,119 @@
+id: B250
+title: Success callback dispatch and deduplication
+description: >-
+  Implement _is_assembled_stream_success/dispatch_success_handlers, _success_handler_helper_fn, recognized call-type
+  helpers, success_handler/_success_handler_body and async_success_handler/_async_success_handler_body for chat/embeddings,
+  plus _handle_callback_failure and sync-success callback handling on async calls. Share native sync/async mechanics
+  through typed events, restoring context on every exit. Exporter-specific branches in 2772-3577 are B110-B118;
+  batch-specific handling is B086, background interactions B098. No callback error may alter a successful response.
+  Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
+  functions b250_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations logging_success in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Own recognized-call-type checks 2579-2620 and success emission deduplication 2678-2701; interaction detection/dispatch
+  2622-2676 is B098.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/logging_success.rs
+  - crates/betterlite-logging/src/logging_success/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-success/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2118-L2204
+  why: Primary source seam; additional named methods below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2133-L2149
+  why: _is_assembled_stream_success
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2151-L2204
+  why: dispatch_success_handlers
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2497-L2577
+  why: _success_handler_helper_fn
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2754-L2770
+  why: success_handler
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2772-L3191
+  why: _success_handler_body
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3193-L3209
+  why: async_success_handler
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3211-L3577
+  why: _async_success_handler_body
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3579-L3599
+  why: _handle_callback_failure
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b250_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'logging_success' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/logging-success/sync-success.yaml
+- tools/oracle/cases/helpers/logging-success/async-success.yaml
+- tools/oracle/cases/helpers/logging-success/single-terminal.yaml
+- tools/oracle/cases/helpers/logging-success/callback-error.yaml
+- tools/oracle/cases/helpers/logging-success/context-restored.yaml
+- tools/oracle/cases/helpers/logging-success/assembled-stream.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+- >-
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
+- >-
+  Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
+  or ported.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

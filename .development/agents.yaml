@@ -3,7 +3,7 @@ runners:
   - id: codex-worker
     vendor: openai
     program: codex
-    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", --add-dir, "{git_common_dir}", --add-dir, "{home}/.cargo/registry", --add-dir, "{home}/.cargo/git", --add-dir, "{home}/.cargo/advisory-dbs", --add-dir, "{home}/.cache/prek", --add-dir, "{home}/.cache/uv", --cd, "{worktree}", "-"]
+    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", --cd, "{worktree}", "-"]
     output: file
   - id: codex-reviewer
     vendor: openai
@@ -13,7 +13,7 @@ runners:
   - id: claude-worker
     vendor: anthropic
     program: claude
-    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --allowedTools, "Bash(cargo:*)", "Bash(git:*)", "Bash(ls:*)", "Bash(rg:*)", Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
     output: claude-json
   - id: claude-reviewer
     vendor: anthropic
@@ -77,3 +77,10 @@ policy:
   review_by_other_vendor: true
   max_review_rounds: 2
   max_hook_blocks: 6
+  writable:
+    - "{git_common_dir}"
+    - "{home}/.cargo/registry"
+    - "{home}/.cargo/git"
+    - "{home}/.cargo/advisory-dbs"
+    - "{home}/.cache/prek"
+    - "{home}/.cache/uv"

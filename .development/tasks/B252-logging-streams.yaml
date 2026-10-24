@@ -1,0 +1,101 @@
+id: B252
+title: Bounded stream logging and served text
+description: >-
+  Implement _get_assembled_streaming_response and chat/embedding stream/result normalization, flush_passthrough_collected_chunks/async_flush_passthrough_collected_chunks,
+  logging_utils _assemble_complete_response_from_streaming_chunks/_set_duration_in_model_call_details and served_output_texts
+  chat/stream extraction and overlay. Aggregate incrementally with bounded tool/text buffers and sparse-index checks;
+  no per-chunk retained list. Responses/Anthropic native shapes stay with B080/B081 and text completion with B203.
+  Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
+  functions b252_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations logging_streams in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  normalize_logging_result 2309-2359 is this task for chat/embeddings; later endpoints add their typed variants.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/logging_streams.rs
+  - crates/betterlite-logging/src/logging_streams/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-streams/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4144
+  why: Primary source seam; additional named methods below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2703-L2710
+  why: flush_passthrough_collected_chunks
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2712-L2716
+  why: async_flush_passthrough_collected_chunks
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4144
+  why: _get_assembled_streaming_response
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b252_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'logging_streams' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/logging-streams/stream-tools-usage.yaml
+- tools/oracle/cases/helpers/logging-streams/served-text-overlay.yaml
+- tools/oracle/cases/helpers/logging-streams/sparse-choices.yaml
+- tools/oracle/cases/helpers/logging-streams/cancel-partial.yaml
+- tools/oracle/cases/helpers/logging-streams/many-chunks.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+- >-
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
+- >-
+  Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
+  or ported.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

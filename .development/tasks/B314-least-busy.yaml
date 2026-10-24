@@ -1,0 +1,129 @@
+id: B314
+title: Least-busy selection and in-flight accounting
+description: 'Add least-busy as one exhaustive strategy variant using B304 state and B016 attempt callbacks.
+  Keep the routing group counter separate from B303''s concurrency cap. Use an ownership guard so every
+  started call is released exactly once on success, mapped failure or cancelled stream. Add the effective
+  strategy config only with the selector. Configuration boundary keys introduced or consumed here: routing_strategy.
+  Pinned declaration defaults: routing_strategy=''simple-shuffle''. Resolve env values once in betterlite-config,
+  never in router code. Implement the owned native service in crates/betterlite-router/src/least_busy.rs.
+  Add ProbeOperation::B314 in tools/oracle/src/router_probes/mod.rs and the corresponding B314 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/least_busy.py: _request_count_key
+  (L47-L48), _deployment_ref (L51-L65), _request_count_keys (L68-L72), _as_counts (L75-L76), _local_counts
+  (L79-L83), _least_busy (L86-L91), _warn_unreadable (L94-L101), _warn_unwritable (L104-L110), LeastBusyLoggingHandler.__init__
+  (L118-L120), LeastBusyLoggingHandler.log_pre_api_call (L122-L123), LeastBusyLoggingHandler.log_success_event
+  (L125-L130), LeastBusyLoggingHandler.log_failure_event (L132-L137), LeastBusyLoggingHandler.async_log_success_event
+  (L139-L144), LeastBusyLoggingHandler.async_log_failure_event (L146-L151), LeastBusyLoggingHandler.get_available_deployments
+  (L153-L166), LeastBusyLoggingHandler.async_get_available_deployments (L168-L181), LeastBusyLoggingHandler._increment
+  (L183-L199), LeastBusyLoggingHandler._async_increment (L201-L217). Implement these behaviors through
+  the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/least_busy.rs
+  - crates/betterlite-router/src/least_busy/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/least_busy.rs
+  - crates/betterlite-server/src/routing/least_busy/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/least_busy.rs
+  - tools/oracle/src/router_probes/least_busy/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/least_busy.py
+  - tools/oracle/cases/routing/least-busy/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/least_busy.rs
+  - crates/betterlite-config/src/least_busy/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b314-*
+  - crates/betterlite-config/fuzz/Cargo.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L47-L217
+  why: Counter identity, selection and local/shared error handling.
+dod:
+- text: Write tests named b314_behaviors and b314_boundaries under least_busy::tests. The first asserts
+    the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
+    and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
+    check.
+  proof:
+  - b314-behaviors
+  - b314-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b314-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b314-invalid.yaml;
+    the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
+  proof:
+  - config-corpus
+  - b314-boundaries
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b314-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b314_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b314-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b314_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/least_busy.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/least_busy.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b314-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b314-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b314-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b314-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/routing/least-busy/unique-lowest-count.yaml
+- tools/oracle/cases/routing/least-busy/equal-count-first.yaml
+- tools/oracle/cases/routing/least-busy/missing-count-zero.yaml
+- tools/oracle/cases/routing/least-busy/success-and-failure-release.yaml
+- tools/oracle/cases/routing/least-busy/redis-error-local-fallback.yaml
+- tools/oracle/cases/routing/least-busy/stream-count-until-close.yaml
+deviations: []
+out_of_scope:
+- A new concurrency admission limiter.
+pitfalls:
+- least-busy counts are not a rate limit and must not inherit RPM window semantics.
+- Counter keys include deployment identity and must survive same-name deployments.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,144 @@
+id: B398
+title: Fallback events and response metadata
+description: 'Implement redacted fallback error details, success/failure callback events and typed retry/fallback
+  headers. Keep errors and hidden stream metadata separate from already-sent HTTP headers, with caller-sensitive
+  fields redacted. B310 calls this service; it makes no provider call or authorization decision. ROUTER_FALLBACK_ERROR_DETAIL_MAX_CHARS
+  is 2000, with no environment override; retain credential masking before truncation. Implement the owned
+  native service in crates/betterlite-router/src/fallback_observations.rs. Add ProbeOperation::B398 in
+  tools/oracle/src/router_probes/mod.rs and the corresponding B398 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/add_retry_fallback_headers.py:
+  get_fallback_error_info (L228-L238), _coerce_error_dicts (L241-L242), get_fallback_errors_from_headers
+  (L245-L258), _add_headers_to_response (L261-L281), add_fallback_headers_to_response (L301-L334). Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors
+  reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/common_utils.py:
+  truncate_fallback_error_detail (L64-L77), format_no_fallback_group_message (L80-L92), format_fallback_outcome_message
+  (L95-L107). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/fallback_event_handlers.py:
+  log_success_fallback_event (L722-L747), log_failure_fallback_event (L750-L775). Implement these behaviors
+  through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
+  instead of separate ports.'
+scope:
+  paths:
+  - crates/betterlite-router/src/fallback_observations.rs
+  - crates/betterlite-router/src/fallback_observations/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/fallback_observations.rs
+  - crates/betterlite-server/src/routing/fallback_observations/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/fallback_observations.rs
+  - tools/oracle/src/router_probes/fallback_observations/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/fallback_observations.py
+  - tools/oracle/cases/routing/fallback-observations/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L64-L107
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L228-L281
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L301-L334
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L722-L775
+  why: Implementation boundary verified against the pinned checkout.
+dod:
+- text: Write tests named b398_behaviors and b398_boundaries under fallback_observations::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b398-behaviors
+  - b398-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
+  proof:
+  - oracle
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
+  proof:
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: b398-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b398_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b398-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b398_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/fallback_observations.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/fallback_observations.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/fallback-observations/fallback-success-headers.yaml
+- tools/oracle/cases/routing/fallback-observations/fallback-error-details-redacted.yaml
+deviations: []
+out_of_scope:
+- B310 owns final integration and the remaining functions listed in its implementation boundary.
+- 'litellm/router_utils/add_retry_fallback_headers.py: B016 owns: prepare_response_for_header_attachment
+  (L108-L115), response_has_hidden_params (L118-L121), ensure_response_additional_headers (L124-L131),
+  apply_response_model_id (L134-L144), response_total_token_count (L167-L176), _normalize_hidden_params
+  (L188-L193), get_hidden_params_dict (L196-L209), _write_hidden_params (L212-L216), _ensure_additional_headers_dict
+  (L219-L225).'
+- 'litellm/router_utils/add_retry_fallback_headers.py: B017 owns: add_retry_headers_to_response (L284-L298).'
+- 'litellm/router_utils/add_retry_fallback_headers.py: B019 owns: apply_remaining_usage_headers (L179-L185).'
+- 'litellm/router_utils/add_retry_fallback_headers.py: B311 owns: HiddenParamsAsyncIteratorWrapper.__init__
+  (L92-L94), HiddenParamsAsyncIteratorWrapper.__aiter__ (L96-L97), HiddenParamsAsyncIteratorWrapper.__anext__
+  (L99-L100), HiddenParamsAsyncIteratorWrapper.aclose (L102-L105).'
+- 'litellm/router_utils/add_retry_fallback_headers.py: B338 owns: apply_quality_router_decision_headers
+  (L147-L164).'
+- 'litellm/router_utils/add_retry_fallback_headers.py: B366 owns: _routing_header_mapping (L26-L31), _header_string
+  (L34-L38), complexity_router_decision_headers (L41-L68), replace_complexity_router_headers (L71-L80).'
+- 'litellm/router_utils/common_utils.py: B014 owns: provider_for_generic_call (L291-L314).'
+- 'litellm/router_utils/common_utils.py: B082 owns: add_model_file_id_mappings (L118-L140).'
+- 'litellm/router_utils/common_utils.py: B302 owns: resolve_model_group_alias (L43-L61).'
+- 'litellm/router_utils/common_utils.py: B303 owns: get_litellm_params_sensitive_credential_hash (L110-L115),
+  warn_on_provider_credential_mismatch (L317-L359).'
+- 'litellm/router_utils/common_utils.py: B322 owns: _is_proxy_admin_request (L20-L28), get_request_team_id
+  (L31-L40), filter_team_based_models (L143-L207).'
+- 'litellm/router_utils/common_utils.py: B364 owns: _deployment_supports_web_search (L210-L227), filter_web_search_deployments
+  (L230-L259).'
+- 'litellm/router_utils/fallback_event_handlers.py: B308 owns: _trigger_cooldown_for_failed_deployment
+  (L46-L154).'
+- 'litellm/router_utils/fallback_event_handlers.py: B309 owns: fallback_attempt_key (L157-L179), AttemptedFallbackTargets.__contains__
+  (L196-L197), AttemptedFallbackTargets.record (L199-L200), has_unattempted_fallback_target (L203-L212),
+  _check_stripped_model_group (L215-L237), _provider_prefixed_model_group (L240-L244), record_pre_routing_selection
+  (L251-L268), clear_pre_routing_selection (L271-L285), get_pre_routing_selection (L288-L292), carry_over_pre_routing_selection
+  (L295-L304), per_request_fallback_controls (L332-L335), mid_stream_fallback_hop_kwargs (L338-L362),
+  record_disable_fallbacks (L368-L385), fallbacks_disabled_for_request (L388-L394), fallback_lookup_groups
+  (L397-L413), _resolved_a_specific_chain (L416-L423), get_fallback_model_group_for_lookup_groups (L426-L438),
+  get_fallback_model_group (L441-L480).'
+- 'litellm/router_utils/fallback_event_handlers.py: B310 owns: _get_fallback_target_model_group (L498-L502),
+  _is_fallback_target_authorized (L505-L526), _is_fallback_target_within_budget (L529-L545), references_provider_scoped_resource
+  (L548-L567), creates_provider_scoped_resource (L570-L579), run_async_fallback (L582-L719), _check_non_standard_fallback_format
+  (L778-L802), run_non_standard_fallback_format (L805-L806).'
+pitfalls:
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
