@@ -209,6 +209,7 @@ tasks:
     depends_on:
     - B017
     - B307
+    - B308
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1934,3 +1935,14 @@ tasks:
     file: tasks/B307-cooldown-state.yaml
     covers:
     - litellm/router_utils/{cooldown_cache,health_state_cache}.py
+
+  - id: B308
+    milestone: M2 routing
+    title: Cooldown error policy and callback events
+    status: todo
+    depends_on:
+    - B307
+    - B012
+    file: tasks/B308-cooldown-policy.yaml
+    covers:
+    - litellm/router_utils/{cooldown_callbacks,cooldown_handlers}.py
