@@ -187,6 +187,7 @@ tasks:
     - B303
     - B304
     - B360
+    - B361
     file: tasks/B016-router-core.yaml
     covers:
     - litellm/router.py
@@ -2676,3 +2677,12 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/evals/**
     - litellm/proxy/public_endpoints/autorouter_presets.json
+
+  - id: B361
+    milestone: M2 routing
+    title: Explicit numerical and deviation comparison contracts
+    status: todo
+    depends_on:
+    - B301
+    file: tasks/B361-oracle-comparison-contracts.yaml
+    covers: []
