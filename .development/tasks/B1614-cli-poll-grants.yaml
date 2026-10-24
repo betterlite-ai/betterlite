@@ -1,0 +1,69 @@
+id: B1614
+title: Bind CLI poll credentials to known team grants
+description: >-
+  Build cli_poll_grants in betterlite-server and register GET /sso/cli/poll/{key_id}
+  as a public endpoint authenticated by x-litellm-cli-poll-secret. Own _TeamDetailRow,
+  _team_detail_db, _TeamRowGrants, CliSsoTeamDetail, the two team-detail constants,
+  _cli_sso_team_detail, fetch_cli_sso_team_details, _cli_sso_session_teams,
+  selected_cli_sso_team_detail and cli_poll_key. Query B724's teams including their alias
+  tables; a failed lookup returns unknown, an empty result means no teams, and deleted
+  membership targets disappear. Reuse B1613's flow decoding/secret comparison. Respond
+  pending until both SSO and browser verification finish. With multiple teams and no team_id,
+  return selection details without minting a token; zero or one team selects automatically.
+  An explicit nonmember team is 403. Unknown selected grants are 500, never unrestricted;
+  a known empty grant is valid. B1223 issues the CLI JWT with the user's models and selected
+  team's models/aliases and max_budget=None, then delete the flow through the dual cache.
+  This read/mint/delete order is not an atomic claim: preserve it and test a failed delete
+  after minting instead of promising race-free consumption. Add flattened attribution only
+  when B1611 produces a nonempty map. B1613 owns JSON bytes; this task converts already
+  decoded records and uses the server's query extractor for optional team_id. Exercise
+  ready flows with injected cache/clock and PostgreSQL team rows; run malformed/expired and
+  bad-secret HTTP cases against both real proxies. Owned source is 168 lines including
+  records; 240 implementation, 200 tests and 60 integration/corpus lines fit a 575-line cap.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cli_poll_grants.rs
+    - crates/betterlite-server/src/cli_poll_grants/**
+    - crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*
+    - tools/oracle/cases/sso/cli-poll/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L206-L234
+    why: Team snapshots and the explicit teamless empty grant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2248-L2296
+    why: Lookup failure, deleted teams and selected-grant resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2466-L2595
+    why: Poll route, secret header, selection response and mint-before-delete sequence.
+dod:
+  - text: The polling HTTP boundary rejects invalid credentials and returns pending without issuing a JWT.
+    proof: [poll-tests, oracle]
+  - text: Team selection distinguishes unknown, empty and deleted grants and issues the selected model constraints before consuming the flow.
+    proof: [poll-tests]
+  - text: Corrupt cached team snapshots are covered by the existing flow decoder's replay.
+    proof: [grant-corpus]
+checks:
+  optional: []
+  commands:
+    - id: poll-tests
+      why: Team selection or cache consumption can mint a credential with the wrong authority.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_poll_grants::/) - test(/replays_the_/)'
+    - id: grant-corpus
+      why: CLI grant records were not added to the flow decoder corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*')" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_cli_login_input_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/cli-poll/missing-poll-secret.yaml
+  - tools/oracle/cases/sso/cli-poll/wrong-poll-secret.yaml
+  - tools/oracle/cases/sso/cli-poll/started-but-unverified.yaml
+  - tools/oracle/cases/sso/cli-poll/expired-login-id.yaml
+deviations: []
+out_of_scope:
+  - B1615 gathers user/session attributes and B1613 implements browser-code confirmation; neither is repeated in the poll handler.
+  - The non-CLI functions of ui_sso.py are allocated by B063's ownership inventory.
+pitfalls:
+  - A cached team_id with missing team_models is unknown authority and must not be repaired into an empty unrestricted grant.
+  - The ready response for several teams has requires_team_selection=true and no key until a team is selected.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

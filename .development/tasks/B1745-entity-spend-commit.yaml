@@ -1,0 +1,81 @@
+id: B1745
+title: Commit entity balances in order and preserve roster removal races
+description: >-
+  Implement betterlite-db::entity_spend_commit, owning _commit_spend_updates_to_db,
+  _update_entity_spend_in_db, _write_team_member_spend, _invalidate_project_caches and
+  the closed entity-table mapping in db_spend_update_writer.py. Extract
+  ProxyUpdateSpend.update_end_user_spend from proxy/utils.py into this same lower writer.
+  Use B700 transactions and B1746 retry primitives with Decimal values at the existing
+  schema conversion boundary. Each entity table commits separately in this order:
+  users, end users, keys, teams, team members, organizations, organization members,
+  projects, tags, model-access-group budgets, agents. Sort each table's ids before issuing
+  updates and give each transaction 60 seconds. Retry only proven retry-safe connection
+  failures or deadlocks, for n_retry_times+1 total attempts. Do not replay a completed
+  table when a later table fails. Invoke on_table_committed after every category, including
+  empty categories; this callback is the Redis coordinator's exact progress boundary.
+  Users/teams/orgs/projects/tags/access groups/agents increment spend on existing rows
+  without creating missing identities. Keys increment both spend and total_spend and set
+  last_active to current UTC. End users upsert missing rows with blocked=false and initial
+  spend, otherwise increment spend; max_end_user_budget's source pass adds no behavior.
+  Organization membership keys decode their four :: components and percent-encoded ids,
+  updating existing rows only. Reject malformed keys through the ordinary failure path.
+  Team membership uses the raw four-component key and sorts (team,user) rows. Before its
+  single jsonb_to_recordset upsert, take sorted per-team advisory transaction locks with
+  the same hashtext(team_id) key B724 uses. Insert a missing membership only if the user
+  remains on members_with_roles; an existing membership can still be incremented. Both
+  spend and total_spend advance. Encode costs through the approved numeric database
+  boundary so an all-zero batch cannot poison later fractional parameter typing.
+  Mark team membership committed before invalidating team_membership:{user}:{team} cache
+  entries. Likewise mark projects committed before deleting B733 project-cache keys.
+  Cache invalidation failures propagate after that mark; callers must not replay the
+  balance already committed. Test a concurrent roster removal, missing entities, zero
+  followed by fractional updates on one connection, sorted locking, all eleven callback
+  markers and a cache failure between tables. The actual SQL cohort is about 380 lines
+  plus structural protocols reused through native transaction types; budget 800 for its
+  implementation and PostgreSQL/concurrency tests. There are no new external decoders.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/entity_spend_commit.rs
+    - crates/betterlite-db/src/entity_spend_commit/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L124-L184
+    why: Typed entity table mapping and transaction interfaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L354-L391
+    why: Roster-safe member SQL and sorted advisory locks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2021-L2356
+    why: Per-table commits, progress callbacks and post-commit invalidation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7272-L7309
+    why: End-user upsert extracted from the broad proxy utility module.
+dod:
+  - text: All eleven balances use the correct missing-row, total-spend and timestamp behavior in distinct ordered transactions.
+    proof: [balance-commit-tests]
+  - text: Member writes cannot recreate a removed roster member, and committed marks precede cache invalidation.
+    proof: [member-race-tests, committed-boundary-tests]
+checks:
+  optional: []
+  commands:
+    - id: balance-commit-tests
+      why: Entity-specific SQL, sorted writes or retry boundaries are absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^entity_spend_commit::balances::/)'
+    - id: member-race-tests
+      why: Team advisory locking and membership removal protection are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^entity_spend_commit::membership::/)'
+    - id: committed-boundary-tests
+      why: Post-commit cache failures can cause an already applied table to replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^entity_spend_commit::progress::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1746 provides _spend_update_tx, _handle_spend_update_failure, _spend_commit_failure_is_requeue_safe and _spend_tables_left_to_send; no retry algorithm is duplicated here.
+  - B1742 owns entity enqueue identities, B1743 daily record construction and B1744 usage enqueue; B070 owns update_database and its detached-batch replacement.
+  - B1746/B1747/B1748 divide daily commits, memory coordination and Redis coordination; B1749 owns log claims and storage utilities.
+  - The remaining proxy/utils.py surface stays with B124 and its previously extracted owners; max_end_user_budget validation belongs to budget policy, not this no-op branch.
+pitfalls:
+  - Team membership cache eviction happens after the committed callback, so its failure must leave that category excluded from replay.
+  - End users are created by spend flushing, whereas missing user, key and team rows are simply not updated.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

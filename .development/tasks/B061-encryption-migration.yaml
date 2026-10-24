@@ -1,0 +1,63 @@
+id: B061
+title: Migrate legacy ciphertext and attest residual encryption across stores
+description: >-
+  Finish credential_migration.py in betterlite-server::credentials::migration using B1602's
+  reports/scans and B1700's same-key rotation. migrate_encryption, including dry_run, first
+  requires case-insensitive general_settings.encryption_algorithm=aes-256-gcm; a missing or
+  different value raises the source RuntimeError-equivalent before reading tables. A real
+  run scans covered stores, requires the configured salt/master key, rotates with that same
+  key, scans again and sets migrated=max(pre.legacy-post.legacy,0) per location. Dry-run
+  scans only. Then visit team callbacks, key callbacks, vantage_settings api_key/integration_token,
+  cloudzero_settings api_key and sso_config, in that order. check_encryption uses the same
+  read-only walkers without requiring AES. Neither operation claims all-or-nothing migration.
+  Config walkers accept mapping or JSON-string rows through B1602's decoder, ignore nonobjects,
+  count each selected non-null value and write a JSON string only when ciphertext changed.
+  SSO visits every nonempty string field and skips other values. Already-v2 values stay put;
+  a legacy value unchanged by re-encryption remains residual. Invalid stored JSON propagates.
+  Callback walkers accept only mapping metadata, classify both logging[*].callback_vars and
+  callback_settings.callback_vars, and skip rows with no legacy value. A dry run counts
+  residuals without transforming. On a real run decrypt then encrypt the complete metadata;
+  transformation failure warns and counts those legacy values as undecryptable, while a
+  database update failure propagates after preceding rows have committed. Preserve the
+  pin's migrated counter based on classified legacy values rather than inventing a second
+  post-transform classification.
+  Use B1600's shared callback-secret transforms for each complete metadata mapping;
+  their marked-value behavior deliberately survives a change of salt key. Postgres tests
+  must observe exact writes and counts, including gate-off attestation,
+  partial failures, JSON-string metadata being skipped and repeated migration. The migration
+  ranges contain 241 nonblank lines; allow 280 production, 300 fault-injection tests and
+  70 wiring lines within 650. Routes remain B785's responsibility and this task adds no
+  helper facade for its database walkers.
+scope:
+  paths:
+    - crates/betterlite-server/src/credentials.rs
+    - crates/betterlite-server/src/credentials/migration.rs
+    - crates/betterlite-server/src/credentials/migration/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L401
+    why: AES precondition and selective config, SSO and callback walkers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L582-L683
+    why: Same-key migration, before/after residual accounting and gate-independent attestation.
+dod:
+  - text: Migration and attestation preserve location order, gate differences, residual counters and partial database progress.
+    proof: [migration-tests]
+checks:
+  optional: []
+  commands:
+    - id: migration-tests
+      why: Migration reads or writes at the wrong stage or certifies residual ciphertext as migrated.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^credentials::migration::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1602 owns classification, report structures and all scan functions; reencrypt_selective_dict has no caller at the pin.
+  - B1600 owns ciphers, callback-secret transforms and key resolution; B1700 supplies rotation, while B785 implements the HTTP migration/attestation handlers.
+pitfalls:
+  - check_encryption must detect legacy callback values while the AES write gate is disabled.
+  - 'A v2:gcm: prefix is classified as migrated without proving that its ciphertext can be decrypted.'
+  - Callback encryption's marker check intentionally survives rotation to a different salt key.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

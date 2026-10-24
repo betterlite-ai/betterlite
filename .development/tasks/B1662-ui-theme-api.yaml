@@ -1,0 +1,107 @@
+id: B1662
+title: Store dashboard theme URLs and accept bounded logo uploads
+description: >-
+  Build ui_theme_routes with public GET /get/ui_theme_settings, authenticated PATCH
+  /update/ui_theme_settings and administrator-only POST /upload/logo. Own UIThemeConfig,
+  _is_public_http_url, _resolve_ui_theme_field, _validate_public_image_url and the three handlers.
+  Load litellm_settings.ui_theme_config with logo_url, logo_url_dark and favicon_url defaulting
+  null, and UI_LOGO_PATH, UI_LOGO_PATH_DARK and LITELLM_FAVICON_URL defaulting absent in
+  betterlite-config::ui_theme. loads_ui_theme_settings must load these actual config/env keys.
+  GET uses B1656's schema projection, then returns each nonblank stored string unchanged;
+  only its environment fallback is filtered to an http/https URL with nonempty netloc. A
+  legacy stored local path therefore passes through, while a local path supplied solely by
+  environment remains hidden. Do not fetch or inspect any URL in these settings handlers.
+  decode_ui_theme_request(bytes) parses PATCH's JSON body into UIThemeConfig. The handler
+  validates the three supplied values before the storage guard: null, empty and
+  whitespace-only strings are accepted; other strings require the source's urlparse scheme
+  and netloc check, without DNS lookup, extension checks or stricter hostname normalization.
+  Check trimmed text but preserve the original string when saving. Malformed URL syntax that
+  raises in urlparse follows the source error path rather than becoming an invented success.
+  Require store_model_in_db=true, load config and capture the prior theme, then replace the
+  block using the full model dump with nulls excluded. Publish set/remove operations for all
+  three owned environment names through B1646's RuntimeEnvironment; missing/blank values clear
+  them. Save litellm_settings first, then call B124's save_environment_variables with only
+  those three keys, then enqueue config audit via B065. Preserve partial runtime/config writes
+  if either save fails. PATCH adds no role guard beyond B052, unlike the upload handler.
+  Upload requires exact proxy_admin. Use B900's existing multipart decoding, then
+  decode_logo_upload metadata/content boundary to select the lowercase final filename suffix
+  from .png/.jpg/.jpeg/.svg and read at most 5 MiB plus one byte. Extension failure and excess
+  size return the source's distinct 400 details; do not add MIME or image-magic validation.
+  Generate logo_<uuid-hex><extension>, create the uploads directory beside the executable,
+  write the bytes and return message/status/file_path/filename/file_size. No theme setting is
+  automatically changed. Keep the upload destination independent of the supplied filename.
+  Native tests inspect byte limits, disk failures and both persistence boundaries. HTTP cases
+  cover public URL resolution, accepted empty theme values, bad schemes, role differences,
+  mixed-case extensions, empty image bytes and the 5 MiB boundary. Normalize only generated
+  UUIDs and installation roots in upload comparisons, retaining filename structure and size.
+  Fuzz ui_theme_input across JSON theme bodies and parsed multipart logo metadata/content,
+  reusing B900 for multipart framing; replay replays_the_ui_theme_input_corpus. The 178 owned
+  model/function lines budget 250 routes/files, 80 config, 220 tests and 190 fuzz/HTTP, cap 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/ui_theme_routes.rs
+    - crates/betterlite-server/src/ui_theme_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/ui_theme_input.rs
+    - crates/betterlite-server/fuzz/corpus/ui_theme_input/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/ui_theme.rs
+    - crates/betterlite-config/src/ui_theme/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/ui-theme-*
+    - tools/oracle/cases/management/ui-theme/**
+    - tools/oracle/fixtures/multipart-oracle/ui-logo-*
+    - tools/oracle/fuzz/corpus/http_case/ui-theme-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L130-L195
+    why: Theme environment names, public fallback filtering and nullable field records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1325-L1463
+    why: GET/PATCH decorators and runtime, theme-save, environment-save, audit ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1964-L2024
+    why: Upload role check, suffix allowlist, bounded read and generated local filename.
+dod:
+  - text: Theme settings preserve stored-versus-environment visibility and the three-key runtime/persistence sequence.
+    proof: [ui-theme-tests, ui-theme-config, oracle, ui-theme-corpora]
+  - text: Logo upload enforces administrator access and the exact size/suffix rules without interpreting image bytes.
+    proof: [ui-theme-tests, oracle, ui-theme-corpora]
+  - text: Theme configuration is loaded and both accepted body boundaries have committed malformed-input regressions.
+    proof: [ui-theme-config, ui-theme-tests, ui-theme-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ui-theme-tests
+      why: Theme saves disclose environment-only local paths or logo uploads bypass source limits.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_theme_routes::/) - test(replays_the_ui_theme_input_corpus)'
+    - id: ui-theme-config
+      why: Theme records exist without their real YAML and environment bindings.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^ui_theme::tests::loads_ui_theme_settings/)'
+    - id: ui-theme-corpora
+      why: Theme URLs, logo payloads and branding configuration lack new replay seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/ui_theme_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/ui-theme-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_ui_theme_input_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/ui-theme/public-stored-values-versus-environment-paths.yaml
+  - tools/oracle/cases/management/ui-theme/null-blank-and-whitespace-replacement.yaml
+  - tools/oracle/cases/management/ui-theme/reject-local-file-and-non-http-schemes.yaml
+  - tools/oracle/cases/management/ui-theme/save-only-owned-environment-names.yaml
+  - tools/oracle/cases/management/ui-theme/upload-admin-check-and-uppercase-suffix.yaml
+  - tools/oracle/cases/management/ui-theme/upload-empty-image-bytes-and-five-mib-limit.yaml
+  - tools/oracle/cases/management/ui-theme/upload-does-not-change-theme.yaml
+deviations:
+  - what: Logo uploads are saved in uploads beside the betterlite executable, and file_path reports that absolute location instead of a path inside the Python package.
+    why: The native binary has no installed litellm/proxy package directory; the generated filename and response fields are retained.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L2003-L2024
+  - what: Native theme readers see runtime-overlay updates, while Python callbacks reading os.environ directly keep boot values; an overloaded audit queue can omit a saved theme's audit with a warning and counter.
+    why: B1646 avoids unsafe live process-environment mutation and B065 bounds audit task ownership.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1437-L1457
+out_of_scope:
+  - "Unowned functions in proxy_setting_endpoints.py map to B1656 (L88-L127, L723-L783, L800-L849, L1001-L1072), B1657 (L858-L998, L1080-L1127), B1658 (L591-L720), B1659 (L379-L399, L453-L470, L786-L797, L1671-L1742), B1660 (L1750-L1961), B1661 (L1136-L1322) and B1663 (L548-L582, L1472-L1664)."
+  - register_extra_ui_setting L439-L450 has no caller at the pin and its enterprise-only behavior is absent.
+  - B124 owns /get_image and favicon serving; this task only stores theme strings and local upload bytes.
+pitfalls:
+  - Null and omitted theme fields clear the corresponding runtime environment names even though null fields are omitted from the saved theme object.
+  - Upload validation checks the filename extension, so an empty .svg upload succeeds without an SVG parser.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

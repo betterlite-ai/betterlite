@@ -1,0 +1,88 @@
+id: B1617
+title: Connect SSO identities to agent enrollment and assertion diagnostics
+description: >-
+  Add sso_identity_bridge to betterlite-server. Own every function and ActiveSSOProvider in
+  id_jag_assertion_capture.py, both functions in agent_subject_enrollment.py, plus
+  RetentionCheck, warn_if_id_jag_assertion_uncaptured and warn_if_id_jag_capture_gap from
+  ui_sso.py. Active-provider precedence is GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID,
+  GENERIC_CLIENT_ID, then B1625's configured SAML, then none; all client IDs default absent
+  and an empty but present ID still wins. Only generic OIDC has an assertion-capture path.
+  Startup suppresses the no-provider warning because DB settings have not been reconciled;
+  post-login diagnostics do not. Consult B137's assertion-retention-enabled query only when
+  necessary, swallowing its failure with a debug diagnostic. A supplied assertion needs no
+  missing-capture warning. These diagnostics must never fail a successful login.
+  For Microsoft enrollment, require parseable tenant and response id UUIDs, canonicalize both,
+  and accept only absent/empty endpoint overrides or the exact canonical Microsoft URLs.
+  Custom or sovereign endpoint overrides suppress this enrollment path. Form the issuer as
+  https://login.microsoftonline.com/{tenant}/v2.0. Delegate valid nonempty user IDs to B141's
+  AgentIdentityStore.enroll_interactive_human; propagate AgentIdentityFailure through its
+  existing mapper instead of swallowing it like a diagnostic. Do not enroll subjects from
+  arbitrary generic OIDC claims. Compare provider/gap and subject projection with a pure
+  sso_identity_bridge helper; test warning failures and enrollment effects through injected
+  retention/identity-store interfaces. loads_provider_presence exercises empty/present/absent
+  client IDs with SAML configuration through the real loader. The 144 source lines support
+  190 implementation, 140 tests, 80 adapters and 90 config/wiring lines within 550.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_identity_bridge.rs
+    - crates/betterlite-server/src/sso_identity_bridge/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_identity_bridge.rs
+    - crates/betterlite-config/src/sso_identity_bridge/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-identity-bridge-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_identity_bridge.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_identity_bridge.py
+    - tools/oracle/cases/helpers/sso-identity-bridge/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-identity-bridge-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/id_jag_assertion_capture.py#L1-L81
+    why: Shared provider precedence and startup-versus-login diagnostic behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/agent_subject_enrollment.py#L1-L49
+    why: Microsoft UUID and endpoint binding before identity-store enrollment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1670-L1707
+    why: Nonblocking missing-assertion and capture-gap warnings.
+dod:
+  - text: Provider precedence and trusted Microsoft subject projection match the pure original helpers.
+    proof: [identity-bridge-tests, oracle, identity-bridge-python]
+  - text: Retention-query outages only affect diagnostics while identity-store enrollment failures retain their API error.
+    proof: [identity-bridge-tests]
+  - text: Client-ID presence is loaded accurately and added helper/config inputs replay.
+    proof: [identity-bridge-config, identity-bridge-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: identity-bridge-tests
+      why: Provider diagnostics or enrollment can misattribute an identity or turn a warning into login failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_identity_bridge::/)'
+    - id: identity-bridge-config
+      why: An empty configured client ID is incorrectly treated as absent.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_identity_bridge::tests::loads_provider_presence/)'
+    - id: identity-bridge-python
+      why: Identity projection and capture-gap comparisons cannot invoke the original functions.
+      run: test -f tools/oracle/helpers/sso_identity_bridge.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: identity-bridge-corpora
+      why: Shared decoders have no provider-presence or identity-bridge call seed.
+      run: grep -rlq 'sso_identity_bridge:' tools/oracle/fuzz/corpus/helper_case/sso-identity-bridge-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-identity-bridge-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-identity-bridge/empty-google-id-masks-generic.yaml
+  - tools/oracle/cases/helpers/sso-identity-bridge/no-provider-at-startup.yaml
+  - tools/oracle/cases/helpers/sso-identity-bridge/generic-captures-but-saml-does-not.yaml
+  - tools/oracle/cases/helpers/sso-identity-bridge/uuid-canonicalization.yaml
+  - tools/oracle/cases/helpers/sso-identity-bridge/foreign-endpoint-suppresses-enrollment.yaml
+deviations: []
+out_of_scope:
+  - B137 stores and spends the captured assertion; this task diagnoses its absence but never creates an assertion from an access token.
+  - B1622 calls subject projection during Microsoft login; the remaining ui_sso.py functions are indexed in B063.
+pitfalls:
+  - GOOGLE_CLIENT_ID="" selects Google for capture diagnostics even when GENERIC_CLIENT_ID is also configured.
+  - Enrollment is allowed only when every nonempty endpoint override matches its expected canonical tenant URL exactly.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

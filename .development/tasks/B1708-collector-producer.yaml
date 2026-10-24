@@ -1,0 +1,89 @@
+id: B1708
+title: Deliver spend events to the local collector with explicit outage behavior
+description: >-
+  Add betterlite-logging::collector_producer and ::spend_error, owning both source modules.
+  CollectorSettings loads case-insensitive LITELLM_COLLECTOR_ fields ENABLED=false,
+  ADDRESS=unix:///var/run/litellm/collector.sock, BUFFER_SIZE=1000 (at least one),
+  ON_UNAVAILABLE=fallback (fallback or drop), DRAIN_TIMEOUT_SECONDS=10 and
+  CONNECT_TIMEOUT_SECONDS=1 (both positive), plus LITELLM_JOB_ROLE=null. A producer
+  exists only when enabled and job_role is not exactly collector. Parse unix paths and
+  tcp host/port addresses; accept only IP loopback or literal localhost for TCP. Semantic
+  AddressError results log an error and leave billing in-process; URL syntax failures,
+  including malformed or out-of-range ports, propagate from producer construction.
+  Preserve the pinned Unix path selection
+  and localhost behavior; no remote collector authentication is introduced.
+  Use one owned writer and bounded FIFO. publish immediately invokes outage policy when
+  closing, during the one-second reconnect backoff or when the queue is full. Successful
+  queueing increments queued; successful complete send increments sent. Reuse a connection
+  only while open and before peer EOF. Connect failures log a transition and start backoff;
+  write failures disconnect, start backoff and apply policy to that event. Reconnect and
+  transport tests use injected time and a controlled socket, never timing-dependent sleeps.
+  Fallback completes the in-process callback even if its requester is cancelled, then
+  propagates cancellation; callback failure is logged and contained. Drop increments its
+  counter and logs at counts 1,1001,2001. stats.connected reports connection presence,
+  not a new liveness probe. Close stops admission, waits for queued work until the drain
+  timeout, cancels the writer, then applies policy to unsent in-flight and queued events.
+  Track the byte offset explicitly: abort a partially written connection before fallback;
+  never replay an event whose complete line reached the kernel. This is at-most-once
+  delivery, not an acknowledgment/retry protocol.
+  Spend-error logging reads LITELLM_SUPPRESS_SPEND_LOG_TRACEBACKS from the current runtime
+  settings snapshot on each call, default false. Suppress only when str_to_bool returns
+  true and DEBUG logging is disabled; otherwise preserve the supplied or active exception
+  trace. This helper does not invoke alerting. Expose the same predicate to failure-row
+  construction so it can omit traceback entirely. loads_collector_delivery_settings and
+  loads_spend_traceback_policy prove env defaults/aliases and dynamic snapshot replacement.
+  decode_collector_settings and parse_collector_address share a tagged config fuzz target;
+  include suppression values in that decoder. Pure collector_policy oracle cases exercise
+  address parsing and the suppression predicate; native tests cover queue pressure,
+  half-close, partial-send cancellation and fallback completion. Source totals 291 producer
+  plus 66 error-helper lines; budget 350 implementation and 450 tests/config/oracle/fuzz.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/{collector_producer,spend_error}.rs
+    - crates/betterlite-logging/src/{collector_producer,spend_error}/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/collector.rs
+    - crates/betterlite-config/src/collector/**
+    - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/collector_settings.rs,corpus/collector_settings/**}
+    - tools/oracle/src/helpers/{mod.rs,collector_policy.rs}
+    - tools/oracle/helpers/{dispatch.py,collector_policy.py}
+    - tools/oracle/cases/helpers/collector-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/collector-policy-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event_producer.py#L36-L338
+    why: Settings, local addressing, queue delivery, failure shielding and shutdown ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_log_error_logger.py#L33-L83
+    why: Dynamic opt-in and DEBUG override for console and stored failure traceback suppression.
+dod:
+  - text: The producer retains queue order and at-most-once send ownership through outages, full buffers, half-close and cancellation.
+    proof: [producer-tests]
+  - text: Settings/address validation and traceback suppression retain exact defaults, role behavior and DEBUG override.
+    proof: [producer-tests, oracle, producer-python, producer-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: producer-tests
+      why: Collector delivery or traceback policy tests lose ownership or load the wrong settings.
+      run: cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/^collector_producer::/) + test(/^spend_error::/) + test(/^collector::/) - test(replays_the_collector_settings_corpus)'
+    - id: producer-python
+      why: Collector policy comparison lacks a checked pinned-source adapter.
+      run: test -f tools/oracle/helpers/collector_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: producer-corpora
+      why: Collector settings bytes or the policy helper operation have no new replay input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/collector_settings)" && grep -rlq 'collector_policy:' tools/oracle/fuzz/corpus/helper_case/collector-policy-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_collector_settings_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/collector-policy/unix-loopback-ipv6-and-remote-address.yaml
+  - tools/oracle/cases/helpers/collector-policy/defaults-job-role-and-invalid-port.yaml
+  - tools/oracle/cases/helpers/collector-policy/traceback-opt-in-with-debug-override.yaml
+deviations: []
+out_of_scope:
+  - B1707 defines event bytes; B069 installs the producer and failure callback, while the collector consumer task owns socket listening and process startup.
+pitfalls:
+  - Falling back after a fully sent line can double-charge even when the peer disappears immediately afterward.
+  - Debug logging disables traceback suppression for both console output and stored failure metadata.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

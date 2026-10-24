@@ -1,0 +1,98 @@
+id: B1649
+title: Apply provider discounts and provider-or-global margins with exact money
+description: >-
+  Create betterlite-cost and its adjustments module for cost_calculator.py's
+  _apply_cost_discount and _apply_cost_margin. Define the loaded adjustment records in
+  betterlite-config so the calculator and later management routes share them without
+  making billing depend on the server. litellm_settings.cost_discount_config and
+  cost_margin_config both default to empty maps. Keep discount keys as configured names;
+  only a truthy matching provider gets a discount, with no global fallback. Return the
+  discounted amount, selected fraction and saved amount. Margin lookup prefers an existing
+  provider entry over global even when that provider entry is null or empty. A scalar
+  number supplies a percentage, an object may supply percentage and/or fixed_amount,
+  and unrelated object keys do not contribute. Preserve unsupported/null legacy config
+  variants as explicit unapplied entries rather than falling through to global. Numeric
+  strings inside the recognized object fields follow float-convertible source semantics,
+  while a scalar string does not become a percentage. Config loading does not impose the
+  management API's provider/range restrictions: negative or over-one discounts and negative
+  margins remain calculable when directly configured, as in the pinned helpers.
+  Use B204's checked Decimal conversion and checked arithmetic for base * discount,
+  base - saved, base * percentage + fixed, and base + margin; expose typed overflow errors.
+  Return every component even when zero. Do not bake discount-before-margin ordering into
+  this leaf's independent functions; B068's caller owns the order. loads_cost_adjustments
+  must exercise both settings, provider-presence precedence, unsupported legacy shapes and
+  absent defaults through the real loader. Extend config_yaml replay seeds rather than
+  introducing another config parser. Add the cost_adjustments pure helper adapter that
+  invokes the pinned functions with isolated configured maps and canonicalizes only numeric
+  rendering. Oracle inputs use exactly representable amounts to verify branch behavior;
+  separate native tests prove exact cents/subcent arithmetic and overflow, with no broad
+  tolerance hiding billing differences. The 78 owned function lines permit 160 math/types,
+  90 config/crate wiring, 190 tests and 130 adapter/corpus lines, capped at 650.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-cost/Cargo.toml
+    - crates/betterlite-cost/src/lib.rs
+    - crates/betterlite-cost/src/adjustments.rs
+    - crates/betterlite-cost/src/adjustments/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/cost_adjustments.rs
+    - crates/betterlite-config/src/cost_adjustments/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/cost_adjustments.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/cost_adjustments.py
+    - tools/oracle/cases/helpers/cost-adjustments/**
+    - tools/oracle/fuzz/corpus/helper_case/cost-adjustments-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1121-L1218
+    why: Independent discount and margin functions, provider/global precedence and supported legacy shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L564-L567
+    why: Both module-level adjustment maps default empty.
+dod:
+  - text: Discount and margin selection match provider presence, global fallback and all recognized/ignored entry shapes.
+    proof: [adjustment-tests, adjustment-config-tests, oracle, adjustment-python]
+  - text: Monetary calculations stay exact and report overflow without floating-point conversion.
+    proof: [adjustment-tests]
+  - text: Loaded adjustment settings and helper calls have committed decoder replay inputs.
+    proof: [adjustment-config-tests, adjustment-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: adjustment-tests
+      why: A configured adjustment picks the wrong branch or loses exact monetary arithmetic.
+      run: cargo nextest run --locked -p betterlite-cost --no-tests=fail -E 'test(/^adjustments::/)'
+    - id: adjustment-config-tests
+      why: Cost adjustment maps are not loaded with the source's defaults and legacy precedence.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^cost_adjustments::tests::loads_cost_adjustments/)'
+    - id: adjustment-python
+      why: The pure adjustment oracle is missing or does not pass strict Python validation.
+      run: test -f tools/oracle/helpers/cost_adjustments.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: adjustment-corpora
+      why: Adjustment configuration and helper operation tags have no new replay seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*')" && grep -rlq 'cost_adjustments:' tools/oracle/fuzz/corpus/helper_case/cost-adjustments-* && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cost-adjustments/discount-has-no-global-fallback.yaml
+  - tools/oracle/cases/helpers/cost-adjustments/null-provider-margin-shadows-global.yaml
+  - tools/oracle/cases/helpers/cost-adjustments/combined-percentage-and-fixed.yaml
+  - tools/oracle/cases/helpers/cost-adjustments/scalar-string-versus-object-number-string.yaml
+  - tools/oracle/cases/helpers/cost-adjustments/direct-config-outside-api-ranges.yaml
+deviations:
+  - what: Adjustment totals use exact decimal arithmetic, so trailing digits may differ from LiteLLM's binary-float results; unrepresentable monetary values fail with a typed error.
+    why: The repository requires Decimal from initial parsing through every money operation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1135-L1218
+out_of_scope:
+  - B068 owns all remaining cost_calculator.py functions outside L1121-L1218 until its call-graph parts assign them; no provider selection or token pricing belongs to this leaf.
+  - B1650 owns management validation and persistence for cost adjustment maps, which intentionally impose stricter ranges than direct configuration.
+pitfalls:
+  - Testing a provider entry by truthiness instead of membership incorrectly exposes the global margin when the provider explicitly supplies null or an empty object.
+  - A fixed margin still applies when the base cost is zero, so skipping zero-cost requests before this helper changes billing.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

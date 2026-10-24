@@ -1,0 +1,104 @@
+id: B1671
+title: Separate cached modalities and price input usage without double charging
+description: >-
+  Introduce betterlite-models::modality_cost for utils.py's _get_token_detail_value,
+  get_billable_input_tokens, calculate_cache_writing_cost, both detail-result records,
+  parse_prompt_tokens_details, parse_completion_tokens_details, _calculate_input_cost and
+  _coerce_token_count. Consume B1668 CostUsage rather than importing the core response
+  pipeline; extend its billing projection only with the named counters needed here.
+  Prompt details use cached_tokens or zero, then cache_write_tokens or cache_creation_tokens
+  or zero. Nested cached counters accept dictionary or attribute records, and only integers
+  including Booleans count. Allocate cache coverage to audio, then text, then image with
+  successive min caps, retaining signed source values; subtract each from its reported
+  modality and clamp the resulting ordinary modality at zero. Video and query counts alone
+  require positive integers. Character/image counts and audio/video durations keep the
+  source's or-zero semantics. get_billable_input_tokens subtracts total cached tokens from
+  prompt_tokens without clamping or subtracting writes.
+  Completion details preserve audio, image and reasoning counters and positive video counts.
+  Remove only reasoning demonstrably nested in reported text: subtract the minimum of
+  reasoning, text and max(text+reasoning+other-modalities-completion_tokens,0). This billing
+  projection reproduces the referenced public-type helper's arithmetic without depending
+  upward on a response DTO crate or creating another public Usage model. Missing completion
+  text remains zero here; the higher-level generic calculator owns remainder inference.
+  A present cache_creation_token_details record completely replaces the aggregate write
+  count, even when both TTL fields are null or zero. Five-minute tokens use ordinary write
+  price and one-hour tokens use the one-hour price; no implicit leftover count is billed.
+  Input cost starts with text*base, then nonaudio cached tokens*read plus cached audio at the
+  service-aware audio-read price or ordinary read fallback. Uncached audio tokens use the
+  service-aware audio rate unless audio seconds and a nonnull per-second price coexist.
+  Likewise an image count with a nonnull per-image price suppresses image-token charging,
+  and video seconds with a nonnull video-second price suppress video-token charging. Missing
+  image/video token prices fall back to the ordinary unsuffixed input-token field; audio has
+  no such generic fallback. Explicit zero unit prices still suppress token charges. Add
+  write cost and positive character/image/duration/query components using B1670's common
+  component operation, preserving its rejection of nonpositive quantities.
+  The modality_cost helper exercises already-constructed Usage objects and direct detail
+  records against the source; this is not a second JSON response parser. Add helper_case
+  seeds for mixed dictionaries, optional records and signed counters. The 261 owned
+  nonblank lines support 280 implementation, 230 focused tests and 190 adapter/case lines,
+  capped at 750 including the CostUsage projection additions.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - crates/betterlite-models/src/modality_cost.rs
+    - crates/betterlite-models/src/modality_cost/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/modality_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/modality_cost.py
+    - tools/oracle/cases/helpers/modality-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/modality-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L105-L110
+    why: Integer-only counters support dictionary and attribute-backed records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L162-L168
+    why: Billable input subtracts reads without a zero clamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L892-L1173
+    why: Cache allocation, nested detail views and mutually exclusive modality units.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1495-L1496
+    why: Positive integer filtering used specifically for video/query counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1721-L1729
+    why: Arithmetic the completion-detail view uses to remove nested reasoning.
+dod:
+  - text: Cached audio/text/image allocation and nested reasoning produce the pinned detail records, including zero and signed-count cases.
+    proof: [modality-cost-tests, oracle, modality-cost-python, modality-cost-corpus]
+  - text: Per-unit prices suppress the corresponding token charges even when free, and TTL detail presence overrides aggregate writes.
+    proof: [modality-cost-tests, oracle, modality-cost-python]
+  - text: Extending the billing usage view preserves every counter used by modality pricing without coupling model prices to core dispatch.
+    proof: [modality-cost-tests, oracle, modality-cost-python]
+checks:
+  optional: []
+  commands:
+    - id: modality-cost-tests
+      why: Modality subtraction, TTL precedence or the billing projection loses chargeable usage.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^modality_cost::/) | test(/^cost_usage::modality_projection::/)'
+    - id: modality-cost-python
+      why: Modality comparisons lack a checked adapter calling the original functions.
+      run: test -f tools/oracle/helpers/modality_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: modality-cost-corpus
+      why: Parsed usage variants are absent from the modality_cost helper corpus.
+      run: grep -rlq 'modality_cost:' tools/oracle/fuzz/corpus/helper_case/modality-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/modality-cost/cache-audio-first-then-text-image.yaml
+  - tools/oracle/cases/helpers/modality-cost/ttl-record-empty-overrides-total-writes.yaml
+  - tools/oracle/cases/helpers/modality-cost/free-seconds-and-images-suppress-token-cost.yaml
+  - tools/oracle/cases/helpers/modality-cost/audio-rate-absent-versus-image-fallback.yaml
+  - tools/oracle/cases/helpers/modality-cost/reasoning-nested-in-text-only-to-excess.yaml
+  - tools/oracle/cases/helpers/modality-cost/signed-counts-and-positive-video-query.yaml
+deviations:
+  - what: Usage arithmetic and monetary products fail with typed overflow errors rather than unbounded integers or rounded/infinite floats.
+    why: Billing keeps signed source semantics within checked counter and Decimal bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1073-L1173
+out_of_scope:
+  - B1670 supplies utils.py threshold/base/reasoning selectors; B1669 supplies its off-peak window/rate functions. Generic totals and uplift are B1672; billed token rates, breakdowns and cache savings are B1673; B1674 owns image arithmetic, B1675 the two web-search counters, B1676 character metrics, and B1687 requested-image accessors and CostCalculatorUtils dispatch.
+  - Public Usage construction and response serialization retain their existing owners; callers project those records into CostUsage before entering this module.
+pitfalls:
+  - An empty TTL detail object means zero write cost rather than permission to charge the aggregate cache_creation_tokens again.
+  - Missing audio-token pricing yields zero for that component, whereas missing image/video token pricing falls back to input_cost_per_token.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

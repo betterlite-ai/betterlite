@@ -1,0 +1,78 @@
+id: B1612
+title: Render CLI verification, consent and completion pages
+description: >-
+  Add cli_login_pages to betterlite-server, retaining the pinned HTML structure of
+  _render_cli_sso_verification_page, render_cli_sso_success_page,
+  render_native_client_consent_page and _team_field. These renderers receive typed values
+  and register no endpoints. The verification form posts browser_complete_token and user_code
+  to its supplied action; a nonempty prefill changes both the value attribute and instructions.
+  Native-client consent must expose the requesting origin, signed-in user and credential
+  lifetime from B1223's CLI_JWT_EXPIRATION_HOURS setting. Render no team field for zero teams,
+  one hidden field for one team and an ordered select for several. Escape every dynamic
+  text/attribute using the same quote-aware semantics as html.escape. The native flow handle
+  appears only in the form body and the page declares referrer=no-referrer. Completion keeps
+  its window.close script and terminal instructions. Rebrand visible product names and the
+  ASCII banner in accordance with the retained-dashboard decision, without changing input
+  names, URLs or the lite logout command. A cli_login_page helper compares form controls,
+  escaped content, script and referrer metadata; explicitly omit the branded title/banner
+  fields from equality and assert them in native tests. The 334 nonblank source lines are
+  mostly retained HTML/CSS; allow 350 rendering, 130 tests, 80 adapters and 40 wiring lines
+  within 650. Typed strings are already decoded by their callers, so add only a seed to
+  B171's helper-case corpus, not a second HTML-input parser.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cli_login_pages.rs
+    - crates/betterlite-server/src/cli_login_pages/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/cli_login_page.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/cli_login_page.py
+    - tools/oracle/cases/helpers/cli-login-pages/**
+    - tools/oracle/fuzz/corpus/helper_case/cli-login-page-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L624-L700
+    why: Browser verification form and prefill branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/cli_sso_success.py#L1-L197
+    why: Completion page markup and close-window action.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/native_client_consent.py#L1-L91
+    why: Escaped consent inputs, no-referrer directive and team-field cardinality.
+dod:
+  - text: All three pages preserve their form contracts and hostile values remain text or attribute data.
+    proof: [page-tests, oracle, page-python]
+  - text: Product branding changes are isolated from the compatible controls and helper inputs replay successfully.
+    proof: [page-tests, page-corpus]
+checks:
+  optional: []
+  commands:
+    - id: page-tests
+      why: CLI forms lost a control, leaked an unescaped attribute or retained the old product branding.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_login_pages::/)'
+    - id: page-python
+      why: Page comparison does not call the original pure renderers through a checked adapter.
+      run: test -f tools/oracle/helpers/cli_login_page.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: page-corpus
+      why: The shared helper envelope does not recognize the CLI page operation.
+      run: grep -rlq 'cli_login_page:' tools/oracle/fuzz/corpus/helper_case/cli-login-page-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cli-login-pages/empty-and-prefilled-code.yaml
+  - tools/oracle/cases/helpers/cli-login-pages/quoted-action-and-token.yaml
+  - tools/oracle/cases/helpers/cli-login-pages/no-single-and-many-teams.yaml
+  - tools/oracle/cases/helpers/cli-login-pages/hostile-label-and-origin.yaml
+  - tools/oracle/cases/helpers/cli-login-pages/completion-script.yaml
+deviations:
+  - what: CLI pages display betterlite in product labels, titles and the retained ASCII banner.
+    why: The README decision keeps and rebrands the MIT dashboard; form behavior remains compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/cli_sso_success.py#L155-L185
+out_of_scope:
+  - B1613 verifies browser_complete_token and B1615 supplies the verification page; B137 owns native-client approval handling.
+  - Functions elsewhere in ui_sso.py retain the assignments in B063's ownership inventory.
+pitfalls:
+  - A single team must use a hidden team_id control even though its human-readable label remains visible.
+  - The flow handle is an attribute value inside a POST form, never a query parameter in the complete_url.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

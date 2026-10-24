@@ -1,0 +1,84 @@
+id: B1609
+title: Map generic OIDC claims to roles and teams
+description: >-
+  Implement sso_claims in betterlite-auth, owning normalize_email, determine_role_from_groups,
+  process_sso_jwt_access_token, _decode_sso_token_claims, _merge_sso_token_claims and
+  generic_response_convertor in ui_sso.py. B1608 supplies identities/roles; B760 supplies JWT
+  team projection and B213 nested claim lookup. Userinfo wins over id_token and then
+  access_token, but a null value falls through. Access-token role/team extraction fills only
+  missing values and tolerates opaque tokens. This unverified decoding consumes tokens already
+  returned by the configured OAuth exchange, never a caller's API bearer as authentication.
+  Load GENERIC_USER_ID_ATTRIBUTE=preferred_username, DISPLAY_NAME_ATTRIBUTE=sub,
+  EMAIL_ATTRIBUTE=email, FIRST_NAME_ATTRIBUTE=first_name, LAST_NAME_ATTRIBUTE=last_name,
+  PROVIDER_ATTRIBUTE=provider and ROLE_ATTRIBUTE=role, all with the GENERIC_USER_ prefix.
+  GENERIC_USER_EXTRA_ATTRIBUTES is absent by default and splits comma-separated nested paths.
+  Generic/okta role mappings accept group lists, comma-separated strings and scalar values,
+  use highest privilege, then default_role, then the configured direct role claim. DB team
+  mapping suppresses the ordinary JWT-handler team lookup but not the SSO-specific one;
+  preserve duplicate team IDs. Add loads_claim_attributes in betterlite-config.
+  Extend B760's existing unverified JWT decoder corpus for malformed/opaque tokens; JSON
+  identities use B1608's decoder. A sso_claims helper invokes the six original functions with
+  the same configuration and input. The measured 244 source lines allow 280 product, 170 tests,
+  100 adapters and 100 config/corpus lines, within 675 changed lines.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/sso_claims.rs
+    - crates/betterlite-auth/src/sso_claims/**
+    - crates/betterlite-auth/fuzz/corpus/jwt_claims/sso-*
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_claims.rs
+    - crates/betterlite-config/src/sso_claims/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-claims-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_claims.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_claims.py
+    - tools/oracle/cases/helpers/sso-claims/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-claims-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L788-L974
+    why: Lowercase email, group hierarchy, access-token augmentation and ordered claim merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1130-L1247
+    why: Generic provider field mapping and duplicate-preserving team collection.
+dod:
+  - text: Claim precedence, group conversion and generic field projection agree with the pinned Python helpers.
+    proof: [sso-claim-tests, oracle, sso-claims-python]
+  - text: The real config loader accepts every listed GENERIC_USER attribute binding and feeds the projection.
+    proof: [sso-claim-config]
+  - text: Opaque tokens and the added helper/config shapes replay through existing byte decoders.
+    proof: [sso-claim-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sso-claim-tests
+      why: Claim fallback, direct-role selection or team mapping is missing.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^sso_claims::/) - test(/replays_the_/)'
+    - id: sso-claim-config
+      why: Generic claim environment names are not supported by config loading.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_claims::tests::loads_claim_attributes/)'
+    - id: sso-claims-python
+      why: Claim conversion is not exercised by a checked direct Python adapter.
+      run: test -f tools/oracle/helpers/sso_claims.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: sso-claim-corpora
+      why: New SSO inputs are absent from one of the reused parser corpora.
+      run: grep -rlq 'sso_claims:' tools/oracle/fuzz/corpus/helper_case/sso-claims-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-auth/fuzz/corpus/jwt_claims/sso-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-claims-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_jwt_claims_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-claims/userinfo-null-falls-through.yaml
+  - tools/oracle/cases/helpers/sso-claims/opaque-access-token.yaml
+  - tools/oracle/cases/helpers/sso-claims/groups-array-string-scalar.yaml
+  - tools/oracle/cases/helpers/sso-claims/existing-role-is-kept.yaml
+  - tools/oracle/cases/helpers/sso-claims/team-mapping-duplicates.yaml
+  - tools/oracle/cases/helpers/sso-claims/nested-extra-fields.yaml
+deviations: []
+out_of_scope:
+  - B1610 loads role/team mappings; B1623 performs the generic exchange; B063 assigns the remaining ui_sso.py definitions to its other parts.
+pitfalls:
+  - A DB team_ids_jwt_field adds to SSO-specific teams and does not deduplicate the result.
+  - Empty or absent userinfo values have different claim-merge behavior from nonempty values, even when an ID token carries the same key.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

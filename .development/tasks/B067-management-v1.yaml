@@ -1,0 +1,85 @@
+id: B067
+title: Mount management v1 and expose bulk team-member actions
+description: >-
+  Finish betterlite-server::management::v1 by composing B1703's budget collection, B1705's
+  spend facets and B1222's existing bulk-user router exactly once. The user routes' complete
+  paths are /management/v1/users/bulk and /management/v1/users/bulk_delete; the shorter
+  strings in B1222 are relative route declarations, not additional public aliases. Own
+  management_v1/__init__.py and teams.py; users.py is already implemented by B1222.
+  Add POST /management/v1/teams/{team_id}/members/bulk_delete and
+  POST /management/v1/teams/{team_id}/members/bulk_update in management::member_actions.
+  Use B1231's request decoders/response records, B052 authentication, B1701's declared-query
+  rejection and problem conversion, and B865's management completion wrapper. Deletion
+  calls B1202's locked bulk removal service; update calls B802's budget merge service.
+  Forward litellm-changed-by only on budget update, where the source reads it. Both return
+  a data array in input order, with row errors remaining row errors rather than turning
+  the response into a failed HTTP request. Missing database is a 503 database-not-connected
+  problem; preserve ManagementProblem from the service, and convert other failures to
+  500 internal-server-error. No extra outer transaction surrounds either service.
+  Body limits are 1..500 members, unknown fields are rejected, and exactly one user ID
+  or email identifies a member. B1231 retains absent versus null patch fields, duration
+  validation and allowed_models; this route must not rebuild those records with defaults
+  that erase field presence. The effective limits in the response come from B802's result,
+  including member/team_default provenance and shared-budget copy-on-write. Team-member
+  roles are outside the update schema. Authorization permits the source's team/org admins,
+  not just proxy administrators; unknown teams remain 404 management problems.
+  Boot both proxies for oracle cases covering each member action, scoped administrators,
+  unknown teams, duplicate/unknown members, forbidden roles, unknown query/body fields,
+  null/absent budget fields and audit attribution. Mounting tests enumerate all seven
+  management paths and prove there is one handler for each, while an actual request to
+  every composed router verifies the prefix. Use B860 database inspection for shared-budget
+  isolation and row order; underlying transaction concurrency remains with B802/B1202.
+  Teams owns 163 nonblank source lines and composition 21; allocate 190 handlers/wiring,
+  230 integration tests and 200 HTTP fixtures, capped at 700 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/management.rs
+    - crates/betterlite-server/src/management/v1.rs
+    - crates/betterlite-server/src/management/v1/**
+    - crates/betterlite-server/src/management/member_actions.rs
+    - crates/betterlite-server/src/management/member_actions/**
+    - crates/betterlite-server/src/routes.rs
+    - tools/oracle/cases/http/management-member-actions/**
+    - tools/oracle/cases/http/management-v1-mount/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/__init__.py#L1-L26
+    why: The four routers compose under their existing prefix without duplicate registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/teams.py#L28-L102
+    why: Bulk removal decorator, scope/service dispatch and problem handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/teams.py#L100-L182
+    why: Budget action decorator, changed-by header and response wrapping.
+dod:
+  - text: Bulk team removal and budget updates preserve authorization, ordered outcomes, patch presence and their service transaction boundaries.
+    proof: [member-action-tests, oracle]
+  - text: All seven management paths are mounted once with their full prefix and retain the proper problem response and query/body validation behavior.
+    proof: [management-mount-tests, member-action-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: member-action-tests
+      why: A bulk member handler forwards the wrong identity, patch fields or service outcome.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::member_actions::/)'
+    - id: management-mount-tests
+      why: Management v1 is missing a composed route, repeats a handler or exposes an incorrect prefix.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::v1::/)'
+oracle_cases:
+  - tools/oracle/cases/http/management-member-actions/team-and-org-admin-removal.yaml
+  - tools/oracle/cases/http/management-member-actions/duplicate-email-and-missing-member.yaml
+  - tools/oracle/cases/http/management-member-actions/budget-omitted-null-and-shared-row.yaml
+  - tools/oracle/cases/http/management-member-actions/changed-by-audit-and-effective-limits.yaml
+  - tools/oracle/cases/http/management-member-actions/unknown-team-body-query-and-forbidden.yaml
+  - tools/oracle/cases/http/management-v1-mount/seven-prefixed-paths.yaml
+deviations: []
+out_of_scope:
+  - B1222 owns users.py and its user creation/deletion paths, including its recorded removal of the license seat cap; B793/B794 own the underlying services.
+  - B1703 owns budgets.py, B1705 spend_logs.py, B1665 common.py and envelopes, and B1701/B1702 the list framework.
+  - B1231 owns team request byte decoding/fuzzing; B802 and B1202 retain budget and roster mutation algorithms.
+pitfalls:
+  - The budget patch response describes limits after the write, not merely the fields supplied by the caller.
+  - Only the update action consumes litellm-changed-by; deletion must not invent that parameter.
+  - Re-registering the bulk-user handlers while composing their router would panic at startup.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

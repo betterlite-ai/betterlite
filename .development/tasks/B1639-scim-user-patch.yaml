@@ -1,0 +1,89 @@
+id: B1639
+title: Apply SCIM user patches and export the shared member-path parser
+description: >-
+  Implement scim_user_patch for PATCH /scim/v2/Users/{user_id} and all functions from
+  _parse_member_entry through _apply_patch_ops. Reuse B1632's PatchOp validation and B1634's
+  JSON-object view. Member entries accept strings or objects with a truthy value converted
+  using Python string formatting; preserve display/type where accepted and ignore other
+  shapes. Export decode_scim_member_path(bytes, Groups|Members), matching the source's
+  anchored quoted value-equality filter case-insensitively while preserving ids and
+  unescaping any backslash-followed character. Unquoted, malformed or empty matches
+  produce no ids. Fuzz that decoder as scim_member_path and replay it in ordinary tests.
+  Apply user patches in order. Pathless objects recognize active, displayName, externalId,
+  entitlements, roles and nested name fields, ignoring other keys including groups.
+  Named unknown paths instead write/remove lowercase metadata keys. Active strings are
+  true only when lowercased exactly true, without trimming. Entitlement/role add appends
+  without deduplication; replace overwrites, remove deletes, and filtered/subattribute
+  paths or missing add/replace values are 400. Group add/remove mutate the original set,
+  but a replace records a separate final set that wins even over later add/remove
+  operations; preserve this asymmetry with group PATCH. Names retain scim_metadata.
+  Capture prior active before applying metadata mutations, reconcile rosters through B1637,
+  derive the role from final team ids via B1635, write user data, evict/broadcast the user
+  cache, then change key blocks only for a non-null active transition. Removing active
+  therefore displays the default true without unblocking previously SCIM-blocked keys.
+  Return B1633's resource with application/scim+json. Compare pure patch projections through
+  scim_user_patch helper cases and the actual route through B1644 eligible HTTP transcripts,
+  including status/type/param/code, content type and authentication. The 250 owned lines
+  budget 280 implementation, 190 tests, 100 adapters and 160 fuzz/HTTP fixtures, capped 800.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_user_patch.rs
+    - crates/betterlite-server/src/scim_user_patch/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/scim_member_path.rs
+    - crates/betterlite-server/fuzz/corpus/scim_member_path/**
+    - crates/betterlite-server/fuzz/corpus/scim_resource/user-patch-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_user_patch.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_user_patch.py
+    - tools/oracle/cases/helpers/scim-user-patch/**
+    - tools/oracle/cases/management/scim-user-patch/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-user-patch-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1965-L2197
+    why: Member value parsing, escaped path filters and all pure user patch operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2325-L2397
+    why: Authenticated PATCH route, roster-before-user writes and later active transition.
+dod:
+  - text: Member filters and patch projections reproduce quoted-id parsing, whole-attribute validation and replace precedence.
+    proof: [user-patch-tests, oracle, user-patch-python, member-path-corpus]
+  - text: The real PATCH route updates roles and key access in the pinned order, including removal of active.
+    proof: [user-patch-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: user-patch-tests
+      why: User patch coercion, membership precedence or post-write access changes diverge.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_user_patch::/) - test(replays_the_scim_member_path_corpus)'
+    - id: user-patch-python
+      why: The pure patch adapter is absent or permits unchecked dynamic Python values.
+      run: test -f tools/oracle/helpers/scim_user_patch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: member-path-corpus
+      why: Shared path-filter decoding and user-patch helper shapes have no new fuzz regressions.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/scim_member_path)" && grep -rlq 'scim_user_patch:' tools/oracle/fuzz/corpus/helper_case/scim-user-patch-* && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_member_path_corpus) | test(replays_the_helper_case_corpus) | test(replays_the_scim_resource_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-user-patch/replace-groups-wins-over-later-add.yaml
+  - tools/oracle/cases/helpers/scim-user-patch/pathless-groups-are-ignored.yaml
+  - tools/oracle/cases/helpers/scim-user-patch/quoted-id-keeps-case-and-unescapes.yaml
+  - tools/oracle/cases/helpers/scim-user-patch/entitlement-add-keeps-duplicates.yaml
+  - tools/oracle/cases/management/scim-user-patch/remove-active-does-not-unblock.yaml
+  - tools/oracle/cases/management/scim-user-patch/filtered-role-path-is-bad-request.yaml
+  - tools/oracle/cases/management/scim-user-patch/role-demotion-after-team-removal.yaml
+  - tools/oracle/cases/management/scim-user-patch/authentication-and-invalid-operation.yaml
+deviations: []
+out_of_scope:
+  - "B064 owns group PATCH evaluation and its different sequential member-replace semantics; it consumes this task's member entry/path parsers."
+  - "Support functions elsewhere in scim_v2.py: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "Other scim_v2.py routes/helpers: B1638 L164-L232/L1661-L1879; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - A user groups replace uses a separately retained replacement set, so later add/remove operations cannot be folded into it as group PATCH does.
+  - Removing scim_active changes the displayed default but does not satisfy the route's non-null transition condition for unblocking keys.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

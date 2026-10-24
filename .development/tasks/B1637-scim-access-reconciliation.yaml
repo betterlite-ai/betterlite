@@ -1,0 +1,84 @@
+id: B1637
+title: Reconcile SCIM rosters and revoke only SCIM-controlled key access
+description: >-
+  Add scim_access_reconciliation to betterlite-server for _handle_team_membership_changes,
+  the key-block marker helpers, _set_user_keys_blocked, _delete_rows_referencing_user,
+  active-state readers, all roster-failure helpers and patch_team_membership, plus
+  _handle_group_membership_changes. Use B808/B1207's member services with the source's
+  proxy_admin service identity. Swallow only team_member_already_in_team on add and
+  the HTTP detail error User not found in team on removal; other failures remain visible.
+  Execute every scheduled write sequentially, additions before removals, and collect
+  nested SCIMRosterSyncError failures without losing labels. A unanimous error status
+  remains that status, mixed statuses become 500, and numeric ProxyException.code is
+  converted before falling back to 500. patch_team_membership defaults raise_on_error=false
+  and still returns true after logged failures; user/group reconciliation passes true.
+  Group member differences are sorted before writes; user team differences retain set
+  semantics. Do not roll back successful memberships after another member fails.
+  Deactivation selects keys with blocked=false or NULL and adds metadata.scim_blocked=true.
+  Reactivation considers only blocked=true keys whose marker is the Boolean true, never
+  truthy strings or numbers. Preserve other metadata and strip that marker when unblocking.
+  Finish all key-row updates before evicting any key via B734; a failed update can leave
+  earlier rows changed and cached. User-reference cleanup deletes invitations matching
+  user_id/created_by/updated_by, then organization memberships, then team memberships.
+  Active readers return None for absent/null, otherwise Python truthiness. Add pure
+  scim_access_state oracle operations for these readers, marker checks and aggregate
+  status selection, with PostgreSQL/cache tests for nullable keys, partial updates,
+  ordered foreign-key cleanup and all-attempted roster failures. These 246 function lines
+  plus failure records budget 290 implementation, 260 tests and 110 adapters, capped 750.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_access_reconciliation.rs
+    - crates/betterlite-server/src/scim_access_reconciliation/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_access_state.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_access_state.py
+    - tools/oracle/cases/helpers/scim-access-state/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-access-state-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L966-L1094
+    why: User membership differences, reversible SCIM key blocks and foreign-key cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2200-L2322
+    why: Idempotent writes, failure aggregation and optional error propagation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2819-L2864
+    why: Sorted group additions/removals with every member attempted.
+dod:
+  - text: SCIM reactivation leaves manually blocked keys untouched and invalidation follows the source's two-pass writes.
+    proof: [scim-access-tests, oracle, access-state-python]
+  - text: Failed roster batches retain successful changes, attempt every member and report the correct aggregate status.
+    proof: [scim-access-tests, oracle, access-state-python]
+  - text: Reference cleanup and active-state projections have deterministic regression coverage.
+    proof: [scim-access-tests, access-state-corpus]
+checks:
+  optional: []
+  commands:
+    - id: scim-access-tests
+      why: Provisioning can restore a manually revoked key or leave unattempted membership writes hidden.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_access_reconciliation::/)'
+    - id: access-state-python
+      why: Pure SCIM revocation decisions lack a strictly checked Python comparison.
+      run: test -f tools/oracle/helpers/scim_access_state.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: access-state-corpus
+      why: The helper decoder has no samples for SCIM block and aggregate-error decisions.
+      run: grep -rlq 'scim_access_state:' tools/oracle/fuzz/corpus/helper_case/scim-access-state-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-access-state/string-true-is-not-a-block-marker.yaml
+  - tools/oracle/cases/helpers/scim-access-state/null-active-versus-empty-active.yaml
+  - tools/oracle/cases/helpers/scim-access-state/unanimous-forbidden-keeps-status.yaml
+  - tools/oracle/cases/helpers/scim-access-state/mixed-failures-report-server-error.yaml
+deviations: []
+out_of_scope:
+  - "SCIM route owners B1638, B1639, B1640 and B064 exercise these mutations through HTTP; this task exports their shared write services."
+  - "scim_v2.py non-write support: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142."
+  - "Other scim_v2.py functions: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - SQL blocked=false alone misses existing NULL keys and would leave a deactivated user's credentials usable.
+  - The absence of rollback is observable both when roster writes partially succeed and when key updates fail before eviction begins.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

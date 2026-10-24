@@ -1,0 +1,103 @@
+id: B1678
+title: Calculate OCR credits, page annotations and batch family overrides
+description: >-
+  Create betterlite-models::ocr_pricing for OCRPricing/OCRPricingField, _first_ocr_price,
+  _layered_ocr_pricing, _cost_map_model_info, _raw_cost_map_entry, ocr_cost, ocr_batch_cost,
+  _single_log_line, _lookup_model_info_or_none and _first_price in cost_calculator.py.
+  Introduce the shared PriceLookup interface in models::price_lookup with separate effective
+  model-info resolution and raw-entry access. The assembled calculator binds effective
+  lookup to B205 and raw access to B193; this interface does not equate a raw map entry with
+  synthesized model metadata. Native pricing fixtures implement both operations explicitly.
+  Soft model-info helpers swallow lookup errors only where the source does; raw access
+  accepts mapping records only. Reuse these operations instead of giving every cost module
+  its own cache or model-name resolver.
+  OcrBilling is a projection of a validated OCR response, with an explicit response-kind
+  tag, optional usage, credits, pages_processed and pages_processed_annotation. Reject wrong
+  response type and missing usage before lookup. Layer each synchronous pricing field
+  independently: first numeric source value wins, including Boolean/zero, while strings
+  are skipped rather than parsed. A supplied partial override falls back field by field to
+  effective public prices. Present credits and a present credit price win completely, even
+  for zero credits/rate. Otherwise use annotation price or page-price fallback. Positive
+  annotation pages with a known annotation rate permit missing ordinary page count. With
+  missing pages and no billable annotations, credit-priced or page-unpriced models warn
+  and return zero; a page-priced model raises missing-pages error. With present pages but
+  no page rate and no billable annotations, warn and return zero. Final page multiplication
+  retains signed counts and treats absent/falsey counts or prices as zero; all cost is input.
+  Batch OCR resolves page and annotation families independently, trying each deployment
+  family's *_batches then synchronous field before consulting public pricing for that
+  family. An explicit deployment synchronous price beats a public batch price. Fetch public
+  info only if a positively used family lacks its own rate. That decision still happens
+  for missing annotation price even if a deployment page price can later supply annotation
+  fallback. Lookup failure warns and bills the families that remain priced. Missing page
+  rate with positive pages emits its own warning. After selecting both families, annotations
+  fall back to the effective page rate. Do not apply an additional one-half discount here.
+  Warning model/provider values remove CR and LF, retaining Python's None spelling where
+  relevant. The batch path never uses credits or invokes managed-file persistence.
+  Pure ocr_pricing cases call the layering functions and batch calculation with complete
+  supplied rates, ensuring the source performs no catalog lookup. Native tests cover sync
+  response validation, public fallback, lookup counts and warning/error ordering through
+  PriceLookup. B068's cost dispatch owns extraction from logging/deployment context; this
+  leaf receives the selected override. Add existing helper_case seeds for parsed OCR
+  records. The 150 nonblank source lines allow 240 implementation including the lookup
+  interface, 240 tests and 180 adapter/fixture lines, within a 725-line budget.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/price_lookup.rs
+    - crates/betterlite-models/src/price_lookup/**
+    - crates/betterlite-models/src/ocr_pricing.rs
+    - crates/betterlite-models/src/ocr_pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/ocr_pricing.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/ocr_pricing.py
+    - tools/oracle/cases/helpers/ocr-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/ocr-pricing-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L320-L326
+    why: OCR's three independently optional rate fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2114-L2138
+    why: Numeric-only layering and distinct soft-effective versus raw lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2174-L2334
+    why: Credit/page precedence, missing usage diagnostics and lazy per-family batch lookup.
+dod:
+  - text: Synchronous OCR preserves credit precedence and the exact missing-page error versus warning/zero boundaries.
+    proof: [ocr-price-tests]
+  - text: Batch page and annotation overrides remain independent and avoid catalog access only when every positively used family is priced.
+    proof: [ocr-price-tests, oracle, ocr-pricing-python, ocr-pricing-corpus]
+  - text: Typed lookup separates raw declarations from effective metadata and numeric-only OCR layering does not accept string prices.
+    proof: [ocr-price-tests, oracle, ocr-pricing-python]
+checks:
+  optional: []
+  commands:
+    - id: ocr-price-tests
+      why: OCR loses billable annotation pages or confuses unpriced usage with malformed response data.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::/) | test(/^price_lookup::/)'
+    - id: ocr-pricing-python
+      why: The OCR layering and supplied-price batch adapter is absent or not type checked.
+      run: test -f tools/oracle/helpers/ocr_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ocr-pricing-corpus
+      why: No ocr_pricing record tests the shared helper decoder.
+      run: grep -rlq 'ocr_pricing:' tools/oracle/fuzz/corpus/helper_case/ocr-pricing-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ocr-pricing/numeric-layering-skips-string-but-keeps-zero.yaml
+  - tools/oracle/cases/helpers/ocr-pricing/independent-batch-page-and-annotation-rates.yaml
+  - tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml
+  - tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml
+  - tools/oracle/cases/helpers/ocr-pricing/negative-counts-retain-arithmetic-sign.yaml
+deviations:
+  - what: OCR prices and products use checked Decimal money while preserving the source's numeric-versus-string layering distinction.
+    why: Exact billing cannot round through floats; an unrepresentable monetary value is a typed pricing failure, not a new accepted override.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2114-L2126
+out_of_scope:
+  - _deployment_model_info, _ocr_model_info and pricing_entry_for_cost_calc remain B068's deployment/context selection work; they call this task's layering and lookup boundary.
+  - The OCR slice leaves cost_calculator.py's custom prices to B1673, additional fees to B1677, duration/transcription/video to B1676, image defaults to B1674, adjustments to B1649 and batch math to B1679. B1680/B1681 own aggregation/realtime, B1682 context and breakdown storage, B1683 usage/tier diagnostics, B1686 token/vector/rerank dispatch, B1688 completion preparation, B1689 replicate and early-call charges, and B068 the outer response/completion functions.
+  - OCR provider wire schemas and batch output parsing retain their API-family owners; OcrBilling never reads a document URL or opens a batch file.
+pitfalls:
+  - A numeric credit rate and credits=0 suppress all otherwise chargeable pages because presence controls the credit branch.
+  - Batch annotation lookup can occur even when the page rate would be sufficient for the eventual annotation fallback.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

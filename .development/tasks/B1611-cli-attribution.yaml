@@ -1,0 +1,82 @@
+id: B1611
+title: Carry allowlisted SSO claims into CLI attribution
+description: >-
+  Implement cli_attribution in betterlite-auth with the metadata row projection and all
+  helpers from _parse_cli_sso_claim_map through _cli_poll_attribution_metadata_from_session
+  in ui_sso.py. This is the CLI claim pipeline, not the generic JWT dot-path implementation:
+  a literal full key wins before escaped-dot traversal and extra_fields wins before the
+  top-level identity. CLI_SSO_CLAIM_MAP takes precedence over LITELLM_CLI_SSO_CLAIM_MAP,
+  defaulting to an empty string. Parse comma-separated source->destination entries,
+  trim each side, strip one metadata. destination prefix and skip malformed entries.
+  Keep the pinned destination-name regex and secret-fragment denylist. Only string, integer,
+  float and boolean values survive; strings longer than 1024 or beginning eyJ with at least
+  two dots are rejected. Nested destinations replace scalar parents, but merging into an
+  existing user record preserves unrelated siblings and string value types. Persist by
+  find_unique then update_many, with no transaction; log failures and continue login.
+  Poll responses flatten safe scalars with dotted keys. Expose the pure build/merge/flatten
+  operations in the cli_attribution oracle helper; use a real PostgreSQL record to verify
+  persistence and missing-user behavior. B1608 decodes incoming identity JSON; add only
+  decode_cli_claim_map for the environment text and a cli_claim_map fuzz target. The config
+  test loads_cli_claim_map must exercise both env names, empty primary and fallback values.
+  The 191 source lines leave room for 220 implementation, 150 tests, 90 adapter and 100
+  configuration/parser lines, capped at 625 changed lines.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/cli_attribution.rs
+    - crates/betterlite-auth/src/cli_attribution/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/cli_claim_map.rs
+    - crates/betterlite-auth/fuzz/corpus/cli_claim_map/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/cli_attribution.rs
+    - crates/betterlite-config/src/cli_attribution/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/cli-attribution-*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/cli_attribution.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/cli_attribution.py
+    - tools/oracle/cases/helpers/cli-attribution/**
+    - tools/oracle/fuzz/corpus/helper_case/cli-attribution-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L184-L192
+    why: User metadata column adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L404-L621
+    why: Complete attribution extraction, safe-value filtering, merge, storage and poll flattening.
+dod:
+  - text: CLI attribution preserves nesting and scalar types, refuses unsafe destinations and tolerates persistence errors.
+    proof: [attribution-tests, oracle, attribution-python]
+  - text: Both claim-map environment names resolve through production config and the map decoder replays edge cases.
+    proof: [attribution-config, attribution-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: attribution-tests
+      why: A secret may escape the allowlist or metadata merging may replace unrelated fields.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^cli_attribution::/) - test(/replays_the_/)'
+    - id: attribution-config
+      why: CLI attribution environment precedence is not wired into the loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^cli_attribution::tests::loads_cli_claim_map/)'
+    - id: attribution-python
+      why: Direct comparison with the pinned attribution helpers is unavailable.
+      run: test -f tools/oracle/helpers/cli_attribution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: attribution-corpora
+      why: New map syntax and its configuration/helper envelopes are not replayed.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/cli_claim_map.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/cli_claim_map)" && grep -rlq 'cli_attribution:' tools/oracle/fuzz/corpus/helper_case/cli-attribution-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cli-attribution-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_cli_claim_map_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cli-attribution/literal-dot-before-traversal.yaml
+  - tools/oracle/cases/helpers/cli-attribution/extra-fields-first.yaml
+  - tools/oracle/cases/helpers/cli-attribution/token-shaped-and-secret-destinations.yaml
+  - tools/oracle/cases/helpers/cli-attribution/numeric-string-preserved.yaml
+  - tools/oracle/cases/helpers/cli-attribution/scalar-parent-and-sibling-merge.yaml
+deviations: []
+out_of_scope:
+  - CLI flow issuance is B1613, poll authentication is B1614 and browser completion is B1615; the ui_sso.py ownership map in B063 identifies its other functions.
+pitfalls:
+  - A claim path starting metadata. refers to an actual claim namespace and must not lose that prefix.
+  - Persisting attribution uses update_many, so a missing user does not become a newly inserted identity.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

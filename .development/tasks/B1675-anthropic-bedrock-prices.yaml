@@ -1,0 +1,119 @@
+id: B1675
+title: Apply Anthropic surcharges and Bedrock image-family prices
+description: >-
+  Implement anthropic_pricing in betterlite-models for the complete Anthropic cost module
+  and utils.py's get_web_search_requests/get_web_search_requests_from_usage. Extend CostUsage
+  with the parsed server_tool_use, inference_geo and speed fields those calculations need.
+  Anthropic token totals call B1672 with provider anthropic and the supplied service tier
+  and model-info. Resolve the effective model-info through B1678 only when none was supplied;
+  keep raw price-table access distinct for the image-family branches that require it.
+  Inside the source's best-effort surcharge block, resolve geo first, then speed=fast only
+  for that exact string and a truthy provider_specific_entry; multiply speed before geo.
+  Any exception in that block leaves the amount reached so far, while the preceding generic
+  calculation's error propagates. Do not extend this to Bedrock: its cost_per_token simply
+  dispatches to generic pricing with provider bedrock and service tier, without Anthropic
+  geo/speed surcharge. Express that forwarding as a typed pricing-policy match rather than
+  adding a prohibited single-expression wrapper.
+  The tolerant server-tool accessor preserves absent versus zero and accepts dictionary or
+  attribute records without validating its retrieved counter. The raw Anthropic response
+  probe is different: only a dictionary is eligible, nested usage/server_tool_use must pass
+  the pinned Pydantic shape, integer coercions apply and invalid input returns None. The
+  search charge requires both model-info and usage, uses the medium search-context rate
+  or zero and multiplies the present count, including negative counts. No rate or zero
+  returns zero; a present zero count remains evidence that upstream reported search usage.
+  Register pure anthropic_pricing cases for these probes/search calculations and supplied
+  token-price records without clock-sensitive fields. Native tests pin the billing instant
+  for surcharge composition and inject catalog failures.
+  Put Bedrock image billing in betterlite-bedrock::image_pricing, reusing B634's family
+  selector and B633's typed family identity without repeating model-name detection. Own
+  bedrock/image_generation/cost_calculator.py and only the cost_calculator methods of
+  Titan L142-L154, Stability 1 L133-L162, Stability 3 L108-L125 and Nova Canvas L188-L205.
+  All charge the number of returned images, not requested n. Titan looks up model without
+  a provider argument; Nova and Stability 3 use bedrock. Stability 1 reads steps default 50,
+  choosing max-steps only above 50, then looks up size-or-1024-x-1024/steps/model with provider
+  bedrock. It does not normalize 1024x1024 to 1024-x-1024. Lookup precedes the empty-data
+  result, so an unknown model still fails with zero images. Missing/falsey output price
+  yields zero; deployment image-price overrides are not passed into these methods.
+  Test family selection, catalog keys and error ordering natively against immutable catalog
+  fixtures; B068's final image dispatch supplies their booted-proxy cost cases. The Amazon
+  Nova direct token-cost wrapper has no caller at the pin and must not acquire code or cases.
+  Counting the live ranges gives 235 nonblank source lines. Allocate 280 implementation,
+  250 native cases and 180 pure adapters/fixtures, capped at 775 across both crates.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/anthropic_pricing.rs
+    - crates/betterlite-models/src/anthropic_pricing/**
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - crates/betterlite-bedrock/Cargo.toml
+    - crates/betterlite-bedrock/src/lib.rs
+    - crates/betterlite-bedrock/src/image_pricing.rs
+    - crates/betterlite-bedrock/src/image_pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/anthropic_pricing.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/anthropic_pricing.py
+    - tools/oracle/cases/helpers/anthropic-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/anthropic-pricing-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cost_calculation.py#L22-L131
+    why: Best-effort geo/speed surcharges, strict raw response probe and medium-context search rate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L126-L153
+    why: Tolerant server-tool access does not perform the raw probe's validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/cost_calculation.py#L14-L25
+    why: Bedrock token pricing uses generic service-tier rates without direct-Anthropic surcharges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/cost_calculator.py#L7-L24
+    why: Family selection is delegated to the existing Bedrock image selector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_titan_transformation.py#L141-L154
+    why: Titan's unqualified lookup happens before counting returned images.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py#L132-L162
+    why: Step bucket and unnormalized image size form the Stability 1 catalog key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L107-L125
+    why: Stability 3 uses a provider-qualified flat price and returned data count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py#L187-L205
+    why: Nova Canvas follows its own model's flat per-image price.
+dod:
+  - text: Anthropic applies its best-effort surcharge order and search probes distinguish unreported counts from reported zero.
+    proof: [anthropic-price-tests, oracle, anthropic-pricing-python, anthropic-pricing-corpus]
+  - text: Bedrock image families use the correct lookup key and returned count, preserving unknown-model failure before zero-image handling.
+    proof: [bedrock-image-price-tests]
+  - text: Bedrock token policy retains generic service-tier billing without enabling unused Nova direct-cost code.
+    proof: [anthropic-price-tests]
+checks:
+  optional: []
+  commands:
+    - id: anthropic-price-tests
+      why: Search usage, surcharge fallback or Bedrock token policy changes the billed total.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^anthropic_pricing::/) | test(/^cost_usage::server_tool_projection::/)'
+    - id: bedrock-image-price-tests
+      why: A Bedrock image-family lookup or its pre-count failure ordering is missing.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^image_pricing::/)'
+    - id: anthropic-pricing-python
+      why: Anthropic pricing has no checked pure-function oracle adapter.
+      run: test -f tools/oracle/helpers/anthropic_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: anthropic-pricing-corpus
+      why: No anthropic_pricing call exercises the shared parser with raw probe records.
+      run: grep -rlq 'anthropic_pricing:' tools/oracle/fuzz/corpus/helper_case/anthropic-pricing-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-pricing/raw-probe-coercion-and-invalid-nested-shape.yaml
+  - tools/oracle/cases/helpers/anthropic-pricing/reported-zero-versus-missing-server-tools.yaml
+  - tools/oracle/cases/helpers/anthropic-pricing/medium-search-rate-and-negative-count.yaml
+  - tools/oracle/cases/helpers/anthropic-pricing/geo-and-fast-speed-surcharges.yaml
+  - tools/oracle/cases/helpers/anthropic-pricing/invalid-geo-skips-speed-block.yaml
+deviations:
+  - what: Anthropic and Bedrock prices use finite exact Decimal arithmetic; unrepresentable money yields typed errors except inside the source's best-effort Anthropic surcharge block.
+    why: Preserve the original fallback boundary while preventing nonfinite spend from escaping successful calculations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cost_calculation.py#L44-L71
+out_of_scope:
+  - B633 owns every constructor, get_config, family predicate, supported-parameter method and request/response transform in the four Bedrock image transformation files; this task owns only their cost_calculator methods.
+  - amazon_nova/cost_calculation.py cost_per_token has no caller at the pin, so its imported generic calculation does not justify a new forwarding API.
+  - This task extracts only get_web_search_requests and get_web_search_requests_from_usage from utils.py; B1669-B1674 own off-peak/rate/detail/generic/breakdown/image arithmetic, B1676 owns the character-metric helpers, and B1687 owns image request access and dispatch.
+pitfalls:
+  - Anthropic calculates geo before speed, so malformed geo data prevents even an otherwise valid fast-speed surcharge.
+  - Stability 1 preserves the supplied size spelling in its price key instead of applying the default image calculator's normalization.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

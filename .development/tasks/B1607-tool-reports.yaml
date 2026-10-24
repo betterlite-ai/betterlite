@@ -1,0 +1,73 @@
+id: B1607
+title: Serve tool discovery, spend and invocation logs
+description: >-
+  Implement tool_reports in betterlite-server. Register GET /v1/tool/policy/options,
+  /v1/tool/list, /v1/tool/spend, /v1/tool/{tool_name:path}/detail,
+  /v1/tool/{tool_name:path}/logs and /v1/tool/{tool_name:path}. Own those handlers,
+  TOOL_POLICY_OPTIONS, _parse_day_start, _ToolSpendSums, _TopToolRow,
+  _input_snippet_for_tool_log, _snippet_str and the source's table/parsed-JSON contracts.
+  B1605 provides records and discovery reads; B726 supplies daily-tool, index and spend tables.
+  Static options require auth but no database. Spend requires proxy_admin or proxy_admin_viewer,
+  defaults to today minus 30 days through today, aggregates the 100 highest-spend tools in SQL,
+  and fetches daily rows only for those tools. All money is Decimal.
+  Logs default page=1/page_size=50 with size 1..100, count index rows before joining spend logs,
+  and can return fewer entries than total when a spend row was removed. Invalid log dates are
+  ignored, while /spend date parsing raises 400. Render a 200-character input snippet from
+  messages, then proxy_server_request messages/body.messages, then its fallback representation;
+  truncate by Unicode characters, adding ... only when longer. Decode query bytes and stored
+  snippet JSON in decode_tool_report(&[u8]); one tool_report fuzz target tags these two inputs.
+  Use B860 HTTP cases for slash-containing tool names, missing rows, policy filters, invalid
+  pagination, DB failures and role denial. Compare response fields and headers, status and
+  complete error metadata; error prose alone is ignored. The route/helper block has 317 source
+  lines plus 77 declarations/options; allow 390 product, 180 tests, 110 fuzz and 70 wiring lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/tool_reports.rs
+    - crates/betterlite-server/src/tool_reports/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tool_report.rs
+    - crates/betterlite-server/fuzz/corpus/tool_report/**
+    - tools/oracle/cases/management/tool-reports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L60-L522
+    why: Table contracts, policy options and every decorated read route, with spend and snippet projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1795-L1795
+    why: TOOL_SPEND_TOP_TOOLS is 100 at this pin.
+dod:
+  - text: Tool read routes retain their distinct role, missing-database and not-found behavior over real HTTP.
+    proof: [oracle, tool-report-tests]
+  - text: Top-tool spend, dangling-index totals and Unicode snippet truncation match the source projections.
+    proof: [oracle, tool-report-tests]
+  - text: Malformed report query and stored snippet bytes pass through the fuzzed production decoder.
+    proof: [tool-report-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tool-report-tests
+      why: A tool report query or static/wildcard route is missing or behaves differently.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^tool_reports::/) - test(replays_the_tool_report_corpus)'
+    - id: tool-report-corpus
+      why: Tool report byte decoding is not exercised with newly committed seeds.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/tool_report.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tool_report)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tool_report_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/tool-reports/options-without-db.yaml
+  - tools/oracle/cases/management/tool-reports/list-filter-and-owner.yaml
+  - tools/oracle/cases/management/tool-reports/detail-overrides-and-slashes.yaml
+  - tools/oracle/cases/management/tool-reports/spend-admin-top-hundred.yaml
+  - tools/oracle/cases/management/tool-reports/spend-window-and-bad-date.yaml
+  - tools/oracle/cases/management/tool-reports/log-invalid-date-and-dangling-index.yaml
+  - tools/oracle/cases/management/tool-reports/snippet-fallback-unicode.yaml
+  - tools/oracle/cases/management/tool-reports/pagination-auth-and-missing.yaml
+deviations: []
+out_of_scope:
+  - B062 owns _resolve_key_hash_to_object_permission_id, _resolve_team_id_to_object_permission_id, update_tool_policy and delete_tool_policy_override in tool_management_endpoints.py.
+pitfalls:
+  - Axum cannot express a catch-all before /detail or /logs directly; one bounded suffix dispatcher must preserve FastAPI's route precedence.
+  - The log total counts index matches, including rows whose underlying SpendLogs record has already disappeared.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

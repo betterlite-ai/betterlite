@@ -1,0 +1,110 @@
+id: B1737
+title: Decode Redis spend batches and park capped request logs
+description: >-
+  Add betterlite-db::redis_spend for the buffer constructor, enable policy, serialization,
+  entity merge helpers, seven-queue pipeline drain, daily-tag drain and spend-log parking.
+  Load general_settings.use_redis_transaction_buffer (default false): strings trim/lower
+  and recognize only true/false; null or unrecognized strings disable it. Load integer
+  MAX_REDIS_BUFFER_DEQUEUE_COUNT from the environment, default 100, preserving Redis's
+  handling of zero/negative counts rather than inventing a minimum. A named config test
+  loads both settings and exercises reload snapshots without process-environment mutation.
+  Keep the pinned Redis key literals for main, daily user/team/org/end-user/agent/tag,
+  window and spend-log buffers. A pipeline destructively pops at most the configured count
+  from seven queues in that order, excluding daily tags. Pad short result arrays with None
+  and ignore extra results. Entity results accept one JSON string or a string list and
+  combine all eleven maps; absent/nonmapping entity fields contribute nothing. Daily and
+  window slots retain their list-of-strings contract and use B1733/B1734 aggregation.
+  None stays None rather than an empty aggregate. Decode errors propagate after the pop;
+  do not pretend the Redis read and database write form one transaction. The separate
+  daily-tag reader uses the same count and daily parser. Retain _lpop_daily_spend_transactions
+  as the shared operation only where this live caller needs it.
+  Park spend-log rows only when enabled, attached to Redis and nonempty. JSON datetime
+  fallback uses isoformat, other foreign values stringify; unlike transaction safe_dumps,
+  this row encoder does not strip NULs. RPUSH-and-trim keeps the newest 100000 rows and
+  logs the number of oldest rows discarded; this cap is a fixed constant, not an env var.
+  Any parking exception returns false for the caller's memory fallback. Draining accepts
+  a scalar or list result, drops decoded nonobjects and propagates malformed JSON. Return
+  an empty tuple when disabled/unattached. Transaction encoding reuses B192 safe_dumps.
+  Expose the queue-size event emitter through B1690's owned service sink, retaining the
+  source call_type label and gauge service/value. Define decode_spend_buffer(kind,bytes)
+  for entity/daily/window/log records with typed Decimal/counters and a 64 MiB byte ceiling;
+  fuzz every kind and distinguish nonobject log rows from malformed records. Emit a typed
+  limit failure, caught only by the same callers that catch an ordinary parse failure.
+  Pure redis_spend_codec oracle cases test row encoding/decoding and entity merges. Native
+  Redis tests prove destructive reads, missing slots, trimming, cap warnings and parser
+  failures. The live read/codec/config/event cohort is about 290 source lines, budgeted
+  at 800 with configuration and byte-decoder checks.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/redis_spend.rs
+    - crates/betterlite-db/src/redis_spend/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/redis-spend-*
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/spend_buffer.rs
+    - crates/betterlite-db/fuzz/corpus/spend_buffer/**
+    - tools/oracle/src/helpers/{mod.rs,redis_spend_codec.rs}
+    - tools/oracle/helpers/{dispatch.py,redis_spend_codec.py}
+    - tools/oracle/cases/helpers/redis-spend-codec/**
+    - tools/oracle/fuzz/corpus/helper_case/redis-spend-codec-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L100-L161
+    why: Log codecs, entity map merge, constructor and enable policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L546-L587
+    why: Bounded parked logs and destructive row drain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L674-L768
+    why: Fixed seven-slot pipeline decoding and padding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L786-L801
+    why: Live daily-tag reader's lower pop operation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L903-L977
+    why: Daily-tag aggregate, entity decode/merge and owned queue event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L386-L398
+    why: Redis buffer names, count environment binding and fixed log caps.
+dod:
+  - text: Redis drains preserve queue order, None/empty distinctions and post-pop parse failure behavior.
+    proof: [redis-drain-tests, spend-buffer-corpus, oracle, redis-codec-python, redis-codec-corpus]
+  - text: Spend-log parking obeys enable policy, trims oldest rows and returns false on failure for memory fallback.
+    proof: [redis-drain-tests, redis-settings, redis-config-corpus, oracle, redis-codec-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: redis-drain-tests
+      why: Redis buffer draining, trimming or failure behavior is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^redis_spend::/) - test(replays_the_spend_buffer_corpus)'
+    - id: redis-settings
+      why: Redis spend enable/count settings are not loaded by config.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_redis_spend_settings)'
+    - id: redis-config-corpus
+      why: Buffer policy has no new configuration-parser seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/redis-spend-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: spend-buffer-corpus
+      why: Redis JSON variants lack a replayed byte-parser corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/spend_buffer)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_spend_buffer_corpus)'
+    - id: redis-codec-python
+      why: Redis row/merge adapters are absent or fail strict checking.
+      run: test -f tools/oracle/helpers/redis_spend_codec.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: redis-codec-corpus
+      why: Redis codec operations have no tagged helper input.
+      run: grep -rlq 'redis_spend_codec:' tools/oracle/fuzz/corpus/helper_case/redis-spend-codec-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-spend-codec/datetime-nul-and-nonobject-rows.yaml
+  - tools/oracle/cases/helpers/redis-spend-codec/eleven-maps-missing-nonmapping-and-sums.yaml
+  - tools/oracle/cases/helpers/redis-spend-codec/scalar-list-and-invalid-json.yaml
+deviations:
+  - what: A Redis spend record over 64 MiB fails decoding with a typed limit error and follows the caller's existing parse-failure path.
+    why: Buffer records are external bytes and must have a finite allocation bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L923-L933
+out_of_scope:
+  - B1738 owns transaction publishing/restoration and daily-tag publication in redis_update_buffer.py.
+  - _number_of_transactions_to_store_in_redis, _remove_prefix_from_keys, get_all_update_transactions_from_redis_buffer and the individual daily user/team/org/end-user/agent getters have no caller at the pin and are not built.
+pitfalls:
+  - The daily-tag queue is deliberately absent from the main seven-slot pipeline.
+  - Malformed JSON is discovered after destructive LPOP and cannot be treated as a harmless cache miss.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

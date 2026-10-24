@@ -1,0 +1,75 @@
+id: B1603
+title: Create, update and delete budgeted tags
+description: >-
+  Add tag_writes to betterlite-server for POST /tag/new, /tag/update and /tag/delete.
+  Own new_tag, update_tag, delete_tag, _evict_tag_cache_keys, _get_model_names,
+  get_deployments_by_model, _add_tag_to_deployment and the table protocols in the source;
+  represent the latter through B725/B726 repository types. Own all tag_management.py request
+  and response records and decode_tag_request(&[u8]), including omitted versus null
+  budget_duration. B862 handles budget assignment; B734 evicts and broadcasts tag caches.
+  B844 provides model names and deployment lookup. Creation writes the budget, then tag,
+  evicts both tag and registry keys, and finally updates
+  deployment tags. A model name expands to deployments after trying it as an ID. Preserve
+  encrypted litellm_params when adding tags, with no second encryption pass. Update replaces
+  description/models even when omitted and evicts only the individual tag. Delete removes the
+  tag and invalidates both keys without removing deployment tags or the linked budget.
+  Keep the source exception boundaries: duplicate creation and missing update/delete are
+  rethrown as 500, whereas a missing router/DB fails before mutation. Use Decimal for budget
+  amounts. Exercise partial failure after tag insertion against real Postgres, not an invented
+  transaction rollback. Add tag_request fuzzing and B860 HTTP fixtures for all three routes,
+  including invalid/missing auth and exact error type/param/code, with message text excluded.
+  These ranges own 301 nonblank, noncomment lines plus 32 type lines; reserve 350 product,
+  200 behavior tests, 100 parsing/fuzz and 70 route wiring lines, a 725-line budget.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/tag_writes.rs
+    - crates/betterlite-server/src/tag_writes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tag_request.rs
+    - crates/betterlite-server/fuzz/corpus/tag_request/**
+    - tools/oracle/cases/management/tag-writes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L62-L151
+    why: Table contracts and invalidation keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L211-L483
+    why: Model resolution and decorated create/update routes, with their write ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L686-L719
+    why: Delete route and its caught 404.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/tag_management.py#L1-L46
+    why: Tag field defaults and budget request fields.
+dod:
+  - text: Tag writes reproduce their HTTP results, budget handoff, cache keys and observable partial writes.
+    proof: [tag-write-tests, oracle]
+  - text: Explicit null budget duration remains distinct from omission through the fuzzed request decoder.
+    proof: [tag-write-tests, tag-write-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tag-write-tests
+      why: Tag mutations fail their Postgres, cache or route-order assertions.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^tag_writes::/) - test(replays_the_tag_request_corpus)'
+    - id: tag-write-corpus
+      why: Tag request parsing lacks new corpus files or cannot replay them.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/tag_request.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tag_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tag_request_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/tag-writes/create-model-id-and-name.yaml
+  - tools/oracle/cases/management/tag-writes/duplicate-is-server-error.yaml
+  - tools/oracle/cases/management/tag-writes/budget-duration-null.yaml
+  - tools/oracle/cases/management/tag-writes/omitted-models-clear.yaml
+  - tools/oracle/cases/management/tag-writes/delete-missing.yaml
+  - tools/oracle/cases/management/tag-writes/model-write-fails-after-tag.yaml
+  - tools/oracle/cases/management/tag-writes/auth-and-missing-services.yaml
+deviations: []
+out_of_scope:
+  - B1604 owns _get_internal_user_api_keys, _get_tag_list_scope, get_tag_daily_activity_api_key_filter, info_tag, _validate_tag_list_date_range, list_tags and get_tag_daily_activity in tag_management_endpoints.py.
+pitfalls:
+  - Clearing models in /tag/update does not undo tags previously attached to deployment parameters.
+  - Model-name lookup errors are logged and return an empty model_info map, not a failed tag creation.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

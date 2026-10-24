@@ -1,0 +1,93 @@
+id: B1735
+title: Seed window balances once and read authoritative entity spend
+description: >-
+  Implement budget_window_spend_writer.py in betterlite-db::window_spend and extract
+  SpendCounterReseed.from_db, _counter_row, end_user_from_db and
+  _is_key_or_team_window_counter into db::spend_rows. Primary reads use B715's bounded
+  lookup gate and existing key/team/member/user/org/project repositories. Team-member
+  suffixes split at the last colon. Missing DB, unknown key shape, missing rows and lookup
+  failure return None; an existing null spend becomes zero. Only key/team counters ending
+  in :window: plus a B199-valid duration are excluded from primary reads. The separate
+  end-user floor reader accepts spend:end_user: and returns the authoritative reset row;
+  ordinary from_db must not start reseeding tags or end users. decode_spend_counter_key
+  consumes external/cache key bytes, retains IDs literally and is fuzzed for delimiter
+  ambiguity, long IDs and malformed duration suffixes.
+  Window writes consume B1734's sorted typed increments. Before the transaction, query
+  existing primary keys (entity_type,entity_id,window_duration), then compute a seed only
+  for missing keys. Key/team seeds scan SpendLogs since window_start and return total plus
+  the part before this batch's earliest request. Floor that exclusion timestamp to the
+  second so TIMESTAMP(3) rounding cannot include the batch's own first row. Without a
+  known start, both sums are the whole total. Other entity types have no seed. Empty
+  results become zero; seed_base=max(total-batch_spend,before_batch) preserves other pods'
+  persisted work without double-counting this batch. Existing keys get zero seed even if
+  their stored window is old. Keep these reads outside the write transaction as at the pin.
+  In one 60-second transaction, apply sorted upserts with one injected UTC now. A new row
+  receives seed plus increment. An existing row whose window_start is at or ahead of the
+  incoming start adds only the increment; a newer incoming window replaces spend with its
+  prepared seed plus increment and advances the start. This intentionally carries a late
+  request's old-window increment into an already-reset row. Concurrent inserts never add
+  the seed twice. roll_window_spend_row only zeros and advances rows strictly behind the
+  new start, preserving a row already advanced by another pod.
+  Reuse B1734's ISO timestamp decoder when reading window strings and preserve naive UTC
+  database meaning. Pure window_seed oracle cases compare seed arithmetic, second-floor
+  cutoff and upsert parameters. Native PostgreSQL tests exercise concurrent seeders, both
+  reset races, key/member lookup parsing and failed floor reads. Owned source is 283 writer
+  plus 83 primary-read lines; allocate 800 changed lines including SQL and failure tests.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/window_spend.rs
+    - crates/betterlite-db/src/window_spend/**
+    - crates/betterlite-db/src/spend_rows.rs
+    - crates/betterlite-db/src/spend_rows/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/spend_counter_key.rs
+    - crates/betterlite-db/fuzz/corpus/spend_counter_key/**
+    - tools/oracle/src/helpers/{mod.rs,window_seed.rs}
+    - tools/oracle/helpers/{dispatch.py,window_seed.py}
+    - tools/oracle/cases/helpers/window-seed/**
+    - tools/oracle/fuzz/corpus/helper_case/window-seed-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/budget_window_spend_writer.py#L1-L333
+    why: Complete seed/upsert/reset writer and transaction boundaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L119-L208
+    why: Lower authoritative entity reads and window-counter exclusion.
+dod:
+  - text: Window seed and reset races preserve already persisted spend without adding a seed twice or discarding late increments.
+    proof: [window-store-tests, oracle, window-seed-python, window-seed-corpus]
+  - text: Authoritative entity reads respect exact counter prefixes, bounded lookup failures and the separate end-user floor path.
+    proof: [spend-row-tests, spend-key-corpus]
+checks:
+  optional: []
+  commands:
+    - id: window-store-tests
+      why: Seeded window upserts or conditional resets are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^window_spend::/)'
+    - id: spend-row-tests
+      why: A primary/floor counter lookup has no behavioral implementation.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_rows::/) - test(replays_the_spend_counter_key_corpus)'
+    - id: spend-key-corpus
+      why: Counter key decoding lacks a committed delimiter/duration corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/spend_counter_key)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_spend_counter_key_corpus)'
+    - id: window-seed-python
+      why: Seed/cutoff projections have no checked oracle adapters.
+      run: test -f tools/oracle/helpers/window_seed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: window-seed-corpus
+      why: Window seed cases are absent from helper replay.
+      run: grep -rlq 'window_seed:' tools/oracle/fuzz/corpus/helper_case/window-seed-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/window-seed/batch-subtraction-and-before-batch-floor.yaml
+  - tools/oracle/cases/helpers/window-seed/millisecond-rounding-exclusion.yaml
+  - tools/oracle/cases/helpers/window-seed/insert-seed-versus-existing-row-increment.yaml
+deviations: []
+out_of_scope:
+  - B1736 owns coalescing, cache warming and window reads in spend_counter_reseed.py; this task owns every budget_window_spend_writer function.
+  - B071 owns budget reservation/reset policy and calls this lower row store; B1734 owns queued window normalization/merging.
+pitfalls:
+  - A late old-window increment adds into the newer stored window instead of being discarded.
+  - The seed query runs before the write transaction, so concurrency safety must come from the upsert rather than a fictitious read lock.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

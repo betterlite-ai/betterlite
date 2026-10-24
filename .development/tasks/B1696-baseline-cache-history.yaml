@@ -1,0 +1,112 @@
+id: B1696
+title: Replay baseline cache history in request-start order
+description: >-
+  Implement the complete pure baseline_accounting.py under betterlite-models::baseline_history.
+  Add BaselineObservation, BaselineEstimate, CacheEntry and BaselineHistory with the source
+  defaults, reasons and provenance literals. Observation is strict, extra-forbidden and
+  version=3; request_id is nonempty, timestamps are finite/nonnegative, minimum_cache_tokens
+  defaults zero, outcome is complete/uncertain/response_cache, and usage/plan/reason are
+  optional. Extract CountedBreakpoint and CountedPromptCachePlan from Anthropic's prediction
+  module into this lower layer so B075 can consume them without a B068-B070-B075 cycle.
+  Keep both fingerprint lists, default empty content fingerprint/lists and the original
+  field order. This task does not build a prompt parser or obtain token counts.
+  Complete usage requires nonnegative prompt/completion counts, exact total equality, and
+  nonnull nonnegative text/cached/cache_creation detail counts summing to prompt_tokens.
+  Positive writes additionally require both nonnegative 5m/1h counts summing to writes.
+  Validate plans with at most four breakpoints, nonnegative total, nonempty fingerprints
+  appearing in their own lookback lists, TTL 300 or 3600, bounded/nondecreasing prefix counts
+  and nonincreasing TTL. Filter markers below minimum_cache_tokens after plan validation.
+  A cache hit must be available_at <= started < expires_at, match a lookback fingerprint,
+  have tokens <= prefix_tokens and the same TTL. Content-only matches with uncertain entries
+  or a different TTL make the estimate ambiguous. Preserve availability separately from
+  expiry: writes become available at response completion but expire from request start.
+  advance_baseline_history consumes one nonempty equal-start group strictly after last_at;
+  invalid ordering or available_at < started returns invalid_observation_order estimates
+  without altering history. Evaluate all tied observations against the same prior snapshot.
+  Exclude response_cache observations from equivalence and invalidation decisions. Equivalence
+  remains true only while every relevant observation matches the baseline. A complete usage
+  on that equivalent path returns observed_identical before plan validation or blocked-history
+  checks; later invalidation may still clear the cache history for that group.
+  Otherwise refuse estimates before blocked_until, for invalid plans, ambiguous TTLs or
+  unknown history within uncertain_before plus the largest applicable TTL. Select the largest
+  known matching prefix; divide remaining writes at the largest one-hour prefix. Preserve
+  reasons cache_prefix_available, cache_prefix_expired, cache_prefix_cold, below_cache_minimum
+  and no_cache_breakpoints. Rebuild usage with matching public/private cache counts and
+  total_tokens=plan.total_tokens+completion_tokens, retaining unrelated output details.
+  Writes require complete usage, a valid plan and an unblocked request. Refresh a hit not
+  explicitly among current markers; emit current marker entries, marking them uncertain
+  when ambiguous and retaining the longest conflicting TTL. A bad relevant observation
+  invalidates all history and extends blocked_until to the largest availability in that
+  simultaneous group, not just the bad observation. Compact by the five-field entry key:
+  retain the available entry with greatest expiry plus every future-available entry, dropping
+  entries expired more than 3600 seconds before this start. More than 1024 retained entries
+  clears the set and advances uncertain_before instead of evicting an arbitrary prefix.
+  Pure baseline_history oracle sequences compare every estimate and resulting history after
+  each timestamp group. Include equal-time divergence, unknown first history that later
+  warms, 5m/1h changes, response-cache exclusion, a late completion and overflow. Checked
+  counts/time arithmetic must propagate typed errors rather than wrap. The history file
+  contributes 310 nonblank lines and the two shared plan records ten; budget 310 implementation,
+  260 tests and 180 adapters/corpus within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/baseline_history.rs
+    - crates/betterlite-models/src/baseline_history/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/baseline_history.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/baseline_history.py
+    - tools/oracle/cases/helpers/baseline-history/**
+    - tools/oracle/fuzz/corpus/helper_case/baseline-history-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L20-L226
+    why: Observation contracts, plan/usage validity, cache availability and estimate reasons.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L229-L348
+    why: Cache refresh, compaction and chronological simultaneous-group advancement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L195-L208
+    why: Shared counted breakpoint and plan records extracted below prediction callers.
+dod:
+  - text: Observations and plans retain strict validity, exact usage completeness and fingerprint/TTL constraints.
+    proof: [baseline-history-tests, oracle, baseline-history-python, baseline-history-corpus]
+  - text: Chronological replay produces the same provenance and reason for ties, incomplete history, TTL changes and observed-identical requests.
+    proof: [baseline-history-tests, oracle, baseline-history-python]
+  - text: History writes, refreshes, invalidation and bounded compaction preserve separate availability/expiry times and never manufacture warm cache evidence.
+    proof: [baseline-history-tests, oracle, baseline-history-python]
+checks:
+  optional: []
+  commands:
+    - id: baseline-history-tests
+      why: A baseline estimate becomes known from concurrent, incomplete, expired or conflicting cache evidence.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^baseline_history::/)'
+    - id: baseline-history-python
+      why: Chronological replay fixtures lack the checked pinned state-transition adapter.
+      run: test -f tools/oracle/helpers/baseline_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: baseline-history-corpus
+      why: Baseline histories and observation groups are absent from shared parser seeds.
+      run: grep -rlq 'baseline_history:' tools/oracle/fuzz/corpus/helper_case/baseline-history-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/baseline-history/identical-path-before-plan-validation.yaml
+  - tools/oracle/cases/helpers/baseline-history/simultaneous-divergence-shares-prior-snapshot.yaml
+  - tools/oracle/cases/helpers/baseline-history/initial-unknown-history-later-cache-hit.yaml
+  - tools/oracle/cases/helpers/baseline-history/response-cache-does-not-invalidate.yaml
+  - tools/oracle/cases/helpers/baseline-history/availability-after-expiry-and-boundary-hit.yaml
+  - tools/oracle/cases/helpers/baseline-history/content-match-with-changed-ttl.yaml
+  - tools/oracle/cases/helpers/baseline-history/long-ttl-prefix-before-short-write.yaml
+  - tools/oracle/cases/helpers/baseline-history/invalid-group-order-leaves-history.yaml
+  - tools/oracle/cases/helpers/baseline-history/entry-overflow-resets-certainty.yaml
+deviations:
+  - what: Baseline timestamp/counter operations use checked finite arithmetic; values outside the representable domain fail as invalid accounting data.
+    why: Replay must not wrap token counts or admit an infinite cache lifetime into persisted estimates.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L142-L169
+out_of_scope:
+  - B075 owns every function and record in anthropic/prompt_cache_prediction.py except the two counted records extracted here; it builds/fills those records and performs provider counting.
+  - The database baseline-accounting tasks own ordering observations, durable checkpoints and publication; B1694 owns pricing a supplied estimate.
+pitfalls:
+  - Identical-path estimates can be valid even when their cache plan later invalidates the group's stored history.
+  - A cache write expires from started_at, not available_at, so a slow response can arrive after its own entry expired.
+  - One invalid relevant observation extends the block through every relevant observation's availability in that timestamp group.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

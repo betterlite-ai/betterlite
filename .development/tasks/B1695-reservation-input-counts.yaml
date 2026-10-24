@@ -1,0 +1,93 @@
+id: B1695
+title: Count reservation input tokens without blocking asynchronous requests
+description: >-
+  Add betterlite-tokenizer::reservation for the complete input_tokens.py request-accounting
+  path, reusing B195 engines, B196 counts, B197 multimodal handling and B259 model selection.
+  Expose count_input_tokens over an already parsed request, optional raw bytes and an ordered
+  model list; return only models whose count succeeded. The pin's TOKEN_COUNTER rollout is
+  PYTHON_ONLY, so raw_body does not change the result and every selected model uses the
+  ordinary counter. Reproduce grouping/order and duplicate-key replacement without sharing
+  a count between models merely because they use the same encoding: model accounting may
+  differ. The source's _native_counts bridge branch is unreachable under that pinned rollout;
+  the excluded PyO3 runtime/fork guard is not a second tokenizer implementation to build.
+  Field presence determines precedence: messages, then prompt, then input, then query or
+  documents. A present falsey messages value becomes an empty sequence and blocks prompt
+  fallback. Pass tools and tool_choice to the message counter. Only its ValueError-equivalent
+  failure tries text counting of the original messages value; another failure makes the
+  model unavailable. Any outer count error logs a sanitized debug event and returns None,
+  not zero. A request with no recognized fields is also None, while an explicitly null
+  prompt/input produces a successful zero count.
+  Text counting walks nested lists, skips nulls, and counts each remaining item separately.
+  Dictionaries use Python json.dumps-compatible text, including insertion order, default
+  comma/colon spacing and ensure_ascii Unicode escaping; do not substitute compact JSON or
+  a Rust Debug representation. Other values use Python-compatible str formatting, including
+  capitalized Boolean words. Query and documents are counted independently then checked-added.
+  Avoid recursion on untrusted nesting by using an owned stack as the source does.
+  _approximate_input_size sums Unicode lengths of Python-style str representations for
+  messages, prompt, input, query, documents, tools and tool_choice, including mapping keys.
+  Below 30000 characters count inline; at or above 30000 run the same accounting on a
+  bounded blocking pool using the existing tokenizer concurrency limit. Keep the result
+  future owned through cancellation and ensure no blocking work holds a request-state lock.
+  Input-size estimation is only a scheduling decision and must not reject or truncate text.
+  Register reservation_tokens pure helpers for the synchronous per-model counter, aggregate
+  projection and size estimate; Python calls the actual source functions with the pinned
+  bundled engines. Native asynchronous tests verify scheduling at 29999/30000, mixed valid
+  and invalid models, duplicate models, count failures and cancellation while another
+  request progresses. No new byte decoder is introduced: the existing wire/helper parsers
+  supply the records, and the unused raw-body native branch does not parse them again.
+  The source functions contain 121 nonblank lines, including nine native-only bridge lines;
+  budget 160 orchestration/formatting, 230 tests and 160 adapters/seeds, capped at 600.
+scope:
+  paths:
+    - crates/betterlite-tokenizer/src/lib.rs
+    - crates/betterlite-tokenizer/src/reservation.rs
+    - crates/betterlite-tokenizer/src/reservation/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/reservation_tokens.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/reservation_tokens.py
+    - tools/oracle/cases/helpers/reservation-tokens/**
+    - tools/oracle/fuzz/corpus/helper_case/reservation-tokens-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/input_tokens.py#L33-L173
+    why: Size threshold, model grouping, field precedence, exception fallback and iterative text counting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/catalog.py#L84-L94
+    why: The pinned token-counter route always uses its Python fallback; no native bridge rollout is enabled here.
+dod:
+  - text: Per-model reservation counts preserve field presence, message-error fallback, Python text formatting and unavailable-model omission.
+    proof: [reservation-count-tests, oracle, reservation-python, reservation-corpus]
+  - text: Input-size estimation includes all counted fields and the 30000-character boundary offloads work without changing counts or blocking unrelated requests.
+    proof: [reservation-count-tests, oracle, reservation-python]
+checks:
+  optional: []
+  commands:
+    - id: reservation-count-tests
+      why: Reservation count or scheduling tests miss a precedence, omission, formatting or cancellation boundary.
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^reservation::/)'
+    - id: reservation-python
+      why: Reservation fixtures lack checked direct calls to the source counter and size estimator.
+      run: test -f tools/oracle/helpers/reservation_tokens.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: reservation-corpus
+      why: Parsed reservation requests have no tagged helper seed.
+      run: grep -rlq 'reservation_tokens:' tools/oracle/fuzz/corpus/helper_case/reservation-tokens-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/reservation-tokens/present-null-messages-blocks-prompt.yaml
+  - tools/oracle/cases/helpers/reservation-tokens/message-value-error-counts-original-as-text.yaml
+  - tools/oracle/cases/helpers/reservation-tokens/nested-lists-dictionaries-and-python-booleans.yaml
+  - tools/oracle/cases/helpers/reservation-tokens/query-plus-documents-and-empty-request.yaml
+  - tools/oracle/cases/helpers/reservation-tokens/multiple-models-and-legacy-accounting.yaml
+  - tools/oracle/cases/helpers/reservation-tokens/tool-schema-keys-in-size-estimate.yaml
+deviations: []
+out_of_scope:
+  - B071 owns reservation admission, lease settlement and budget enforcement; this task supplies counts and never reserves money.
+  - The rust_bridge package is excluded by the repository inventory; input_tokens.py's _native_counts and fork-specific runtime machinery are not reachable with the pinned TOKEN_COUNTER=PYTHON_ONLY rule.
+  - B195/B196/B197/B259 retain tokenizer algorithms and their existing asset/input policies; this task adds no acquisition path or alternate tokenizer selection.
+pitfalls:
+  - JSON dictionaries are counted with spaces and escaped non-ASCII characters, so compact serialization changes reservations.
+  - A present messages key blocks every later input field even when its value is null.
+  - A failed model count is omitted from the result instead of being represented by a free zero-token request.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,84 @@
+id: B1702
+title: Execute management lists consistently in SQL and memory
+description: >-
+  Extend betterlite-server::list_api with sql, memory and execute modules over B1701's
+  immutable plans. Own order_by_sql through where_sql, handle_list, handle_facet and
+  _duplicate_params, plus the complete in_memory.py executor and empty package initializer.
+  SQL renders only developer-declared column identifiers, binds every value and numbers
+  placeholders continuously from the supplied first index. Datetimes use timestamptz
+  AT TIME ZONE 'UTC'; contains escapes backslash, percent and underscore before adding
+  wildcard percent signs and ILIKE ESCAPE. Empty predicates produce empty SQL/parameters;
+  AnyOf is one parenthesized OR level. Every sort term explicitly specifies NULLS LAST.
+  In-memory comparisons reject null except for is_null, compare numeric/string/datetime
+  pairs only within their source-compatible types, and implement contains with Unicode
+  casefolding of Python-compatible strings. Repeated cells match when any element matches;
+  empty tuples match nothing, including is_null. Keep equality/not semantics separate
+  from orderability. Stable sorts run least-significant key first, including tuple-valued
+  cells, and nulls stay last in either direction. Filter before count/page, enrich only
+  the page slice, and facet distinct flattens repeated cells, keeps nonempty strings,
+  removes duplicates and sorts ascending.
+  Counted execution builds the plan before checking duplicate query names, then awaits
+  count followed by find_many, serializes rows and computes ceil(count/take). Facets reject
+  unknown names, including sort, then duplicates, then page/page_size, and only then scope
+  and filters. Fetch distinct values, take page_size+1 to determine has_more and emit B1665
+  envelopes with B1701 links. Do not parallelize the two counted queries or silently change
+  error precedence. The no-op enrich callback remains a default behavior rather than an
+  independent production wrapper.
+  Register management_executor pure cases for SQL rendering and an in-memory executor
+  with supplied rows/cells; awaiting its methods is deterministic and accesses no proxy
+  globals. Test execution order natively using recording executors, including plan errors
+  against duplicate parameters and scope-denied facets against bad page values. B1703
+  supplies the first HTTP integration. Counted ownership is 76 SQL lines, 83 coordinator
+  lines and 123 memory lines; budget 300 production, 240 tests and 190 adapters/seeds.
+scope:
+  paths:
+    - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/{sql,memory,execute}.rs
+    - crates/betterlite-server/src/list_api/{sql,memory,execute}/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/management_executor.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/management_executor.py
+    - tools/oracle/cases/helpers/management-executor/**
+    - tools/oracle/fuzz/corpus/helper_case/management-executor-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L199-L290
+    why: Bound SQL predicates, datetime casts and null-last ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L548-L644
+    why: Facet/list error ordering and their distinct pagination envelopes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/in_memory.py#L30-L155
+    why: Repeated-cell filtering, stable sorting and page-only enrichment.
+dod:
+  - text: SQL and memory execution agree on scope conjunction, literal wildcard searches, null behavior and stable ordering.
+    proof: [executor-tests, oracle, executor-python, executor-corpus]
+  - text: Counted lists and facets preserve their distinct validation and executor call order and calculate their own envelope metadata correctly.
+    proof: [executor-tests]
+checks:
+  optional: []
+  commands:
+    - id: executor-tests
+      why: SQL, repeated-cell evaluation, sorting or coordinator sequencing differs from the contract.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^list_api::(sql|memory|execute)::/)'
+    - id: executor-python
+      why: Source SQL/memory helper calls are absent or fail strict checking.
+      run: test -f tools/oracle/helpers/management_executor.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: executor-corpus
+      why: The executor helper variant has no replayable seed.
+      run: grep -rlq 'management_executor:' tools/oracle/fuzz/corpus/helper_case/management-executor-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-executor/escaped-search-and-offset-datetime-binds.yaml
+  - tools/oracle/cases/helpers/management-executor/null-last-and-stable-ties.yaml
+  - tools/oracle/cases/helpers/management-executor/repeated-cells-and-empty-tuples.yaml
+  - tools/oracle/cases/helpers/management-executor/unicode-casefold-and-facet-distinct.yaml
+deviations: []
+out_of_scope:
+  - B1701 owns common.py and the remaining list_framework planning/types; B1665 owns all output records, and callers own authorization policy and database queries.
+pitfalls:
+  - Facet validation reaches caller scope later than counted-list validation does.
+  - An empty repeated cell differs from an absent cell for is_null.
+  - Enrichment must never run over rows discarded by pagination.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

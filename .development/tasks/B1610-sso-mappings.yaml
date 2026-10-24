@@ -1,0 +1,83 @@
+id: B1610
+title: Load generic SSO endpoints and database mappings
+description: >-
+  Add sso_mappings to betterlite-auth and betterlite-config. Own _SsoConfigRow,
+  _sso_config_db, _setup_generic_sso_env_vars, _setup_team_mappings,
+  _setup_role_mappings and _parse_generic_sso_headers from ui_sso.py. Expose an immutable
+  GenericSsoSettings and an async mapping loader using B726's SSOConfigRepository.
+  GENERIC_CLIENT_SECRET and GENERIC_AUTHORIZATION_ENDPOINT, GENERIC_TOKEN_ENDPOINT,
+  GENERIC_USERINFO_ENDPOINT default absent; a missing value produces the source's 500
+  auth_error with that variable as param. An empty secret is allowed. GENERIC_SCOPE defaults
+  to "openid email profile" and splits on literal spaces; GENERIC_INCLUDE_CLIENT_ID defaults
+  false and recognizes case-insensitive true without trimming. Read row id sso_config,
+  decoding role_mappings/team_mappings through B1608. Database errors log at debug and leave
+  the mapping absent. GENERIC_ROLE_MAPPINGS_ROLES, GENERIC_ROLE_MAPPINGS_GROUP_CLAIM and
+  GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE default absent; the first overrides the DB only when
+  it decodes to a dictionary. Match the accepted Python literal dictionary/list/string
+  syntax without evaluating code. Its TypeError fallback does not swallow syntax errors.
+  GENERIC_SSO_HEADERS defaults absent; decode comma-separated key=value pairs, discard empty
+  segments, preserve inner whitespace and let later duplicate keys replace earlier ones.
+  Define decode_role_mapping_literal and decode_generic_headers for these environment bytes;
+  fuzz both through a tagged sso_mapping_input target. Name the config test loads_mapping_sources.
+  Use a pure sso_mapping_input oracle adapter for parsing; exercise DB fallback and precedence
+  with PostgreSQL fixtures. The 150 owned source lines support 220 implementation, 180 tests,
+  90 adapter and 110 config/fuzz lines inside a 650-line budget.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/sso_mappings.rs
+    - crates/betterlite-auth/src/sso_mappings/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/sso_mapping_input.rs
+    - crates/betterlite-auth/fuzz/corpus/sso_mapping_input/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_mappings.rs
+    - crates/betterlite-config/src/sso_mappings/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-mappings-*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_mapping_input.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_mapping_input.py
+    - tools/oracle/cases/helpers/sso-mappings/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-mapping-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L195-L203
+    why: Typed SSO settings repository projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1250-L1414
+    why: Environment validation, database fallback and literal/header parsers.
+dod:
+  - text: Endpoint defaults, literal role overrides and database failures produce the pinned mapping inputs.
+    proof: [mapping-tests, mapping-config, oracle, mapping-python]
+  - text: Both environment decoders and their shared oracle envelope replay malformed and accepted inputs.
+    proof: [mapping-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: mapping-tests
+      why: Mapping source ordering or unavailable-database fallback is untested.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^sso_mappings::/) - test(/replays_the_/)'
+    - id: mapping-config
+      why: The config loader does not bind a consumed SSO environment variable.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_mappings::tests::loads_mapping_sources/)'
+    - id: mapping-python
+      why: The parsing comparison has no valid Python implementation adapter.
+      run: test -f tools/oracle/helpers/sso_mapping_input.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: mapping-corpora
+      why: Mapping bytes or new config/helper envelopes have no added seeds.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/sso_mapping_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/sso_mapping_input)" && grep -rlq 'sso_mapping_input:' tools/oracle/fuzz/corpus/helper_case/sso-mapping-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-mappings-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_sso_mapping_input_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-mappings/single-quoted-role-dictionary.yaml
+  - tools/oracle/cases/helpers/sso-mappings/non-dictionary-literal.yaml
+  - tools/oracle/cases/helpers/sso-mappings/header-value-with-equals.yaml
+  - tools/oracle/cases/helpers/sso-mappings/duplicate-header-and-whitespace.yaml
+deviations: []
+out_of_scope:
+  - B1609 consumes the resolved mappings; B1623 owns HTTP exchange errors; B063 maintains the remaining ui_sso.py ownership inventory.
+pitfalls:
+  - GENERIC_CLIENT_SECRET being absent fails even for PKCE, while an explicitly empty string passes validation.
+  - GENERIC_SSO_HEADERS splits on every equals sign, so a value containing another equals sign is an error.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

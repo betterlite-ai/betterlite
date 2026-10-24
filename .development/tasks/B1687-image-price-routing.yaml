@@ -1,0 +1,97 @@
+id: B1687
+title: Route image charges and grounding fees through provider price policies
+description: >-
+  Add betterlite-core::cost::image_dispatch for CostCalculatorUtils and the two requested
+  image-parameter helpers. Extend betterlite-provider::pricing with image and grounding
+  operations, and implement B1685 ToolPricePolicy using that registry. This owns the two
+  pricing dispatch functions in llms/__init__.py, not dynamic guardrail discovery.
+  Recognize image_generation, aimage_generation, passthrough_image_generation, image_edit
+  and aimage_edit. Resolve size from truthy explicit value, response.size, valid string
+  optional_params.size, then 1024-x-1024; quality follows explicit, response, string option,
+  then standard. Optional size must fully match decimal digits separated by x or -x-;
+  whitespace, a sign and auto are rejected here. Preserve Unicode decimal digits accepted
+  by Python's regex. Explicit n, including zero or negative, wins over returned data length;
+  an absent/empty data collection gives zero. Filter deployment prices through B1670.
+  Route vertex_ai, recraft, aiml, cometapi, gemini, fal_ai and runwayml to registered image
+  policies with the source's exact arguments. Gemini selects image-edit policy only for
+  image_edit/aimage_edit. Bedrock invokes B1675 with size/options but deliberately receives
+  no deployment override. Azure AI receives size, n, options and prices through B1674;
+  fal_ai receives options as well. OpenAI/Azure models containing gpt-image after lowercasing
+  use B1674 token-aware image pricing; their other names and unmatched providers use its
+  default image price function. A non-image Vertex response yields zero, while the Bedrock
+  branch raises its type error. Preserve these distinctions in the parsed response view.
+  Implement Maps routing only for gemini or names starting vertex_ai. Web search selects
+  Gemini, Anthropic B1675, Vertex Gemini, xai or groq; Vertex model_info.key containing claude
+  case-insensitively selects Anthropic instead. Perplexity returns Some(0), preventing a
+  generic second search fee; other providers return None. Provider-specific arithmetic stays
+  with the provider's existing owner and is installed via B1686's low-level policy registry.
+  Image grounding returns zero for absent usage or a falsey web_search_requests; otherwise
+  construct usage.prompt_tokens_details.web_search_requests, invoke this web-search dispatch
+  and replace a falsey result with zero. Do not bill a grounding count twice in image policies.
+  Native tests use recording price policies to assert the full dispatch matrix and exact
+  override flow; they also exercise the already implemented OpenAI, Azure AI, Bedrock and
+  Anthropic policies. Pure image_request_options cases call the two optional-parameter helpers
+  and _call_type_has_image_response, without importing a handler or patching source globals.
+  These selected functions contain 265 nonblank source lines including dispatch imports;
+  allocate 300 implementation, 280 tests and 180 adapters/seeds within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/image_dispatch.rs
+    - crates/betterlite-core/src/cost/image_dispatch/**
+    - crates/betterlite-provider/src/pricing.rs
+    - crates/betterlite-provider/src/pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/image_request_options.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/image_request_options.py
+    - tools/oracle/cases/helpers/image-request-options/**
+    - tools/oracle/fuzz/corpus/helper_case/image-request-options-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L113-L123
+    why: String-only requested fields and the full image-size regex.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1865-L2093
+    why: Image grounding usage synthesis, option precedence and provider-specific argument lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L17-L85
+    why: Maps eligibility, Vertex Claude detection and the Perplexity already-billed result.
+dod:
+  - text: Image options retain typed string acceptance, exact call names, default dimensions and explicit count precedence.
+    proof: [image-dispatch-tests, oracle, image-options-python, image-options-corpus]
+  - text: Image policy selection forwards only the arguments used at the pin, including the Bedrock override omission and Gemini edit distinction.
+    proof: [image-dispatch-tests, grounding-dispatch-tests]
+  - text: Grounding dispatch distinguishes unsupported providers from an already-billed zero and adapts image usage without introducing another charge.
+    proof: [image-dispatch-tests, grounding-dispatch-tests]
+checks:
+  optional: []
+  commands:
+    - id: image-dispatch-tests
+      why: Image argument precedence or the selected calculator changes a request's price.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::image_dispatch::/)'
+    - id: grounding-dispatch-tests
+      why: Provider grounding selection loses None versus zero or the Vertex Claude branch.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^pricing::grounding::/) | test(/^pricing::image::/)'
+    - id: image-options-python
+      why: The optional-image-field oracle is missing its checked pinned-source adapter.
+      run: test -f tools/oracle/helpers/image_request_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: image-options-corpus
+      why: Optional image parameters have no tagged seed reaching helper replay.
+      run: grep -rlq 'image_request_options:' tools/oracle/fuzz/corpus/helper_case/image-request-options-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/image-request-options/optional-size-full-match-and-unicode-digits.yaml
+  - tools/oracle/cases/helpers/image-request-options/nonstring-quality-is-absent.yaml
+  - tools/oracle/cases/helpers/image-request-options/five-image-call-types-only.yaml
+deviations: []
+out_of_scope:
+  - B010 owns discover_guardrail_translation_mappings in llms/__init__.py; this task does not add filesystem scanning to price-policy registration.
+  - B1674 owns image cost arithmetic, B1675 owns Bedrock image and Anthropic search arithmetic, and the existing B031/B033/B035/B038-B042 provider owners retain their other image/grounding formulas.
+  - In llm_cost_calc/utils.py, B1669 handles off-peak windows, B1670 threshold/base rates, B1671 token-detail arithmetic, B1672 generic/uplift formulas, B1673 billed rates and savings, B1674 image usage math, B1675 search counters and B1676 character metrics; this task adds only L116-L123 and L1865-L2093.
+pitfalls:
+  - Bedrock's image dispatcher omits model_info even though neighboring provider branches receive deployment prices.
+  - Perplexity's zero is a completed search-price answer, so replacing it with None adds an erroneous generic fee.
+  - Only optional_params.size is regex-checked here; explicit and response sizes bypass that preliminary filter.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security
