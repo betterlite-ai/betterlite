@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/cooldown-policy/**
-  - tools/oracle/src/router_probes/cooldown-policy/**
+  - tools/oracle/src/router_probes/cooldown_policy/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/cooldown_policy.py
   - tools/oracle/litellm/probes/registry.py
@@ -36,7 +36,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the cooldown_policy prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
