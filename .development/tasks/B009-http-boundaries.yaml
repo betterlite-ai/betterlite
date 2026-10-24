@@ -1,0 +1,96 @@
+id: B009
+title: Outbound URL boundaries and shared HTTP integration
+description: >-
+  Finish the shared HTTP layer with typed outbound URL boundaries in betterlite-http. Reuse B171's path encoders
+  and B173's transport, separating operator-configured base URLs from untrusted path/query data and provider-returned
+  follow-up URLs. Add bounded parsing, normalized origin checks and destination host/port allowlist helpers; credentials
+  can only be attached after a follow-up URL has passed the configured origin check. Reject userinfo and unsupported
+  schemes at the configuration boundary and disable automatic credential-bearing cross-origin redirects; a configured
+  private inference endpoint remains valid. Add helper url_origin and url_destination cases around the pinned pure
+  helpers, plus local adversarial tests demonstrating that request bodies cannot override the destination and redirect
+  chains cannot leak credentials. Implement the URL policy parser's fuzz target and replay corpus. The user-URL
+  download wrappers in url_utils.py are deliberately unavailable under the bounded-inputs rule, and callers receive
+  a typed error rather than an attempted fetch. Budget 280 URL policy lines, 150 integration lines and 300 test/fuzz
+  lines.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-http/**
+  - crates/betterlite-config/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/url-origin/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L151-L247
+  why: Host/port normalization, destination candidates and allowlist matching.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L405
+  why: DNS validation and same-origin checks before credential forwarding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
+  why: Redirect traversal and the user-URL fetch behavior that conflicts with repository rules.
+dod:
+- text: Origin and destination matching agree with the listed helper cases, including case folding, explicit default
+    ports and IPv6.
+  proof:
+  - oracle
+- text: Request api_base overrides, URL userinfo, unsupported schemes, cross-origin redirects and encoded traversal
+    cannot redirect configured credentials.
+  proof:
+  - url-boundary-tests
+- text: Configured loopback/private providers still work; request-supplied fetch URLs are rejected before network
+    I/O.
+  proof:
+  - url-boundary-tests
+- text: The URL policy parser has a nonempty corpus replay and existing config corpus still passes.
+  proof:
+  - url-policy-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: url-boundary-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-http -p betterlite-config -p betterlite-openai --no-tests=fail
+      -E 'test(/url_boundary|url_origin/)'
+  - id: url-policy-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-http/fuzz/fuzz_targets/url_policy.rs && test -n "$(ls -A crates/betterlite-http/fuzz/corpus/url_policy)"
+      && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_the_url_policy_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/url-origin/default-port.yaml
+- tools/oracle/cases/helpers/url-origin/host-case.yaml
+- tools/oracle/cases/helpers/url-origin/ipv6.yaml
+- tools/oracle/cases/helpers/url-origin/scheme-mismatch.yaml
+- tools/oracle/cases/helpers/url-origin/port-mismatch.yaml
+- tools/oracle/cases/helpers/url-origin/host-suffix-attack.yaml
+- tools/oracle/cases/helpers/url-origin/destination-allowlist.yaml
+deviations:
+- what: User-supplied media/file URLs are never fetched, and credentials never follow a cross-origin redirect.
+  why: The bounded-inputs rule restricts outbound destinations to configuration; matching LiteLLM's optional user-URL
+    fetching would violate that rule.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L421-L487
+out_of_scope:
+- Actual remote media downloads and user_url_validation opt-outs are unavailable under the current rules.
+- Endpoint implementations and provider-specific signing remain in the provider backlog.
+pitfalls:
+- An origin check compares parsed scheme, normalized host and effective port, never suffixes or string prefixes.
+- Path percent-encoding and URL joining can normalize dot segments at different times; test both before sending.
+- Do not use the user-URL private-network denylist to reject operator-configured internal inference servers.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
