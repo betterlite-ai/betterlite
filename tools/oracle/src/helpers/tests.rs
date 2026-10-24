@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Cursor;
 use std::process::Command;
@@ -32,12 +33,31 @@ fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case
     assert!(parse_helper_case(&source).unwrap_err().contains(reason));
 }
 
+#[rstest::rstest]
+#[case::empty_name("''", "/a", "name cannot be empty")]
+#[case::relative_pointer("a", "a", "JSON pointers")]
+fn helper_cases_are_validated(#[case] name: &str, #[case] pointer: &str, #[case] reason: &str) {
+    let source = format!(
+        "kind: helper\nname: {name}\ncall: {{url_path: {{function: segment, value: a, field_name: id}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: '{pointer}', why: w}}]}}\n"
+    );
+    assert!(parse_helper_case(&source).unwrap_err().contains(reason));
+}
+
 #[test]
 fn helper_case_cannot_disable_the_local_cost_map() {
     let case: HelperCase = serde_saphyr::from_str(
         "kind: helper\nname: reserved\ncall: {url_path: {function: segment, value: ., field_name: id}}\nenv: {LITELLM_LOCAL_MODEL_COST_MAP: 'False'}\ncompare: {ignore: []}\n",
     )
     .expect("helper case should parse");
+    let mut command = Command::new("true");
+    super::configure_environment(&mut command, &case.env);
+    let cost_map = command
+        .get_envs()
+        .find(|(name, _)| *name == "LITELLM_LOCAL_MODEL_COST_MAP");
+    assert_eq!(
+        cost_map.and_then(|(_, value)| value),
+        Some(OsStr::new("True"))
+    );
     assert!(matches!(
         super::run_case(&case, false).expect("helper should run"),
         super::HelperRun::Match
