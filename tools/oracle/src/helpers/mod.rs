@@ -60,13 +60,9 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
     };
     let right = run_python(&python_input, &case.env)?;
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
-        writeln!(
-            io::stderr().lock(),
-            "FAIL {}: {}",
-            case.name,
-            difference.pointer
-        )
-        .map_err(OracleError::Output)?;
+        let pointer = difference.pointer;
+        writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
+            .map_err(OracleError::Output)?;
         return Ok(HelperRun::Difference);
     }
     writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
@@ -204,8 +200,7 @@ where
     let mut buffer = [0_u8; 8192];
     let mut excess = false;
     loop {
-        let read_count = NonZeroUsize::new(reader.read(&mut buffer)?);
-        let Some(nonzero_count) = read_count else {
+        let Some(nonzero_count) = NonZeroUsize::new(reader.read(&mut buffer)?) else {
             return Ok((output, excess));
         };
         let count = nonzero_count.get();
@@ -214,9 +209,7 @@ where
             .get(..count.min(remaining))
             .ok_or_else(|| io::Error::other("reader returned an invalid byte count"))?;
         output.extend(bytes.iter().copied());
-        if count > remaining {
-            excess = true;
-        }
+        excess |= count > remaining;
     }
 }
 
