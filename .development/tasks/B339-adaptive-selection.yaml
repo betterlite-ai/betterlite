@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/adaptive-selection/**
-  - tools/oracle/src/router_probes/adaptive-selection/**
+  - tools/oracle/src/router_probes/adaptive_selection/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/adaptive_selection.py
   - tools/oracle/litellm/probes/registry.py
@@ -45,7 +45,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the adaptive_selection prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
