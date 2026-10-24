@@ -492,3 +492,16 @@ rules:
       write: |
         def completion(model: str, messages: list[Message]) -> ModelResponse:
             raise APIConnectionError(model=model) from error
+
+  - id: processes-die-with-owner
+    title: A started process dies with its owner
+    statement: >-
+      Code that starts a child process (the oracle's LiteLLM, an MCP stdio server, a test fixture) holds the process that does the work, not a wrapper such as uv run or sh -c, so a kill reaches it. The child also dies when its owner is killed or never runs its cleanup: on Linux it starts through setpriv --pdeathsig, or in a process group the owner kills. A test proves the process is gone after its owner is dropped.
+    why: A kill that reaches only the wrapper leaves the real process running. B001's gate runs left 121 LiteLLM servers behind this way, about 28 GB of RAM.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        let child = Command::new("uv").args(["run", "--locked", "litellm"]).spawn()?;
+      write: |
+        let child = Command::new("setpriv").args(["--pdeathsig", "KILL", "--"]).arg(venv.join("bin/litellm")).spawn()?;
