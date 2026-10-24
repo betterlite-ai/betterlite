@@ -1,0 +1,81 @@
+id: B207
+title: Route and call-type metadata matching
+description: >-
+  Add typed route/call metadata under betterlite-core/routes independently of the executable dispatcher. Cover the
+  full pinned CallTypes and API_ROUTE_TO_CALL_TYPES vocabulary as data, including sync/async names, exact keys,
+  dynamic placeholders, suffixed multi-segment tails and inverse lookup. Copy the extracted table into a fixture
+  with source pin and compare the complete table against Python in the helper oracle; enums and matching logic remain
+  counted Rust code. A recognized route never installs a handler or enables an unsupported operation. Parse the
+  table and incoming route strings with bounds; add route_pattern fuzz target with corpus replay and direct route_metadata
+  helper cases for exact-versus-pattern precedence, suffix boundaries, trailing slashes and empty values. Budget
+  300 enum/table loader lines, 100 matching lines and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/routes.rs
+  - crates/betterlite-core/src/routes/**
+  - crates/betterlite-core/fixtures/**
+  - crates/betterlite-core/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/route-metadata/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L449-L636
+  why: All pinned call-type names.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L715-L1077
+  why: Full API route-to-call table.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/api_route_to_call_types.py#L17-L97
+  why: Exact-first matching, suffixed tails and inverse lookup.
+dod:
+- text: The full extracted table and all route matching/inverse cases compare equal with the pinned Python oracle.
+  proof:
+  - oracle
+- text: Route parsing is bounded, matching never activates absent handlers and malformed/oversized input has a typed
+    result.
+  proof:
+  - route-metadata-tests
+  - route-pattern-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: route-metadata-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/route_metadata/)'
+  - id: route-pattern-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-core/fuzz/fuzz_targets/route_pattern.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/route_pattern)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_route_pattern_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/route-metadata/full-table.yaml
+- tools/oracle/cases/helpers/route-metadata/exact-first.yaml
+- tools/oracle/cases/helpers/route-metadata/single-placeholder.yaml
+- tools/oracle/cases/helpers/route-metadata/suffixed-model.yaml
+- tools/oracle/cases/helpers/route-metadata/empty-suffix-value.yaml
+- tools/oracle/cases/helpers/route-metadata/multi-segment-tail.yaml
+- tools/oracle/cases/helpers/route-metadata/trailing-slashes.yaml
+- tools/oracle/cases/helpers/route-metadata/inverse.yaml
+- tools/oracle/cases/helpers/route-metadata/unknown.yaml
+deviations: []
+out_of_scope:
+- HTTP route installation is done by endpoint tasks; shared execution is B014.
+- Metadata call types do not imply native implementations for every endpoint.
+pitfalls:
+- Only a suffixed tail placeholder may absorb several path segments in the pinned matcher.
+- Exact entries are checked before pattern iteration.
+- A fixture may contain generated metadata but not executable Rust hidden from the line budget.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
