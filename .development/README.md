@@ -61,6 +61,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: the architect may raise a single task's budget (lines, expects, timeouts) when the work is cohesive and passes, and says why in the PR. Agents never get more access. B001 is the first: 1,700 lines for the oracle harness.
 - 2026-10-24: up to 6 dispatches run at once, plus the planners, with a back-off when Codex returns rate limit errors. The merge queue squashes each pull request into one commit, so a branch that merged main lands without being rebuilt by hand. Content passes stay before a batch of tasks runs.
 - 2026-10-24: the Codex usage limit ran out until 2026-10-30 22:51. Until then the worker ladder starts with the Claude Opus worker and Claude reviews Claude work (review_by_other_vendor off), with at most about 6 Claude agents at once. Revert both after the reset.
+- 2026-10-24: shared list files are written once, not by tasks, so parallel task PRs never conflict and the merge queue can land them in any order. The oracle helper registry is pre-registered from every task file: one group file per crate lists its operations, each operation has its own module (a stub until its task builds it) and adapter, and HelperCall carries the operation by name. Task scopes list only their own files; a task that needs a new shared entry reports a blocker.
 
 ## Writing a task
 
