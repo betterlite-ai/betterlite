@@ -1972,10 +1972,18 @@ tasks:
     milestone: M1 openai data plane
     title: Bedrock message and tool conversion helpers
     status: todo
-    depends_on: [B180, B183]
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    - B228
+    - B229
+    - B230
+    - B231
     file: tasks/B181-bedrock-prompts.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/factory.py"
+    - litellm/litellm_core_utils/prompt_templates/factory.py
   - id: B182
     milestone: M1 openai data plane
     title: Gemini, Cohere and Azure message helpers
@@ -2389,5 +2397,60 @@ tasks:
     - B178
     - B179
     file: tasks/B226-response-tool-calls.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B227
+    milestone: M1 openai data plane
+    title: Bedrock image and MIME blocks
+    status: todo
+    depends_on:
+    - B183
+    file: tasks/B227-bedrock-images.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B228
+    milestone: M1 openai data plane
+    title: Bedrock tool uses and result media
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    file: tasks/B228-bedrock-tool-results.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B229
+    milestone: M1 openai data plane
+    title: Bedrock content order and continuation
+    status: todo
+    depends_on:
+    - B179
+    - B183
+    file: tasks/B229-bedrock-content.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B230
+    milestone: M1 openai data plane
+    title: Bedrock Converse block processor
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    - B228
+    - B229
+    file: tasks/B230-bedrock-processor.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B231
+    milestone: M1 openai data plane
+    title: Bedrock tool names and cache blocks
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B231-bedrock-tools.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/factory.py
