@@ -9,8 +9,8 @@ description: Expose GET /auto_router/benchmarks and GET /auto_router/session thr
   are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching
   adapters to B301's component runner where state is not observable over HTTP; adapters call production
   logic and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
-  and separate seeded distribution tests for random choices. Add a cargo-fuzz target auto_router_read_query
-  under crates/betterlite-server/fuzz and a normal replays_the_auto_router_read_query_corpus test using
+  and separate seeded distribution tests for random choices. Add a cargo-fuzz target router_read
+  under crates/betterlite-server/fuzz and a normal replays_the_router_read_corpus test using
   the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
   and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/auto-router-read-api/**
-  - tools/oracle/src/router_probes/auto-router-read-api/**
+  - tools/oracle/src/router_probes/auto_router_read_api/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/auto_router_read_api.py
   - tools/oracle/litellm/probes/registry.py
@@ -35,7 +35,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the auto_router_read_api prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
@@ -55,9 +56,9 @@ checks:
       -E 'test(auto_router_read_api)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/auto_router_read_query.rs && test -n "$(ls
-      -A crates/betterlite-server/fuzz/corpus/auto_router_read_query)" && cargo nextest run --locked -p
-      betterlite-server --no-tests=fail -E 'test(replays_the_auto_router_read_query_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/router_read.rs && test -n "$(ls
+      -A crates/betterlite-server/fuzz/corpus/router_read)" && cargo nextest run --locked -p
+      betterlite-server --no-tests=fail -E 'test(replays_the_router_read_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
