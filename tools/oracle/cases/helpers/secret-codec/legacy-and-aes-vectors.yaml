@@ -17,6 +17,7 @@ call:
       - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj=x=", field: api_key, report: error, keep_original: false}
       - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXc==Aj", field: api_key, report: error, keep_original: false}
       - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAjé", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXEHhsXXGE41XMBOZQ9MNoYCQDmMAgx/StIWW/bAyTWAHjflBfc16NcjLyZVRCThkL9tn/hnp=", field: api_key, report: error, keep_original: false}
       - {op: decrypt_value, value: "*", field: api_key, report: error, keep_original: false}
       - {op: decrypt_value, value: "", field: api_key, report: error, keep_original: false}
       - {op: decrypt_value, value: "AAECAwQF", field: api_key, report: error, keep_original: false}
