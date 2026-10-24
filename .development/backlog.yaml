@@ -937,7 +937,7 @@ tasks:
     milestone: M5 api families
     title: Batch routes
     status: todo
-    depends_on: [B171, B1017, B1038, B1041, B1043, B1049, B1050, B1051, B1087, B1112, B1103, B1133, B162, B1019, B1020, B1021, B1139, B732, B855, B756, B1048, B003, B856]
+    depends_on: [B171, B1017, B1038, B1041, B1043, B1049, B1050, B1051, B1087, B1112, B1103, B1133, B162, B1019, B1020, B1021, B1139, B732, B855, B756, B1048, B003, B856, B2400]
     file: tasks/B086-batch-routes.yaml
     covers:
       - "litellm/proxy/batches_endpoints/endpoints.py"
@@ -945,7 +945,7 @@ tasks:
     milestone: M5 api families
     title: Managed file routes
     status: todo
-    depends_on: [B171, B1017, B1018, B1020, B1027, B1028, B1032, B1033, B1034, B1087, B1103, B732, B855, B756, B1021, B1019, B003, B1139, B856, B2208]
+    depends_on: [B171, B1017, B1018, B1020, B1027, B1028, B1032, B1033, B1034, B1087, B1103, B732, B855, B756, B1021, B1019, B003, B1139, B856, B2208, B2400]
     file: tasks/B087-managed-file-routes.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -5679,7 +5679,7 @@ tasks:
     milestone: M5 api families
     title: Responses read routes
     status: todo
-    depends_on: [B003, B171, B929, B933, B935, B1087, B1116, B1100, B1139, B732, B855, B756, B856]
+    depends_on: [B003, B004, B929, B933, B935, B1087, B1116, B1100, B1139, B732, B855, B756, B856]
     file: tasks/B938-responses-read-routes.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -6339,7 +6339,7 @@ tasks:
     milestone: M5 api families
     title: File upload route
     status: todo
-    depends_on: [B171, B900, B1018, B1027, B1028, B1031, B1087, B1100, B1103, B1139, B732, B855, B756, B1022, B1021, B1101, B003, B856, B002]
+    depends_on: [B900, B1031, B1024, B1087, B1100, B1103, B1139, B732, B855, B756, B1022, B1021, B1101, B003, B004, B012, B206, B856, B002, B2400]
     file: tasks/B1032-file-upload-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6347,7 +6347,7 @@ tasks:
     milestone: M5 api families
     title: File content route
     status: todo
-    depends_on: [B171, B1017, B1019, B1027, B1030, B1087, B732, B855, B756, B1021, B1080, B1020, B1025, B003, B1139, B856, B2208]
+    depends_on: [B171, B1017, B1019, B1027, B1030, B1087, B732, B855, B756, B1021, B1080, B1020, B1025, B003, B1139, B856, B2208, B2400]
     file: tasks/B1033-file-content-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6355,7 +6355,7 @@ tasks:
     milestone: M5 api families
     title: File read route
     status: todo
-    depends_on: [B171, B1017, B1018, B1019, B1029, B1087, B732, B855, B756, B1021, B1020, B003, B1139, B856]
+    depends_on: [B171, B1017, B1018, B1019, B1029, B1087, B732, B855, B756, B1021, B1020, B003, B1139, B856, B2400]
     file: tasks/B1034-file-read-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6488,15 +6488,15 @@ tasks:
     milestone: M5 api families
     title: Batch create route
     status: todo
-    depends_on: [B171, B1020, B1036, B1041, B1047, B1049, B1087, B1112, B1100, B162, B732, B855, B756, B1021, B1019, B1048, B003, B1139, B856, B002]
+    depends_on: [B171, B1020, B1036, B1041, B1047, B1049, B1087, B1112, B1100, B162, B732, B855, B756, B1021, B1019, B1048, B003, B1139, B856, B002, B2400]
     file: tasks/B1050-batch-create-route.yaml
     covers:
       - "litellm/proxy/batches_endpoints/endpoints.py"
   - id: B1051
     milestone: M5 api families
-    title: Batch read routes
+    title: Batch retrieval route
     status: todo
-    depends_on: [B171, B1017, B1037, B1040, B1041, B1043, B1087, B1112, B1129, B1100, B1133, B732, B855, B756, B1019, B1021, B1048, B1020, B003, B1139, B856, B002]
+    depends_on: [B003, B004, B012, B002, B1037, B1041, B1087, B1112, B732, B855, B756, B1019, B1021, B1048, B1020, B1139, B856, B844, B162, B2400]
     file: tasks/B1051-batch-read-routes.yaml
     covers:
       - "litellm/proxy/batches_endpoints/endpoints.py"
@@ -6623,7 +6623,7 @@ tasks:
     milestone: M5 api families
     title: Vector store write
     status: todo
-    depends_on: [B010, B171, B1058, B1087, B527, B002]
+    depends_on: [B010, B171, B1058, B1087, B527, B002, B2402]
     file: tasks/B1066-vector-store-write.yaml
     covers:
       - "litellm/vector_stores/main.py"
@@ -6697,7 +6697,7 @@ tasks:
     milestone: M5 api families
     title: Vector file resolution
     status: todo
-    depends_on: [B171, B1017, B1020, B1061, B1062, B1087, B1016, B1021, B002]
+    depends_on: [B171, B1017, B1020, B1061, B1062, B1087, B1016, B1021, B002, B2400]
     file: tasks/B1075-vector-file-resolution.yaml
     covers:
       - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
@@ -7123,7 +7123,7 @@ tasks:
     milestone: M5 API families
     title: Shared multipart and form extraction
     status: todo
-    depends_on: [B003, B900, B171, B1087, B1100, B002]
+    depends_on: [B003, B900, B171, B1087, B1100, B002, B844]
     file: tasks/B1101-request-form.yaml
     covers:
       - "litellm/proxy/common_utils/http_parsing_utils.py"
@@ -7148,7 +7148,7 @@ tasks:
     milestone: M5 API families
     title: Request headers and tracing
     status: todo
-    depends_on: [B732, B171, B1087, B1106, B1105, B002]
+    depends_on: [B732, B171, B1087, B1106, B1105, B002, B567]
     file: tasks/B1104-request-headers.yaml
     covers:
       - "litellm/proxy/litellm_pre_call_utils.py"
@@ -7317,7 +7317,7 @@ tasks:
     milestone: M5 API families
     title: Realtime WebSocket route
     status: todo
-    depends_on: [B003, B855, B756, B901, B1011, B1004, B1103, B171, B1087, B1139, B856]
+    depends_on: [B003, B855, B756, B901, B1011, B1004, B004, B014, B012, B886, B071, B2400, B1087, B1139, B856]
     file: tasks/B1125-realtime-websocket-route.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -7383,7 +7383,7 @@ tasks:
     milestone: M5 API families
     title: Batch list route
     status: todo
-    depends_on: [B003, B855, B1035, B1129, B1112, B171, B1087, B1100, B1020, B1019, B756, B1139]
+    depends_on: [B003, B855, B1035, B1129, B1112, B171, B1087, B1100, B1020, B1019, B756, B1139, B2400]
     file: tasks/B1133-batch-list-route.yaml
     covers:
       - "litellm/proxy/batches_endpoints/endpoints.py"
@@ -10487,3 +10487,27 @@ tasks:
     file: tasks/B1395-vertex-embedding-dispatch.yaml
     covers:
       - "litellm/main.py"
+  - id: B2400
+    milestone: M5 api families
+    title: Shared endpoint provider hints and exception handling
+    status: todo
+    depends_on: [B003, B1100, B872, B121, B171, B844, B072]
+    file: tasks/B2400-proxy-endpoint-support.yaml
+    covers:
+      - "litellm/proxy/utils.py"
+      - "litellm/proxy/common_utils/openai_endpoint_utils.py"
+  - id: B2401
+    milestone: M5 API families
+    title: HTTP oracle execution for SDK operations
+    status: todo
+    depends_on: [B001, B004, B011, B900]
+    file: tasks/B2401-sdk-http-oracle.yaml
+    covers: []
+  - id: B2402
+    milestone: M5 API families
+    title: Vector store HTTP writes and transport error conversion
+    status: todo
+    depends_on: [B173, B1058, B1131, B527, B668, B171, B012, B011, B2401]
+    file: tasks/B2402-vector-store-http-write.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"

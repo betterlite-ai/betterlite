@@ -1,0 +1,145 @@
+id: B2402
+title: Vector store HTTP writes and transport error conversion
+description: >-
+  Own BaseLLMHTTPHandler.async_vector_store_update_handler (10494-10559), vector_store_update_handler
+  (10561-10638), async_vector_store_delete_handler (10640-10689), vector_store_delete_handler (10691-10751)
+  and the complete shared _handle_error (6052-6111) in llm_http_handler.py. Implement their typed execution
+  in betterlite-core::api::vector_store_http_write. B1066 calls this task, never the reverse. B173 supplies
+  the pooled transport, B1058 the vector-store provider contract, B527 the OpenAI implementation, B668 the
+  metadata filter, B171 the existing path encoder, B012 logging and B011 provider error records.
+
+  Choose the supplied client only if its execution mode matches the requested sync/async operation; otherwise
+  use the configured pool, carrying ssl_verify with default null. Validate the environment with the supplied
+  headers map or an empty map, then update the returned headers from the map as it exists after validation.
+  Do not restore a pre-validation snapshot: OpenAI mutates Authorization and Content-Type in that same map.
+  Get the provider's complete base URL and append slash plus one encoded vector_store_id path segment.
+  Preserve this literal append even when the base contains a query; do not silently move the id before it.
+
+  Update copies the optional params into the JSON body. If metadata is non-null, run B668 add_openai_metadata:
+  retain string values, remove hidden_params and keep the first sixteen entries. Then overlay extra_body,
+  so extra_body.metadata can replace that cleaned value. Emit pre_call with input="",api_key="" and
+  additional_args containing complete_input_dict, api_base and headers. POST the JSON and call the provider's
+  transform_create_vector_store_response. Delete logs only api_base and headers, sends DELETE without a body
+  and returns response.json() without the create-response transformation; extra_body is accepted but unused.
+  Async sends pass timeout through. Sync sends omit it, leaving the selected client's timeout in effect.
+
+  Transport exceptions enter _handle_error. HTTPStatusError uses its response status; another exception uses
+  status_code only if it is an integer, otherwise synthesize 500. Initial text is response.text for HTTP status
+  errors, otherwise exception.text or str(exception); an attached response.text overrides either. Explicit
+  non-null exception.headers wins over response headers, including an explicit empty map. Missing/falsey headers
+  become an empty map. Ask provider_config.get_error_class for the final exception, or use BaseLLMException when
+  no config exists. Mark status_code_is_synthesized=true only when the source status was not an integer.
+  Response conversion and JSON decode happen outside the transport catch, so their errors are not remapped here.
+
+  Add SdkHttpCall::VectorStoreTransport to B2401's HTTP driver. Inputs name update/delete, mode, id, typed optional
+  params, extra_headers/body, timeout and an OpenAI config whose base is the mock. The Python adapter calls the
+  actual handler with a production logging object; native calls the production service. No handler is mocked and
+  no helper case represents provider I/O. Typed transport/lifecycle tests cover injected client selection and
+  errors that cannot be caused by a valid HTTP response. No byte decoder is added; B1058/B1131 own wire records.
+
+  The five complete functions contain 273 nonblank/non-comment Python lines. Estimate 250 implementation,
+  155 behavior tests, 110 HTTP fixtures, 95 Rust/Python adapter lines and 35 wiring, 645 total under 660.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_store_http_write.rs
+  - crates/betterlite-core/src/api/vector_store_http_write/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_store_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_store_transport.py
+  - tools/oracle/cases/sdk-http/vector-store-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-transport-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10494-L10751
+  why: Four whole update/delete handlers contain the actual HTTP method, metadata-cleaning order and sync timeout omission.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6052-L6111
+  why: The shared error converter preserves response text and headers and marks synthesized statuses.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10292-L10324
+  why: B668 removes hidden/non-string metadata and truncates by insertion order before extra_body is applied.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L50-L91
+  why: OpenAI environment validation mutates the caller's nonempty header map and constructs the base URL used by these handlers.
+dod:
+- text: >-
+    update_http_order sends id=vs/a, optional metadata={keep:yes,hidden_params:secret,count:2} and name=notes.
+    Expect POST /v1/vector_stores/vs%2Fa with body {name:notes,metadata:{keep:yes}}. With eighteen string entries
+    k01 through k18, only k01 through k16 remain. extra_body={metadata:{count:2},name:replacement} overrides
+    both cleaned metadata and name, so the provider sees count=2 and name=replacement. Mock 200 {id:vs_a,
+    object:vector_store,name:replacement} returns those same fields. Test both execution modes.
+  proof: [update-http, oracle, python-adapter]
+- text: >-
+    write_headers sends API key sk-provider, caller Authorization="Bearer sk-caller", Content-Type=text/plain,
+    OpenAI-Beta=assistants=v1 and X-Trace=trace-a. The mock receives Authorization="Bearer sk-provider",
+    Content-Type=application/json, OpenAI-Beta=assistants=v1 and X-Trace=trace-a. Omitting OpenAI-Beta adds
+    assistants=v2. A native assertion observes the post-validation header map used in pre_call logging.
+  proof: [headers-http, oracle, python-adapter]
+- text: >-
+    delete_http_ignores_body sends id=vs_a,extra_body={ignored:true}. The provider receives DELETE
+    /v1/vector_stores/vs_a with no body. Mock 200 {id:vs_a,object:vector_store.deleted,deleted:true} returns that
+    mapping. A mock 200 [1,2] is returned as parsed JSON too; this layer does not impose a new delete-object schema.
+    Malformed JSON fails decoding after the HTTP send, without calling the transport error converter.
+  proof: [delete-http, oracle, python-adapter]
+- text: >-
+    transport_failure supplies HTTP 429 with text=slow down and Retry-After=3. The converter asks the OpenAI
+    config for its error at status=429,message=slow down,headers containing Retry-After=3 and does not mark
+    the status synthesized. Native variants use no status, string status="429" and integer status=503: the
+    first two become 500 with synthesized=true; 503 stays 503. An explicit empty exception-header map blocks
+    fallback to response headers. A response text=remote overrides exception.text=local. No-config input creates
+    BaseLLMException with the same status/text/headers. None of these conversions retries the request.
+  proof: [transport-errors, oracle, python-adapter]
+- text: >-
+    execution_mode uses timeout=7 and a supplied sync client, then async client. A matching client is reused;
+    a mismatch selects the pool with ssl_verify=false when configured. The async send receives timeout=7,
+    while the sync send has no per-call timeout argument. Logging precedes the send and update logging alone
+    has complete_input_dict. A prepared base https://mock.test/vector_stores?api-version=v1 appends /vs_a after
+    the query exactly; the native transport capture sees path=/vector_stores,query=api-version=v1/vs_a.
+  proof: [mode-tests]
+- text: Newly added vector-store-transport SDK seeds exercise both adapters and B2401's existing case decoder.
+  proof: [sdk-corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: update-http
+    why: metadata filtering or extra_body overlay order changes the provider JSON
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::update_http_order($|::)/)'
+  - id: headers-http
+    why: pre-validation credentials are restored after provider validation
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::write_headers($|::)/)'
+  - id: delete-http
+    why: delete forwards extra_body or forces an object response
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::delete_http_ignores_body($|::)/)'
+  - id: transport-errors
+    why: transport failures lose their original status, response text, headers or synthesized marker
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::transport_failure($|::)/)'
+  - id: mode-tests
+    why: sync and async call modes accidentally share a different timeout/client contract
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::execution_mode($|::)/)'
+  - id: python-adapter
+    why: the real-handler HTTP adapter is missing or untyped
+    run: test -f tools/oracle/sdk_http/vector_store_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: no new typed vector_store_transport call reaches the SDK HTTP parser
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-store-transport/update-http-order.yaml
+- tools/oracle/cases/sdk-http/vector-store-transport/write-headers.yaml
+- tools/oracle/cases/sdk-http/vector-store-transport/delete-http-ignores-body.yaml
+- tools/oracle/cases/sdk-http/vector-store-transport/transport-failure.yaml
+deviations: []
+out_of_scope:
+- B1066 owns SDK update/delete argument filtering, provider selection, REQUEST_TIMEOUT and decorator error normalization.
+- B173 owns client pools and generic sends; B1058/B1131 own vector-store contracts and response decoding.
+- B527 and the other provider adapter tasks own validate_environment, get_complete_url and response transformations.
+- Other llm_http_handler.py endpoint families retain their respective API owners; this task claims only the five complete functions listed above.
+pitfalls:
+- extra_body.metadata runs after add_openai_metadata and can therefore restore non-string metadata values.
+- The sync HTTP calls omit timeout even though their public handlers accept it.
+- Header validation can mutate extra_headers before its apparent final overlay, so caller Authorization does not necessarily win.
+review_level: security
+budget:
+  max_changed_lines: 660
+  max_new_expects: 0

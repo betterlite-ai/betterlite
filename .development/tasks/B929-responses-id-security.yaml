@@ -5,50 +5,63 @@ description: >-
   and B061's established secret encryption helper. Add general_settings.disable_responses_id_security=false and
   allow_unmanaged_response_ids=false; resolve LITELLM_SALT_KEY with master-key fallback through config. Keep request-scoped
   encryption reuse and authorize retained addressed IDs before decoding routing IDs.
+  Install the policy by default: PROXY_HOOKS contains responses_id_security without an opt-in. A normal key with
+  a signing key cannot address an unmanaged resp_external; it raises HTTPException 403. The provider-flow HTTP
+  mapper produces permission_error, param=null and code="403". PROXY_ADMIN, either disabling setting or no signing
+  key permits unmanaged ids. Only disable_responses_id_security also bypasses encrypted owner mismatch and stops
+  advertised-id encryption; allow_unmanaged_response_ids does neither.
+
+  Apply pre-call authorization to aresponses, aget_responses, adelete_responses, acancel_responses and alist_input_items.
+  Other call types return None. A nonempty string _litellm_addressed_response_id wins over the body field, which is
+  previous_response_id for aresponses and response_id otherwise. Missing, empty or nonstring addressed values leave
+  data unchanged. After authorization, store the provider id in that body field and retain the original addressed id.
+
+  Encrypt the plaintext litellm_proxy:responses_api:response_id:resp_test;user_id:user_a;team_id:team_a with B061,
+  then advertise resp_ plus its ciphertext. Empty user/team become empty fields and enforce no corresponding check.
+  Nonstream ResponsesAPIResponse objects are rewritten regardless of request route. Streaming rewrites only typed
+  response events on /responses, /v1/responses, /openai/responses and /openai/v1/responses. Reuse one encrypted id
+  per original id within a stream; separate requests use fresh nonces. Rewrite a top-level id beginning resp_ before
+  trying nested response.id; nested ResponsesAPIResponse and mapping values have separate branches. Nonmapping
+  nested values and mappings without a string id pass through unchanged.
 
 
   Pure policy/helper parity stays here; the consuming route tasks own HTTP auth/status/header integration. Do not
   call a FastAPI handler from a helper adapter or add a dependency on the later family composer.
 
 
-  Implement crates/betterlite-core/src/api/responses_id_security.rs. Use ResponsesIdSecurityInput and ResponsesIdSecurityResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  Place the policy in betterlite-core::api::responses_id_security, consuming B732 principals and B902 response
+  objects. Inject the config snapshot and B061 encryption service; B1087 limits bound ids before decryption.
 
 
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): responses_id_security.py:158 status_code=403, exception_detail=FastAPI detail string; responses_id_security.py:193
-  status_code=403, exception_detail=FastAPI detail string; responses_id_security.py:207 status_code=403, exception_detail=FastAPI
-  detail string. Compare the actual source status, error type, param and code; ignore only error wording except
-  in message-extraction tests.
+  The three 403 branches distinguish an unmanaged id, mismatched user and mismatched team. Source details start
+  "Forbidden. This response id was not issued by this proxy", "Forbidden. The response id is not associated with
+  the user" and "Forbidden. The response id is not associated with the team". Check user before team; disabling
+  security logs the corresponding debug diagnostic and returns early. Helper cases compare exception status and
+  absence of type/param/code attributes, while B938 supplies the HTTP permission_error envelope test.
 
 
   Write adjacent tests.rs behavior functions same_user_team, cross_user_forbidden, cross_team_forbidden, proxy_admin_unmanaged,
   no_signing_key_debug_fallback, stream_id_consistency, malformed_owned_id_payload under api::responses_id_security::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
+  Add default_unmanaged_denial, setting_overrides, empty_owners, retained_addressed_id and response_rewrite_routes
+  with the exact inputs below. Name parameterized inputs with rstest so every owner and setting combination is visible.
 
 
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.LITELLM_SALT_KEY
-  defaults to None; general_settings.disable_responses_id_security defaults to False; general_settings.allow_unmanaged_response_ids
-  defaults to False. No environment reads occur outside betterlite-config. Test api::responses_id_security::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
+  betterlite-config::api::responses_id_security::tests::loads_settings loads both flags omitted as false and each
+  explicitly true. LITELLM_SALT_KEY absent falls back to general_settings.master_key; when both are absent the result
+  is None. An explicitly empty salt key remains empty rather than falling back. Test salt=test-salt with
+  master_key=test-master selects test-salt. Commit matching config_yaml seeds and assert none of these keys is unsupported.
 
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  B061 owns encrypted-byte decoding. Fuzz the bounded id boundary decode_owned_response_id(bytes, crypto, limits)
+  in this crate as well, including UTF-8, ciphertext failure and malformed decrypted field counts. Its replay test
+  calls the production decoder with a fixed non-secret encryption key; a two-field payload must return an error,
+  never panic. Preserve the caller-visible 500 failure of LiteLLM's IndexError with a typed internal error.
 
 
-  Register HelperCall::ResponsesIdSecurity in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_id_security: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+  HelperCall::ResponsesIdSecurity selects call: {responses_id_security: ...}; register it in the Rust and Python
+  dispatchers. Python invokes the pinned hook with injected settings/principals and B061's real helper. Compare
+  decrypted payloads, authorization outcomes and within-stream id equality, not randomized ciphertext strings.
+  Normalize malformed-payload failures as an internal-error outcome while retaining their source diagnostic class.
 
 
   Callable ownership: litellm/proxy/hooks/responses_id_security.py: _proxy_general_settings (L43-L46); litellm/proxy/hooks/responses_id_security.py:
@@ -63,22 +76,16 @@ description: >-
   ResponsesIDSecurity._get_signing_key (L269-L270); litellm/proxy/hooks/responses_id_security.py: ResponsesIDSecurity._encrypt_response_id
   (L272-L303); litellm/proxy/hooks/responses_id_security.py: ResponsesIDSecurity.async_post_call_success_hook (L305-L326);
   litellm/proxy/hooks/responses_id_security.py: ResponsesIDSecurity.async_post_call_streaming_iterator_hook (L328-L343).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
+  This task owns every function in responses_id_security.py and its policy constants, without splitting any method.
 
 
-  Sizing: 257 owned nonblank/non-comment/non-docstring Python lines (273 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 277 implementation,
-  82 behavior tests, 84 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 39 config tests/seeds and
-  30 wiring; 602 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
+  Sizing: the callable range L43-L343 contains 241 nonblank/non-comment physical lines, 230 excluding docstrings;
+  the complete file including imports/constants has 273 physical lines. Allow 265 implementation, 155 behavior
+  tests, 125 fixtures, 95 adapters, 55 fuzz/replay, 40 config tests/seeds and 30 wiring, 765 changed lines.
 
 
-  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B061 (Stored credentials and their
-  encryption), B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B903 (Response id codecs),
-  B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  B002 resolves settings, B061 supplies interoperable encryption, B171 runs pure-helper comparisons, B902/B903
+  provide response objects/routing ids, and B732 supplies principals. Do not depend on B080 or B938: they consume this policy.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -87,6 +94,9 @@ scope:
   - crates/betterlite-core/src/api/responses_id_security.rs
   - crates/betterlite-core/src/api/responses_id_security/**
   - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/owned_response_id.rs
+  - crates/betterlite-core/fuzz/corpus/owned_response_id/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
@@ -109,57 +119,94 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L54-L54
-  why: Setting env.LITELLM_SALT_KEY and its pinned default/precedence.
+  why: The salt overrides master_key even when it is the empty string; only absence triggers fallback.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L340-L340
-  why: Setting general_settings.disable_responses_id_security and its pinned default/precedence.
+  why: The streaming hook checks disable_responses_id_security for every chunk, defaulting false.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L165-L165
-  why: Setting general_settings.allow_unmanaged_response_ids and its pinned default/precedence.
+  why: This flag permits unmanaged inputs without turning off encrypted owner checks or output encryption.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L1-L343
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Own authorization, advertised-id rewriting and stream-local encryption reuse, including the malformed two-field payload branch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L31
+  why: The startup hook inventory includes responses_id_security without requiring an explicit callback setting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L209-L225
+  why: B061's default SecretBox encryption generates a fresh nonce, so ciphertext equality across independent calls is invalid.
 dod:
-- text: 'same user team: the named production behavior test asserts the result and effects described above.'
+- text: same_user_team decrypts an id carrying user_a/team_a for a user_a/team_a principal and returns the original resp_test.
   proof:
   - case-same-user-team
   - oracle
-- text: 'cross user forbidden: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: cross_user_forbidden sends user_a/team_a ownership with user_b/team_a; authorization raises 403 before returning a routing id.
   proof:
   - case-cross-user-forbidden
   - oracle
-- text: 'cross team forbidden: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: cross_team_forbidden keeps user_a but changes team_a to team_b; it raises 403 on the team branch.
   proof:
   - case-cross-team-forbidden
   - oracle
-- text: 'proxy admin unmanaged: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: proxy_admin_unmanaged accepts resp_external and mismatched encrypted owners for PROXY_ADMIN, represented by either enum or value.
   proof:
   - case-proxy-admin-unmanaged
   - oracle
-- text: 'no signing key debug fallback: the named production behavior test asserts the result and effects described
-    above.'
+  - helper-python
+- text: no_signing_key_debug_fallback supplies signing_key=None; resp_external is permitted and output resp_test remains plaintext with a debug diagnostic.
   proof:
   - case-no-signing-key-debug-fallback
   - oracle
-- text: 'stream id consistency: the named production behavior test asserts the result and effects described above.'
+  - helper-python
+- text: >-
+    stream_id_consistency emits response.created and response.completed for resp_test in one stream: both advertise
+    the same encrypted id. Another stream advertises a fresh ciphertext; all decrypt to the same resp_test/user_a/team_a payload.
   proof:
   - case-stream-id-consistency
   - oracle
-- text: 'malformed owned id payload: the named production behavior test asserts the result and effects described
-    above.'
+  - helper-python
+- text: >-
+    malformed_owned_id_payload supplies decrypted litellm_proxy:responses_api:response_id:resp_test;user_id:user_a
+    with no third field: Python raises IndexError and native returns a typed internal failure, mapped by callers
+    to 500 internal_server_error/param=null/code="500". A one-field litellm_proxy payload falls back to the original
+    addressed id with absent owners; a nonmanaged ciphertext is unmanaged, and a two-field payload never panics in Rust.
   proof:
   - case-malformed-owned-id-payload
   - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
+  - helper-python
+- text: default_unmanaged_denial uses a normal user_a key, signing key=test-master and both flags omitted; resp_external raises HTTPException 403.
+  proof: [case-default-denial, oracle, helper-python]
+- text: >-
+    setting_overrides separately sets disable_responses_id_security=true and allow_unmanaged_response_ids=true:
+    either permits resp_external. A mismatched encrypted owner is permitted only by disable_responses_id_security,
+    which logs debug and leaves output ids unencrypted; allow_unmanaged_response_ids still denies that owner with 403.
+  proof: [case-settings, oracle, helper-python]
+- text: empty_owners encrypts resp_test for a principal with no user or team; another ordinary principal passes because both owner fields are empty.
+  proof: [case-empty-owners, oracle, helper-python]
+- text: >-
+    retained_addressed_id uses aresponses with previous_response_id=resp_wrong and a retained valid owned id;
+    previous_response_id becomes resp_test and the retained field stays unchanged. Repeat all four lifecycle call
+    types with response_id. Empty/missing/nonstring fields leave data unchanged; acompletion returns None.
+  proof: [case-addressed-id, oracle, helper-python]
+- text: >-
+    response_rewrite_routes encrypts typed chunks on all four create aliases, but leaves chunks on /v1/responses/resp_test,
+    /chat/completions and a missing route unchanged. A nonstream ResponsesAPIResponse still encrypts on those routes.
+    Test top-level resp_test, nested typed response, nested {id:"resp_test"}, nested {id:7} and nested null; the last
+    two remain unchanged. A top-level resp_ id takes precedence over a simultaneous nested response id.
+  proof: [case-rewrite-routes, oracle, helper-python]
+- text: The production owned-id decoder and fuzz replay reject truncated UTF-8 and malformed encrypted payloads without panics.
+  proof: [id-corpus]
+- text: loads_settings proves both false defaults, independent true overrides, absent salt fallback and empty-salt precedence using the config loader.
   proof:
   - config-tests
   - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+- text: responses_id_security helper fixtures compare decrypted identities and authorization results through the registered native and Python adapters.
   proof:
   - oracle
   - helper-python
   - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: All twelve security fixtures are newly added, with production core/config behavior tests and independent pinned-hook comparison.
   proof:
   - new-oracle-cases
+  - behavior-tests
   - oracle
   - helper-python
   - helper-corpus
@@ -167,6 +214,24 @@ checks:
   optional:
   - mutants
   commands:
+  - id: case-default-denial
+    why: startup defaults permit an ordinary key to address an unmanaged provider id
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::default_unmanaged_denial($|::)/)'
+  - id: case-settings
+    why: the two security flags incorrectly have identical effects
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::setting_overrides($|::)/)'
+  - id: case-empty-owners
+    why: empty owner fields unexpectedly enforce identity matching
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::empty_owners($|::)/)'
+  - id: case-addressed-id
+    why: routing-decoded ids overwrite the retained authorization target
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::retained_addressed_id($|::)/)'
+  - id: case-rewrite-routes
+    why: streaming and nonstream output rewriting apply the same route restriction
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::response_rewrite_routes($|::)/)'
+  - id: id-corpus
+    why: encrypted response-id parsing has no newly committed malformed-input corpus
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/owned_response_id.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/owned_response_id)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_id_security::tests::replays_corpus$/)'
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
     run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_id_security::/)
@@ -212,6 +277,11 @@ checks:
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-id-security)"
 oracle_cases:
+- tools/oracle/cases/helpers/responses-id-security/default-unmanaged-denial.yaml
+- tools/oracle/cases/helpers/responses-id-security/setting-overrides.yaml
+- tools/oracle/cases/helpers/responses-id-security/empty-owners.yaml
+- tools/oracle/cases/helpers/responses-id-security/retained-addressed-id.yaml
+- tools/oracle/cases/helpers/responses-id-security/response-rewrite-routes.yaml
 - tools/oracle/cases/helpers/responses-id-security/same-user-team.yaml
 - tools/oracle/cases/helpers/responses-id-security/cross-user-forbidden.yaml
 - tools/oracle/cases/helpers/responses-id-security/cross-team-forbidden.yaml
@@ -221,17 +291,14 @@ oracle_cases:
 - tools/oracle/cases/helpers/responses-id-security/malformed-owned-id-payload.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B061 owns the encryption algorithms and salt-key material; this task owns the identity payload and authorization policy.
+- B080/B938 own creation/lifecycle HTTP registration and its final status, error envelope and header comparisons.
 pitfalls:
-- responses_id_security.py:187 emits the diagnostic 'Responses ID Security is disabled. User %s is accessing response
-  id %s which is not associated with them.'; retain its level and fallback instead of turning it into a hard error.
-- responses_id_security.py:200 emits the diagnostic 'Responses ID Security is disabled. Response belongs to team
-  %s but user %s is accessing it with team id %s.'; retain its level and fallback instead of turning it into a hard
-  error.
+- SecretBox uses a random nonce; compare decrypted fields and within-stream reuse, never ciphertext strings from independent gateways.
+- len(parts)>=2 does not make parts[2] safe; the malformed two-field input needs an error path rather than Rust indexing.
+- A no-user/no-team id carries empty owner fields and is accepted by other ordinary principals at this pin.
+- The nonstream success hook encrypts any ResponsesAPIResponse, while the streaming hook is restricted to create-route aliases.
 review_level: security
 budget:
-  max_changed_lines: 610
+  max_changed_lines: 780
   max_new_expects: 1

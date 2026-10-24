@@ -1,81 +1,50 @@
 id: B1125
 title: Realtime WebSocket route
 description: >-
-  Install /openai/v1/realtime, /v1/realtime and /realtime with the pinned model/auth handshake and release budget/parallel
-  reservations on every exit. Handshake and relays use B901 transcripts.
+  Register the WebSocket routes /openai/v1/realtime, /v1/realtime and /realtime once in
+  betterlite-server::api::realtime_websocket_route. Put the lifecycle policy in the matching core module.
+  Own the whole realtime_websocket_endpoint, its nested return_body and _realtime_query_params_template,
+  _release_realtime_budget_reservation, _release_realtime_max_parallel_slot and _reject_realtime_session
+  at proxy_server.py:12856-13045. Reuse B901's WebSocket transcripts and B1087's limits; this route does not
+  decode provider frames or introduce a new external-byte parser.
 
+  model, intent and guardrails query parameters default to null. B756 authenticates the handshake and B886's
+  can_key_call_resolved_model checks the resolved model before accept. An absent model defaults to
+  gpt-realtime-whisper only when intent=transcription. Otherwise reject before accept with attempted close
+  1008 and reason "model query parameter is required". Model denial also attempts 1008 with the first 120
+  characters of the denial message. On the wire both are a bare HTTP 403, without a WebSocket close frame or
+  OpenAI error object. Echo the first nonempty trimmed Sec-WebSocket-Protocol token, not a protocol allowlist.
 
-  Require model unless intent=transcription, whose default model is gpt-realtime-whisper. Missing or unauthorized
-  model closes 1008 before accept, observed as HTTP 403; cut failed model-check reason to 120 characters. Echo the
-  first Sec-WebSocket-Protocol. Pre-call failure sends a guardrail_error event then closes 1011. InvalidStatus uses
-  close_after_upstream_handshake_refusal; release budget reservations and max-parallel slots according to the success/failure
-  logged flags.
+  Only the client's explicit model and intent enter query_params. The transcription routing default is not
+  inserted there. Split truthy guardrails on commas, trim entries, discard empty entries and pass the list in
+  data[guardrails], never as an upstream query parameter. A whitespace-only nonempty guardrails value yields
+  an empty list; an empty value leaves the field absent. Build the B1004 synthetic request with raw ASGI headers,
+  the original WebSocket URL and a body containing the resolved route model.
 
+  Call B004's common_processing_pre_call_logic with route_type=_arealtime and the existing configured
+  user_model/user_temperature/user_request_timeout/user_max_tokens/user_api_base values; B004 owns their
+  defaults and precedence. B014 route_request selects B1011's realtime transport. B012 supplies logging and
+  redaction, B071 owns release_or_invalidate_budget_reservation, and B2400 owns the ProxyLogging disconnect
+  adapter to B072's limiter. These dependencies are the actual callees, not a proxy-server umbrella.
 
-  Implement crates/betterlite-server/src/api/realtime_websocket_route.rs, crates/betterlite-core/src/api/realtime_websocket_route.rs.
-  Use RealtimeWebsocketRouteInput and RealtimeWebsocketRouteResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
+  A pre-call Exception sends {type:error,error:{type:guardrail_error,message:str(exception)}} and closes 1011
+  with reason "Pre-call error". A send failure logs the debug diagnostic and still attempts close. Rejection
+  cleanup awaits budget release, then parallel release. If budget release itself fails, the parallel call is
+  not reached. A pre-call BaseException/cancellation instead awaits only parallel release and propagates;
+  do not invent budget cleanup on this branch.
 
+  For upstream InvalidStatus, delegate to B1004's error-event/close mapping. Other upstream exceptions are
+  redacted by B012, sent as server_error, then closed with 1011 and B1004's 123-byte UTF-8-safe reason or
+  "Internal server error" for an empty message. Failure to send or close is debug-logged and does not bypass
+  finally. When REALTIME_SESSION_SUCCESS_LOGGED_KEY is truthy, finally releases neither resource. Otherwise
+  release budget and, only if REALTIME_SESSION_FAILURE_LOGGED_KEY is false/absent, parallel capacity too.
 
-  Register exactly these routes in this task: WEBSOCKET /openai/v1/realtime; WEBSOCKET /v1/realtime; WEBSOCKET /realtime.
-  Each alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts
-  its child factories without re-registering their methods/paths.
-
-
-  Extraction uses the typed path/query/body records named by the owned handler signatures.
-
-
-  Write adjacent tests.rs behavior functions realtime_connect, realtime_model_missing_403, realtime_model_denied_403,
-  transcription_default_model, precall_guardrail_1011, upstream_handshake_refusal, slot_release, route_aliases,
-  auth_missing, auth_invalid under api::realtime_websocket_route::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Use B901 kind: websocket transcripts with the default gateway driver against both booted proxies, comparing upstream
-  handshake status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases
-  also compare pre-accept HTTP status. No helper calls a WebSocket route function.
-
-
-  Callable ownership: litellm/proxy/proxy_server.py: _realtime_query_params_template (L12856-L12866); litellm/proxy/proxy_server.py:
-  _release_realtime_budget_reservation (L12869-L12876); litellm/proxy/proxy_server.py: _release_realtime_max_parallel_slot
-  (L12879-L12883); litellm/proxy/proxy_server.py: _reject_realtime_session (L12886-L12905); litellm/proxy/proxy_server.py:
-  realtime_websocket_endpoint (L12911-L13045). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 156 owned nonblank/non-comment/non-docstring Python lines (160 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 176 implementation,
-  100 behavior tests, 120 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 434 total within the 440-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B855 (Authenticated request admission
-  and budget handoff), B756 (Authentication header selection and mode dispatch), B901 (Websocket oracle), B1011
-  (Realtime connect), B1004 (Realtime contracts), B1103 (Authenticated request preparation), B171 (Direct helper
-  oracle and URL path encoding), B1087 (Api boundaries), B1139 (Stateful HTTP oracle scenarios), B856 (Management
-  oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Configure master key sk-test and seed virtual keys through B1139/B856 for gateway cases. Compare handshake
+  HTTP status and negotiated subprotocol; after accept compare events and close frames. There is no code/param
+  field in realtime_error_event, and pre-accept rejection has no close reason to compare. Native lifecycle tests
+  inject pending/failing release services and cancellation; do not compare scheduler timing between runtimes.
+  Counted ownership is 160 nonblank/non-comment source lines, 156 without docstrings. Allow 190 implementation,
+  170 behavior tests, 190 transcript fixtures and 40 wiring lines, 590 total under a 600-line cap.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -99,57 +68,105 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: All three decorators, explicit query projection, acceptance boundary and distinct cleanup branches are owned here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L676-L710
+  why: B756 accepts Bearer, api-key and browser subprotocol credentials; failures close before the upgrade.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_errors.py#L26-L71
+  why: B1004 defines the server_error event, 123-byte close reason and 401/403/429 handshake mappings used by this route.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4134-L4156
+  why: B2400's adapter awaits the v3 parallel limiter instead of scheduling a second independent release.
 dod:
-- text: 'realtime connect: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    realtime_connect opens /v1/realtime?model=realtime-a&intent=conversation&ignored=x with a valid key and
+    Sec-WebSocket-Protocol=" realtime, second ". Expect HTTP 101, negotiated protocol=realtime and upstream
+    query containing model=realtime-a,intent=conversation but no ignored key. A mock session.created event
+    reaches the client, and a session.update frame reaches the provider in per-direction order. With no
+    protocol header the handshake has no Sec-WebSocket-Protocol response. The synthetic pre-call request
+    retains the original URL and headers while its body model is realtime-a and route_type is _arealtime.
   proof:
   - case-realtime-connect
   - oracle
-- text: 'realtime model missing 403: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    realtime_model_missing_403 uses valid auth and no model, with intent absent and intent=conversation in
+    separate steps. Both yield bare HTTP 403 before upgrade, zero upstream connections and no error object,
+    close frame or client-visible reason. A native sink records the attempted 1008 with reason="model query
+    parameter is required", followed by budget release and parallel release, once each.
   proof:
   - case-realtime-model-missing-403
   - oracle
-- text: 'realtime model denied 403: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    realtime_model_denied_403 seeds a key allowed only realtime-a and asks model=realtime-b. Expect bare HTTP
+    403 and no upstream connection; denial is logged through B886. A native denial message of 130 ASCII x
+    characters attempts code=1008 with exactly 120 x characters. Do not require that reason in the HTTP response.
   proof:
   - case-realtime-model-denied-403
   - oracle
-- text: 'transcription default model: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    transcription_default_model requests ?intent=transcription with a key allowed gpt-realtime-whisper.
+    Authorization and pre-call body use model=gpt-realtime-whisper, but the upstream URL has only
+    intent=transcription and no model query parameter. Expect a 101 handshake and the mock's session.created.
+    Explicit model=realtime-a with the same intent uses realtime-a for both authorization and upstream query.
   proof:
   - case-transcription-default-model
   - oracle
-- text: 'precall guardrail 1011: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    precall_guardrail_1011 connects with model=realtime-a and guardrails=" first, ,second ". Pre-call data
+    contains [first,second] in that order. Configure the first guardrail's deterministic failure "blocked";
+    after HTTP 101 the client receives {type:error,error:{type:guardrail_error,message:blocked}} then close
+    1011,reason="Pre-call error", with no upstream connection. A successful guardrail run forwards neither
+    guardrails nor unrelated query keys upstream. Empty guardrails leaves data unset; whitespace/commas yields
+    an empty list. Native send-failure coverage records a debug diagnostic, then still closes and releases.
   proof:
   - case-precall-guardrail-1011
   - oracle
-- text: 'upstream handshake refusal: the named production behavior test asserts the result and effects described
-    above.'
+- text: >-
+    upstream_handshake_refusal makes the mock reject with 401,403,429 and 503. After client HTTP 101, each
+    transcript contains {type:error,error:{type:server_error,message:"Upstream realtime handshake rejected
+    with HTTP N"}} followed by close 1008 for 401/403, 1013 for 429 and 1011 for 503. The reason equals the
+    message with N substituted. The event has no param or code fields, and cleanup runs after the refusal.
   proof:
   - case-upstream-handshake-refusal
   - oracle
-- text: 'slot release: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    slot_release seeds one key with max_parallel_requests=1 and a budget reservation, opens a valid session,
+    then closes before a success/failure logging event. After the release barrier, a second session can acquire
+    the slot and the first reservation is released or invalidated through B071. Native flag cases assert
+    success=true releases neither resource; success=false,failure=true releases only budget; both false/absent
+    release budget then parallel. Pre-call cancellation releases parallel only and propagates cancellation.
+    Rejection close failure still reaches cleanup; budget-release failure prevents the following parallel call.
   proof:
   - case-slot-release
   - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    route_aliases connects to /realtime, /v1/realtime and /openai/v1/realtime with model=realtime-a and valid
+    auth. Each upgrades with 101, makes one provider connection, relays the mock session.created and closes
+    cleanly when the provider closes 1000. No alias returns 404 or registers a duplicate handler.
   proof:
   - case-route-aliases
   - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    auth_missing keeps model=realtime-a but omits Authorization, api-key and credential subprotocols with
+    master key sk-test configured. Expect bare HTTP 403, no accepted session and zero provider connections.
   proof:
   - case-auth-missing
   - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    auth_invalid tries Authorization="Basic wrong" and "Bearer sk-wrong" against the configured master key.
+    Both fail before accept with bare HTTP 403 and no provider connection. Companion success steps authenticate
+    with api-key=sk-test or Sec-WebSocket-Protocol="realtime,openai-insecure-api-key.sk-test" and receive 101,
+    protocol=realtime. Putting the credential token first echoes that first token as the selected subprotocol.
   proof:
   - case-auth-invalid
   - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+- text: >-
+    upstream_internal_failure supplies a native routing exception "api_key=abcdefgh failed" with default B012
+    redaction enabled. Expect {type:error,error:{type:server_error,message:"REDACTED failed"}} and close
+    1011,reason="REDACTED failed". An empty message uses close reason "Internal server error" but keeps the
+    event message empty. Sixty-four é characters remain whole in the event; close reason contains sixty-one é
+    characters (122 bytes). Failed sends and failed closes each log debug and still execute the flag-based
+    cleanup. B012 owns LITELLM_DISABLE_REDACT_SECRETS; true passes the original message unchanged.
+  proof: [internal-failure]
+- text: The new gateway transcripts compare both proxies' handshakes, frame sequences and recorded upstream query parameters.
   proof:
   - new-oracle-cases
   - oracle
@@ -193,6 +210,9 @@ checks:
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/realtime-websocket-route)"
+  - id: internal-failure
+    why: non-handshake upstream failures omit their event, expose a default-redacted secret or skip cleanup
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_websocket_route::tests::upstream_internal_failure($|::)/)'
 oracle_cases:
 - tools/oracle/cases/websocket/realtime-websocket-route/realtime-connect.yaml
 - tools/oracle/cases/websocket/realtime-websocket-route/realtime-model-missing-403.yaml
@@ -370,11 +390,10 @@ out_of_scope:
 - Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
   operations. Python package export/event-loop facades remain B158-B161.
 pitfalls:
-- proxy_server.py:12901 emits the diagnostic 'Could not send realtime pre-call error event to client; closing anyway';
-  retain its level and fallback instead of turning it into a hard error.
-- proxy_server.py:13033 emits the diagnostic 'Could not send realtime error event to client; closing anyway'; retain
-  its level and fallback instead of turning it into a hard error.
+- gpt-realtime-whisper is the transcription authorization default but is absent from the upstream query unless the client supplied it.
+- The first subprotocol is echoed even when it is openai-insecure-api-key.sk-test; choosing the first non-credential token changes behavior.
+- Pre-call cancellation bypasses the upstream finally block and releases only parallel capacity.
 review_level: security
 budget:
-  max_changed_lines: 440
+  max_changed_lines: 600
   max_new_expects: 0
