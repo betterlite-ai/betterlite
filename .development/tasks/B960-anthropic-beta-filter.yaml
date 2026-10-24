@@ -1,221 +1,124 @@
 id: B960
-title: Anthropic beta filter
+title: Anthropic beta filtering and feature injection
 description: >-
-  Filter, remap and inject Anthropic beta headers using the validated provider matrix. Keep unsupported-header diagnostics
-  and native pass-through model-specific beta synthesis for thinking, tools and context management, without filtering
-  unrelated client headers.
+  Implement the three live filtering functions in anthropic_beta_headers_manager.py and the whole native
+  _update_headers_with_anthropic_beta method plus _messages_carry_output_config in messages/transformation.py.
+  Put the transformations in betterlite-core::api::anthropic_beta_filter. B959 supplies a cached matrix and alias
+  resolver; B568 supplies feature predicates and tool-search header names. This task consumes decoded request
+  records and does not add a parser or perform network I/O.
 
+  Keep matrix filtering distinct from native feature injection. Filtering mutates the lowercase anthropic-beta
+  header and anthropic_beta body list, with debug diagnostics on each unknown or null-mapped input. Native injection
+  finds existing header names case-insensitively and returns one lowercase header when any tokens exist, preserving
+  unknown beta tokens until the caller explicitly filters them. It never filters unrelated headers. No thinking
+  beta is added merely because thinking is enabled; only display=updates has an injection here.
 
-  Unknown or null-mapped beta values are dropped with a debug diagnostic; deduplicate, sort and join remaining tokens
-  with a comma and no spaces. Remove the header/body anthropic_beta if none remain. Native injection finds header
-  names case-insensitively and writes anthropic-beta in lower case. Own _messages_carry_output_config below the
-  caller B961.
-
-
-  Provider behavior comes through B010 prepared operation/capability values; no provider umbrella is a scheduling
-  dependency.
-
-
-  is_beta_header_supported (litellm/anthropic_beta_headers_manager.py:L269-L288) has no MIT runtime caller at the
-  pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that
-  unused entry point.
-
-
-  get_provider_beta_header (litellm/anthropic_beta_headers_manager.py:L291-L318) has no MIT runtime caller at the
-  pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that
-  unused entry point.
-
-
-  get_unsupported_headers (litellm/anthropic_beta_headers_manager.py:L395-L410) has no MIT runtime caller at the
-  pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case exercises that
-  unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/anthropic_beta_filter.rs. Use AnthropicBetaFilterInput and AnthropicBetaFilterResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions unsupported_beta_diagnostic, provider_beta_remap, comma_separated_beta,
-  thinking_beta_injection, context_management_beta, all_betas_filtered_header_409f under api::anthropic_beta_filter::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::AnthropicBetaFilter in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {anthropic_beta_filter: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/anthropic_beta_headers_manager.py: filter_and_transform_beta_headers (L215-L266);
-  litellm/anthropic_beta_headers_manager.py: update_headers_with_filtered_beta (L321-L356); litellm/anthropic_beta_headers_manager.py:
-  update_request_with_filtered_beta (L359-L392); litellm/llms/anthropic/pass_through/messages/transformation.py:
-  _messages_carry_output_config (L53-L54); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._update_headers_with_anthropic_beta
-  (L611-L709). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 122 owned nonblank/non-comment/non-docstring Python lines (167 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 142 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 410 total within the 410-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B959 (Anthropic beta config), B1087
-  (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  Use HelperCall::AnthropicBetaFilter to select matrix_filter or native_injection in Rust and Python. Fixtures
+  call the pinned functions with local configuration, recording transformed headers/body and debug-drop reasons.
+  Name tests after the cases below, with rstest inputs for provider and feature combinations. The functions own
+  168 nonblank/non-comment lines; allow 150 implementation, 150 tests, 140 fixtures, 85 adapters and 35 wiring,
+  560 changed lines.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/anthropic_beta_filter.rs
   - crates/betterlite-core/src/api/anthropic_beta_filter/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/anthropic_beta_filter.rs
-  - tools/oracle/src/helpers/anthropic_beta_filter/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/anthropic_beta_filter.py
-  - tools/oracle/helpers/anthropic_beta_filter/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_beta_filter-*
   - tools/oracle/cases/helpers/anthropic-beta-filter/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L215-L268
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L289-L290
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L319-L394
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L215-L266
+  why: Strip input tokens, map only known non-null values, deduplicate output and sort lexically.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L321-L392
+  why: Header and body filtering differ when the original value is absent or empty.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L53-L54
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L611-L709
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: A message output_config key counts even if its value is null.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L610-L709
+  why: Own native injection as one method, including the sorted union and case-insensitive header merge.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_tool_search.py#L14-L36
+  why: B568 selects advanced-tool-use-2025-11-20 or tool-search-tool-2025-10-19 by provider.
 dod:
-- text: 'unsupported beta diagnostic: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-unsupported-beta-diagnostic
-  - oracle
-- text: 'provider beta remap: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-beta-remap
-  - oracle
-- text: 'comma separated beta: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-comma-separated-beta
-  - oracle
-- text: 'thinking beta injection: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thinking-beta-injection
-  - oracle
-- text: 'context management beta: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-context-management-beta
-  - oracle
-- text: 'all betas filtered header removed: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-all-betas-filtered-header-removed
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    mapped_beta_tokens sends bedrock tokens " advanced-tool-use-2025-11-20 ", tool-search-tool-2025-10-19,
+    fast-mode-2026-02-01 and invented. Return [tool-search-tool-2025-10-19], with unsupported debug for fast-mode
+    and unknown debug for invented. Unknown provider drops every token; empty input returns [] without loading
+    the matrix. A custom alias and two input tokens mapped to the same output resolve once and deduplicate.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    header_body_removal sends anthropic-beta="unknown,, " and anthropic_beta=[unknown] and removes both keys.
+    An absent or null header is unchanged; an empty header is removed. An absent, null or [] body field is kept
+    unchanged because it is falsey. Mixed input "effort-2025-11-24, computer-use-2025-01-24,effort-2025-11-24"
+    becomes computer-use-2025-01-24,effort-2025-11-24 with no spaces. X-Keep=yes survives; Anthropic-Beta is untouched
+    by the matrix function because that function looks up only the lowercase key.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    native_beta_merge supplies Anthropic-Beta=" custom ,custom" and anthropic-beta="other"; injection returns
+    only anthropic-beta=custom,other and retains X-Keep=yes. Empty headers/options/messages return unchanged.
+    An existing empty Anthropic-Beta with no feature is also unchanged. Native injection preserves unknown custom.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    context_compaction_betas uses context_management.edits=[] and gets no beta; compact_20260112 adds
+    compact-2026-01-12; clear_tool_uses_20250919 or an edit missing type adds context-management-2025-06-27;
+    both edits produce both sorted tokens. Native compaction={} or an existing compaction block with signature=sig
+    adds compact-2026-09-04 only for provider=anthropic; empty signature and provider=bedrock do not.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    output_and_speed_betas sends output_format={} or output_config.format={} and gets structured-outputs-2025-11-13;
+    null format does not. speed=fast adds fast-mode-2026-02-01, speed=standard does not. A message carrying
+    output_config=null adds per-turn-control-2026-07-01; a top-level output_config alone does not add that token.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    tool_and_thinking_betas sends tool type=advisor_20260301 and gets advisor-tool-2026-03-01. Either
+    tool_search_tool_regex_20251119 or tool_search_tool_bm25_20251119 adds tool-search-tool-2025-10-19 for
+    vertex_ai,vertex_ai_beta,bedrock and advanced-tool-use-2025-11-20 for anthropic,azure,azure_ai,unknown.
+    thinking={type:enabled,display:updates} or adaptive/updates adds thinking-display-updates-2026-08-18;
+    disabled/updates and enabled without display do not. A system tool_addition or tool_removal block with
+    tool.type=tool_reference adds mid-conversation-tool-changes-2026-07-01; a user block does not.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Independent beta-filter cases and a newly tagged helper seed execute the production transforms without provider traffic.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::/)
-      - test(/::replays_corpus$/)'
-  - id: case-unsupported-beta-diagnostic
-    why: the unsupported-beta-diagnostic behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::unsupported_beta_diagnostic($|::)/)'
-  - id: case-provider-beta-remap
-    why: the provider-beta-remap behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::provider_beta_remap($|::)/)'
-  - id: case-comma-separated-beta
-    why: the comma-separated-beta behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::comma_separated_beta($|::)/)'
-  - id: case-thinking-beta-injection
-    why: the thinking-beta-injection behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::thinking_beta_injection($|::)/)'
-  - id: case-context-management-beta
-    why: the context-management-beta behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::context_management_beta($|::)/)'
-  - id: case-all-betas-filtered-header-removed
-    why: the all-betas-filtered-header-removed behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::tests::all_betas_filtered_header_409f($|::)/)'
+    why: beta merge, injection or removals lack executable comparisons
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::anthropic_beta_filter::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/anthropic_beta_filter.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: the filter adapter is missing or not strictly checked
+    run: test -f tools/oracle/helpers/anthropic_beta_filter.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/anthropic_beta_filter-*)"
-      && grep -qE "^[[:space:]]+anthropic_beta_filter:" tools/oracle/fuzz/corpus/helper_case/anthropic_beta_filter-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: anthropic_beta_filter cannot be selected by the helper parser
+    run: grep -qE '^[[:space:]]+anthropic_beta_filter:' tools/oracle/fuzz/corpus/helper_case/anthropic_beta_filter-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: the branch adds no beta-filter comparisons
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-beta-filter)"
 oracle_cases:
-- tools/oracle/cases/helpers/anthropic-beta-filter/unsupported-beta-diagnostic.yaml
-- tools/oracle/cases/helpers/anthropic-beta-filter/provider-beta-remap.yaml
-- tools/oracle/cases/helpers/anthropic-beta-filter/comma-separated-beta.yaml
-- tools/oracle/cases/helpers/anthropic-beta-filter/thinking-beta-injection.yaml
-- tools/oracle/cases/helpers/anthropic-beta-filter/context-management-beta.yaml
-- tools/oracle/cases/helpers/anthropic-beta-filter/all-betas-filtered-header-removed.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/mapped-beta-tokens.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/header-body-removal.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/native-beta-merge.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/context-compaction-betas.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/output-and-speed-betas.yaml
+- tools/oracle/cases/helpers/anthropic-beta-filter/tool-and-thinking-betas.yaml
 deviations: []
 out_of_scope:
-- 'litellm/anthropic_beta_headers_manager.py: B959 owns GetAnthropicBetaHeadersConfig.load_local_beta_headers_config
-  L47-L64, GetAnthropicBetaHeadersConfig._check_is_valid_dict L67-L98, GetAnthropicBetaHeadersConfig.validate_beta_headers_config
-  L101-L107, GetAnthropicBetaHeadersConfig.fetch_remote_beta_headers_config L110-L119, get_beta_headers_config L122-L159,
-  _load_beta_headers_config L162-L183, reload_beta_headers_config L186-L197, get_provider_name L200-L212.'
-- 'litellm/anthropic_beta_headers_manager.py: is_beta_header_supported L269-L288, get_provider_beta_header L291-L318,
-  get_unsupported_headers L395-L410 are out of scope: no MIT runtime caller at the pin; unused entry point is not
-  rebuilt.'
-- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B961 owns AnthropicMessagesConfig.custom_llm_provider
-  L59-L60, AnthropicMessagesConfig._resolved_provider L63-L64, AnthropicMessagesConfig.get_supported_anthropic_messages_params
-  L66-L89, AnthropicMessagesConfig.should_filter_anthropic_beta_headers L91-L92, AnthropicMessagesConfig._remove_scope_from_cache_control
-  L94-L122, AnthropicMessagesConfig.should_strip_billing_metadata L124-L131, AnthropicMessagesConfig._filter_billing_headers_from_system
-  L134-L165, AnthropicMessagesConfig._normalize_system_role_messages L167-L230, AnthropicMessagesConfig.get_complete_url
-  L232-L244, AnthropicMessagesConfig.validate_anthropic_messages_environment L246-L284.'
-- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B962 owns AnthropicMessagesConfig._translate_reasoning_effort_to_anthropic
-  L287-L345, AnthropicMessagesConfig._translate_adaptive_effort_for_non_adaptive_model L348-L447, AnthropicMessagesConfig._drop_incompatible_temperature_for_thinking
-  L450-L477, AnthropicMessagesConfig.transform_anthropic_messages_request L479-L570, AnthropicMessagesConfig.transform_anthropic_messages_response
-  L572-L585, AnthropicMessagesConfig.get_async_streaming_response_iterator L587-L608.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B959 owns matrix loading, validation, reload and get_provider_name in anthropic_beta_headers_manager.py L47-L212.
+- is_beta_header_supported, get_provider_beta_header and get_unsupported_headers have no caller at the pin.
+- B961 owns messages/transformation.py L59-L284 preparation; B2430 owns L287-L570 request transformation; B962 owns L572-L608 response transformation and iterator construction.
+- B568 owns common_utils.py feature predicates and types/llms/anthropic_tool_search.py provider-specific beta selection.
 pitfalls:
-- anthropic_beta_headers_manager.py:250 emits the diagnostic "Dropping unknown beta header '%s' for provider '%s'
-  (not in mapping)"; retain its level and fallback instead of turning it into a hard error.
-- anthropic_beta_headers_manager.py:260 emits the diagnostic "Dropping unsupported beta header '%s' for provider
-  '%s'"; retain its level and fallback instead of turning it into a hard error.
+- The structured-output enum member contains 2025_09_25 but its wire value is structured-outputs-2025-11-13.
+- Empty anthropic_beta=[] survives while a nonempty list whose entries all drop is removed.
+- Native header merging is case-insensitive; the separate matrix updater is case-sensitive.
 review_level: standard
 budget:
-  max_changed_lines: 410
-  max_new_expects: 1
+  max_changed_lines: 580
+  max_new_expects: 0

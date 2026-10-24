@@ -1,305 +1,115 @@
 id: B925
-title: Responses stream events
+title: Process complete provider Responses event payloads
 description: >-
-  Implement Responses SSE parsing and per-event transformations over B005 framing. Introduce typed stream state,
-  deadline and error fields; apply provider/deployment ID and usage projections without losing unknown provider
-  payload outside the named passthrough field.
+  Implement api::responses_stream_events around the entire _process_chunk function,
+  L363-L532. The former split inside its encrypted-content/terminal branches is removed.
+  B2413 owns state, JSON decoding and duration; B926 owns logging/failure effects; B928
+  owns terminal usage/cost helpers; B904/B903 wrap IDs and encrypted content. This task is
+  above those callees, and B927 is its live HTTP driver. Use B508's actual OpenAI event
+  transform through the B1114 provider contract in parity cases. Keep the ProjectQuotaCallback
+  declaration L63-L70 here as the typed async quota port used by B942-B945. Re-export B2413's
+  primitives through this existing stream surface so those callers retain their dependency.
 
-
-  decode_response_event reads a completed SSE data payload, recognizes [DONE], ignores invalid JSON with the source
-  diagnostic and returns Event or TerminalEvent. B927 owns terminal processing at L466-L522; this decoder never
-  invokes logging, billing or persistence hooks.
-
-
-  B005 owns SSE framing; this task decodes complete data payloads. A [DONE] payload terminates and invalid JSON
-  is ignored in the source branch. Keep terminal billing/logging above the decoder in B927.
-
-
-  Implement crates/betterlite-core/src/api/responses_stream_events.rs. Use ResponsesStreamEventsInput and ResponsesStreamEventsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions response_created_id, output_item_encrypted_id, provider_error_status,
-  stream_duration_expired, done_sentinel, invalid_json_payload under api::responses_stream_events::tests. Each named
-  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
-  replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.LITELLM_MAX_STREAMING_DURATION_SECONDS
-  defaults to unset means no duration limit; numeric seconds otherwise; elapsed greater than limit raises Timeout.
-  No environment reads occur outside betterlite-config. Test api::responses_stream_events::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  The production external-byte decoder is betterlite-core::api::responses_stream_events::decode_responses_stream_event(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input payload at litellm/responses/streaming_iterator.py:150; json.loads
-  input payload at litellm/responses/streaming_iterator.py:155. Place its implementation in crates/betterlite-core/src/api/responses_stream_events.rs
-  and call it from the actual boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/responses_stream_events.rs
-  passes arbitrary bounded bytes to that exact decoder; api::responses_stream_events::tests::replays_corpus replays
-  newly committed seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::ResponsesStreamEvents in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_stream_events: <typed input>};
-  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
-  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/streaming_iterator.py: ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  (L64-L70); litellm/responses/streaming_iterator.py: _get_openai_response_types (L74-L77); litellm/responses/streaming_iterator.py:
-  _is_json_object (L80-L81); litellm/responses/streaming_iterator.py: _is_json_array (L84-L85); litellm/responses/streaming_iterator.py:
-  _optional_str (L88-L90); litellm/responses/streaming_iterator.py: _json_array_or_empty (L93-L95); litellm/responses/streaming_iterator.py:
-  _is_str_mapping (L98-L99); litellm/responses/streaming_iterator.py: _MutableJsonObject.get (L104-L104); litellm/responses/streaming_iterator.py:
-  _MutableJsonObject.get (L106-L106); litellm/responses/streaming_iterator.py: _MutableJsonObject.__getitem__ (L107-L107);
-  litellm/responses/streaming_iterator.py: _MutableJsonObject.__setitem__ (L108-L108); litellm/responses/streaming_iterator.py:
-  _MutableJsonObject.__contains__ (L109-L109); litellm/responses/streaming_iterator.py: _MutableJsonObject.items
-  (L110-L110); litellm/responses/streaming_iterator.py: _GetsLitellmParams.__call__ (L114-L114); litellm/responses/streaming_iterator.py:
-  _UnmasksPiiText.__call__ (L118-L118); litellm/responses/streaming_iterator.py: _ShouldStoreResultInCache.__call__
-  (L122-L122); litellm/responses/streaming_iterator.py: _PostStreamingDeploymentHook.__call__ (L126-L132); litellm/responses/streaming_iterator.py:
-  _typed_gets_litellm_params (L140-L141); litellm/responses/streaming_iterator.py: _load_json_object (L148-L150);
-  litellm/responses/streaming_iterator.py: _load_json_value (L153-L155); litellm/responses/streaming_iterator.py:
-  _model_id_from_metadata (L158-L161); litellm/responses/streaming_iterator.py: _log_background_task_failure (L164-L169);
-  litellm/responses/streaming_iterator.py: _running_loop (L175-L179); litellm/responses/streaming_iterator.py: _spawn_logging_task
-  (L182-L189); litellm/responses/streaming_iterator.py: _error_event_fields (L221-L237); litellm/responses/streaming_iterator.py:
-  _status_code_for_error_field (L240-L243); litellm/responses/streaming_iterator.py: _status_code_for_error_fields
-  (L246-L250); litellm/responses/streaming_iterator.py: stream_error_status_and_message (L253-L255); litellm/responses/streaming_iterator.py:
-  _map_stream_error_to_exception (L258-L278); litellm/responses/streaming_iterator.py: _mid_stream_fallback_eligible
-  (L281-L285); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator.__init__ (L300-L349);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._check_max_streaming_duration (L351-L361);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._process_chunk (L363-L465); litellm/responses/streaming_iterator.py:
-  BaseResponsesAPIStreamingIterator._process_chunk (L523-L526). Abstract/protocol declarations map to native types
-  and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 302 owned nonblank/non-comment/non-docstring Python lines (312 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 322 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
-  and 30 wiring; 683 total within the 690-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B005 (Streaming chat completions), B171 (Direct helper oracle and URL path encoding),
-  B198 (Injected call context and shared settings), B904 (Response id traversal), B906 (Responses usage), B1087
-  (Api boundaries), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
-  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add B171 responses_stream_events for already-framed data payloads, recording transformed
+  events and injected logging effects. No network pull occurs in this method. Feed bytes
+  through B2413's bounded decoder and extend its corpus for malformed/scalar/terminal
+  inputs; do not introduce a second JSON parser. The processing function and quota protocol
+  contain 149 nonblank/non-comment lines. Budget 175 implementation, 155 tests, 110 cases, 75 adapters
+  and 25 wiring/corpus lines, totaling 540.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_stream_events.rs
   - crates/betterlite-core/src/api/responses_stream_events/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/responses_stream_events.rs
-  - crates/betterlite-config/src/api/responses_stream_events/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-stream-events-*
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/responses_stream_events.rs
-  - crates/betterlite-core/fuzz/corpus/responses_stream_events/**
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_stream_events.rs
-  - tools/oracle/src/helpers/responses_stream_events/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_stream_events.py
-  - tools/oracle/helpers/responses_stream_events/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_events-*
   - tools/oracle/cases/helpers/responses-stream-events/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L105-L108
-  why: Setting env.LITELLM_MAX_STREAMING_DURATION_SECONDS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L64-L465
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L523-L526
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L63-L70
+  why: Quota port accepts an optional authenticated principal/model and input/output token estimates; enforcement is the caller's policy.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L363-L532
+  why: One function owns parsing, response/container/cipher rewriting and all terminal billing/logging branches.
 dod:
-- text: 'response created id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-response-created-id
-  - oracle
-- text: 'output item encrypted id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-output-item-encrypted-id
-  - oracle
-- text: 'provider error status: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-error-status
-  - oracle
-- text: 'stream duration expired: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-duration-expired
-  - oracle
-- text: 'done sentinel: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-done-sentinel
-  - oracle
-- text: 'invalid json payload: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-invalid-json-payload
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    framed_payload_handling ignores "" without timing changes and recognizes only exact
+    "[DONE]",setting finished=true and returning no event. Other payloads set completion
+    start time once before parsing, including malformed JSON and scalar JSON. Malformed
+    JSON or valid [],null,1 returns no event without failure hooks; no data: prefix is
+    stripped because B005 already did framing. The string "data:{...}" is therefore
+    malformed and dropped. A dict with no provider config raises ValueError
+    "responses_api_provider_config is required to process live streaming chunks" and
+    triggers B926 failure once; provider transform errors do the same and propagate.
+    The shared stream surface exposes the quota protocol and B2413 primitives without
+    invoking quota enforcement while processing an ordinary SSE event.
+  proof: [event-tests, oracle, event-adapter, event-corpus]
+- text: >-
+    event_identity_wrapping invokes B508 with model,parsed dict and logging context.
+    A response-bearing JSON key plus a nonnull transformed response invokes B904 wrapping;
+    absent response key never rewrites a synthesized response attribute. output_item.added
+    and output_item.done encode item container_id; output_text.annotation.added encodes
+    annotation container_id; content_part.done rewrites containers in annotations for dict
+    or typed parts. With provider=openai,model_info.id=deployment_a,decode each wrapped
+    container to its original c and that provider/model. Other event types remain unchanged.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    encrypted_item_affinity wraps nonempty string encrypted_content only on added/done
+    items when litellm_metadata.encrypted_content_affinity_enabled is truthy and
+    model_info.id is a nonempty string. Missing/false flag,empty/numeric model ID,
+    empty/nonstring cipher or other event type leaves the cipher untouched. Decode a
+    wrapped cipher to (deployment_a,cipher) through B903; preserve existing wrappers
+    according to its idempotence rule. Response-body wrapping remains B904's separate path.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    generated_usage_inputs concatenates only string output_text.delta into generated text
+    and string function_call_arguments.delta,custom_tool_call_input.delta,mcp_call_arguments.delta
+    into generated arguments. For text hi and argument {},terminal estimation receives
+    "hi{}",not interleaved event order. Other deltas and nonstrings contribute nothing.
+    Only completed/incomplete terminals estimate missing usage via B928 using request.input,
+    the full request and model default ""; failed terminals do not estimate.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    terminal_state_and_logging stores completed,incomplete and failed events as
+    completed_response without setting finished. Existing usage survives unchanged;
+    absent usage uses B928's billed copy when needed, leaving earlier object references
+    untouched. Stamp usage cost before callbacks. Completed/incomplete call the success
+    logging hook,failed calls the failure hook; failed existing usage still reaches billing.
+    Return the stored terminal event. A terminal hook exception invokes failure and is
+    re-raised; no synthetic success is returned. B927 decides when errors/EOF end iteration.
+  proof: [event-tests, oracle, event-adapter]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_stream_events::/)
-      - test(/::replays_corpus$/)'
-  - id: case-response-created-id
-    why: the response-created-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::response_created_id($|::)/)'
-  - id: case-output-item-encrypted-id
-    why: the output-item-encrypted-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::output_item_encrypted_id($|::)/)'
-  - id: case-provider-error-status
-    why: the provider-error-status behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::provider_error_status($|::)/)'
-  - id: case-stream-duration-expired
-    why: the stream-duration-expired behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::stream_duration_expired($|::)/)'
-  - id: case-done-sentinel
-    why: the done-sentinel behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::done_sentinel($|::)/)'
-  - id: case-invalid-json-payload
-    why: the invalid-json-payload behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::tests::invalid_json_payload($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_stream_events::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-stream-events-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_stream_events)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/responses_stream_events.rs && grep -qF "decode_responses_stream_event"
-      crates/betterlite-core/fuzz/fuzz_targets/responses_stream_events.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::responses_stream_events::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_stream_events.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_stream_events-*)"
-      && grep -qE "^[[:space:]]+responses_stream_events:" tools/oracle/fuzz/corpus/helper_case/responses_stream_events-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-stream-events)"
+  - id: event-tests
+    why: complete event processing omits identity, billing or terminal effects
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_events::/)'
+  - id: event-corpus
+    why: new event payloads bypass the shared production JSON decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_primitives::tests::replays_corpus$/)'
+  - id: event-adapter
+    why: transformed events and logging effects lack independent pinned execution
+    run: test -f tools/oracle/helpers/responses_stream_events.py && grep -qE '^[[:space:]]+responses_stream_events:' tools/oracle/fuzz/corpus/helper_case/responses_stream_events-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-stream-events/response-created-id.yaml
-- tools/oracle/cases/helpers/responses-stream-events/output-item-encrypted-id.yaml
-- tools/oracle/cases/helpers/responses-stream-events/provider-error-status.yaml
-- tools/oracle/cases/helpers/responses-stream-events/stream-duration-expired.yaml
-- tools/oracle/cases/helpers/responses-stream-events/done-sentinel.yaml
-- tools/oracle/cases/helpers/responses-stream-events/invalid-json-payload.yaml
+- tools/oracle/cases/helpers/responses-stream-events/framed-payload-handling.yaml
+- tools/oracle/cases/helpers/responses-stream-events/event-identity-wrapping.yaml
+- tools/oracle/cases/helpers/responses-stream-events/encrypted-item-affinity.yaml
+- tools/oracle/cases/helpers/responses-stream-events/generated-usage-inputs.yaml
+- tools/oracle/cases/helpers/responses-stream-events/terminal-state-and-logging.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L466-L522
-  stage, BaseResponsesAPIStreamingIterator._process_chunk L527-L532 stage, BaseResponsesAPIStreamingIterator._note_yielded_event
-  L954-L957, BaseResponsesAPIStreamingIterator._fallback_error L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error
-  L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error
-  L988-L992, call_post_streaming_hooks_for_testing L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035,
-  ResponsesAPIStreamingIterator.__aiter__ L1037-L1038, ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event
-  L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response L1094-L1096, SyncResponsesAPIStreamingIterator.__init__
-  L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__ L1127-L1128, SyncResponsesAPIStreamingIterator.__next__
-  L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response L1177-L1179, MockResponsesAPIStreamingIterator.__init__
-  L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__
-  L1233-L1234, MockResponsesAPIStreamingIterator.__anext__ L1236-L1245, MockResponsesAPIStreamingIterator.__iter__
-  L1247-L1248, MockResponsesAPIStreamingIterator.__next__ L1250-L1259, CachedResponsesAPIStreamingIterator.__init__
-  L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__
-  L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__ L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__
-  L1314-L1315, CachedResponsesAPIStreamingIterator.__next__ L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B926 owns BaseResponsesAPIStreamingIterator._log_completed_response
-  L534-L576, BaseResponsesAPIStreamingIterator._restore_provider_response_headers L578-L606, BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  L608-L609, BaseResponsesAPIStreamingIterator._handle_logging_failed_response L611-L625, BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  L627-L645, BaseResponsesAPIStreamingIterator._map_error_event_exception L647-L648, BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  L650-L671, BaseResponsesAPIStreamingIterator._get_completed_response_object L673-L683, BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  L685-L757, BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook L759-L799, BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  L801-L807, BaseResponsesAPIStreamingIterator._run_post_success_hooks L809-L884, BaseResponsesAPIStreamingIterator._handle_failure
-  L886-L918, BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order L920-L931, BaseResponsesAPIStreamingIterator._submit_sync_failure_handler
-  L933-L943, BaseResponsesAPIStreamingIterator._record_pending_logging_task L945-L946, BaseResponsesAPIStreamingIterator._await_pending_logging
-  L948-L952.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B942 owns _extract_frame_quota_estimate_inputs L1752-L1784, _enforce_frame_project_quota
-  L1787-L1814, _ws_event_error L1832-L1836, _restore_input_item_ids L1839-L1840, _restored_container_fields L1843-L1854,
-  _restore_wrapped_ids_in_response_create L1857-L1866, _wrap_output_item_encrypted_content L1869-L1884, ResponsesWebSocketStreaming._enforce_authorized_model
-  L2101-L2126, ResponsesWebSocketStreaming._with_request_defaults L2128-L2134, ResponsesWebSocketStreaming._mask_response_create
-  L2136-L2238, ResponsesWebSocketStreaming._unmask_response_event L2265-L2328, ResponsesWebSocketStreaming._mask_response_completed
-  L2330-L2408, ResponsesWebSocketStreaming._enforce_or_reject_frame L2410-L2437.'
-- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming.__init__ L1900-L1932, ResponsesWebSocketStreaming._should_store_event
-  L1934-L1935, ResponsesWebSocketStreaming._store_event L1937-L1949, ResponsesWebSocketStreaming._collect_input_from_client_event
-  L1951-L1984, ResponsesWebSocketStreaming._store_input L1986-L1989, ResponsesWebSocketStreaming._failure_exception
-  L1991-L1999, ResponsesWebSocketStreaming._log_messages L2001-L2016, ResponsesWebSocketStreaming._record_usage_for_failure
-  L2018-L2031, ResponsesWebSocketStreaming._wrap_response_event L2033-L2049, ResponsesWebSocketStreaming.backend_to_client
-  L2051-L2099, ResponsesWebSocketStreaming.client_to_backend L2439-L2458, ResponsesWebSocketStreaming.bidirectional_forward
-  L2460-L2477.'
-- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler.__init__ L2519-L2556, ManagedResponsesWebSocketHandler._serialize_chunk
-  L2563-L2575, ManagedResponsesWebSocketHandler._send_error L2577-L2583, ManagedResponsesWebSocketHandler._get_history_messages
-  L2585-L2594, ManagedResponsesWebSocketHandler._store_history L2596-L2603, ManagedResponsesWebSocketHandler._extract_response_id
-  L2606-L2617, ManagedResponsesWebSocketHandler._extract_output_messages L2620-L2654, ManagedResponsesWebSocketHandler._input_to_messages
-  L2657-L2672, ManagedResponsesWebSocketHandler._parse_message L2678-L2688, ManagedResponsesWebSocketHandler._is_warmup_frame
-  L2691-L2695, ManagedResponsesWebSocketHandler._is_warmup_response_id L2698-L2704, ManagedResponsesWebSocketHandler._warmup_source_params
-  L2707-L2711, ManagedResponsesWebSocketHandler._build_warmup_response L2713-L2729, ManagedResponsesWebSocketHandler._send_warmup_ack
-  L2731-L2751, ManagedResponsesWebSocketHandler._build_base_call_kwargs L2754-L2768, ManagedResponsesWebSocketHandler._apply_history
-  L2770-L2801, ManagedResponsesWebSocketHandler._resolve_provider L2804-L2814, ManagedResponsesWebSocketHandler._same_provider
-  L2816-L2823, ManagedResponsesWebSocketHandler._inject_credentials L2825-L2841, ManagedResponsesWebSocketHandler._update_proxy_request
-  L2844-L2860.'
-- 'litellm/responses/streaming_iterator.py: B945 owns ManagedResponsesWebSocketHandler._stream_and_forward L2862-L2890,
-  ManagedResponsesWebSocketHandler._save_turn_history L2892-L2911, ManagedResponsesWebSocketHandler._process_response_create
-  L2917-L2990, ManagedResponsesWebSocketHandler.run L2996-L3016.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2413 owns all helpers/state/settings L73-L361; B926 hooks L534-L952; B927 fallback and live/synthetic iterators L954-L1326; B928 builders/billing L1329-L1732.
+- Test-only hook facades L801-L807 and L995-L1006 have no production caller at the pin and are excluded.
+- B942-B945 own websocket code after L1732 and quota invocation; B005 owns network SSE framing.
 pitfalls:
-- _model_id_from_metadata uses litellm_metadata.get('model_info'); retain its missing-value behavior and field spelling
-  in the typed projection.
-- _model_id_from_metadata uses model_info.get('id'); retain its missing-value behavior and field spelling in the
-  typed projection.
+- Re-stripping the data prefix here would corrupt payloads because the SSE decoder already removed it.
+- Malformed JSON still establishes completion_start_time before it is silently skipped.
+- A terminal event is stored and logged without setting finished; the driver still consumes the stream boundary.
 review_level: standard
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 540
   max_new_expects: 1

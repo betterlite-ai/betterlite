@@ -1,194 +1,121 @@
 id: B933
-title: Responses lifecycle call
+title: Responses retrieve and input-items SDK calls
 description: >-
-  Add typed get/delete/list-input-items/cancel Responses operations to the prepared provider boundary, decoding
-  addressed IDs through response-id-codecs. Reuse the same injected HTTP pool and normalized error mapping for synchronous
-  and async public facades, with no transport outside B009.
+  Build responses_lifecycle_call around the four whole SDK functions aget_responses, get_responses,
+  alist_input_items and list_input_items. B903 decodes provider-bearing IDs; decoded nonempty fields
+  override the raw ID and explicit provider. Resolve a Responses config for model=null through
+  B157, log through B247 and execute B2416. B010 owns generic SDK parameters and B198 owns the
+  imported REQUEST_TIMEOUT default of 6000. Use B185/B186 for exceptions, preserving SDK absence
+  and null fields rather than projecting proxy errors. B904 updates successful retrieve IDs with
+  litellm_metadata and the selected provider; input-items JSON is returned unchanged.
 
+  Keep defaults after=null,before=null,include=null,limit=20,order=desc. Async wrappers decode,
+  set their mode flag and preserve context through the sync call; await returned coroutines once.
+  alist_input_items has no @client decorator, while list_input_items does. Sync dispatch tests
+  its popped mode flag with is True. Retrieve accepts extra_query and extra_body but neither
+  affects provider HTTP. timeout=null or 0 selects REQUEST_TIMEOUT before B2416; that transport
+  intentionally omits the timeout on GET. Do not fix that omission in this SDK task.
 
-  Implement crates/betterlite-core/src/api/responses_lifecycle_call.rs. Use ResponsesLifecycleCallInput and ResponsesLifecycleCallResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions get_encoded_id, input_items_pagination, provider_not_found under api::responses_lifecycle_call::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::responses_lifecycle_call::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesLifecycleCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_lifecycle_call: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/main.py: aget_responses (L1614-L1685); litellm/responses/main.py: get_responses
-  (L1689-L1790); litellm/responses/main.py: alist_input_items (L1794-L1846); litellm/responses/main.py: list_input_items
-  (L1850-L1925). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 240 owned nonblank/non-comment/non-docstring Python lines (260 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 260 implementation,
-  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 507 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B011 (Exception types and provider error mapping),
-  B171 (Direct helper oracle and URL path encoding), B903 (Response id codecs), B1087 (Api boundaries), B1116 (Responses
-  delete and cancel calls), B509 (OpenAI Responses retrieve cancel delete and compact), B904 (Response id traversal),
-  B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add SdkHttpCall::ResponsesLifecycleRead to B2401, testing both public modes against the same
+  mock protocol. Python uses actual SDK calls; native calls the production service. The
+  api::responses_lifecycle_call::tests module also checks logging and context. Source ownership
+  totals 255 nonblank/non-comment lines. Budget 225 implementation, 140 tests, 100 fixtures,
+  90 adapters and 30 wiring, 585 total under 620. No parser is introduced above B509 and B2401.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_lifecycle_call.rs
   - crates/betterlite-core/src/api/responses_lifecycle_call/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/responses_lifecycle_read.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/responses_lifecycle_read.py
+  - tools/oracle/cases/sdk-http/responses-lifecycle-read/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-read-*
   - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/responses_lifecycle_call.rs
-  - crates/betterlite-config/src/api/responses_lifecycle_call/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-lifecycle-call-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/responses_lifecycle_call.rs
-  - tools/oracle/src/helpers/responses_lifecycle_call/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/responses_lifecycle_call.py
-  - tools/oracle/helpers/responses_lifecycle_call/**
-  - tools/oracle/fuzz/corpus/helper_case/responses_lifecycle_call-*
-  - tools/oracle/cases/helpers/responses-lifecycle-call/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1611-L1928
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1613-L1790
+  why: Retrieve decodes before dispatch and encodes typed responses after sync or awaited completion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1794-L1925
+  why: Input-items defaults and wrapper asymmetry; returned item JSON does not use the retrieve ID rewrite.
 dod:
-- text: 'get encoded id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-get-encoded-id
-  - oracle
-- text: 'input items pagination: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-input-items-pagination
-  - oracle
-- text: 'provider not found: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-not-found
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    retrieve_routes_encoded_id sends a B903 ID for provider=openai,response_id=resp/a plus explicit
+    provider=anthropic. Both modes make GET /v1/responses/resp%2Fa with no body. Mock 200 complete
+    response id=resp_a,status=completed is returned with a B904 ID decoding to provider=openai,
+    model_id=deployment_a,response_id=resp_a when litellm_metadata.model_info.id=deployment_a.
+    Repeated encoding through sync/async layers must not nest the ID. Raw resp_a plus explicit
+    openai works too; returned provider headers remain attached.
+  proof: [retrieve-id, oracle, python-adapter]
+- text: >-
+    input_items_sdk_pagination calls with defaults and observes GET /v1/responses/resp_a/input_items
+    query limit=20,order=desc. after="",before=item_b,include=[message.input_image.image_url],limit=2,
+    order=asc forwards all five fields; [] include omits include and explicit null limit/order
+    omit those query fields. A mock {object:list,data:[{id:item_a,type:message}],has_more:false}
+    returns exactly that object without B904 item/response ID encoding. This SDK accepts explicit
+    pagination arguments; the proxy route's ignored URL query belongs to B938.
+  proof: [input-items, oracle, python-adapter]
+- text: >-
+    read_ignored_extras_and_context sends extra_query={after:ignored},extra_body={ignored:true},
+    extra_headers={X-Trace:trace-a},timeout=7. The mock sees the trace header but no added query/body.
+    Native capture sees timeout=7 handed to B2416 and no timeout on its GET. null/0 becomes 6000
+    or injected REQUEST_TIMEOUT=17; B198 tests that setting's loader. Call context call-a survives
+    async handoff. update_from_kwargs records model=null,optional_params={response_id:resp_a},
+    litellm_params={litellm_call_id:call-a}; kwargs overlay locals first. Only a true mode flag
+    selects async, not 1 or "true". ID rewriting applies only to typed ResponsesAPIResponse values.
+  proof: [read-context, oracle, python-adapter]
+- text: >-
+    read_provider_errors sends a raw ID without provider and expects no HTTP with source ValueError
+    "custom_llm_provider is required but passed as None". Missing anthropic config yields
+    "GET responses is not supported for anthropic" or "list_input_items is not supported for anthropic".
+    Shared mapping returns SDK APIConnectionError,status=500,type=null,param=null,code=null;
+    assert the exact source cause and redacted public-message deviation. Mock 404 body
+    {error:{message:gone,type:invalid_request_error,param:response_id,code:not_found}} becomes
+    NotFoundError,status=404,type=null,param=null,code=null because the SDK mapper omits its body.
+  proof: [read-errors, oracle, python-adapter]
+- text: New lifecycle-read seeds parse as the SDK HTTP variant and execute real requests in each mode.
+  proof: [sdk-corpus, oracle, python-adapter]
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_lifecycle_call::/)
-      - test(/::replays_corpus$/)'
-  - id: case-get-encoded-id
-    why: the get-encoded-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::get_encoded_id($|::)/)'
-  - id: case-input-items-pagination
-    why: the input-items-pagination behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::input_items_pagination($|::)/)'
-  - id: case-provider-not-found
-    why: the provider-not-found behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::provider_not_found($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-lifecycle-call-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_lifecycle_call.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_lifecycle_call-*)"
-      && grep -qE "^[[:space:]]+responses_lifecycle_call:" tools/oracle/fuzz/corpus/helper_case/responses_lifecycle_call-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-lifecycle-call)"
+  - id: retrieve-id
+    why: retrieve leaks the public encoded ID upstream or encodes its returned ID twice
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::retrieve_routes_encoded_id($|::)/)'
+  - id: input-items
+    why: SDK pagination is confused with the proxy route's body-only arguments
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::input_items_sdk_pagination($|::)/)'
+  - id: read-context
+    why: extra_query leaks or context/logging uses the undecoded response ID
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::read_ignored_extras_and_context($|::)/)'
+  - id: read-errors
+    why: missing provider reaches HTTP or upstream body fields are invented on SDK exceptions
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::read_provider_errors($|::)/)'
+  - id: python-adapter
+    why: read SDK parity lacks an independent pinned implementation
+    run: test -f tools/oracle/sdk_http/responses_lifecycle_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the read SDK variant has no new decoder seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-lifecycle-call/get-encoded-id.yaml
-- tools/oracle/cases/helpers/responses-lifecycle-call/input-items-pagination.yaml
-- tools/oracle/cases/helpers/responses-lifecycle-call/provider-not-found.yaml
-deviations: []
+- tools/oracle/cases/sdk-http/responses-lifecycle-read/retrieve-routes-encoded-id.yaml
+- tools/oracle/cases/sdk-http/responses-lifecycle-read/input-items-sdk-pagination.yaml
+- tools/oracle/cases/sdk-http/responses-lifecycle-read/read-ignored-extras-and-context.yaml
+- tools/oracle/cases/sdk-http/responses-lifecycle-read/read-provider-errors.yaml
+deviations:
+- what: Unsupported lifecycle calls expose the shared bounded error message rather than Python stack traces, retaining APIConnectionError and status=500.
+  why: The existing B184/B187 diagnostics contract applies to these locally raised errors.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709
 out_of_scope:
-- 'litellm/responses/main.py: B1078 owns _has_file_search_tool L98-L102, mock_responses_api_response L105-L154,
-  responses L1128-L1458.'
-- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
-  _responses_try_dispatch_emulated_file_search L1038-L1124.'
-- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure
-  L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap
-  L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions
-  L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790,
-  _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891,
-  _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses
-  L909-L931, _apply_managed_file_id_mapping L934-L964.'
-- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1128-L1458.'
-- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
-  L1929-L1986, cancel_responses L1990-L2077.'
-- 'litellm/responses/main.py: B934 owns acompact_responses L2081-L2155, compact_responses L2159-L2279.'
-- 'litellm/responses/main.py: B943 owns _build_litellm_metadata_for_ws L2287-L2292, _deployment_reasoning_default
-  L2298-L2306, _first_ws_frame_with_routed_input L2312-L2327, _build_responses_websocket_request_defaults L2330-L2340,
-  _aresponses_websocket L2344-L2445.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1116 owns delete/cancel, B934 compact, B1078 create, B932 async create, B931 shared selection, B955 interception and B943 websocket functions in main.py.
+- B938 owns HTTP lifecycle routes, including JSON-body pagination and polling cancellation/re-read.
+- B2416 owns resource HTTP execution; B509 owns request transforms and resource byte decoding.
 pitfalls:
-- aget_responses uses decoded_response_id.get('response_id'); retain its missing-value behavior and field spelling
-  in the typed projection.
-- aget_responses uses decoded_response_id.get('custom_llm_provider'); retain its missing-value behavior and field
-  spelling in the typed projection.
-review_level: standard
+- alist_input_items delegates to the decorated synchronous function but is not itself decorated.
+- SDK input-items returns raw item JSON; retrieve alone updates the response ID.
+- A passed timeout does not imply a per-call deadline on the GET request at the pin.
+review_level: security
 budget:
-  max_changed_lines: 510
-  max_new_expects: 1
+  max_changed_lines: 620
+  max_new_expects: 0

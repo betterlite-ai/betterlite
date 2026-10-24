@@ -1,0 +1,92 @@
+id: B2410
+title: Codex history normalization and additional tools
+description: >-
+  Move the complete codex_compat.py and additional_tools.py helpers out of B907 into
+  betterlite-core::api::codex_history_tools. Normalize Codex history before provider mapping
+  and hoist additional_tools without losing vendor-specific tool keys. Own every function
+  and record in these two files. Callers receive rewritten/dropped type names and decide
+  their own warning wording; these normalization helpers themselves do not warn.
+
+  The codex_history_tools helper oracle exercises parsed records and their ordered output,
+  including validation failures swallowed by the additional-tools predicates. Keep Python
+  JSON serialization spaces/escaping for local_shell arguments, because that value is a
+  string on the wire. There is no byte parser here. Count 164 nonblank/non-comment source
+  lines including docstrings; budget 165 production, 120 tests, 85 fixtures, 80 adapters,
+  20 wiring, totaling 470 lines.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/codex_history_tools.rs
+  - crates/betterlite-core/src/api/codex_history_tools/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/codex_history_tools.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/codex_history_tools.py
+  - tools/oracle/fuzz/corpus/helper_case/codex_history_tools-*
+  - tools/oracle/cases/helpers/codex-history-tools/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/codex_compat.py#L1-L154
+  why: Complete Codex item rewrites and sorted unsupported-tool type reporting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/additional_tools.py#L1-L60
+  why: Hoisting preserves raw tool dictionaries while dropping every recognized additional_tools item.
+dod:
+- text: >-
+    agent_history sends agent_message.content=[{text:a},{encrypted_content:b},{text:0,encrypted_content:c},7];
+    expect {type:message,role:assistant,content:[{type:output_text,text:abc}]} and rewritten_types=[agent_message].
+    Non-list/empty content drops the item but still reports agent_message; text is preferred
+    only when truthy and other truthy values are stringified. Unknown/non-dict items survive.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    compaction_shell maps {type:context_compaction,encrypted_content:cipher,extra:1} to
+    {type:compaction,encrypted_content:cipher}; empty/non-string cipher drops it. A
+    local_shell_call with call_id=c,action={command:ls} becomes {type:function_call,call_id:c,
+    name:local_shell,arguments:'{"command": "ls"}'}. Missing/non-string/empty call_id drops
+    it; non-dict action becomes "{}". Rewritten type names are unique and sorted, even for
+    dropped entries. Non-list input="hi" returns hi and an empty rewritten tuple.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    unsupported_tools with supported_types={function} keeps function tools and non-dict
+    sentinel values, drops web_search,custom and missing type, and reports sorted
+    ["None","custom","web_search"]. Duplicate dropped types appear once; kept order remains.
+    No warning is emitted by drop_unsupported_tools itself.
+  proof: [history-tests, oracle, history-adapter]
+- text: >-
+    additional_tools starts tools=[{type:function,name:first}], input containing a message
+    and two additional_tools items holding [{type:vendor,name:extra,custom:7}] and malformed
+    tools=7. Expect only the message in input, top-level tools=[first,extra], hoisted=[extra],
+    vendor custom=7 preserved and debug "Responses API: hoisting 1 tool(s) out of 2
+    'additional_tools' input item(s) into the top-level tools param." Missing tools hoists
+    zero but removes the item. String input or no recognized item leaves input unchanged,
+    converts null tools to an empty tuple and emits no diagnostic. Duplicate tools remain duplicates.
+  proof: [history-tests, oracle, history-adapter]
+checks:
+  optional: []
+  commands:
+  - id: history-tests
+    why: Codex history rewrites or tool hoisting loses data or changes fallback behavior
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::codex_history_tools::/)'
+  - id: history-adapter
+    why: the normalization operation has no independently typed Python adapter
+    run: test -f tools/oracle/helpers/codex_history_tools.py && grep -qE '^[[:space:]]+codex_history_tools:' tools/oracle/fuzz/corpus/helper_case/codex_history_tools-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/codex-history-tools/agent-history.yaml
+- tools/oracle/cases/helpers/codex-history-tools/compaction-shell.yaml
+- tools/oracle/cases/helpers/codex-history-tools/unsupported-tools.yaml
+- tools/oracle/cases/helpers/codex-history-tools/additional-tools.yaml
+deviations: []
+out_of_scope:
+- B907 retains custom-tool schemas, argument parsing and tool choices; provider tasks own logging decisions for the reported rewritten/dropped types.
+pitfalls:
+- A malformed additional_tools item is removed even when its tool list cannot validate.
+- Codex encrypted_content in agent messages is treated as plaintext fallback here; this helper performs no decryption.
+- Dropped items still contribute their type to rewritten_types, so deriving diagnostics from retained output loses information.
+review_level: standard
+budget:
+  max_changed_lines: 470
+  max_new_expects: 1

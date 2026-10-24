@@ -1,187 +1,103 @@
 id: B1074
-title: Vector file write
+title: Update attached-file attributes and delete attachments
 description: >-
-  Implement vector-store file update/delete through B010, preserving attributes and deletion payloads. Caller-supplied
-  fields cannot override registry/provider credentials or managed ownership.
+  Implement update/aupdate/delete/adelete in core::api::vector_file_write, owning the complete functions
+  at vector_store_files/main.py:523-749. The required ids are keyword arguments; update also requires
+  attributes. B1111 chooses openai for a falsey provider and overlays registry credentials on kwargs.
+  Construct GenericLiteLLMParams with the store id afterwards, while keeping the original local provider
+  for B174 enum conversion and B010 config selection with B527 transforms. Update filters merged locals/kwargs through B1071 then restores the explicit
+  attributes argument, including null. Its extra_body goes to B2482; delete has no extra-body parameter.
 
-
-  Implement crates/betterlite-core/src/api/vector_file_write.rs. Use VectorFileWriteInput and VectorFileWriteResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions vector_file_update_attributes, vector_file_delete, vector_file_delete_missing,
-  vector_file_update_error under api::vector_file_write::tests. Each named function drives production code and asserts
-  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
-  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_file_write::tests::loads_settings
-  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
-  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
-  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
-  replay B002's existing decoder rather than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::VectorFileWrite in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_file_write: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/vector_store_files/main.py: aupdate (L524-L566); litellm/vector_store_files/main.py:
-  update (L570-L641); litellm/vector_store_files/main.py: adelete (L645-L683); litellm/vector_store_files/main.py:
-  delete (L687-L749). Abstract/protocol declarations map to native types and synchronous/async wrappers share one
-  implementation; a partial function span is the explicit preparation/transition stage described above, with typed
-  values passed to the following stage.
-
-
-  Sizing: 205 owned nonblank/non-comment/non-docstring Python lines (205 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 225 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
-  30 wiring; 490 total within the 490-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1071 (Vector file contracts), B1087 (Api boundaries), B527 (OpenAI vector stores
-  and attached files), B1111 (Vector file provider selection), B002 (Load LiteLLM config.yaml into typed config).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  Record model=null, both ids and update attributes in optional_params. Logged litellm_params combines
+  the store id,call id (default null) and non-null GenericLiteLLMParams. Preserve context in async calls;
+  only boolean true aupdate/adelete selects async. timeout=null/0 uses REQUEST_TIMEOUT, default 6000,
+  through betterlite-config. B2482 owns the actual HTTP send and B011 maps public SDK exceptions.
+  Add B2401 VectorFileWrite with update/delete and both modes. Tests belong in api::vector_file_write;
+  the config loader has loads_write_timeout in that module. The owned functions have 206 nonblank/
+  non-comment lines; allow 205 code, 145 tests, 90 adapters, 90 fixtures, 55 config/corpus/wiring, 585
+  total under 630. Decode through the existing B1071/B2401 boundaries.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/vector_file_write.rs
   - crates/betterlite-core/src/api/vector_file_write/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/vector_file_write.rs
   - crates/betterlite-config/src/api/vector_file_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/vector_file_write.rs
-  - tools/oracle/src/helpers/vector_file_write/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/vector_file_write.py
-  - tools/oracle/helpers/vector_file_write/**
-  - tools/oracle/fuzz/corpus/helper_case/vector_file_write-*
-  - tools/oracle/cases/helpers/vector-file-write/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_file_write.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_file_write.py
+  - tools/oracle/cases/sdk-http/vector-file-write/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L524-L749
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L523-L749
+  why: Whole file-write wrappers restore explicit attributes after filtering and retain id/call context for logging.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
+  why: File writes use the same REQUEST_TIMEOUT default for missing and zero per-call timeouts.
 dod:
-- text: 'vector file update attributes: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vector-file-update-attributes
-  - oracle
-- text: 'vector file delete: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-delete
-  - oracle
-- text: 'vector file delete missing: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-vector-file-delete-missing
-  - oracle
-- text: 'vector file update error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-update-error
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    update_file_attributes sends vs_a,file_a,attributes={tag:x,count:2,enabled:false},unknown=1.
+    Expect POST /v1/vector_stores/vs_a/files/file_a with {attributes:{tag:x}} after B527 cleaning.
+    attributes={} stays {}, and explicit null stays null because update restores it after the filter.
+    extra_body={attributes:{replacement:y}} replaces the explicit map downstream. Mock 200
+    {id:file_a,object:vector_store.file,attributes:{replacement:y}} returns those values in both modes.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    delete_file_attachment sends vs_a,file_a with kwargs extra_body={ignored:true},extra_query={ignored:true}.
+    DELETE /v1/vector_stores/vs_a/files/file_a has no body or query. Mock 200
+    {id:file_a,object:vector_store.file.deleted,deleted:true} is returned. extra_headers={X-Trace:t}
+    reaches both write methods. No ordinary Files API delete and no registry mutation occurs.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    file_write_provider_resolution defaults null/"" to openai. Registry key=sk-registry replaces caller
+    key=sk-caller; registry failure leaves caller credentials usable, without warning. A registry provider
+    azure does not replace local openai. Explicit azure fails with source "Vector store file update is not supported for azure"
+    or "Vector store file delete is not supported for azure"; bogus fails enum conversion. All three
+    failures map to SDK APIConnectionError,status=500,type=null,param=null,code=null before HTTP.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    file_write_error_mapping returns HTTP 404 {error:{message:missing,type:invalid_request_error,param:null,code:missing}}
+    for each method. SDK NotFoundError has status=404,type=null,param=null,code=null with one request and
+    no retry. Ignore only failure.message for betterlite wording, never the outbound request or status.
+  proof: [write-tests, oracle, python-adapter]
+- text: >-
+    write_context_and_timeout checks handler timeout=null/0/7 becomes 6000/6000/7 or 12/12/7 with
+    REQUEST_TIMEOUT=12. Logs retain model=null,store/file ids,update's pre-cleaning attributes and call id
+    null or call-a; delete has no attributes in optional_params. Async retains context, while flag=1 does
+    not select async. loads_write_timeout loads absent=6000,"12"=12 and rejects "bad" through Config.
+    New config and SDK seeds replay through both existing case decoders.
+  proof: [write-tests, config-tests, corpora]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_write::/)
-      - test(/::replays_corpus$/)'
-  - id: case-vector-file-update-attributes
-    why: the vector-file-update-attributes behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_write::tests::vector_file_update_attributes($|::)/)'
-  - id: case-vector-file-delete
-    why: the vector-file-delete behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_write::tests::vector_file_delete($|::)/)'
-  - id: case-vector-file-delete-missing
-    why: the vector-file-delete-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_write::tests::vector_file_delete_missing($|::)/)'
-  - id: case-vector-file-update-error
-    why: the vector-file-update-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_write::tests::vector_file_update_error($|::)/)'
+  - id: write-tests
+    why: file writes lose explicit-null attributes, delete semantics or credential ordering
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_write::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_write::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/vector_file_write.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_file_write-*)"
-      && grep -qE "^[[:space:]]+vector_file_write:" tools/oracle/fuzz/corpus/helper_case/vector_file_write-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-file-write)"
+    why: REQUEST_TIMEOUT is not exercised by a real config loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_write::tests::loads_write_timeout($|::)/)'
+  - id: python-adapter
+    why: the file mutation comparison cannot capture real public SDK HTTP
+    run: test -f tools/oracle/sdk_http/vector_file_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpora
+    why: new mutation/config inputs bypass corpus replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-file-write/vector-file-update-attributes.yaml
-- tools/oracle/cases/helpers/vector-file-write/vector-file-delete.yaml
-- tools/oracle/cases/helpers/vector-file-write/vector-file-delete-missing.yaml
-- tools/oracle/cases/helpers/vector-file-write/vector-file-update-error.yaml
+- tools/oracle/cases/sdk-http/vector-file-write/update-file-attributes.yaml
+- tools/oracle/cases/sdk-http/vector-file-write/delete-file-attachment.yaml
+- tools/oracle/cases/sdk-http/vector-file-write/file-write-provider-resolution.yaml
+- tools/oracle/cases/sdk-http/vector-file-write/file-write-error-mapping.yaml
 deviations: []
 out_of_scope:
-- 'litellm/vector_store_files/main.py: B1111 owns _ensure_provider L35-L36, _prepare_registry_credentials L39-L51.'
-- 'litellm/vector_store_files/main.py: B1072 owns acreate L55-L103, create L107-L178, alist L182-L231, list L235-L303.'
-- 'litellm/vector_store_files/main.py: B1073 owns aretrieve L307-L346, retrieve L350-L412, aretrieve_content L416-L454,
-  retrieve_content L458-L520.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1111 owns file SDK provider/credential helpers; B1072 owns create/list and B1073 retrieve/content in this same source file.
+- B2482 owns HTTP mutation handlers, B527 OpenAI transformations and B1071 records/filtering. B011 owns public SDK exception mapping.
 pitfalls:
-- Within update\'s provider_config is None branch, preserve raise ValueError(f'Vector store file update is not supported
-  for {custom_llm_provider}') and its nested guards.
-- update uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field spelling in the typed
-  projection.
+- Explicit attributes=null reappears after null filtering and is sent by update, unlike create's omission behavior.
+- Deleting an attachment does not delete its underlying file resource or its vector-store registry entry.
 review_level: security
 budget:
-  max_changed_lines: 490
-  max_new_expects: 1
+  max_changed_lines: 630
+  max_new_expects: 0

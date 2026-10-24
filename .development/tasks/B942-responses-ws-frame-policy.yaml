@@ -1,62 +1,70 @@
 id: B942
 title: Responses ws frame policy
 description: >-
-  Implement per-frame Responses WebSocket model authorization, quota gates and guardrail mask/unmask transformations
-  using B052/B071/B104 and typed Responses records. Restore wrapped item/container IDs before dispatch and preserve
-  request defaults; a session handshake never authorizes a later model switch.
+  Implement the pure policy that prepares and filters decoded native Responses WebSocket frames. It receives typed
+  quota callbacks, an authenticated key record, a Presidio callback, a separate B104-supplied
+  `unmask_pii_text(text, pii_tokens) -> text` function, response-ID/encrypted-content codecs, request defaults,
+  the authorized model, request metadata and the client send effect. The unmask function is passed explicitly beside
+  the B902 `PresidioGuardrailCallback`; it is not discovered from that callback by attribute lookup. The policy has
+  no ambient state and does not own the B943 native relay or B944 managed relay.
 
+  Preserve these pinned values and order. `_FRAME_NO_MAX_OUTPUT_TOKENS_FLOOR` is `1024` and
+  `_FRAME_CHARS_PER_TOKEN_ESTIMATE` is `4`; a non-empty text total uses `max(1, total_chars // 4)`, while no text is
+  `0`. A `response.create` frame uses a non-empty dict at `response` as its estimate container, but `response: {}`
+  falls back to top-level fields excluding only `type`; the estimator's work stack starts with `input` then
+  `instructions`, pops from the end, and appends object `content` then `text`. An `int` max_output_tokens is explicit
+  (including JSON `true`, because Python `bool` is an `int`); every other value uses `1024`.
 
-  Implement crates/betterlite-core/src/api/responses_ws_frame_policy.rs. Use ResponsesWsFramePolicyInput and ResponsesWsFramePolicyResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  `_enforce_frame_project_quota` ignores invalid JSON, top-level arrays, and every object whose `type` is not exactly
+  `response.create`. For a valid response.create it invokes every quota callback sequentially with the unchanged
+  `user_api_key_dict`, the authorized model, and the extracted input/output estimates. `_enforce_or_reject_frame`
+  catches only B163 `RateLimitError`: it attempts one JSON text frame with `type="error"`,
+  `error.type="rate_limit_exceeded"` and `error.message=str(error)`, swallows any send exception, returns `false`
+  and drops the rejected frame. A non-RateLimitError propagates; accepted frames return `true`.
 
+  Keep the exact event and text rules. Logged event types are `response.created`, `response.completed`,
+  `response.failed`, `response.incomplete`, `error`; failure types are `error` and `response.failed`; output-item
+  types are `response.output_item.added` and `response.output_item.done`; maskable block types are `input_text`,
+  `output_text` and `text`; delta unmasking types are `response.output_text.delta`,
+  `response.reasoning_summary_text.delta`, `response.refusal.delta` and `response.function_call_arguments.delta`;
+  the six suppressed done types are `response.output_text.done`, `response.content_part.done`,
+  `response.output_item.done`, `response.function_call_arguments.done`, `response.reasoning_summary_text.done` and
+  `response.reasoning_summary_part.done`. Request masking calls every
+  Presidio callback with `output_parse_pii=true` and masks flat/nested `input` and string `instructions`, item
+  `content`/`output`, and only the three maskable block types. Output masking calls every output callback with
+  `output_parse_pii=false` in arguments, summary-text, content-text order. Response-event unmasking calls only the
+  first guardrail callback's explicitly supplied unmask function, walks completed output content, and replaces only
+  the four delta `delta` strings.
 
-  Write adjacent tests.rs behavior functions later_frame_model_switch, project_quota_frame, guardrail_blocked_frame,
-  restore_container_id, mask_completed_output under api::responses_ws_frame_policy::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
+  Implement `crates/betterlite-core/src/api/responses_ws_frame_policy.rs`, adjacent tests under
+  `api::responses_ws_frame_policy::tests`, the B171 independent helper adapter and its parity fixtures. This slice
+  transforms decoded records, adds no byte decoder or fuzz target, registers no HTTP route, reads no environment
+  variable/config key/query parameter, performs no database write, emits no warning-and-drop diagnostic, and makes no
+  provider call. No HTTP status/type/param/code case belongs here; route and connection status behavior remains with
+  B941/B943/B944.
 
+  Keep these complete owned source items together: `_FRAME_NO_MAX_OUTPUT_TOKENS_FLOOR` and
+  `_FRAME_CHARS_PER_TOKEN_ESTIMATE` (L1741-L1749); `_extract_frame_quota_estimate_inputs` (L1752-L1784);
+  `_enforce_frame_project_quota` (L1787-L1814); `RESPONSES_WS_LOGGED_EVENT_TYPES`,
+  `RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES`, `_RESPONSES_WS_FAILURE_EVENT_TYPES` and
+  `_RESPONSES_WS_OUTPUT_ITEM_EVENT_TYPES` (L1817-L1829); `_ws_event_error` (L1832-L1836);
+  `_restore_input_item_ids` (L1839-L1840); `_restored_container_fields` (L1843-L1854);
+  `_restore_wrapped_ids_in_response_create` (L1857-L1866); `_wrap_output_item_encrypted_content` (L1869-L1884);
+  `ResponsesWebSocketStreaming._enforce_authorized_model` (L2101-L2126), `_with_request_defaults` (L2128-L2134),
+  `_mask_response_create` (L2136-L2238), `_DELTA_EVENT_TYPES` (L2240-L2248), `_OUTPUT_DONE_EVENT_TYPES`
+  (L2250-L2263), `_unmask_response_event` (L2265-L2328), `_mask_response_completed` (L2330-L2408), and
+  `_enforce_or_reject_frame` (L2410-L2437).
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  Direct inputs are B071's project-quota callback, B104's Presidio implementation and separate unmask function,
+  B163's `RateLimitError`, B171's helper protocol, B902's WebSocket/default types and Presidio callback shape,
+  B903's response-ID and encrypted-item wrapper codecs, B904's encrypted input-item traversal, B925's JSON/type
+  helpers and quota protocol, and B732's authenticated key record. B925 owns the source `_UnmasksPiiText` protocol
+  and `_UNMASK_PII_TEXT_ATTR` declaration, but B942's Rust/native seam is the typed function passed beside the
+  callback; it must not use `getattr` or invent a callback method absent from B902. Do not create a second JSON-shape
+  helper or codec.
 
-
-  Register HelperCall::ResponsesWsFramePolicy in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_ws_frame_policy: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/streaming_iterator.py: _extract_frame_quota_estimate_inputs (L1752-L1784);
-  litellm/responses/streaming_iterator.py: _enforce_frame_project_quota (L1787-L1814); litellm/responses/streaming_iterator.py:
-  _ws_event_error (L1832-L1836); litellm/responses/streaming_iterator.py: _restore_input_item_ids (L1839-L1840);
-  litellm/responses/streaming_iterator.py: _restored_container_fields (L1843-L1854); litellm/responses/streaming_iterator.py:
-  _restore_wrapped_ids_in_response_create (L1857-L1866); litellm/responses/streaming_iterator.py: _wrap_output_item_encrypted_content
-  (L1869-L1884); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._enforce_authorized_model
-  (L2101-L2126); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._with_request_defaults (L2128-L2134);
-  litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._mask_response_create (L2136-L2238); litellm/responses/streaming_iterator.py:
-  ResponsesWebSocketStreaming._unmask_response_event (L2265-L2328); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._mask_response_completed
-  (L2330-L2408); litellm/responses/streaming_iterator.py: ResponsesWebSocketStreaming._enforce_or_reject_frame (L2410-L2437).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 332 owned nonblank/non-comment/non-docstring Python lines (388 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 352 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 602 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B071 (Budgets, budget resets and reservations), B104 (Guardrail framework, registry and
-  guardrail API), B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B904 (Response id
-  traversal), B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B925 (Responses
-  stream events), B903 (Response id codecs). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  The owned source is about 330 nonblank, non-comment, non-docstring Python lines. The implementation, focused
+  behavior tests, twelve helper fixtures, adapters and wiring must fit the 800 changed-line budget.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -79,159 +87,236 @@ scope:
   - tools/oracle/cases/helpers/responses-ws-frame-policy/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1752-L1884
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L117-L150
+  why: >-
+    `_UnmasksPiiText(text, pii_tokens)` and `_UNMASK_PII_TEXT_ATTR="_unmask_pii_text"` are separate from
+    B902's two-method Presidio callback, and `_load_json_object` returns raw `json.loads` output.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1741-L1814
+  why: >-
+    These lines define the literal `1024`/`4` estimates, the falsey-empty nested-response fallback, stack order,
+    bool-as-int rule, malformed-frame skips and sequential callback arguments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1817-L1884
+  why: >-
+    These declarations and helpers define every logged/failure/output-item/block event string, error lookup,
+    deep-copied input restoration and affinity encrypted-content guard.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2101-L2238
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2265-L2438
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: >-
+    This range fixes authorized-model insertion for flat/nested frames, `fill_missing`/request/override precedence,
+    response-ID restoration, metadata initialization and each request masking traversal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2240-L2328
+  why: >-
+    This range fixes the four delta strings, six done strings, completed-output traversal and first-callback-only
+    token replacement.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2330-L2437
+  why: >-
+    This range fixes output callback order and `output_parse_pii=false`, completed-event gating, and the exact
+    rate-limit JSON/drop/send-failure behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/streaming_websocket.py#L28-L54
+  why: >-
+    `PresidioGuardrailCallback` exposes only settings and `check_pii`, while `ResponsesWebSocketRequestDefaults`
+    merges fill-missing values, request values and overrides in that order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L421-L431
+  why: >-
+    The encrypted output wrapper uses the literal `litellm_enc:` prefix, base64 `model_id:<id>` payload and first
+    semicolon separator.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L526-L556
+  why: >-
+    The injected traversal deep-copies input arrays before restoring `encitem_` IDs and unwrapping encrypted content.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L693-L710
+  why: >-
+    The previous-response decoder returns an original ID when present and preserves the input value otherwise.
 dod:
-- text: 'later frame model switch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-later-frame-model-switch
-  - oracle
-- text: 'project quota frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-project-quota-frame
-  - oracle
-- text: 'guardrail blocked frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-guardrail-blocked-frame
-  - oracle
-- text: 'restore container id: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-restore-container-id
-  - oracle
-- text: 'mask completed output: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-mask-completed-output
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    `quota_estimation_shapes` sends flat `{type:"response.create",input:"abcd",instructions:"efgh",max_output_tokens:7}`
+    and nested `{type:"response.create",response:{input:"abcd",instructions:"efgh",max_output_tokens:7}}`; each
+    returns input estimate `2` and output estimate `7`. It sends `{type:"response.create",input:"abcde"}` and gets
+    `1`/`1024`, `{type:"response.create",input:[{content:"ab"},{text:"cd"}]}` and gets input `1`,
+    `{type:"response.create",input:"",instructions:"",max_output_tokens:null}` and gets `0`/`1024`,
+    `{type:"response.create",input:"abcd",max_output_tokens:"7"}` and gets output `1024`, and
+    `{type:"response.create",input:"abcd",max_output_tokens:true}` and gets output `true`. It also sends
+    `{type:"response.create",response:{},input:[{content:"abcd",id:"encitem_1"}],max_output_tokens:7}`: quota
+    extraction falls back to top-level `input`/`max_output_tokens` and returns `1`/`7`, while ID restoration restores
+    the top-level `encitem_1` input ID and model
+    authorization treats the empty `response` dict as the nested container, inserting only `response.model:"gpt-4o"`
+    when no top-level model exists.
+  proof: [case-quota-estimation-shapes, oracle]
+- text: >-
+    `quota_frame_selection` sends `not-json`, `[1,2,3]`, `{type:"response.completed"}` and `{type:"ping"}` to two
+    callbacks and records no calls; an empty callback list also records no calls. For
+    `{type:"response.create",input:"abcd",max_output_tokens:7}`, both callbacks
+    receive the same `user_api_key_dict`, model `gpt-4o`, input `1` and output `7` in list order; callback one raising
+    an exception prevents callback two from running and propagates that exception.
+  proof: [case-quota-frame-selection, oracle]
+- text: >-
+    `ws_event_error_and_event_sets` returns `event.error` for `{type:"error",error:{code:"E"}}`, returns null for
+    `{type:"error"}`, returns `response.error` for `{type:"response.completed",response:{error:{code:"E"}}}`, and returns null for
+    `{type:"response.completed"}`, `{type:"response.completed",response:[]}` and `{type:"other"}`. The helper
+    exposes logged types exactly `response.created`, `response.completed`, `response.failed`, `response.incomplete`,
+    `error`; failure types exactly `error`, `response.failed`; output-item types exactly
+    `response.output_item.added`, `response.output_item.done`; and maskable blocks exactly `input_text`, `output_text`, `text`.
+  proof: [case-ws-event-error-and-event-sets, oracle]
+- text: >-
+    `restore_wrapped_ids` deep-copies `{type:"response.create",input:[{id:"encitem_1",encrypted_content:"litellm_enc:x"}],
+    previous_response_id:"wrapped",response:{input:[],previous_response_id:"original"}}`, sends the input list and
+    previous ID through B904/B903, changes only restored `input` and `previous_response_id` fields, and leaves an object
+    containing already-original values byte-equivalent in content. A nested empty `response:{}` remains a real nested
+    container for the model/default policy rather than being flattened into the top level.
+  proof: [case-restore-wrapped-ids, oracle]
+- text: >-
+    `affinity_output_item_wrap` with `encrypted_content_affinity_enabled:true`, `model_info.id:"deploy-7"` and
+    `item.encrypted_content:"cipher"` returns `litellm_enc:bW9kZWxfaWQ6ZGVwbG95LTc=;cipher`; an empty string model ID
+    returns `litellm_enc:bW9kZWxfaWQ6;cipher`. Added, done and arbitrary event objects take the same pure helper path.
+    Missing/null `model_info`, non-string model IDs, missing/non-object items, missing/empty/non-string encrypted content,
+    and affinity false/null return no replacement.
+  proof: [case-affinity-output-item-wrap, oracle]
+- text: >-
+    `model_authorization_and_defaults` with authorized model `gpt-4o` changes flat `model:"client"` and nested
+    `response.model:"client"` to `gpt-4o`, inserts a top-level model when `response` is absent, and leaves the frame
+    unchanged for authorized model `null` or `""`. With `fill_missing:{temperature:0.2}`, request
+    `temperature:0.5` and overrides `{temperature:0.9}`, the result is `temperature:0.9` and keeps
+    `type:"response.create"`; with no defaults the same object is returned. For `response:{}`, authorization writes
+    nested `response.model` and does not classify the container as absent.
+  proof: [case-model-authorization-and-defaults, oracle]
+- text: >-
+    `request_masking_without_callbacks` returns `not-json`, `{type:"ping"}` and an unchanged response.create string
+    byte-for-byte when no default/model/ID change is needed. With authorized `gpt-4o`, fill-missing
+    `{temperature:0.2}` and wrapped input/previous-response IDs, it serializes the changed frame with model `gpt-4o`,
+    temperature `0.2` and restored IDs even with no guardrail callback; defaults are merged before authorization and
+    restoration.
+  proof: [case-request-masking-without-callbacks, oracle]
+- text: >-
+    `request_guardrail_masking` invokes every callback in list order with `output_parse_pii:true` for flat and nested
+    string `input`/`instructions`, string item `content`/`output`, and block `text` only when block type is exactly
+    `input_text`, `output_text` or `text`; each returned value is the next callback's input. An image block, unknown
+    block type, non-string field and missing field are unchanged. The first callback creates `request_data.metadata:{}`
+    when absent, and a callback returning the same string still causes JSON serialization.
+  proof: [case-request-guardrail-masking, oracle]
+- text: >-
+    `response_event_unmasking` receives an explicitly injected `unmask_pii_text` function, not a callback attribute.
+    It returns invalid `not-json`, missing/non-object metadata, non-string/empty `pii_tokens`, no callbacks, non-string
+    text, unknown events and the six done events `response.output_text.done`, `response.content_part.done`,
+    `response.output_item.done`, `response.function_call_arguments.done`, `response.reasoning_summary_text.done` and
+    `response.reasoning_summary_part.done` unchanged. With `pii_tokens:{"<EMAIL_ADDRESS_1>":"a@example.com"}`, only
+    the first unmask function runs: completed `response.output[*].content[*].text` and the four delta events
+    `response.output_text.delta`, `response.reasoning_summary_text.delta`, `response.refusal.delta` and
+    `response.function_call_arguments.delta` replace tokens only when the returned text differs.
+  proof: [case-response-event-unmasking, oracle]
+- text: >-
+    `completed_output_masking` returns `not-json`, non-`response.completed` events, missing/non-object response and
+    completed events with no output text unchanged. For each output item and each output callback it calls
+    `check_pii` with `output_parse_pii:false` first for string `arguments`, then `summary[*].text`, then
+    `content[*].text`; only changed return values replace fields and trigger serialization, while equal return values
+    leave the original response string unchanged.
+  proof: [case-completed-output-masking, oracle]
+- text: >-
+    `non_object_masking_frames` sends `[1,2,3]` to each of `_mask_response_create`, `_unmask_response_event` with
+    metadata `pii_tokens:{"<EMAIL_ADDRESS_1>":"a@example.com"}`, and `_mask_response_completed` with an output
+    callback. Each masking method produces the explicit non-object policy error corresponding to LiteLLM's uncaught
+    `.get("type")` AttributeError; B943 terminates forwarding/connection instead of forwarding `[1,2,3]`, and Rust
+    does not panic.
+  proof: [case-non-object-masking-frames, oracle]
+- text: >-
+    `quota_rejection` makes a callback raise `RateLimitError("quota exceeded")`; the client-send effect receives
+    exactly `{"type":"error","error":{"type":"rate_limit_exceeded","message":"quota exceeded"}}`, the
+    result is `false`, and the rejected frame is not forwarded. A send exception is swallowed and still returns false;
+    a non-RateLimitError propagates; accepted and non-response.create frames return true.
+  proof: [case-quota-rejection, oracle]
+- text: >-
+    The twelve named helper fixtures use `call: {responses_ws_frame_policy: ...}` and compare independently scripted
+    Rust and pinned-MIT values plus ordered callback/send effects; no fixture compares a service with itself, and the
+    response-event case proves the separate typed unmask function is wired.
+  proof: [new-oracle-cases, helper-python, helper-corpus, oracle]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::/)
-      - test(/::replays_corpus$/)'
-  - id: case-later-frame-model-switch
-    why: the later-frame-model-switch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::later_frame_model_switch($|::)/)'
-  - id: case-project-quota-frame
-    why: the project-quota-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::project_quota_frame($|::)/)'
-  - id: case-guardrail-blocked-frame
-    why: the guardrail-blocked-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::guardrail_blocked_frame($|::)/)'
-  - id: case-restore-container-id
-    why: the restore-container-id behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::restore_container_id($|::)/)'
-  - id: case-mask-completed-output
-    why: the mask-completed-output behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::mask_completed_output($|::)/)'
+    why: The frame-policy module or one of its named production tests is missing; helper replay alone cannot prove it.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy/) - test(/::replays_corpus$/)'
+  - id: case-quota-estimation-shapes
+    why: The literal `1024`/`4` estimates, `response:{}` fallback, stack order, floor or bool-as-int result is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::quota_estimation_shapes($|::)/)'
+  - id: case-quota-frame-selection
+    why: Invalid JSON/arrays/non-create frames are charged, callback order differs, or callback errors are hidden.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::quota_frame_selection($|::)/)'
+  - id: case-ws-event-error-and-event-sets
+    why: An error lookup result or one literal logged/failure/output/block event set is wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::ws_event_error_and_event_sets($|::)/)'
+  - id: case-restore-wrapped-ids
+    why: Flat/nested restoration, deep-copy isolation, unchanged values or the empty nested container behavior differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::restore_wrapped_ids($|::)/)'
+  - id: case-affinity-output-item-wrap
+    why: The exact base64 wrapper or one empty/missing/non-string guard path is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::affinity_output_item_wrap($|::)/)'
+  - id: case-model-authorization-and-defaults
+    why: Falsey authorization, nested-empty handling, model insertion or fill/request/override precedence is wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::model_authorization_and_defaults($|::)/)'
+  - id: case-request-masking-without-callbacks
+    why: Raw pass-through, transformation order or no-callback serialization is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::request_masking_without_callbacks($|::)/)'
+  - id: case-request-guardrail-masking
+    why: A text branch, callback argument, metadata initialization or equal-value serialization result differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::request_guardrail_masking($|::)/)'
+  - id: case-response-event-unmasking
+    why: The separate unmask input, first-callback rule, completed traversal or four delta/six done literals are wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::response_event_unmasking($|::)/)'
+  - id: case-completed-output-masking
+    why: Arguments/summary/content order, false output parsing or changed-versus-equal serialization is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::completed_output_masking($|::)/)'
+  - id: case-non-object-masking-frames
+    why: A JSON array is forwarded unchanged, panics Rust, or fails to terminate the native forwarding path.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::non_object_masking_frames($|::)/)'
+  - id: case-quota-rejection
+    why: The exact rate-limit JSON, false/drop result, send-error swallowing or non-rate error propagation is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_frame_policy::tests::quota_rejection($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_ws_frame_policy.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The B171 policy adapter is absent or fails locked ruff and basedpyright checks.
+    run: test -f tools/oracle/helpers/responses_ws_frame_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_frame_policy-*)"
-      && grep -qE "^[[:space:]]+responses_ws_frame_policy:" tools/oracle/fuzz/corpus/helper_case/responses_ws_frame_policy-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: No added externally tagged helper seed reaches the shared parser or helper replay fails.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_frame_policy-*)" && grep -qE "^[[:space:]]+responses_ws_frame_policy:" tools/oracle/fuzz/corpus/helper_case/responses_ws_frame_policy-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: No independent frame-policy parity fixture was added on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-ws-frame-policy)"
 oracle_cases:
-- tools/oracle/cases/helpers/responses-ws-frame-policy/later-frame-model-switch.yaml
-- tools/oracle/cases/helpers/responses-ws-frame-policy/project-quota-frame.yaml
-- tools/oracle/cases/helpers/responses-ws-frame-policy/guardrail-blocked-frame.yaml
-- tools/oracle/cases/helpers/responses-ws-frame-policy/restore-container-id.yaml
-- tools/oracle/cases/helpers/responses-ws-frame-policy/mask-completed-output.yaml
-deviations: []
+- tools/oracle/cases/helpers/responses-ws-frame-policy/quota-estimation-shapes.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/quota-frame-selection.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/ws-event-error-and-event-sets.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/restore-wrapped-ids.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/affinity-output-item-wrap.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/model-authorization-and-defaults.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/request-masking-without-callbacks.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/request-guardrail-masking.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/response-event-unmasking.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/completed-output-masking.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/non-object-masking-frames.yaml
+- tools/oracle/cases/helpers/responses-ws-frame-policy/quota-rejection.yaml
+deviations:
+- link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2148-L2159
+  what: >-
+    LiteLLM lets a JSON array reach `.get("type")` and leak `AttributeError` from the three masking methods;
+    betterlite returns a typed non-object policy error that B943 translates into forwarding/connection termination.
+  why: >-
+    Rust must not panic on a valid JSON array, while the native relay still needs the same caller-visible termination
+    rather than silently forwarding `[1,2,3]`.
 out_of_scope:
-- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  L64-L70, _get_openai_response_types L74-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90,
-  _json_array_or_empty L93-L95, _is_str_mapping L98-L99, _MutableJsonObject.get L104-L104, _MutableJsonObject.get
-  L106-L106, _MutableJsonObject.__getitem__ L107-L107, _MutableJsonObject.__setitem__ L108-L108, _MutableJsonObject.__contains__
-  L109-L109, _MutableJsonObject.items L110-L110, _GetsLitellmParams.__call__ L114-L114, _UnmasksPiiText.__call__
-  L118-L118, _ShouldStoreResultInCache.__call__ L122-L122, _PostStreamingDeploymentHook.__call__ L126-L132, _typed_gets_litellm_params
-  L140-L141, _load_json_object L148-L150, _load_json_value L153-L155, _model_id_from_metadata L158-L161, _log_background_task_failure
-  L164-L169, _running_loop L175-L179, _spawn_logging_task L182-L189, _error_event_fields L221-L237, _status_code_for_error_field
-  L240-L243, _status_code_for_error_fields L246-L250, stream_error_status_and_message L253-L255, _map_stream_error_to_exception
-  L258-L278, _mid_stream_fallback_eligible L281-L285, BaseResponsesAPIStreamingIterator.__init__ L300-L349, BaseResponsesAPIStreamingIterator._check_max_streaming_duration
-  L351-L361, BaseResponsesAPIStreamingIterator._process_chunk L363-L532.'
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L363-L532,
-  BaseResponsesAPIStreamingIterator._note_yielded_event L954-L957, BaseResponsesAPIStreamingIterator._fallback_error
-  L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event
-  L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error L988-L992, call_post_streaming_hooks_for_testing
-  L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035, ResponsesAPIStreamingIterator.__aiter__ L1037-L1038,
-  ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1094-L1096, SyncResponsesAPIStreamingIterator.__init__ L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__
-  L1127-L1128, SyncResponsesAPIStreamingIterator.__next__ L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1177-L1179, MockResponsesAPIStreamingIterator.__init__ L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response
-  L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__ L1233-L1234, MockResponsesAPIStreamingIterator.__anext__
-  L1236-L1245, MockResponsesAPIStreamingIterator.__iter__ L1247-L1248, MockResponsesAPIStreamingIterator.__next__
-  L1250-L1259, CachedResponsesAPIStreamingIterator.__init__ L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response
-  L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__ L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__
-  L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__ L1314-L1315, CachedResponsesAPIStreamingIterator.__next__
-  L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B926 owns BaseResponsesAPIStreamingIterator._log_completed_response
-  L534-L576, BaseResponsesAPIStreamingIterator._restore_provider_response_headers L578-L606, BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  L608-L609, BaseResponsesAPIStreamingIterator._handle_logging_failed_response L611-L625, BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  L627-L645, BaseResponsesAPIStreamingIterator._map_error_event_exception L647-L648, BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  L650-L671, BaseResponsesAPIStreamingIterator._get_completed_response_object L673-L683, BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  L685-L757, BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook L759-L799, BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  L801-L807, BaseResponsesAPIStreamingIterator._run_post_success_hooks L809-L884, BaseResponsesAPIStreamingIterator._handle_failure
-  L886-L918, BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order L920-L931, BaseResponsesAPIStreamingIterator._submit_sync_failure_handler
-  L933-L943, BaseResponsesAPIStreamingIterator._record_pending_logging_task L945-L946, BaseResponsesAPIStreamingIterator._await_pending_logging
-  L948-L952.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming.__init__ L1900-L1932, ResponsesWebSocketStreaming._should_store_event
-  L1934-L1935, ResponsesWebSocketStreaming._store_event L1937-L1949, ResponsesWebSocketStreaming._collect_input_from_client_event
-  L1951-L1984, ResponsesWebSocketStreaming._store_input L1986-L1989, ResponsesWebSocketStreaming._failure_exception
-  L1991-L1999, ResponsesWebSocketStreaming._log_messages L2001-L2016, ResponsesWebSocketStreaming._record_usage_for_failure
-  L2018-L2031, ResponsesWebSocketStreaming._wrap_response_event L2033-L2049, ResponsesWebSocketStreaming.backend_to_client
-  L2051-L2099, ResponsesWebSocketStreaming.client_to_backend L2439-L2458, ResponsesWebSocketStreaming.bidirectional_forward
-  L2460-L2477.'
-- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler.__init__ L2519-L2556, ManagedResponsesWebSocketHandler._serialize_chunk
-  L2563-L2575, ManagedResponsesWebSocketHandler._send_error L2577-L2583, ManagedResponsesWebSocketHandler._get_history_messages
-  L2585-L2594, ManagedResponsesWebSocketHandler._store_history L2596-L2603, ManagedResponsesWebSocketHandler._extract_response_id
-  L2606-L2617, ManagedResponsesWebSocketHandler._extract_output_messages L2620-L2654, ManagedResponsesWebSocketHandler._input_to_messages
-  L2657-L2672, ManagedResponsesWebSocketHandler._parse_message L2678-L2688, ManagedResponsesWebSocketHandler._is_warmup_frame
-  L2691-L2695, ManagedResponsesWebSocketHandler._is_warmup_response_id L2698-L2704, ManagedResponsesWebSocketHandler._warmup_source_params
-  L2707-L2711, ManagedResponsesWebSocketHandler._build_warmup_response L2713-L2729, ManagedResponsesWebSocketHandler._send_warmup_ack
-  L2731-L2751, ManagedResponsesWebSocketHandler._build_base_call_kwargs L2754-L2768, ManagedResponsesWebSocketHandler._apply_history
-  L2770-L2801, ManagedResponsesWebSocketHandler._resolve_provider L2804-L2814, ManagedResponsesWebSocketHandler._same_provider
-  L2816-L2823, ManagedResponsesWebSocketHandler._inject_credentials L2825-L2841, ManagedResponsesWebSocketHandler._update_proxy_request
-  L2844-L2860.'
-- 'litellm/responses/streaming_iterator.py: B945 owns ManagedResponsesWebSocketHandler._stream_and_forward L2862-L2890,
-  ManagedResponsesWebSocketHandler._save_turn_history L2892-L2911, ManagedResponsesWebSocketHandler._process_response_create
-  L2917-L2990, ManagedResponsesWebSocketHandler.run L2996-L3016.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame (L64-L70), _get_openai_response_types (L74-L77), _is_json_object (L80-L81), _is_json_array (L84-L85), _optional_str (L88-L90), _json_array_or_empty (L93-L95), _is_str_mapping (L98-L99), the _MutableJsonObject methods (L102-L110), _GetsLitellmParams.__call__ (L113-L115), _UnmasksPiiText.__call__ (L117-L118), _typed_gets_litellm_params (L140-L141), _UNMASK_PII_TEXT_ATTR (L145), _load_json_object (L148-L150), _load_json_value (L153-L155) and _model_id_from_metadata (L158-L161). B942 consumes typed equivalents and never uses attribute lookup for unmasking.'
+- 'litellm/responses/streaming_iterator.py: B925 owns stream iteration and response-event processing outside this policy (L300-L1326); B926 owns logging, usage, cache and hook processing (L534-L952); B928 owns synthetic events and usage estimation (L1331-L1732).'
+- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming construction, event/input storage, backend_to_client, client_to_backend and bidirectional_forward (L1900-L2099, L2439-L2477). It consumes this task’s transformed frame and owns connection termination.'
+- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler and its quota call site (L2519-L3016); B942 supplies the shared quota policy but not managed routing, history or provider calls.'
+- 'litellm/responses/utils.py: B903 owns _wrap_encrypted_content_with_model_id and previous-response-id codec functions; B904 owns _restore_encrypted_content_item_ids_in_input. B942 injects these seams and does not reimplement them.'
+- 'litellm/types/responses/streaming_websocket.py: B902 owns ResponsesClientWebSocket, ResponsesBackendWebSocket, PresidioGuardrailCallback and ResponsesWebSocketRequestDefaults declarations (L10-L54). The callback has no unmask method; B104 supplies the separate typed unmask function consumed here.'
+- 'litellm/exceptions.py: B163 owns RateLimitError construction and fields; B942 only catches that type in _enforce_or_reject_frame.'
+- 'The owned ranges contain no environment variable, config key, query parameter, route decorator, HTTP status/type/param/code, database write, warning-and-drop log or provider call; no such case belongs here.'
 pitfalls:
-- _extract_frame_quota_estimate_inputs uses msg_obj.get('response'); retain its missing-value behavior and field
-  spelling in the typed projection.
-- _extract_frame_quota_estimate_inputs uses params.get('max_output_tokens'); retain its missing-value behavior and
-  field spelling in the typed projection.
+- 'The quota extractor treats `{response:{}}` as falsey and falls back to top-level `input`/`instructions`/`max_output_tokens`, but `_restore_wrapped_ids_in_response_create` and `_enforce_authorized_model` treat the same empty dict as a real nested container.'
+- 'The quota worklist pops `instructions` before `input`, and for an array object pushes `content` before `text`, so the estimate order is stack order rather than source order.'
+- 'Python `isinstance(true, int)` makes JSON `max_output_tokens:true` explicit; coercing it to `1024` changes the callback-visible output estimate.'
+- '`_wrap_output_item_encrypted_content` accepts an arbitrary event object and does not inspect `event.type`; only B943’s caller filters to `response.output_item.added` and `response.output_item.done`.'
+- 'An empty-string `model_info.id` is a valid string and produces base64 `bW9kZWxfaWQ6`; treating it as missing suppresses the encrypted-content wrapper.'
+- '`_mask_response_create` marks a request changed even when `check_pii` returns the same string, but `_mask_response_completed` serializes only after a changed arguments, summary or content value.'
+- '`_unmask_response_event` invokes only the separately supplied first unmask function, whereas output masking invokes every output callback; the callback list must not be reused as an unmask chain.'
+- 'A valid top-level `[1,2,3]` is safely ignored by quota selection but reaches `.get("type")` in all three masking methods; B943 must surface the typed non-object error as termination without a Rust panic.'
 review_level: security
 budget:
-  max_changed_lines: 610
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

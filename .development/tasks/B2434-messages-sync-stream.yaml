@@ -1,0 +1,108 @@
+id: B2434
+title: Drive synchronous Messages stream transitions
+description: >-
+  Move the whole AnthropicStreamWrapper.__next__ at adapters/streaming_iterator.py L548-L781 from B977 into
+  api::messages_sync_stream. Own its event transition engine and synchronous driver; B977 reuses the transitions
+  for async pulling while preserving its different exception behavior. Use B976's per-stream state/helpers and
+  B966 translation. Do not cut either iterator inside a branch. The 161 nonblank/non-comment lines expand into
+  a typed input/output transition machine, with provider pulls outside the pure state update.
+
+  Add SdkHttpCall::MessagesSyncStream through B2401. Obtain a real B005 chat stream from the mock, wrap it and
+  compare event order plus bounded pull/state observations. Native tests may inject parsed chunks to isolate
+  a transition; provider-reaching parity cases must capture the HTTP POST. Include typed initial-state overrides
+  only for otherwise dormant held-buffer paths, identically applied to both wrappers. The decoder remains B005's.
+  Budget 230 implementation, 145 tests, 155 fixtures, 100 adapters and 30 wiring, 660 total. Tests use
+  api::messages_sync_stream. B977 remains the original entry and depends on this split.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_sync_stream.rs
+  - crates/betterlite-core/src/api/messages_sync_stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_sync_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_sync_stream.py
+  - tools/oracle/cases/sdk-http/messages-sync-stream/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-sync-stream-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L548-L781
+  why: Own __next__ whole, including queued-event priority, delayed usage and synchronous exception swallowing.
+dod:
+- text: >-
+    initial_events_precede_provider_pulls wraps a mock chat stream after its POST /v1/chat/completions. First
+    wrapper output is message_start with msg_<UUID>,type=message,role=assistant,content=[],the requested model,
+    stop_reason=null,stop_sequence=null and B976's four zero counters, before any chunk pull. With compaction S,
+    the next outputs are its start/delta/stop at index0 before pulling; regular content then uses index1.
+    Existing queued output always wins over a new upstream read. Normalize UUID only, keeping its cross-event identity.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    text_thinking_tool_transitions feeds text A,reasoning R,tool lookup with bundled arguments {"x":1},finish.
+    Expect each old content_block_stop before the next start, index increments once, then each first delta A,R,
+    input_json_delta.partial_json="{\"x\":1}" exactly once. A named tool with empty arguments emits its start
+    immediately without waiting for the next provider frame. Empty translated deltas emit no content event;
+    role-only/empty unsigned thinking before the first block opens nothing. Combined content+finish is handled by B975.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    finish_waits_for_usage sends text A,finish_reason=stop without usage,then choices=[] usage5/2. Emit block stop,
+    hold end_turn, then one message_delta with usage5/2 and applied_edits; finally message_stop. A usage-bearing
+    choice chunk also merges into a held stop. Metadata-only choiceless chunks otherwise skip. After usage is
+    emitted, trailing content and finish chunks produce no further deltas; end-of-stream still yields message_stop once.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    finish_without_usage_flushes sends text then stop and EOF. Flush the held stop using its placeholder usage,
+    attaching context edits/summary iterations through B976 and no zero-token message iteration, then message_stop.
+    If active content was not closed, emit content_block_stop first. Pure EOF without any content yields only
+    message_start,message_stop; a finish-only chunk opens and closes an empty text block before message_delta.
+    Subsequent next after the final queue drains is StopIteration.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    held_content_order seeds holding_chunk=text H and a held terminal event. EOF emits H before block stop/final
+    message_delta, never after it. queued_usage_chunk=true drops H instead. During normal processing, an existing
+    holding_chunk precedes the processed event and clears once. A StopIteration path flushes queued events before
+    held stop; it clears held state so repeated next cannot repeat the terminal usage.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    sync_stream_failure_ends_iteration makes the mock disconnect after A, or supplies a typed null/"None" chunk
+    from the decoder seam. __next__ logs error "Anthropic Adapter - <exception>\n<traceback>" and raises
+    StopIteration, without an error SSE event or a fabricated message_stop on that failed pull. Capture the
+    diagnostic and compare its level/prefix; traceback paths are normalized. This differs from B977's async SSE
+    wrapper, which emits an Anthropic error event. No retry POST is made by this driver.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: New synchronous HTTP cases and a messages_sync_stream input seed prove the driver reaches an actual mock provider.
+  proof: [new-cases, corpus, oracle, python-adapter]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: synchronous transition order or exception termination is absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_sync_stream::/)'
+  - id: python-adapter
+    why: the synchronous HTTP comparison lacks a checked pinned driver
+    run: test -f tools/oracle/sdk_http/messages_sync_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: synchronous stream calls cannot be decoded by sdk_http
+    run: grep -qE '^[[:space:]]+messages_sync_stream:' tools/oracle/fuzz/corpus/sdk_http_case/messages-sync-stream-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: no actual synchronous-provider scenarios were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-sync-stream)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/messages-sync-stream/initial-events-precede-provider-pulls.yaml
+- tools/oracle/cases/sdk-http/messages-sync-stream/text-thinking-tool-transitions.yaml
+- tools/oracle/cases/sdk-http/messages-sync-stream/finish-waits-for-usage.yaml
+- tools/oracle/cases/sdk-http/messages-sync-stream/finish-without-usage-flushes.yaml
+- tools/oracle/cases/sdk-http/messages-sync-stream/held-content-order.yaml
+- tools/oracle/cases/sdk-http/messages-sync-stream/sync-stream-failure-ends-iteration.yaml
+deviations: []
+out_of_scope:
+- B977 owns __anext__, both SSE wrappers and AnthropicSSEStream at L783-L1044,L1212-L1233; it calls this transition engine, never the other way around.
+- B975 owns L43-L293 splitter/error functions; B976 owns defaults/state helpers L310-L546,L1046-L1201.
+- B005 handles provider SSE decoding and B966 content/usage conversion. This iterator owns event sequencing only.
+pitfalls:
+- Returning a new block start without its triggering delta loses the first text, thinking or bundled tool arguments.
+- The sync iterator swallows ordinary exceptions as StopIteration; sharing the async exception boundary changes the wire result.
+- Once merged usage is queued, subsequent provider content must not appear after the final message_delta.
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

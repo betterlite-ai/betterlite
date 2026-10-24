@@ -1,0 +1,100 @@
+id: B2486
+title: Vector management ownership, access and credential projection
+description: >-
+  Extract the complete shared helpers at management_endpoints.py:52-176 into server::api::vector_management_boundaries:
+  _vector_store_table, _row_to_vector_store, _raise_if_config_owned, _with_ownership,
+  _redact_sensitive_litellm_params, _fetch_and_authorize_vector_store and _check_vector_store_access.
+  Use B726 repositories/B858 rows, B1062 config ownership, B1060 access checks, B1131 store records and
+  B244 sensitive-key matching with extra pattern connection. Read/write route tasks consume this layer.
+  Keep redaction sentinel REDACTED_BY_LITELM and depth limit 10. Add pure VectorManagementProjection
+  helper cases to B171 for ownership and redaction; repository/auth sequencing is tested natively and
+  through the consuming routes, not a helper that calls FastAPI.
+
+  decode_management_json(bytes, ApiLimits) in this module handles JSON strings stored in litellm_params
+  or metadata. Use the existing bounded JSON machinery, expose a cargo-fuzz target management_json and
+  replay newly committed seeds. Literal strings parse, redact recursively and reserialize with Python
+  json.dumps spacing; invalid JSON becomes the sentinel only in the params redactor, while metadata
+  callers receive a decode error. The owned source has 100 nonblank/non-comment physical lines including
+  docstrings. Budget 180 implementation, 160 tests, 85 adapters, 100 fixtures and 105 fuzz/wiring, 630 total.
+scope:
+  paths:
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/api/vector_management_boundaries.rs
+  - crates/betterlite-server/src/api/vector_management_boundaries/**
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/management_json.rs
+  - crates/betterlite-server/fuzz/corpus/management_json/**
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/vector_management_projection.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_management_projection.py
+  - tools/oracle/cases/helpers/vector-management-projection/**
+  - tools/oracle/fuzz/corpus/helper_case/vector-management-projection-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L52-L176
+  why: Complete ownership/access helpers and bounded credential projection are shared by both route groups.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L78-L99
+  why: Segment matching, case folding and cost override determine which keys get the full redaction marker.
+dod:
+- text: >-
+    ownership_projection supplies absent is_config and gets false; present true,false,null are preserved.
+    _raise_if_config_owned allows absent registry and non-config id. Config id=vs_a raises 400 with
+    detail={error:"Vector store vs_a is defined in the config file, so the config file owns it and it cannot be changed here. Edit the config file to change it, or remove it from the file to let the database own it.",vector_store_id:vs_a},
+    no type/param/code. Do not mutate the input record while adding the is_config field.
+  proof: [boundary-tests, oracle, helper-python]
+- text: >-
+    redact_vector_credentials gives api_key=null,API-Key=secret,connection_string=secret,vertex_credentials={},
+    nested litellm_embedding_config.api_key=secret and expects REDACTED_BY_LITELM for each sensitive value,
+    including null. api_base,region,model,api_version,max_tokens,input_cost_per_token remain unchanged.
+    Ordinary nested dicts recurse; depth 9 recurses once and depth 10 yields the sentinel. Top-level
+    null,number,bool and list pass through in source; arrays containing credential maps are covered by
+    the stated security deviation. A nonsensitive string inside a dict is not parsed as JSON.
+  proof: [boundary-tests, oracle, helper-python]
+- text: >-
+    serialized_vector_params sends the JSON string {"api_key":"secret","region":"us"} and expects
+    the string {"api_key": "REDACTED_BY_LITELM", "region": "us"}. "bad" becomes the marker, JSON
+    "null" becomes string "null", JSON "7" becomes string "7", and nested encoded JSON consumes one
+    depth per parse. No parse failure echoes the original credential-bearing bytes. Corpus includes invalid
+    UTF-8, deeply nested objects, encoded strings and scalars; the helper enum gets its own seed.
+  proof: [boundary-tests, oracle, helper-python, json-corpus, helper-corpus]
+- text: >-
+    fetch_store_before_access scripts repository miss for vs_a and gets 404 detail="Vector store with ID vs_a not found"
+    without an access call. A row denied by B1060 yields 403 detail="Access denied: You do not have permission to access this vector store".
+    Both have absent type/param/code; allowed row is returned whole from model_dump. Repository lookup is
+    find_unique where={vector_store_id:vs_a}; _check_vector_store_access simply forwards record and identity.
+  proof: [boundary-tests]
+checks:
+  optional: []
+  commands:
+  - id: boundary-tests
+    why: ownership, source error order or credential projection is not implemented
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_boundaries::tests::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the pure projection has no independent pinned execution
+    run: test -f tools/oracle/helpers/vector_management_projection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: json-corpus
+    why: persisted JSON decoding is not fuzzed and replayed at its production boundary
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/management_json.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/management_json)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_boundaries::tests::replays_corpus$/)'
+  - id: helper-corpus
+    why: new management projection inputs have no external-tag parser seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-management-projection-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/vector-management-projection/ownership-projection.yaml
+- tools/oracle/cases/helpers/vector-management-projection/redact-vector-credentials.yaml
+- tools/oracle/cases/helpers/vector-management-projection/serialized-vector-params.yaml
+deviations:
+- what: Credential fields inside lists also become REDACTED_BY_LITELM in betterlite management responses; LiteLLM returns lists unchanged in this helper.
+  why: The repository's no-secret-output rule requires closing this credential exposure; preserve all nonsecret values and document this exact oracle difference.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L121-L132
+out_of_scope:
+- B1069 owns create_vector_store_in_db and new/delete/update routes; B1070 owns list/info routes and uses this decoder for stored metadata.
+- B244 owns the shared key classifier; do not substitute its partial masking output for this helper's whole-value marker.
+pitfalls:
+- A sensitive key with null value is still replaced by REDACTED_BY_LITELM.
+- A JSON-encoded params record stays a JSON string after masking, not a dict.
+- Config ownership is checked against the registry, not a caller-supplied is_config field.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

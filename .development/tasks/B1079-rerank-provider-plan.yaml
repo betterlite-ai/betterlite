@@ -1,242 +1,147 @@
 id: B1079
-title: Rerank provider plan
+title: Complete rerank SDK dispatch
 description: >-
-  Prepare configured rerank provider execution for the pinned provider branches using B174 identity/defaults and
-  B010 capability transforms. Keep secret/base URL precedence provider-specific, with operator-only environment
-  resolution; expose a typed plan to rerank-call rather than opening HTTP clients here.
+  Own the whole rerank function, including @client, at rerank_api/main.py:92-562 in
+  betterlite-core::api::rerank_provider_plan. B1014 owns arerank. Resolve identity with B174, select
+  the rerank config through B157, map options with B1013, and execute generic HTTP through B2454.
+  B037 supplies Cohere/Voyage/Jina/Infinity configs, B556 Foundry, B041 Together/Nvidia/Fireworks,
+  B042 Watsonx credentials and B639 Bedrock execution. Keep provider operations injectable through
+  B010; do not copy their transforms. B011 converts failures after the error diagnostic.
 
+  The signature requires model,query,documents; custom_llm_provider,top_n,rank_fields,max_chunks_per_doc,
+  max_tokens_per_doc default None, while return_documents defaults True. kwargs instruction,headers,user,
+  client,litellm_call_id,proxy_server_request,model_info default None; arerank is popped and selected
+  only when it is the boolean True. GenericLiteLLMParams timeout defaults None; string timeouts become
+  float. Pass both version-sensitive max_chunks_per_doc and max_tokens_per_doc to the config factory
+  when not None, including zero. Logger metadata starts with preset_cache_key=None and
+  stream_response={}, then explicitly supplied generic parameters win. Mapping sees the remaining
+  kwargs, and drop_params uses call value or global value or False, so call False cannot disable global True.
 
-  Implement crates/betterlite-core/src/api/rerank_provider_plan.rs. Use RerankProviderPlanInput and RerankProviderPlanResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  B002 loads litellm_settings.api_key,api_base,headers,togetherai_api_key (all None) and drop_params
+  (False), plus LITELLM_DROP_PARAMS and every environment name in the cases below. All provider
+  environment strings default unset. Add loads_rerank_settings table cases through the production
+  loader for unset, empty, explicit values and call/global/environment precedence. The drop flag
+  accepts the B002 normalizer, including invalid nonempty values warning and enabling the flag.
+  Reuse config_yaml decoding with new seeds. No new request-byte decoder is introduced here.
 
-
-  Write adjacent tests.rs behavior functions cohere_rerank_base, azure_rerank_base, infinity_missing_base, bedrock_rerank_config,
-  unsupported_rerank_provider under api::rerank_provider_plan::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_key
-  defaults to None; litellm_settings.api_base defaults to None; env.COHERE_API_BASE defaults to unset (None); env.AZURE_AI_API_BASE
-  defaults to unset (None); litellm_settings.headers defaults to None; env.INFINITY_API_BASE defaults to unset (None);
-  litellm_settings.togetherai_api_key defaults to None; env.TOGETHERAI_API_KEY defaults to unset (None); env.BEDROCK_API_BASE
-  defaults to unset (None); env.NVIDIA_NIM_API_BASE defaults to unset (None); env.HOSTED_VLLM_API_KEY defaults to
-  unset (None); env.HOSTED_VLLM_API_BASE defaults to unset (None); env.DEEPINFRA_API_KEY defaults to unset (None);
-  env.DEEPINFRA_API_BASE defaults to unset (None); env.FIREWORKS_API_KEY defaults to unset (None); env.FIREWORKS_AI_API_KEY
-  defaults to unset (None); env.FIREWORKSAI_API_KEY defaults to unset (None); env.FIREWORKS_AI_TOKEN defaults to
-  unset (None); env.FIREWORKS_AI_API_BASE defaults to unset (None); env.VOYAGE_API_KEY defaults to unset (None);
-  env.VOYAGE_AI_API_KEY defaults to unset (None); env.VOYAGE_API_BASE defaults to unset (None). No environment reads
-  occur outside betterlite-config. Test api::rerank_provider_plan::tests::loads_settings uses the production Config
-  loader and an injected environment map, with a named rstest case for every key above, explicit override, unset/default
-  and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report;
-  a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
-  than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::RerankProviderPlan in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {rerank_provider_plan: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/rerank_api/main.py: rerank (L204-L519). Abstract/protocol declarations map to native
-  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
-  stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 281 owned nonblank/non-comment/non-docstring Python lines (281 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 301 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 96 config tests/seeds and
-  30 wiring; 647 total within the 650-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B174 (Provider identity and model resolution), B175 (Provider parameter capabilities
-  and mapping), B1013 (Rerank contracts), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml into typed config).
-  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
-  on the provider and keys/data branches.
+  B2401 sdk_http.rerank_provider_plan must actually call the mock HTTP provider for every successful
+  dispatch, recording request, result and ordered diagnostics. Error-only cases capture no request.
+  Preserve SDK exception class/status/type/param/code, including absent values; proxy envelopes belong
+  to B085. Count 413 nonblank/non-comment lines in the complete function. Share typed branch arguments
+  rather than duplicating Rust calls: 280 implementation,170 table tests,135 fixtures,90 adapters,
+  90 config tests/seeds and 35 wiring =800 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/rerank_provider_plan.rs
   - crates/betterlite-core/src/api/rerank_provider_plan/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/rerank_provider_plan.rs
   - crates/betterlite-config/src/api/rerank_provider_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/rerank_provider_plan.rs
-  - tools/oracle/src/helpers/rerank_provider_plan/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/rerank_provider_plan.py
-  - tools/oracle/helpers/rerank_provider_plan/**
-  - tools/oracle/fuzz/corpus/helper_case/rerank_provider_plan-*
-  - tools/oracle/cases/helpers/rerank-provider-plan/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/rerank_provider_plan.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/rerank_provider_plan.py
+  - tools/oracle/cases/sdk-http/rerank-provider-plan/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/rerank-provider-plan-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L215-L215
-  why: Setting env.COHERE_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L241-L241
-  why: Setting env.AZURE_AI_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593-L593
-  why: Setting litellm_settings.headers and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L263-L263
-  why: Setting env.INFINITY_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L302-L302
-  why: Setting litellm_settings.togetherai_api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L290-L290
-  why: Setting env.TOGETHERAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L363-L363
-  why: Setting env.BEDROCK_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L342-L342
-  why: Setting env.NVIDIA_NIM_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L390-L390
-  why: Setting env.HOSTED_VLLM_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L392-L392
-  why: Setting env.HOSTED_VLLM_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L416-L416
-  why: Setting env.DEEPINFRA_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L418-L418
-  why: Setting env.DEEPINFRA_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L444-L444
-  why: Setting env.FIREWORKS_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L445-L445
-  why: Setting env.FIREWORKS_AI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L446-L446
-  why: Setting env.FIREWORKSAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L447-L447
-  why: Setting env.FIREWORKS_AI_TOKEN and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L450-L450
-  why: Setting env.FIREWORKS_AI_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L471-L471
-  why: Setting env.VOYAGE_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L472-L472
-  why: Setting env.VOYAGE_AI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L475-L475
-  why: Setting env.VOYAGE_API_BASE and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L204-L519
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L92-L562
+  why: Whole sync dispatcher, including option preparation, every credential branch and final exception mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-L429
+  why: Generic timeout defaults to None; explicitly supplied extra fields survive the parameter model.
 dod:
-- text: 'cohere rerank base: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cohere-rerank-base
-  - oracle
-- text: 'azure rerank base: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-azure-rerank-base
-  - oracle
-- text: 'infinity missing base: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-infinity-missing-base
-  - oracle
-- text: 'bedrock rerank config: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-bedrock-rerank-config
-  - oracle
-- text: 'unsupported rerank provider: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-unsupported-rerank-provider
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    rerank_defaults_and_options sends query=q,documents=[a,b] with no options and expects
+    return_documents=true, original result indexes [1,0], and no implicit sorting. With top_n=0,
+    rank_fields=[],max_chunks_per_doc=0,max_tokens_per_doc=0,instruction=brief those values reach
+    config mapping without being treated as absent. timeout="2.5" becomes 2.5; "bad" fails before HTTP.
+    Boolean arerank=true takes async transport; 1 does not. mock_response in kwargs does not bypass HTTP.
+    Call drop_params=false with global true still drops the unsupported option with the source warning;
+    both false raise B1013's unsupported-parameter error. Logger params contain the call id, supplied
+    model_info and proxy request; explicit preset_cache_key overrides None and no stream response is invented.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    rerank_cohere_foundry_infinity uses distinct call,dynamic,global,environment sentinels. Cohere and
+    litellm_proxy choose key dynamic > call > global and base dynamic > call > global > COHERE_API_BASE
+    > https://api.cohere.com. Azure_ai key is dynamic > call, base dynamic > call > global > AZURE_AI_API_BASE.
+    Infinity base is dynamic > call > global > INFINITY_API_BASE; all missing produces
+    "Invalid api base. api_base=None. Set in call or via `INFINITY_API_BASE` env var." and zero HTTP.
+    Infinity's computed global key is not sent: actual key is dynamic > call. Header fallback is
+    call headers > litellm_settings.headers > {} for these branches. Each populated branch makes one POST.
+  proof: [behavior-tests, oracle, sdk-python, config-tests]
+- text: >-
+    rerank_together_jina_nvidia tests Together key dynamic > call > togetherai_api_key > TOGETHERAI_API_KEY
+    > global api_key and base dynamic > call > global > https://api.together.ai/v1. Missing key gives
+    "TogetherAI API key is required, please set 'TOGETHERAI_API_KEY' in your environment" before HTTP.
+    Together forwards top_n,rank_fields,return_documents,max_chunks_per_doc but not timeout,instruction
+    or max_tokens_per_doc. Jina requires the resolved dynamic key or fails with "Jina AI API key is required,
+    please set 'JINA_AI_API_KEY' in your environment"; its base fallback is BEDROCK_API_BASE.
+    Nvidia's absent dynamic key gives "Nvidia NIM API key is required, please set 'NVIDIA_NIM_API_KEY'
+    in your environment"; base is call > NVIDIA_NIM_API_BASE > https://ai.api.nvidia.com, ignoring global
+    and resolved dynamic bases. SDK mapping is compared, without asserting invented HTTP statuses for ValueError.
+  proof: [behavior-tests, oracle, sdk-python, config-tests]
+- text: >-
+    rerank_local_and_hosted_credentials checks Hosted VLLM key dynamic > call > HOSTED_VLLM_API_KEY
+    and base dynamic > call > HOSTED_VLLM_API_BASE; missing base raises "api_base must be provided for
+    Hosted VLLM rerank. Set in call or via HOSTED_VLLM_API_BASE env var.". Deepinfra uses the analogous
+    DEEPINFRA_API_KEY/DEEPINFRA_API_BASE chain and "api_base must be provided for Deepinfra rerank.
+    Set in call or via DEEPINFRA_API_BASE env var.". Neither uses global key/base.
+    Fireworks key uses dynamic > call > FIREWORKS_API_KEY > FIREWORKS_AI_API_KEY > FIREWORKSAI_API_KEY
+    > FIREWORKS_AI_TOKEN, base dynamic > call > FIREWORKS_AI_API_BASE. Voyage key uses dynamic > call
+    > VOYAGE_API_KEY > VOYAGE_AI_API_KEY, base dynamic > call > VOYAGE_API_BASE. Exercise each first-nonempty
+    position, empty strings falling through and all unset; no extra local missing-key error is added.
+  proof: [behavior-tests, oracle, sdk-python, config-tests]
+- text: >-
+    rerank_bedrock_watsonx_and_generic gives Bedrock call headers {x:a}, extra_headers {x:b,y:c} and
+    expects {x:b,y:c}, timeout and generic params forwarded, base dynamic > call > global > BEDROCK_API_BASE.
+    Watsonx receives the generic credential map plus resolved key/base and uses its returned api_key/api_base;
+    token="" is inserted because it is not None, token=None is omitted. A non-Cohere provider whose factory
+    returns CohereRerankConfig or CohereV2RerankConfig fails "Unsupported provider: <provider>" before HTTP.
+    Other configs use only dynamic > call key/base. A mock 429 emits "Error in rerank: %s" with the error
+    then B011 mapping, never retries here; check class/status/type/param/code and credential redaction.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: loads_rerank_settings and newly added YAML/SDK seeds exercise all listed settings and actual provider I/O.
+  proof: [config-tests, config-corpus, sdk-corpus, new-cases, oracle, sdk-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::rerank_provider_plan::/)
-      - test(/::replays_corpus$/)'
-  - id: case-cohere-rerank-base
-    why: the cohere-rerank-base behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::cohere_rerank_base($|::)/)'
-  - id: case-azure-rerank-base
-    why: the azure-rerank-base behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::azure_rerank_base($|::)/)'
-  - id: case-infinity-missing-base
-    why: the infinity-missing-base behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::infinity_missing_base($|::)/)'
-  - id: case-bedrock-rerank-config
-    why: the bedrock-rerank-config behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::bedrock_rerank_config($|::)/)'
-  - id: case-unsupported-rerank-provider
-    why: the unsupported-rerank-provider behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::unsupported_rerank_provider($|::)/)'
+    why: Branch tables must test actual dispatch, including credential omissions and option asymmetries.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::loads_settings($|::)/)'
+    why: Rerank's environment and global precedence must work through the supported config loader.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::loads_rerank_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/rerank_provider_plan.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/rerank_provider_plan-*)"
-      && grep -qE "^[[:space:]]+rerank_provider_plan:" tools/oracle/fuzz/corpus/helper_case/rerank_provider_plan-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rerank-provider-plan)"
+    why: New provider setting seeds must survive the existing YAML decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: sdk-python
+    why: The rerank adapter must invoke the SDK against mock HTTP, with checked Python types.
+    run: test -f tools/oracle/sdk_http/rerank_provider_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: The rerank_provider_plan operation needs a fresh decoder seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-provider-plan-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Every credential family needs new provider-capture parity fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/rerank-provider-plan)"
 oracle_cases:
-- tools/oracle/cases/helpers/rerank-provider-plan/cohere-rerank-base.yaml
-- tools/oracle/cases/helpers/rerank-provider-plan/azure-rerank-base.yaml
-- tools/oracle/cases/helpers/rerank-provider-plan/infinity-missing-base.yaml
-- tools/oracle/cases/helpers/rerank-provider-plan/bedrock-rerank-config.yaml
-- tools/oracle/cases/helpers/rerank-provider-plan/unsupported-rerank-provider.yaml
+- tools/oracle/cases/sdk-http/rerank-provider-plan/rerank-defaults-and-options.yaml
+- tools/oracle/cases/sdk-http/rerank-provider-plan/rerank-cohere-foundry-infinity.yaml
+- tools/oracle/cases/sdk-http/rerank-provider-plan/rerank-together-jina-nvidia.yaml
+- tools/oracle/cases/sdk-http/rerank-provider-plan/rerank-local-and-hosted-credentials.yaml
+- tools/oracle/cases/sdk-http/rerank-provider-plan/rerank-bedrock-watsonx-and-generic.yaml
 deviations: []
 out_of_scope:
-- 'litellm/rerank_api/main.py: B1014 owns arerank L31-L89, rerank L93-L203 stage, rerank L520-L562 stage.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1014 owns arerank in the same file; B157 owns the provider-config selector and GenericLiteLLMParams.
+- B1013 owns optional rerank mapping and response types; B2454 owns generic HTTP; B174 identity and B011 exception conversion.
+- Provider config methods and direct handlers remain B037, B041, B042, B556 and B639; this task supplies their complete call arguments.
 pitfalls:
-- Within rerank\'s _custom_llm_provider == litellm.LlmProviders.COHERE or _custom_llm_provider == litellm.LlmProviders.LITELLM_PROXY
-  branch, preserve raise Exception('Invalid api base. api_base=None. Set in call or via `COHERE_API_BASE` env var.')
-  and its nested guards.
-- Within rerank\'s api_base is None branch, preserve raise Exception('Invalid api base. api_base=None. Set in call
-  or via `COHERE_API_BASE` env var.') and its nested guards.
+- The Infinity branch calculates a global API key and then omits it from the actual handler call.
+- Jina falls back to BEDROCK_API_BASE, while Nvidia ignores both the resolved base and the global base.
+- return_documents=True is a sync default; arerank deliberately supplies None instead.
+- The Cohere missing-base guard is unreachable after the nonempty https://api.cohere.com fallback.
 review_level: security
 budget:
-  max_changed_lines: 650
-  max_new_expects: 1
+  max_changed_lines: 800
+  max_new_expects: 0

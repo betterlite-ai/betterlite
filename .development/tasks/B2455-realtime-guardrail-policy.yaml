@@ -1,0 +1,95 @@
+id: B2455
+title: Realtime guardrail selection and setup policy
+description: >-
+  Separate the pure guardrail policy from WebSocket sends so B1110 can send guardrail-modified
+  setup without depending on B1007's guardrail runner. Own _has_realtime_guardrails_for_event_hooks,
+  _has_audio_transcription_guardrails, _make_disable_auto_response_message and
+  _maybe_inject_guardrail_auto_response_disable as whole methods in
+  betterlite-core::api::realtime_guardrail_policy. Accept B104's callback descriptors/predicate
+  interface, request_data, backend protocol and the per-session sent flag. Do not register callbacks
+  or execute apply_guardrail here. The unused _has_realtime_guardrails has no caller at the pin.
+
+  A callback must be a CustomGuardrail and should_run_guardrail must accept at least one requested
+  event hook. The audio predicate checks only realtime_input_transcription, not pre_call/post_call.
+  Detection does not exclude use_native_lifecycle_hooks; exclusion happens later in B1007's runner.
+  Setup injection sets its sent flag before any network send, matching source ordering even if
+  that later send fails. B1110's standalone session.update path marks the flag only after delivery.
+  B1004 owns bounded frame decoding; this task transforms decoded setup records and emits JSON.
+
+  Register HelperCall::RealtimeGuardrailPolicy with independently supplied finite callback predicates.
+  Count 67 nonblank/non-comment lines in these four methods. Allow 85 implementation,120 tests,
+  90 adapters,75 fixtures and 30 wiring lines, 400 total.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/realtime_guardrail_policy.rs
+  - crates/betterlite-core/src/api/realtime_guardrail_policy/**
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/realtime_guardrail_policy.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/realtime_guardrail_policy.py
+  - tools/oracle/cases/helpers/realtime-guardrail-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/realtime-guardrail-policy-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L708-L721
+  why: Beta and GA session.update shapes that disable VAD auto-response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L737-L784
+  why: Setup modification and callback selection are the shared lower dependency of sender and runner.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L798-L807
+  why: Only realtime_input_transcription enables the audio-specific disable policy.
+dod:
+- text: >-
+    transcription_guardrail_selection supplies callbacks for pre_call,post_call,realtime_input_transcription
+    and a non-CustomGuardrail callback. Only the third enables the audio predicate. should_run_guardrail
+    receives request_data unchanged; a false predicate disables it. A native-lifecycle CustomGuardrail
+    still enables detection. Multiple event hooks stop at the first match and do not call apply_guardrail.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    disable_auto_response_shapes produces beta {type:session.update,session:{turn_detection:{type:server_vad,
+    create_response:false}}}; GA nests the same turn_detection under session.audio.input and adds
+    session.type=realtime. Neither payload adds a model, voice or unrelated audio format.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    setup_guardrail_injection sends {setup:{realtimeInputConfig:{automaticActivityDetection:{disabled:false,
+    sensitivity:high}}}} with an audio guardrail. Expect disabled=true, sensitivity=high and sent=true,
+    plus the debug diagnostic "Realtime: folded automaticActivityDetection.disabled=true into setup for
+    transcription-guardrail gating". Missing nested objects are created. Already sent, no matching guardrail,
+    invalid JSON, nonobject setup or ordinary session.update leaves bytes and flag unchanged. An existing
+    nonobject realtimeInputConfig raises instead of being silently repaired. A later failed send does not
+    roll back the flag set by this pure method.
+  proof: [behavior-tests, oracle, helper-python]
+- text: New helper seeds tag call.realtime_guardrail_policy and compare independently executed source transformations.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Callback selection and flag timing determine whether provider auto-response can bypass guardrails.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_guardrail_policy::tests::/)'
+  - id: helper-python
+    why: Pure policy parity needs the pinned callback predicates and transforms, not a socket stub.
+    run: test -f tools/oracle/helpers/realtime_guardrail_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: The new operation must be accepted by the shared helper enum decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime-guardrail-policy-*)" && grep -qE '^[[:space:]]+realtime_guardrail_policy:' tools/oracle/fuzz/corpus/helper_case/realtime-guardrail-policy-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: Selection, both protocol shapes and setup mutation need fresh parity cases.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-guardrail-policy)"
+oracle_cases:
+- tools/oracle/cases/helpers/realtime-guardrail-policy/transcription-guardrail-selection.yaml
+- tools/oracle/cases/helpers/realtime-guardrail-policy/disable-auto-response-shapes.yaml
+- tools/oracle/cases/helpers/realtime-guardrail-policy/setup-guardrail-injection.yaml
+deviations: []
+out_of_scope:
+- _has_realtime_guardrails at 786-796 has no caller at the pin and is not implemented.
+- B1110 owns sends, enforcement and _maybe_send_guardrail_turn_detection_update; B1007 owns run_realtime_guardrails.
+- Other realtime_streaming.py functions belong to B1004 contracts, B1005 beta mapping, B1006 state, B1124 buffering, B1008 backend relay and B1009 client relay.
+pitfalls:
+- Setup injection sets the sent flag before transport; the separate session.update helper uses different timing.
+- pre_call and post_call callbacks alone must never turn off provider VAD auto-response.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

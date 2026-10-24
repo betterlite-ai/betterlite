@@ -1,0 +1,101 @@
+id: B2412
+title: Recover missing Responses output from recorded SSE
+description: >-
+  Extract the complete SSE recovery helpers from B919 into api::responses_sse_recovery.
+  Own all of sse_output_recovery.py and the three completed-output/raw-SSE/logging recovery
+  methods L825-L888 in the reverse bridge. This is recovery from an already recorded string,
+  not a live provider pump. B005 supplies prefix stripping and B012 the logging snapshot.
+  B919 remains the final response assembly task and depends on this part.
+
+  Expose decode_recovery_line(bytes,limits) and recover_recorded_output(bytes,limits) using
+  B1087 byte/item bounds. The latter splits lines and calls the former; do not replace
+  this line-by-line algorithm with multiline SSE dispatch. The responses_sse_recovery fuzz
+  target selects either production decoder with its first byte; replays_corpus exercises
+  both. Register responses_sse_recovery in B171 and compare recovered JSON, not just counts.
+  The linked spans contain 140 nonblank/non-comment lines. Allocate 160 implementation,
+  145 tests, 95 fixtures, 80 adapters, 55 fuzz/replay and 25 wiring lines: 560 total.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/responses_sse_recovery.rs
+  - crates/betterlite-core/src/api/responses_sse_recovery/**
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/responses_sse_recovery.rs
+  - crates/betterlite-core/fuzz/corpus/responses_sse_recovery/**
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_sse_recovery.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_sse_recovery.py
+  - tools/oracle/fuzz/corpus/helper_case/responses_sse_recovery-*
+  - tools/oracle/cases/helpers/responses-sse-recovery/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L1-L125
+  why: Whole line parser and indexed item/text writers, including the inclusive content-index limit 1024.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L825-L888
+  why: Completed output wins immediately; otherwise merge real items over text-only items and sort numeric indices.
+dod:
+- text: >-
+    recovery_line_filter strips surrounding whitespace and one leading data: or data: prefix
+    followed by a space. Empty lines,event: lines,[DONE],malformed JSON,arrays and scalars
+    yield no object; plain JSON objects and data:{"type":"x"} return that object.
+    A data prefix embedded after other text is not stripped. Multiline JSON spread across
+    separate data lines is not joined and does not recover an item.
+  proof: [recovery-tests, oracle, recovery-adapter, recovery-corpus]
+- text: >-
+    indexed_item_recovery ignores non-dict item; missing/null/invalid output_index uses
+    the current real-item count, and repeated indices overwrite. Python integer coercion
+    accepts " +3 ","1_000",true and 2.9 as 3,1000,1,2; negative output indices survive
+    and sort before positive indices. A missing index can overwrite an existing sparse
+    slot because the fallback is len(map), not the next unused integer.
+  proof: [recovery-tests, oracle, recovery-adapter]
+- text: >-
+    text_item_recovery accepts text="" but ignores nonstrings. It creates type=message,
+    id=item_id when truthy else msg_<output_index>,role=assistant,status=completed,content=[].
+    Missing content_index appends; index=2 pads indices 0 and 1 with
+    {type:output_text,text:"",annotations:[]}. Index=1024 is accepted, -1 and 1025 ignored.
+    Repeated text indices replace text, preserve existing annotations when new annotations
+    are null/absent, and copy any nonnull annotations. A real item at that output index
+    suppresses text writes. Non-list content suppresses updates and a nondict content slot
+    is replaced with a dictionary before assignment.
+  proof: [recovery-tests, oracle, recovery-adapter, recovery-corpus]
+- text: >-
+    terminal_output_precedence returns the first response.completed with nonempty list
+    response.output immediately, even if later events disagree. Missing/non-dict response,
+    empty/non-list output and response.incomplete do not short-circuit recovery. Otherwise
+    real output_item.done wins over synthetic output_text.done at the same index in either
+    arrival order; preserve text-only items at other indices and return numeric sorted order.
+    Text deltas alone recover nothing. Missing/null/nonstring original_response in
+    logging.model_call_details returns []; a recorded valid terminal output returns its items.
+  proof: [recovery-tests, oracle, recovery-adapter]
+checks:
+  optional: []
+  commands:
+  - id: recovery-tests
+    why: missing-output recovery selects or orders the wrong items
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_sse_recovery::/) - test(/::replays_corpus$/)'
+  - id: recovery-corpus
+    why: recorded provider bytes lack bounded production decoding and corpus replay
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/responses_sse_recovery.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_sse_recovery)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_sse_recovery::tests::replays_corpus$/)'
+  - id: recovery-adapter
+    why: raw SSE recovery has no independently executed Python counterpart
+    run: test -f tools/oracle/helpers/responses_sse_recovery.py && grep -qE '^[[:space:]]+responses_sse_recovery:' tools/oracle/fuzz/corpus/helper_case/responses_sse_recovery-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/responses-sse-recovery/recovery-line-filter.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/indexed-item-recovery.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/text-item-recovery.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/terminal-output-precedence.yaml
+deviations: []
+out_of_scope:
+- B917 owns shared reasoning and history, B918 request construction, B919 response assembly, B920 live reverse-bridge streaming and B1136 content projection in transformation.py.
+- B005 owns the shared SSE prefix helper and transport framing; this task must retain recovery's separate line semantics.
+- Aggregate byte/item limits and their errors come from B1087; this task adds no configurable limit key.
+pitfalls:
+- output_index falls back to map length, which is not necessarily a free slot in sparse output.
+- Only a nonempty completed output short-circuits recovery; response.incomplete is ignored here.
+- content_index=1024 allocates 1025 slots and must not be rejected as an off-by-one overflow.
+review_level: standard
+budget:
+  max_changed_lines: 560
+  max_new_expects: 1

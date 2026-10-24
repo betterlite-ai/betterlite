@@ -1,0 +1,92 @@
+id: B2451
+title: Image edit HTTP execution
+description: >-
+  Implement complete image_edit_handler and async_image_edit_handler methods in
+  betterlite-provider::api::image_edit_http. Reuse B997's edit contract, B173 transport, B2402 send-error
+  conversion and B206 response-header metadata. Validate with litellm_params.api_key/api_base and option
+  extra_headers or {}; explicit truthy extra_headers overwrite that result. Resolve URL before request
+  transformation, then always finalize transformed data with that exact URL before logging and sending.
+  Async calls await async_transform_image_edit_request; sync calls use transform_image_edit_request.
+
+  Preserve the logging difference: sync complete_input_dict contains files; async contains finalized data.
+  Both pre_call records use input=prompt,api_key="",api_base and headers. Multipart sends finalized data and
+  returned files; JSON sends finalized data only. extra_body,fake_stream,litellm_metadata are unused. Only
+  the post operation is inside _handle_error's try; after response transformation attach provider headers.
+  Client kind filtering and ssl_verify=None default match the generation transport, but edit has no dummy file.
+
+  The image_edit_http SDK operation runs real mock HTTP with a finite config fixture supplying transforms,
+  finalizer and trusted URL. Tests record callback order rather than treating expected captures as results.
+  Count 191 nonblank/non-comment lines; allocate 175 implementation, 120 tests, 100 fixtures, 75 adapters and
+  30 wiring lines, 500 total. Reuse existing HTTP/multipart and SDK decoders with new SDK parser seeds.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/image_edit_http.rs
+  - crates/betterlite-provider/src/api/image_edit_http/**
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/operation.rs
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/image_edit_http.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/image_edit_http.py
+  - tools/oracle/cases/sdk-http/image-edit-http/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-http-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6700-L6918
+  why: Own both edit HTTP methods, including URL-dependent finalization and their different pre-call logging payloads.
+dod:
+- text: >-
+    edit_finalization_and_multipart uses prompt=change,image=a.png bytes=abc,options.extra_headers={x:option},
+    validated={x:validated},explicit={x:caller},api_key=key,api_base=mock,timeout=5. The finalizer receives the
+    exact resolved /v1/images/edits URL and adds revision=final to transformed {prompt:change}. One multipart
+    POST contains those fields and image a.png=abc with x=caller, no file named none. Mock 200 returns
+    {created:1,data:[{b64_json:YQ==}]}; hidden provider_response_headers includes x-request-id=edit_1.
+    Sync logs the file mapping; async logs {prompt:change,revision:final}; neither logs api_key=key.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    edit_json_and_unused_arguments chooses multipart=false,extra_body={ignored:true},fake_stream=true and
+    litellm_metadata={tag:t}. Expect a single JSON POST with finalized data only, no files, ignored or streaming
+    field. Async transforms are awaited once. Missing explicit headers retains validated headers. Wrong-kind
+    clients select the pooled client; absent ssl_verify passes None and explicit false remains false.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    edit_transport_failure makes the mock return 400 with body="bad image" and x-error=bad. B2402 converts
+    the send failure with status=400,source message="bad image" and those headers. Response transformation
+    and hidden-header attachment do not run. Native injected errors from validation, URL resolution, either
+    transform, finalization and logging propagate outside send conversion. No request is sent for a finalizer
+    failure. HTTP comparisons use SDK exception fields, not a proxy error envelope.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: New edit transport fixtures and SDK seeds exercise native send code and pinned handler methods independently.
+  proof: [new-cases, sdk-corpus, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: URL-dependent finalization and distinct sync/async logging must precede the actual send.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::image_edit_http::tests::/)'
+  - id: sdk-python
+    why: The edit handler adapter must be present and type checked.
+    run: test -f tools/oracle/sdk_http/image_edit_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: Edit HTTP must have a recognized typed SDK operation seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-edit-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Edit transport cannot be proved by the generation fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/image-edit-http)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/image-edit-http/edit-finalization-and-multipart.yaml
+- tools/oracle/cases/sdk-http/image-edit-http/edit-json-and-unused-arguments.yaml
+- tools/oracle/cases/sdk-http/image-edit-http/edit-transport-failure.yaml
+deviations: []
+out_of_scope:
+- B999 owns image_edit/aimage_edit; B997 owns base transforms; concrete provider edit transforms retain their provider task owners.
+- B2450 owns generation HTTP; B2402 owns _handle_error; B173 owns shared clients/send methods; B206 owns hidden response-header attachment. Other llm_http_handler.py endpoint methods remain with their endpoint owners.
+pitfalls:
+- The finalizer runs with the resolved request URL, not the configured base or a reconstructed URL.
+- JSON edit drops the returned file mapping; it does not serialize files into the JSON object.
+- Sync and async complete_input_dict differ at the pin and must not be homogenized by refactoring.
+review_level: security
+budget:
+  max_changed_lines: 520
+  max_new_expects: 0

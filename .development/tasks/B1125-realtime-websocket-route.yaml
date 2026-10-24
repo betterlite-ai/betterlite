@@ -5,7 +5,7 @@ description: >-
   betterlite-server::api::realtime_websocket_route. Put the lifecycle policy in the matching core module.
   Own the whole realtime_websocket_endpoint, its nested return_body and _realtime_query_params_template,
   _release_realtime_budget_reservation, _release_realtime_max_parallel_slot and _reject_realtime_session
-  at proxy_server.py:12856-13045. Reuse B901's WebSocket transcripts and B1087's limits; this route does not
+  at proxy_server.py:12855-13045, including the query-template LRU decorator. Reuse B901's WebSocket transcripts; this route does not
   decode provider frames or introduce a new external-byte parser.
 
   model, intent and guardrails query parameters default to null. B756 authenticates the handshake and B886's
@@ -25,7 +25,9 @@ description: >-
   user_model/user_temperature/user_request_timeout/user_max_tokens/user_api_base values; B004 owns their
   defaults and precedence. B014 route_request selects B1011's realtime transport. B012 supplies logging and
   redaction, B071 owns release_or_invalidate_budget_reservation, and B2400 owns the ProxyLogging disconnect
-  adapter to B072's limiter. These dependencies are the actual callees, not a proxy-server umbrella.
+  adapter to B072's limiter. B124 owns _log_model_access_denial, called only for the caught model denial.
+  The query-template cache holds1000 model/intent pairs and returns a fresh dict to each connection;
+  None omits a key, while an explicit empty string retains it. No guardrails or arbitrary query key is cached.
 
   A pre-call Exception sends {type:error,error:{type:guardrail_error,message:str(exception)}} and closes 1011
   with reason "Pre-call error". A send failure logs the debug diagnostic and still attempts close. Rejection
@@ -43,8 +45,8 @@ description: >-
   HTTP status and negotiated subprotocol; after accept compare events and close frames. There is no code/param
   field in realtime_error_event, and pre-accept rejection has no close reason to compare. Native lifecycle tests
   inject pending/failing release services and cancellation; do not compare scheduler timing between runtimes.
-  Counted ownership is 160 nonblank/non-comment source lines, 156 without docstrings. Allow 190 implementation,
-  170 behavior tests, 190 transcript fixtures and 40 wiring lines, 590 total under a 600-line cap.
+  Counted ownership is 166 nonblank/non-comment source lines including the decorator and scope template. Allow 190 implementation,
+  180 behavior tests,200 transcript fixtures and 40 wiring lines,610 total under a 650-line cap.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -67,9 +69,11 @@ scope:
   - tools/oracle/fixtures/realtime-websocket-route/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L188-L192
+  why: The synthetic request always has HTTP type, POST method and canonical /v1/realtime path even for aliases.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12855-L13045
   why: All three decorators, explicit query projection, acceptance boundary and distinct cleanup branches are owned here.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L676-L710
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L648-L707
   why: B756 accepts Bearer, api-key and browser subprotocol credentials; failures close before the upgrade.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_errors.py#L26-L71
   why: B1004 defines the server_error event, 123-byte close reason and 401/403/429 handshake mappings used by this route.
@@ -82,7 +86,8 @@ dod:
     query containing model=realtime-a,intent=conversation but no ignored key. A mock session.created event
     reaches the client, and a session.update frame reaches the provider in per-direction order. With no
     protocol header the handshake has no Sec-WebSocket-Protocol response. The synthetic pre-call request
-    retains the original URL and headers while its body model is realtime-a and route_type is _arealtime.
+    retains the original URL and headers while its body model is realtime-a and route_type is _arealtime;
+    its copied ASGI scope has type=http,method=POST,path=/v1/realtime, including on both other aliases.
   proof:
   - case-realtime-connect
   - oracle
@@ -96,7 +101,7 @@ dod:
   - oracle
 - text: >-
     realtime_model_denied_403 seeds a key allowed only realtime-a and asks model=realtime-b. Expect bare HTTP
-    403 and no upstream connection; denial is logged through B886. A native denial message of 130 ASCII x
+    403 and no upstream connection; B886's denial is logged through B124. A native denial message of 130 ASCII x
     characters attempts code=1008 with exactly 120 x characters. Do not require that reason in the HTTP response.
   proof:
   - case-realtime-model-denied-403
@@ -165,7 +170,18 @@ dod:
     event message empty. Sixty-four é characters remain whole in the event; close reason contains sixty-one é
     characters (122 bytes). Failed sends and failed closes each log debug and still execute the flag-based
     cleanup. B012 owns LITELLM_DISABLE_REDACT_SECRETS; true passes the original message unchanged.
-  proof: [internal-failure]
+    The HTTP transcript also configures an authorized model whose resolved provider has no realtime handler;
+    expect an accepted 101 handshake followed by server_error and close 1011, with no provider connection.
+    Compare the error text across gateways while the native injected case pins redaction and empty-message behavior.
+  proof: [internal-failure, oracle]
+- text: >-
+    realtime_query_projection_cache checks None/None ->{},model="" ->{model:""},intent="" ->{intent:""}
+    and model=a,intent=transcription ->both keys. Mutating one returned dict does not alter the next cached
+    projection. After1001 distinct pairs the first pair can be recomputed with identical values. Through
+    /v1/realtime?model=a&model=b with both models authorized, FastAPI's last model value b is selected;
+    unrelated query keys stay out of the provider request. A whitespace-only protocol list yields no
+    selected subprotocol, while commas/whitespace in guardrails produce an empty list in pre-call data.
+  proof: [query-projection, oracle]
 - text: The new gateway transcripts compare both proxies' handshakes, frame sequences and recorded upstream query parameters.
   proof:
   - new-oracle-cases
@@ -213,6 +229,9 @@ checks:
   - id: internal-failure
     why: non-handshake upstream failures omit their event, expose a default-redacted secret or skip cleanup
     run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_websocket_route::tests::upstream_internal_failure($|::)/)'
+  - id: query-projection
+    why: Empty query values, duplicate model values and cached projections must preserve their different meanings.
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_websocket_route::tests::realtime_query_projection_cache($|::)/)'
 oracle_cases:
 - tools/oracle/cases/websocket/realtime-websocket-route/realtime-connect.yaml
 - tools/oracle/cases/websocket/realtime-websocket-route/realtime-model-missing-403.yaml
@@ -224,6 +243,8 @@ oracle_cases:
 - tools/oracle/cases/websocket/realtime-websocket-route/route-aliases.yaml
 - tools/oracle/cases/websocket/realtime-websocket-route/auth-missing.yaml
 - tools/oracle/cases/websocket/realtime-websocket-route/auth-invalid.yaml
+- tools/oracle/cases/websocket/realtime-websocket-route/upstream-internal-failure.yaml
+- tools/oracle/cases/websocket/realtime-websocket-route/realtime-query-projection-cache.yaml
 deviations: []
 out_of_scope:
 - 'litellm/proxy/proxy_server.py: B124 owns showwarning L195-L198, generate_feedback_box L236-L260, _redact_worker_config_for_logging
@@ -339,8 +360,8 @@ out_of_scope:
   L11347-L11399, ProxyStartupEvent._init_dd_tracer L11402-L11424, ProxyStartupEvent._init_pyroscope L11427-L11507,
   _names_hidden_by_listing_callbacks L11511-L11524, _entries_kept_by_listing_callbacks L11527-L11535, _deployment_hidden_by_listing_callbacks
   L11538-L11542, model_list L11549-L11784, model_info L11797-L11912, _blocked_response_usage L11915-L11928, chat_completion
-  L11952-L12102, completion L12117-L12272, embeddings L12299-L12395, moderations L12410-L12507, _audio_speech_chunk_generator
-  L12510-L12519, vertex_ai_live_passthrough_endpoint L12814-L12845, _get_provider_token_counter L13824-L13876, _try_provider_token_count
+  L11952-L12102, completion L12117-L12272, embeddings L12299-L12395, moderations L12410-L12507,
+  vertex_ai_live_passthrough_endpoint L12814-L12845, _get_provider_token_counter L13824-L13876, _try_provider_token_count
   L13879-L13926, _system_message L13929-L13933, token_counter L13942-L14058, supported_openai_params L14066-L14096,
   model_info_lookup L14110-L14136, transform_request L14145-L14158, _check_if_model_is_user_added L14161-L14187,
   _check_if_model_is_team_model L14190-L14205, non_admin_all_models L14208-L14251, _add_team_models_to_all_models
@@ -382,18 +403,17 @@ out_of_scope:
   _mcp_forward_as_path L20217-L20227, _resolve_mcp_csv_tokens L20230-L20275, _is_mcp_access_group_cached L20278-L20304,
   dynamic_mcp_route L20312-L20379.'
 - 'litellm/proxy/proxy_server.py: B089 owns async_assistants_data_generator L9290-L9341, run_thread L13689-L13798.'
-- 'litellm/proxy/proxy_server.py: B083 owns audio_speech L12532-L12652, audio_transcriptions L12665-L12803.'
+- 'litellm/proxy/proxy_server.py: B083 owns _audio_speech_chunk_generator L12510-L12519, audio_speech with decorators L12522-L12652, audio_transcriptions with decorators L12655-L12803.'
 - 'litellm/proxy/proxy_server.py: B1085 owns get_assistants L13066-L13143, create_assistant L13156-L13233, delete_assistant
   L13246-L13322.'
 - 'litellm/proxy/proxy_server.py: B1086 owns create_threads L13335-L13411, get_thread L13424-L13498, add_messages
   L13511-L13589, get_messages L13602-L13676.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1011 owns live provider dispatch; B1004 owns synthetic authentication-body bytes and close errors; B2400 owns the parallel-limiter disconnect adapter. Python package exports remain B158-B161.
 pitfalls:
 - gpt-realtime-whisper is the transcription authorization default but is absent from the upstream query unless the client supplied it.
 - The first subprotocol is echoed even when it is openai-insecure-api-key.sk-test; choosing the first non-credential token changes behavior.
 - Pre-call cancellation bypasses the upstream finally block and releases only parallel capacity.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 650
   max_new_expects: 0

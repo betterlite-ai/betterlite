@@ -1,0 +1,97 @@
+id: B2433
+title: Choose Responses or chat for Messages reasoning
+description: >-
+  Extract the three whole reasoning functions at adapters/handler.py L322-L464 from B973 into
+  api::messages_reasoning_route. Normalize effort through B962 before adding responses/ to a model, infer provider
+  through B174, inspect capabilities through B205 and read auto-summary through B962. B158 owns
+  main.py::responses_api_bridge_check but has no task file; use a typed injected bridge-policy interface that
+  returns mode and rewritten model, and consume only its mode here. Record that missing owner for the architect
+  instead of rebuilding the large bridge policy in this task. B973 keeps its id and depends on this split;
+  B974 calls these helpers when assembling completion arguments.
+
+  All inputs are parsed kwargs and settings; no HTTP or new decoder is involved. Register
+  HelperCall::MessagesReasoningRoute for normalize, route and plain_effort, with independent scripted model
+  metadata/provider/bridge seams in Python. Assert the outgoing map and exact lookup arguments, including
+  failures silently ignored by these wrappers. Own 128 nonblank/non-comment physical lines including decorators;
+  allow 150 implementation, 120 tests, 105 fixtures, 90 adapters and 30 wiring, 495 total.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_reasoning_route.rs
+  - crates/betterlite-core/src/api/messages_reasoning_route/**
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/messages_reasoning_route.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_reasoning_route.py
+  - tools/oracle/cases/helpers/messages-reasoning-route/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_reasoning_route-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L322-L464
+  why: Own complete effort normalization, OpenAI thinking promotion and plain-chat effort recovery methods.
+dod:
+- text: >-
+    thinking_promotes_only_openai supplies provider=openai,model=openai/o3,thinking={type:enabled} and gets
+    model=openai/responses/o3; model=o3 gets the same prefix. Explicit provider overrides inference, including
+    empty string preventing promotion. Absent provider uses B174; its exception leaves the map unchanged.
+    Other providers and disabled/adaptive/non-dict thinking stay unchanged. A model whose supports_reasoning
+    is exactly false stays on chat; missing capability,empty metadata or lookup failure allows promotion.
+    Any occurrence of responses/ in the model prevents adding another prefix; empty/nonstring model is not rewritten.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    summary_options_preserve_presence uses enabled thinking and reasoning_effort=high: output is {effort:high}
+    with auto-summary off; auto-summary on adds summary=detailed; explicit truthy thinking.summary=concise wins.
+    A dict already containing summary=null or generate_summary=false is preserved, even with explicit summary.
+    A dict lacking both adds explicit truthy summary or auto detailed. Empty/nonstring effort is left unchanged.
+    Summary handling still runs when model was already prefixed; capability=false prevents both changes.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    normalize_before_route tests string max and dict {effort:max,summary:concise,extra:1} with a model supporting
+    high only; B962 returns high and other dict fields stay. Missing/null/nonstring/non-dict effort and dict without
+    effort remain unchanged. Model lookup gets the original model or "" when absent, plus custom_llm_provider;
+    it never sees a responses/ prefix introduced by this operation's later routing step.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    plain_effort_requires_chat requires truthy thinking, dict effort with a summary key (null is enough), string
+    effort including "", and nonempty string model. Missing prerequisites return null without resolution. Resolver
+    receives only string custom_llm_provider/api_base/api_key values, treating other types as null. Resolution
+    failure or litellm_proxy returns null. Bridge mode=responses retains the dict via null result; mode=chat or
+    absent mode returns the effort string. Bridge receives resolved local model/provider/base, only dict
+    web_search_options and only list tools, plus the complete reasoning dict. Bridge exceptions propagate.
+  proof: [behavior-tests, oracle, helper-python]
+- text: New reasoning-route fixtures carry the operation tag and compare real helper output with the native map updates.
+  proof: [new-cases, corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: model promotion or reasoning-map preservation has no production test
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_reasoning_route::/)'
+  - id: helper-python
+    why: the reasoning-policy comparison is absent or unchecked
+    run: test -f tools/oracle/helpers/messages_reasoning_route.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: reasoning-route input cannot pass through the shared helper decoder
+    run: grep -qE '^[[:space:]]+messages_reasoning_route:' tools/oracle/fuzz/corpus/helper_case/messages_reasoning_route-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: the policy operation has no added parity fixtures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-reasoning-route)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-reasoning-route/thinking-promotes-only-openai.yaml
+- tools/oracle/cases/helpers/messages-reasoning-route/summary-options-preserve-presence.yaml
+- tools/oracle/cases/helpers/messages-reasoning-route/normalize-before-route.yaml
+- tools/oracle/cases/helpers/messages-reasoning-route/plain-effort-requires-chat.yaml
+deviations: []
+out_of_scope:
+- B973 owns adapters/handler.py L51-L312 context-management helpers; B974 owns L466-L824 final kwargs and calls.
+- B962 owns actual effort capability fallback and the reasoning_auto_summary setting; B174/B205 own provider/model lookup.
+- B158 owns responses_api_bridge_check in main.py L1083-L1194; this task's injected mode interface does not implement that policy.
+pitfalls:
+- A present summary=null prevents auto-summary insertion but still qualifies a dict for plain-chat recovery.
+- Only thinking.type=enabled promotes OpenAI to Responses; adaptive thinking does not.
+- Inferred providers are local decisions here and are not inserted into completion_kwargs.
+review_level: standard
+budget:
+  max_changed_lines: 520
+  max_new_expects: 0

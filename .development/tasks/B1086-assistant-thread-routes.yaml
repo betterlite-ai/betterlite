@@ -1,393 +1,123 @@
 id: B1086
-title: Assistant thread routes
+title: Assistant thread and message routes
 description: >-
-  Install thread create/get and thread message create/list routes over assistant-threads/messages. Bind B052 auth
-  and source path/query/body extraction; restore managed file identifiers only through authorized supplied mappings
-  and preserve provider errors.
+  Build server::api::assistant_thread_routes for the four complete proxy functions create_threads,
+  get_thread, add_messages and get_messages. Mount POST /v1/threads and /threads; GET /v1/threads/{thread_id}
+  and /threads/{thread_id}; POST and GET /v1/threads/{thread_id}/messages and /threads/{thread_id}/messages.
+  These eight paths use single-segment thread ids, unlike B1085's catch-all assistant-delete id.
 
+  All four begin with data={} and delegate request decoration to B1103 and execution to B2489. Creating a
+  thread awaits request.body but throws its contents away: messages, metadata and tool_resources in that
+  body do not reach acreate_thread. Retrieval/listing also starts with empty data. Only add_messages parses
+  strict JSON through B2489 decode_assistant_body. Pass thread_id as an explicit SDK argument; do not merge
+  it over a body key of the same name. Schedule B012 request status on success, project B004 headers, and
+  await B012 failure hooks on errors; no post-call success hook is present in these handlers.
 
-  Implement crates/betterlite-server/src/api/assistant_thread_routes.rs, crates/betterlite-core/src/api/assistant_thread_routes.rs.
-  Use AssistantThreadRoutesInput and AssistantThreadRoutesResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v1/threads; POST /threads; GET /v1/threads/{thread_id}; GET
-  /threads/{thread_id}; POST /v1/threads/{thread_id}/messages; POST /threads/{thread_id}/messages; GET /v1/threads/{thread_id}/messages;
-  GET /threads/{thread_id}/messages. Each alias is exercised through the booted proxy. Every route factory is mounted
-  once; a family composer mounts its child factories without re-registering their methods/paths.
-
-
-  Route input projections: data.litellm_call_id (absent '').
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): proxy_server.py:13363 status_code=500, exception_detail=FastAPI detail object; proxy_server.py:13450
-  status_code=500, exception_detail=FastAPI detail object; proxy_server.py:13541 status_code=500, exception_detail=FastAPI
-  detail object; proxy_server.py:13628 status_code=500, exception_detail=FastAPI detail object; proxy_server.py:13398
-  type=getattr(e, 'type', 'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'status_code', status.HTTP_400_BAD_REQUEST);
-  proxy_server.py:13406 type=getattr(e, 'type', 'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'code',
-  getattr(e, 'status_code', 500)); proxy_server.py:13485 type=getattr(e, 'type', 'None'), param=getattr(e, 'param',
-  'None'), code=getattr(e, 'status_code', status.HTTP_400_BAD_REQUEST); proxy_server.py:13493 type=getattr(e, 'type',
-  'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'code', getattr(e, 'status_code', 500)); proxy_server.py:13576
-  type=getattr(e, 'type', 'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'status_code', status.HTTP_400_BAD_REQUEST);
-  proxy_server.py:13584 type=getattr(e, 'type', 'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'code',
-  getattr(e, 'status_code', 500)); proxy_server.py:13663 type=getattr(e, 'type', 'None'), param=getattr(e, 'param',
-  'None'), code=getattr(e, 'status_code', status.HTTP_400_BAD_REQUEST); proxy_server.py:13671 type=getattr(e, 'type',
-  'None'), param=getattr(e, 'param', 'None'), code=getattr(e, 'code', getattr(e, 'status_code', 500)). Compare the
-  actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions thread_create_route, thread_get_route, thread_message_create_route,
-  thread_message_list_route, route_aliases, auth_missing, auth_invalid under api::assistant_thread_routes::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-server::api::assistant_thread_routes::decode_assistant_thread_route(bytes:
-  &[u8], limits: &ApiLimits), for orjson.loads input body at litellm/proxy/proxy_server.py:13527. Place its implementation
-  in crates/betterlite-server/src/api/assistant_thread_routes.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-server/fuzz/fuzz_targets/assistant_thread_routes.rs passes arbitrary bounded bytes to
-  that exact decoder; api::assistant_thread_routes::tests::replays_corpus replays newly committed seeds through
-  the same function. Transform-only helpers reuse the already decoded records.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/proxy_server.py: create_threads (L13335-L13411); litellm/proxy/proxy_server.py:
-  get_thread (L13424-L13498); litellm/proxy/proxy_server.py: add_messages (L13511-L13589); litellm/proxy/proxy_server.py:
-  get_messages (L13602-L13676). Abstract/protocol declarations map to native types and synchronous/async wrappers
-  share one implementation; a partial function span is the explicit preparation/transition stage described above,
-  with typed values passed to the following stage.
-
-
-  Sizing: 286 owned nonblank/non-comment/non-docstring Python lines (302 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 306 implementation,
-  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 570 total within the 570-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1056 (Assistant threads), B1057 (Assistant
-  messages), B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1103 (Authenticated
-  request preparation), B1137 (Request intake and safe snapshots), B003 (HTTP server, health routes and master key
-  auth), B756 (Authentication header selection and mode dispatch), B1139 (Stateful HTTP oracle scenarios), B856
-  (Management oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Ownership includes decorators at proxy_server.py:13325-13676, 302 nonblank/non-comment lines. The SDK
+  functions live wholly in B1056/B1057 and are not owned here. Budget 205 routes, 185 behavioral tests,
+  225 HTTP fixtures, 40 hook fixtures and 25 corpus seeds, 680 lines. Exercise actual provider HTTP through
+  the booted proxies with a fixed test master key and assistant_settings; no helper case invokes a handler.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/api/assistant_thread_routes.rs
-  - crates/betterlite-server/src/api/assistant_thread_routes/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/assistant_thread_routes.rs
-  - crates/betterlite-core/src/api/assistant_thread_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-server/fuzz/Cargo.toml
-  - crates/betterlite-server/fuzz/fuzz_targets/assistant_thread_routes.rs
-  - crates/betterlite-server/fuzz/corpus/assistant_thread_routes/**
+  - crates/betterlite-server/src/api/assistant_thread_routes.rs
+  - crates/betterlite-server/src/api/assistant_thread_routes/**
+  - crates/betterlite-server/fuzz/corpus/assistant_body/message-*
   - tools/oracle/cases/api/assistant-thread-routes/**
   - tools/oracle/fixtures/assistant-thread-routes/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13325-L13677
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13325-L13676
-  why: Shared dependency/call-site context; ownership is only the callable list above.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: All eight decorators and complete thread/message handlers, including the discarded create-thread body and explicit thread_id calls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4385
+  why: ProxyException stringifies a null code and distinguishes missing type/param attributes from explicit nulls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2079
+  why: A failed status-code conversion ends in the shared internal_server_error response, not the provider's original status.
 dod:
-- text: 'thread create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-create-route
-  - oracle
-- text: 'thread get route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thread-get-route
-  - oracle
-- text: 'thread message create route: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-thread-message-create-route
-  - oracle
-- text: 'thread message list route: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-thread-message-list-route
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    thread_and_message_aliases makes authenticated requests through all eight paths. Mock create/get thread
+    returns {id:thread_a,object:thread,created_at:1,metadata:{}} with 200. Add-message sends content=hello,
+    role=user,metadata={turn:first},attachments=[] and returns msg_a unchanged with 200. Omitting role
+    raises TypeError before HTTP: 500,type="None",param="None",code="500", message naming missing required
+    argument 'role'; neither this handler nor B1057 supplies a role default. List returns the mock
+    object=list,data=[msg_a],has_more=false page with 200.
+    Capture provider /v1/threads, /v1/threads/thread_a and /v1/threads/thread_a/messages methods and bodies.
+    GET /threads/folder/thread_a is an unmatched route, not a request for a slash-containing thread id.
+  proof: [thread-tests, oracle]
+- text: >-
+    create_thread_discards_body sends {messages:[{role:user,content:ignored}],metadata:{tag:ignored},
+    tool_resources:{code_interpreter:{file_ids:[file_a]}},custom_llm_provider:azure}. OpenAI configured in
+    assistant_settings still receives its default empty thread creation, with none of these supplied values.
+    A JSON scalar body also remains ignored once authentication succeeds. SDK thread creation with messages
+    is tested by B1056; adding it to this proxy handler would change the pinned behavior.
+  proof: [thread-tests, oracle]
+- text: >-
+    message_list_drops_query sends ?limit=1&order=asc&after=msg_a&before=msg_z and a valid body with those
+    keys. The provider still gets order=desc&limit=20 and neither cursor, B1057's defaults. Thread GET body
+    {thread_id:other} is ignored. Query api-version is retained only by B1103's authenticated preparation,
+    not by pagination parsing invented in this task. These discarded arguments produce no warning.
+  proof: [thread-tests, oracle]
+- text: >-
+    message_body_and_path_collision posts {thread_id:other,content:hello} and {thread_id:null,content:hello}
+    to /threads/thread_a/messages. Both fail before provider HTTP with TypeError for multiple values of
+    keyword argument 'thread_id', producing 500,type="None",param="None",code="500". Truncated { and
+    empty message bodies produce the same envelope with orjson's respective "unexpected end of data:
+    line 1 column 2 (char 1)" and "Input is a zero-length, empty document: line 1 column 1 (char 0)"
+    messages. Valid null/[] reaches request setup and fails there instead of becoming an empty object.
+    Add collision, duplicate content keys and malformed bytes to B2489's decoder corpus.
+  proof: [thread-tests, oracle, message-corpus]
+- text: >-
+    thread_route_failure_envelopes exercises each handler with llm_router absent: zero provider requests,
+    HTTP 500,type="None",param="None",code="500",message="{'error': 'No models configured on proxy'}".
+    An HTTPException(403,detail=denied) raised from a hook becomes 403,message=denied,type="None",
+    param="None",code="403". For a normal exception, code attribute wins over status_code even when
+    null: numeric code=409,status_code=502 gives HTTP 409,code="409"; absent code gives 502,code="502".
+    With the async SDK's mapped 404 and code=null, the final status conversion fails and yields HTTP 500,
+    {error:{message:"Internal server error",type:internal_server_error}}, with param/code absent. A plain
+    exception without any attributes uses 500/type="None"/param="None"/code="500" and its string message.
+  proof: [thread-tests, oracle]
+- text: >-
+    thread_response_metadata invokes the actual header helper with hidden model_id=deployment_a,
+    cache_key=cache_a,api_base=https://provider.test/v1?key=secret and principal allowed_model_region=eu.
+    Expect x-litellm-model-id=deployment_a,x-litellm-cache-key=cache_a,x-litellm-model-region=eu and
+    x-litellm-model-api-base=https://provider.test/v1. Null/empty hidden entries omit their headers; version
+    and request call-id use B004's public x-litellm names. Success schedules update_request_status with
+    status=success,call id from data or ""; no success hook runs. Every caught failure invokes the failure
+    hook with current data, logs the handler error and debug traceback, and does not schedule success.
+  proof: [thread-tests, oracle]
+- text: >-
+    thread_routes_require_auth covers missing/invalid credentials on all eight aliases with a configured
+    master key: 401,authentication_error,param=null,code="401", zero provider requests. A valid key sends
+    the same request successfully. Shared auth policy and sanitized message text belong to B003/B732.
+  proof: [thread-tests, oracle]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_thread_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-thread-create-route
-    why: the thread-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::thread_create_route($|::)/)'
-  - id: case-thread-get-route
-    why: the thread-get-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::thread_get_route($|::)/)'
-  - id: case-thread-message-create-route
-    why: the thread-message-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::thread_message_create_route($|::)/)'
-  - id: case-thread-message-list-route
-    why: the thread-message-list-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::thread_message_list_route($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::auth_invalid($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/assistant_thread_routes)"
-      && test -f crates/betterlite-server/fuzz/fuzz_targets/assistant_thread_routes.rs && grep -qF "decode_assistant_thread_route"
-      crates/betterlite-server/fuzz/fuzz_targets/assistant_thread_routes.rs && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::replays_corpus$/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/assistant-thread-routes)"
+  - id: thread-tests
+    why: thread creation consumes a body the source drops, or message routing loses a path/collision/error case
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_thread_routes::tests::/) - test(/::replays_corpus$/)'
+  - id: message-corpus
+    why: message body bytes are not replayed through the decoder used by the route
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/assistant_body/message-*)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/api/assistant-thread-routes/thread-create-route.yaml
-- tools/oracle/cases/api/assistant-thread-routes/thread-get-route.yaml
-- tools/oracle/cases/api/assistant-thread-routes/thread-message-create-route.yaml
-- tools/oracle/cases/api/assistant-thread-routes/thread-message-list-route.yaml
-- tools/oracle/cases/api/assistant-thread-routes/route-aliases.yaml
-- tools/oracle/cases/api/assistant-thread-routes/auth-missing.yaml
-- tools/oracle/cases/api/assistant-thread-routes/auth-invalid.yaml
+- tools/oracle/cases/api/assistant-thread-routes/thread-and-message-aliases.yaml
+- tools/oracle/cases/api/assistant-thread-routes/create-discards-body.yaml
+- tools/oracle/cases/api/assistant-thread-routes/message-list-drops-query.yaml
+- tools/oracle/cases/api/assistant-thread-routes/message-body-and-path-collision.yaml
+- tools/oracle/cases/api/assistant-thread-routes/failure-envelopes.yaml
+- tools/oracle/cases/api/assistant-thread-routes/response-metadata.yaml
+- tools/oracle/cases/api/assistant-thread-routes/require-auth.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/proxy_server.py: B124 owns showwarning L195-L198, generate_feedback_box L236-L260, _redact_worker_config_for_logging
-  L997-L1015, cleanup_router_config_variables L1055-L1092, flush_spend_counters_on_shutdown L1095-L1103, _flush_spend_logs_queue_on_shutdown
-  L1106-L1119, proxy_shutdown_event L1122-L1167, _initialize_shared_aiohttp_session L1182-L1219, _connect_to_count_stored_values
-  L1222-L1227, proxy_startup_event L1231-L1645, _generate_stable_operation_id L1648-L1653, _strip_operation_id_method_suffix
-  L1677-L1681, ensure_unique_openapi_operation_ids L1684-L1728, _inject_websocket_stubs_into_openapi_schema L1762-L1803,
-  get_openapi_schema L1806-L1846, custom_openapi L1849-L1878, openai_exception_handler L1893-L1910, otlp_http_exception_handler
-  L1914-L1919, _log_model_access_denial L1922-L1925, _close_dangling_otel_server_span L1928-L1963, management_problem_exception_handler
-  L1967-L1969, _UserTeamsRow.teams L2001-L2001, _config_param_table L2007-L2010, otel_request_validation_exception_handler
-  L2035-L2046, otel_unhandled_exception_handler L2050-L2080, _get_cors_config L2086-L2122, _dir_has_content L2135-L2139,
-  _validate_ui_directory L2141-L2164, _is_ui_pre_restructured L2166-L2209, _try_populate_ui_directory L2211-L2230,
-  _restructure_ui_html_files L2373-L2397, mount_swagger_ui L2477-L2558, root_redirect L2568-L2569, general_settings_view
-  L2600-L2601, _gateway_request_redis_buffer L2664-L2670, _resolve_typed_dict_type L2690-L2702, _resolve_pydantic_type
-  L2705-L2716, load_from_azure_key_vault L2719-L2745, cost_tracking L2751-L2759, _drain_spend_event_producer_on_shutdown
-  L2762-L2766, _fail_closed_budget_enforcement L2774-L2775, _raise_budget_unverifiable L2778-L2794, get_current_spend
-  L2797-L2875, _repair_stale_spend_counter L2878-L2912, reseed_spend_counter_from_db L2915-L2936, _floor_spend_from_db
-  L2939-L2959, _authoritative_floor_spend L2962-L2995, read_spend_counter_cache_value L2998-L3020, _read_spend_counter_estimate
-  L3023-L3042, increment_spend_counters L3045-L3093, _increment_spend_counters_batched L3096-L3346, _reconcile_budget_reservation_for_counter_update
-  L3358-L3391, _prepare_end_user_and_tag_spend_increments L3394-L3429, _prepare_model_access_group_spend_increments
-  L3432-L3462, _prepare_org_spend_increment L3465-L3479, _prepare_project_spend_increment L3482-L3496, _prepare_unreserved_spend_counter_increment
-  L3499-L3512, _prepare_spend_counter_increment L3515-L3541, _enqueue_window_spend_row_update L3544-L3590, _prepare_window_spend_counter_increment
-  L3593-L3617, _ensure_spend_counter_initialized L3620-L3637, _get_source_cache_base_spend L3640-L3651, _ensure_window_spend_counter_initialized
-  L3654-L3680, _is_spend_counter_cache_warm L3683-L3711, increment_spend_counter L3714-L3718, refresh_spend_counter_ttl
-  L3721-L3728, _increment_spend_counter_cache L3731-L3751, _invalidate_spend_counter L3754-L3765, _apply_spend_counter_increments
-  L3768-L3776, _defer_spend_counter_increments L3779-L3792, _settle_spend_counter_increment L3795-L3811, increment_spend_counters_pipeline
-  L3814-L3823, run_spend_counter_pipeline L3826-L3850, update_cache_read_keys L3853-L3866, arm_update_cache_read
-  L3872-L3881, _take_armed_update_cache_read L3884-L3892, _read_update_cache_values L3895-L3920, update_cache L3923-L4223,
-  run_ollama_serve L4226-L4236, _get_process_rss_mb L4239-L4252, _rss_mb_for_log L4255-L4259, _run_direct_health_check_with_instrumentation
-  L4265-L4297, _window_gated_health_check_db_save L4300-L4332, _schedule_background_health_check_db_save L4335-L4364,
-  _get_endpoint_exception_status L4367-L4378, _write_health_state_to_router_cache L4381-L4466, _adaptive_router_flusher_loop
-  L4472-L4500, _run_background_health_check L4503-L4678, _is_remote_module_url L4715-L4716, _scrub_guardrail_inner
-  L4719-L4736, _scrub_db_overlay_remote_module_loads L4739-L4836, _normalize_user_url_validation L4839-L4844, _apply_ssrf_general_settings
-  L4847-L4858, _set_redis_usage_cache L4861-L4864, _resolve_coordination_redis_env_refs L4867-L4872, _build_redis_usage_cache
-  L4875-L4891, _environment_has_redis_connection_target L4894-L4907, _build_redis_usage_cache_from_environment L4910-L4923,
-  _attach_redis_usage_cache L4926-L4962, resolve_routing_plugins L4965-L5000, resolve_complexity_router_plugins
-  L5003-L5028, validate_deployment_max_agentic_loops L5031-L5051, validate_deployment_complexity_router_placement
-  L5054-L5073, validate_deployment_access_windows L5076-L5089, validate_auto_router_capability_limits L5092-L5113,
-  pin_complexity_router_model_id L5116-L5135, resolve_classifier_plugin L5138-L5158, _swap_in_model_cost_map L5161-L5164,
-  _websearch_handler_params L5167-L5180, should_load_db_object L5183-L5205, _ConfigWithBaseline.__init__ L5237-L5241,
-  _ConfigWithBaseline.baseline L5244-L5245, _ConfigWithBaseline.update_baseline L5247-L5248, _as_settings_mapping
-  L5257-L5260, _get_field_default L5263-L5266, _pass_through_endpoints_beside_db L5269-L5276, _with_config_file_pass_through_endpoints
-  L5279-L5292, _reload_settings_store L5295-L5300, _bind_general_settings_store L5303-L5305, _current_general_settings
-  L5308-L5310, _cleanup_schedule_of L5323-L5324, _log_ignored_cost_map_copy L5328-L5334, _callback_list_entries
-  L5349-L5350, _registered_callback_entries L5353-L5354, _entries_missing_from L5357-L5361, _restore_displaced_callback
-  L5370-L5373, _unregister_db_callback L5376-L5382, _configured_db_callbacks L5385-L5389, ProxyConfig.__init__ L5397-L5433,
-  ProxyConfig._load_yaml_settings_stores L5435-L5437, ProxyConfig._config_with_resolved_settings L5439-L5451, ProxyConfig._apply_resolved_runtime_settings
-  L5453-L5456, ProxyConfig.is_yaml L5458-L5463, ProxyConfig._load_yaml_file L5465-L5473, ProxyConfig._get_config_from_file
-  L5475-L5509, ProxyConfig._process_includes L5511-L5540, ProxyConfig.save_config L5542-L5588, ProxyConfig._save_changed_config_section
-  L5590-L5627, ProxyConfig.reject_config_owned_deletes L5629-L5636, ProxyConfig.reject_config_owned_writes L5638-L5646,
-  ProxyConfig._raise_config_owned L5648-L5672, ProxyConfig._upsert_changed_config_section L5674-L5712, ProxyConfig.save_environment_variables
-  L5714-L5746, ProxyConfig._check_for_os_environ_vars L5748-L5770, ProxyConfig._resolved_config_value L5772-L5787,
-  ProxyConfig._initialize_secret_manager_from_raw_config L5789-L5830, ProxyConfig._get_team_config L5832-L5843,
-  ProxyConfig.load_team_config L5845-L5860, ProxyConfig._init_coordination_redis L5862-L5896, ProxyConfig._init_coordination_redis_env_fallback
-  L5899-L5953, ProxyConfig._init_cache L5955-L5999, ProxyConfig.switch_on_llm_response_caching L6001-L6012, ProxyConfig.get_config
-  L6014-L6076, ProxyConfig.update_config_state L6078-L6079, ProxyConfig.get_config_state L6081-L6095, ProxyConfig.load_credential_list
-  L6097-L6105, ProxyConfig.parse_search_tools L6107-L6160, ProxyConfig._load_environment_variables L6181-L6220,
-  ProxyConfig._warn_on_misplaced_jwt_keys L6222-L6233, ProxyConfig.load_config L6235-L7044, ProxyConfig._init_non_llm_configs
-  L7046-L7098, ProxyConfig._init_policy_engine L7100-L7138, ProxyConfig._load_alerting_settings L7140-L7177, ProxyConfig.initialize_secret_manager
-  L7179-L7239, ProxyConfig.get_model_info_with_id L7241-L7277, ProxyConfig._delete_deployment L7279-L7362, ProxyConfig._resolve_db_litellm_param
-  L7364-L7371, ProxyConfig._add_deployment L7373-L7413, ProxyConfig.decrypt_model_list_from_db L7415-L7441, ProxyConfig._update_llm_router
-  L7443-L7518, ProxyConfig._add_callback_from_db_to_in_memory_litellm_callbacks L7520-L7543, ProxyConfig._add_callbacks_from_db_config
-  L7545-L7559, ProxyConfig._register_db_config_callback L7561-L7573, ProxyConfig._encrypt_env_variables L7575-L7583,
-  ProxyConfig._decrypt_and_set_db_env_variables L7585-L7612, ProxyConfig._decrypt_db_variables L7614-L7622, ProxyConfig._encrypt_env_variables_for_db
-  L7624-L7643, ProxyConfig._parse_router_settings_value L7646-L7671, ProxyConfig.get_hierarchical_router_settings
-  L7673-L7679, ProxyConfig._get_hierarchical_router_settings L7681-L7725, ProxyConfig._add_router_settings_from_db_config
-  L7727-L7745, ProxyConfig._apply_router_settings L7748-L7759, ProxyConfig._reschedule_spend_log_cleanup_job L7761-L7801,
-  ProxyConfig._spend_log_cleanup_trigger L7803-L7831, ProxyConfig._update_general_settings L7833-L7847, ProxyConfig._resolved_cleanup_schedule
-  L7849-L7850, ProxyConfig.record_cleanup_schedule_attempt L7852-L7853, ProxyConfig._apply_general_settings_side_effects
-  L7855-L7871, ProxyConfig._apply_alerting_settings L7873-L7894, ProxyConfig._apply_pass_through_settings L7896-L7902,
-  ProxyConfig._publish_pass_through_endpoints L7904-L7907, ProxyConfig._serve_pass_through_endpoints L7909-L7911,
-  ProxyConfig._apply_boolean_settings L7913-L7922, ProxyConfig._apply_cache_size_setting L7924-L7949, ProxyConfig._apply_store_model_in_db_setting
-  L7951-L7961, ProxyConfig._apply_retention_settings L7963-L7995, ProxyConfig._apply_ssrf_settings L7997-L7998,
-  ProxyConfig._update_config_from_db L8000-L8030, ProxyConfig._warn_about_shadowed_db_settings L8032-L8040, ProxyConfig._prepared_db_settings_values
-  L8042-L8056, ProxyConfig._apply_litellm_settings_db_values L8058-L8062, ProxyConfig._should_load_db_object L8064-L8065,
-  ProxyConfig.remove_auto_router_catalog_entries L8067-L8071, ProxyConfig._get_models_from_db L8073-L8099, ProxyConfig.add_deployment
-  L8101-L8130, ProxyConfig._add_deployment_locked L8132-L8187, ProxyConfig.start_config_sync_subscriber L8189-L8206,
-  ProxyConfig.stop_config_sync_subscriber L8208-L8216, ProxyConfig.start_auth_cache_invalidation_subscriber L8218-L8231,
-  ProxyConfig.stop_auth_cache_invalidation_subscriber L8233-L8241, ProxyConfig._init_non_llm_objects_in_db L8243-L8301,
-  ProxyConfig._apply_safe_litellm_settings_overrides_from_db L8303-L8309, ProxyConfig._init_semantic_filter_settings_in_db
-  L8311-L8373, ProxyConfig.init_websearch_interception_settings_in_db L8375-L8433, ProxyConfig._init_sso_settings_in_db
-  L8435-L8458, ProxyConfig._init_hashicorp_vault_config_override L8460-L8518, ProxyConfig._init_cyberark_config_override
-  L8520-L8576, ProxyConfig.check_periodic_reloads L8578-L8586, ProxyConfig._check_and_reload_model_cost_map L8588-L8634,
-  ProxyConfig._check_and_reload_anthropic_beta_headers L8636-L8731, ProxyConfig._get_prompt_spec_for_db_prompt L8733-L8747,
-  ProxyConfig._init_prompts_in_db L8749-L8793, ProxyConfig._init_guardrails_in_db L8795-L8832, ProxyConfig._init_policies_in_db
-  L8834-L8856, ProxyConfig._init_tool_policy_in_db L8858-L8870, ProxyConfig._init_vector_stores_in_db L8872-L8889,
-  ProxyConfig._init_vector_store_indexes_in_db L8891-L8913, ProxyConfig._init_mcp_servers_in_db L8915-L8951, ProxyConfig.init_mcp_servers_from_db
-  L8953-L8955, ProxyConfig.reload_mcp_servers_from_db L8957-L8980, ProxyConfig._init_agents_in_db L8982-L8995, ProxyConfig._init_search_tools_in_db
-  L8997-L9037, ProxyConfig.reload_search_tools_from_db L9039-L9057, ProxyConfig._merge_config_and_db_search_tools
-  L9060-L9072, ProxyConfig._init_pass_through_endpoints_in_db L9074-L9079, ProxyConfig.decrypt_credentials L9081-L9092,
-  ProxyConfig.delete_credentials L9094-L9113, ProxyConfig.get_credentials L9115-L9125, save_worker_config L9131-L9134,
-  initialize_from_worker_config L9140-L9142, initialize L9145-L9276, data_generator L9280-L9287, _get_client_requested_model_for_streaming
-  L9344-L9356, _is_positive_int_like L9359-L9363, _should_include_fallback_errors L9366-L9369, _get_streaming_fallback_metadata
-  L9372-L9386, _format_fallback_metadata_sse_event L9389-L9407, _restamp_streaming_chunk_model L9410-L9473, _fast_serialize_simple_model_response_stream
-  L9476-L9551, _serialize_streaming_chunk L9554-L9560, _is_injected_stream_usage_artifact L9563-L9568, _is_empty_streaming_choice
-  L9571-L9579, _apply_streaming_chunk_hooks L9582-L9600, _format_streaming_sse_chunk L9603-L9606, _pop_complete_sse_frame
-  L9614-L9623, _iter_with_keepalive L9634-L9682, _keepalive_from_deployment_config L9690-L9732, _is_explicit_keepalive_disable
-  L9735-L9741, _resolve_keepalive_seconds L9744-L9785, _make_keepalive_resolver L9791-L9827, async_data_generator
-  L9830-L10079, select_data_generator L10082-L10096, _pricing_override_stamps L10099-L10105, get_litellm_model_info
-  L10108-L10119, on_backoff L10122-L10124, giveup L10127-L10140, ProxyStartupEvent._attach_router_to_prompt_injection_detectors
-  L10145-L10150, ProxyStartupEvent.refresh_model_info L10153-L10155, ProxyStartupEvent._warn_budget_without_db L10158-L10168,
-  ProxyStartupEvent._warn_fail_closed_rate_limits_without_redis L10171-L10182, ProxyStartupEvent._initialize_startup_logging
-  L10185-L10195, ProxyStartupEvent._warn_if_mock_testing_params_enabled L10198-L10226, ProxyStartupEvent._validate_redis_transaction_buffer_config
-  L10229-L10256, ProxyStartupEvent._init_coordination_redis_from_db L10259-L10298, ProxyStartupEvent._get_transaction_buffer_redis_cache
-  L10301-L10321, ProxyStartupEvent._initialize_semantic_tool_filter L10324-L10354, ProxyStartupEvent._initialize_jwt_auth
-  L10357-L10388, ProxyStartupEvent._add_proxy_budget_to_db L10391-L10396, ProxyStartupEvent._upsert_proxy_budget_with_reset_at_backfill
-  L10399-L10449, ProxyStartupEvent._warm_global_spend_cache L10452-L10466, ProxyStartupEvent._update_default_team_member_budget
-  L10469-L10484, ProxyStartupEvent._sync_ui_settings_to_general_settings L10487-L10493, ProxyStartupEvent._load_heuristic_v1_tuning_baselines
-  L10496-L10540, ProxyStartupEvent.enforce_heuristic_v1_tuning_baseline L10543-L10560, ProxyStartupEvent.initialize_scheduled_background_jobs
-  L10563-L10990, ProxyStartupEvent._initialize_spend_tracking_background_jobs L10993-L11110, ProxyStartupEvent._initialize_expired_ui_session_key_cleanup_background_job
-  L11113-L11168, ProxyStartupEvent._initialize_spend_capture_rate_check_job L11171-L11219, ProxyStartupEvent._spend_capture_rate_check_settings
-  L11222-L11226, ProxyStartupEvent._initialize_slack_alerting_jobs L11229-L11344, ProxyStartupEvent._setup_prisma_client
-  L11347-L11399, ProxyStartupEvent._init_dd_tracer L11402-L11424, ProxyStartupEvent._init_pyroscope L11427-L11507,
-  _names_hidden_by_listing_callbacks L11511-L11524, _entries_kept_by_listing_callbacks L11527-L11535, _deployment_hidden_by_listing_callbacks
-  L11538-L11542, model_list L11549-L11784, model_info L11797-L11912, _blocked_response_usage L11915-L11928, chat_completion
-  L11952-L12102, completion L12117-L12272, embeddings L12299-L12395, moderations L12410-L12507, _audio_speech_chunk_generator
-  L12510-L12519, vertex_ai_live_passthrough_endpoint L12814-L12845, _get_provider_token_counter L13824-L13876, _try_provider_token_count
-  L13879-L13926, _system_message L13929-L13933, token_counter L13942-L14058, supported_openai_params L14066-L14096,
-  model_info_lookup L14110-L14136, transform_request L14145-L14158, _check_if_model_is_user_added L14161-L14187,
-  _check_if_model_is_team_model L14190-L14205, non_admin_all_models L14208-L14251, _add_team_models_to_all_models
-  L14254-L14297, _add_access_group_models_to_team_models L14300-L14356, get_all_team_models L14359-L14404, _resolve_model_grant_to_deployment_ids
-  L14407-L14430, get_direct_access_models L14433-L14453, _filter_models_to_user_accessible L14456-L14463, _populate_team_access_on_models
-  L14466-L14519, get_all_team_and_direct_access_models L14522-L14537, _enrich_model_info_with_litellm_data L14540-L14610,
-  _get_caller_byok_team_scope L14613-L14647, _byok_row_outside_caller_teams L14650-L14661, _fetch_db_models_for_search
-  L14671-L14735, _apply_search_filter_to_models L14738-L14852, _normalize_datetime_for_sorting L14855-L14894, _sort_models
-  L14897-L14983, _is_auto_router_model L14986-L14999, _model_in_access_group L15002-L15007, _matches_model_info_filters
-  L15010-L15020, _paginate_models_response L15023-L15065, _team_models_resolve_to_names L15068-L15076, _load_team_object_for_model_filter
-  L15079-L15091, _gather_team_accessible_model_ids L15094-L15142, _authorize_team_id_query L15145-L15182, _filter_models_by_team_id
-  L15185-L15249, _find_model_by_id L15252-L15292, model_info_v2 L15300-L15529, model_streaming_metrics L15539-L15661,
-  model_metrics L15671-L15776, model_metrics_slow_responses L15786-L15865, model_metrics_exceptions L15875-L15953,
-  _deployment_matches_allowed_model_names L15956-L15969, _get_v1_model_info_allowed_model_names L15972-L16001, _filter_v1_model_info_deployments
-  L16004-L16010, _translate_model_name_for_response L16013-L16037, _get_proxy_model_info L16040-L16041, _model_info_json_response
-  L16044-L16048, model_info_v1 L16061-L16275, model_deprecations L16290-L16317, _get_model_group_info L16320-L16351,
-  model_group_info L16359-L16581, model_settings L16591-L16611, _nested_setting_source L16617-L16630, alerting_settings
-  L16640-L16754, async_queue_request L16764-L16884, fallback_login L16888-L16910, login L16914-L17003, login_v2
-  L17007-L17066, login_v3 L17072-L17142, login_v3_exchange L17146-L17206, onboarding L17210-L17303, _get_onboarding_claims_from_request
-  L17306-L17340, _rollback_onboarding_invite_claim L17343-L17363, _generate_onboarding_ui_session_token L17366-L17408,
-  claim_onboarding_link L17412-L17552, get_logo_url L17556-L17570, _serve_custom_ui_logo L17573-L17593, get_image
-  L17597-L17668, get_favicon L17672-L17701, new_invitation L17714-L17775, invitation_info L17785-L17820, invitation_update
-  L17830-L17877, invitation_delete L17887-L17950, update_config L17960-L18171, _preserve_redacted_plugin_keys L18225-L18255,
-  update_config_general_settings L18264-L18370, _is_secret_general_setting_field L18373-L18374, _redact_secret_values_in_obj
-  L18384-L18399, _redact_config_param_value_for_logging L18402-L18407, _redact_general_setting_value L18410-L18417,
-  _dump_redacted_config L18420-L18429, create_config_audit_log L18432-L18458, _redact_callback_env_vars L18473-L18485,
-  _apply_callback_role_gate L18488-L18491, _apply_alerting_env_role_gate L18499-L18502, _apply_webhook_role_gate
-  L18505-L18508, _declared_general_setting L18511-L18522, get_config_general_settings L18532-L18585, _general_settings_ui_litellm_default
-  L18651-L18657, _validate_general_settings_ui_litellm_value L18660-L18696, _persist_general_settings_ui_litellm_field
-  L18699-L18712, _reset_general_settings_ui_litellm_field L18715-L18725, get_config_list L18734-L18901, delete_config_general_settings
-  L18910-L18988, delete_callback L18997-L19078, _normalize_callback_alias L19081-L19091, _callback_module_name L19094-L19099,
-  _is_litellm_internal_callback L19102-L19107, _is_instance_of_configured_callback L19110-L19118, _hidden_runtime_callback_names
-  L19121-L19138, get_config L19147-L19306, config_yaml_endpoint L19315-L19332, reload_model_cost_map L19341-L19400,
-  schedule_model_cost_map_reload L19409-L19449, cancel_model_cost_map_reload L19458-L19489, get_model_cost_map_reload_status
-  L19498-L19531, get_model_cost_map_source L19540-L19582, reload_anthropic_beta_headers L19594-L19658, schedule_anthropic_beta_headers_reload
-  L19667-L19718, cancel_anthropic_beta_headers_reload L19727-L19763, get_anthropic_beta_headers_reload_status L19772-L19857,
-  home L19861-L19862, get_adaptive_router_state L19870-L19897, get_routes L19901-L19921, _stream_mcp_asgi_response
-  L20042-L20111, proxy_mcp_route L20123-L20141, aggregate_mcp_route L20148-L20164, toolset_mcp_route L20173-L20214,
-  _mcp_forward_as_path L20217-L20227, _resolve_mcp_csv_tokens L20230-L20275, _is_mcp_access_group_cached L20278-L20304,
-  dynamic_mcp_route L20312-L20379.'
-- 'litellm/proxy/proxy_server.py: B089 owns async_assistants_data_generator L9290-L9341, run_thread L13689-L13798.'
-- 'litellm/proxy/proxy_server.py: B083 owns audio_speech L12532-L12652, audio_transcriptions L12665-L12803.'
-- 'litellm/proxy/proxy_server.py: B1125 owns _realtime_query_params_template L12856-L12866, _release_realtime_budget_reservation
-  L12869-L12876, _release_realtime_max_parallel_slot L12879-L12883, _reject_realtime_session L12886-L12905, realtime_websocket_endpoint
-  L12911-L13045.'
-- 'litellm/proxy/proxy_server.py: B1085 owns get_assistants L13066-L13143, create_assistant L13156-L13233, delete_assistant
-  L13246-L13322.'
-- 'litellm/assistants/main.py: B1130 owns aget_assistants L38-L70, get_assistants L73-L190, adelete_assistant L374-L407,
-  delete_assistant L410-L520.'
-- 'litellm/assistants/main.py: B1055 owns acreate_assistants L193-L227, create_assistants L230-L371.'
-- 'litellm/assistants/main.py: B1056 owns acreate_thread L526-L554, create_thread L557-L690, aget_thread L693-L726,
-  get_thread L729-L835.'
-- 'litellm/assistants/main.py: B1057 owns a_add_message L841-L889, add_message L892-L1011, aget_messages L1014-L1054,
-  get_messages L1057-L1161.'
-- 'litellm/assistants/main.py: B089 owns arun_thread_stream L1165-L1171, arun_thread L1174-L1228, run_thread_stream
-  L1231-L1236, run_thread L1239-L1365.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B2489 owns dispatch, assistant_settings and the JSON byte decoder; SDK thread and message callables remain B1056/B1057, reached only through that dispatcher.
+- B1103 owns the complete authenticated request preparation interface, B004 response-header semantics, B012 hook/status machinery and B003 final error rendering/auth infrastructure.
+- B1085 owns assistant object handlers and B089 run handling plus its complete stream generator. Other proxy_server.py callables remain with B083 audio, B1125 realtime and B124 proxy support or their existing extracted owners.
 pitfalls:
-- data reads 'litellm_call_id' with default ''; omission and an explicit value must not collapse into one case.
-- 'proxy_server.py:13363 uses status_code=500, detail={''error'': CommonProxyErrors.no_llm_router.value}; preserve
-  this envelope rather than a family-wide error default.'
+- The POST /threads handler reads its body without decoding it, so SDK support for messages does not imply route support.
+- A body thread_id is a duplicate keyword error rather than a value overwritten by the URL.
+- These handlers prefer an existing null code attribute to status_code, exposing a sanitized 500 after error rendering fails.
 review_level: security
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 730
   max_new_expects: 0

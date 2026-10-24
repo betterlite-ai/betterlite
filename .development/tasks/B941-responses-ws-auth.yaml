@@ -1,102 +1,149 @@
 id: B941
 title: Responses ws auth
 description: >-
-  Install the two Responses WebSocket routes with the pinned query-model and first-frame auth behavior. Hand off
-  the authenticated session to the native or managed WebSocket service.
+  Implement the Responses WebSocket gateway in
+  crates/betterlite-server/src/api/responses_ws_auth.rs, its typed records in
+  crates/betterlite-core/src/api/responses_ws_auth.rs, and the matching config
+  loader and oracle fixtures. Register the handler exactly once at WEBSOCKET
+  /v1/responses and WEBSOCKET /responses; there is no /openai/v1/responses
+  decorator at the LiteLLM pin. Authorization: Bearer sk-fixed, with the
+  fixed test credential accepted by B756, completes a WebSocket handshake with
+  HTTP status 101. The dependency-owned no-credential
+  input produces pre-accept HTTP 403 detail="No API key provided" and close
+  code 1008; Authorization: Basic wrong-format produces pre-accept HTTP 403
+  detail="Invalid Authorization header format" and close code 1008. Those
+  dependency responses have no WebSocket JSON type, param, or code. Exercise
+  them through the booted gateway; do not copy B756's Authorization, api-key,
+  or openai-insecure-api-key.<token> extraction.
 
+  After the handshake, wait at most 30 seconds for one text frame. A timeout
+  sends no frame and closes with 1008 reason="Timed out waiting for first
+  message". A WebSocketDisconnect returns without sending a frame or a
+  second close. Any other receive exception logs exactly "Responses WebSocket
+  error reading first message" and closes 1011 reason="Internal server error"
+  without sending a frame. Decode the received text at the owned decoder
+  boundary. For input
+  text {, send exactly one JSON text frame with outer type="error", nested
+  error.type="invalid_request_error" and nested error.message="First message
+  is not valid JSON.", then close 1008 reason="Invalid JSON in first message".
+  For input 1, input [], or input {"type":"response.done"}, send the same
+  outer and nested type values with message="First message must be a
+  response.create JSON object.", then close 1008 reason="Invalid first
+  message".
 
-  Paths are WebSocket /v1/responses and /responses. ?model= supplies the query model and skips the first-frame model-auth
-  branch; otherwise read the first response.create frame with a 30-second timeout (close 1008). Echo the first requested
-  Sec-WebSocket-Protocol. Invalid JSON/non-response.create sends invalid_request_error and closes 1008; receive/internal
-  errors close 1011. First-frame auth is skipped without master key and without enable_jwt_auth/enable_oauth2_auth/enable_oauth2_proxy_auth,
-  or for custom auth when custom_auth_run_common_checks=false. Upstream failure frame types are rate_limit_exceeded
-  for 429, invalid_request_error for other 4xx and server_error otherwise.
+  The endpoint's query parameter is model, its default is None, and its API
+  description is "The model to use for the responses WebSocket session."
+  Resolve a
+  non-empty ?model=gpt-4o before the frame; with ?model= and frame
+  {"type":"response.create","model":"frame-model"}, resolve frame-model.
+  With no non-empty query value, a truthy nested response.model wins over a
+  truthy top-level model: the frame
+  {"type":"response.create","model":"top","response":{"model":"nested"}}
+  resolves nested, while a nested model of null or "" falls back to top. A non-object response value such as
+  response=1 or response=[] is ignored and the top-level model is used; a non-object first event has no model.
+  {"type":"response.create","model":"gpt-4o"} resolves gpt-4o and the
+  complete original frame text, including whitespace and extra fields, is
+  retained for the Responses request. If neither query nor frame supplies a
+  truthy model, send outer type="error", nested type="invalid_request_error"
+  and exact message="No model provided. Supply ?model=<model> in the URL or
+  include 'model' in the first response.create event.", then close 1008
+  reason="No model provided". Query model skips only the first-frame model
+  access check; it does not skip JSON or response.create validation.
 
+  The routing-hint record has input default None, previous_response_id default
+  None, recursive response default None, and ConfigDict extra="ignore" and
+  frozen=true. From a valid frame, retain only input and
+  previous_response_id. For top-level input="top", previous_response_id=
+  "resp_top" and nested response input="nested", previous_response_id=
+  "resp_nested", pass nested and resp_nested. A nested null or absent field
+  falls back to its top-level value; absent or null values are omitted from
+  the route data. Ignore an extra key named extra="discard-me". If
+  model_validate_json rejects the routing record, for example input=7 or
+  previous_response_id=9, pass no hints and do not emit a second error frame
+  after response.create validation.
 
-  Implement crates/betterlite-server/src/api/responses_ws_auth.rs, crates/betterlite-core/src/api/responses_ws_auth.rs.
-  Use ResponsesWsAuthInput and ResponsesWsAuthResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
+  First-frame model access runs only if query model is absent, master_key is
+  present (for example master_key="sk-master"), or one of general_settings.enable_jwt_auth,
+  general_settings.enable_oauth2_auth, and
+  general_settings.enable_oauth2_proxy_auth is true. All three mode keys
+  default false. When user_custom_auth is present,
+  general_settings.custom_auth_run_common_checks defaults false and skips
+  this access check; true runs it. Cases cover absent master_key plus all
+  flags false (skip), master_key="sk-master" alone (run), each mode flag true
+  (run), custom auth plus custom_auth_run_common_checks=false (skip), and
+  custom auth plus custom_auth_run_common_checks=true (run). The helper uses
+  route=request.scope["path"] when non-empty and route="/v1/responses" when
+  the scope path is absent or empty. This task reads no environment
+  variable; B002 supplies typed settings. An exception from the access or
+  common-check call sends one frame with outer type="error", nested
+  error.type="invalid_request_error" and error.message=str(exception), with
+  no status, param, or code field, then closes 1008
+  reason="Pre-call error". If send_text itself raises, still close with that
+  code and reason. The pre-call log message is "Responses WebSocket pre-call
+  error".
 
+  Before common processing, construct the synthetic Request with scope type
+  "http", method "POST", path "/v1/responses", the WebSocket scope headers,
+  and request._url equal to websocket.url. Its body is the UTF-8 JSON bytes
+  produced from {"model": "gpt-4o"}, including the json.dumps space after the
+  colon. Call common_processing_pre_call_logic before route_request, pass
+  route_type="_aresponses_websocket", resolved model, original first_message,
+  user_api_key_dict and only non-null routing hints. The route data starts with
+  model, websocket and first_message, then includes user_api_key_dict and the
+  two hint keys. Provider execution remains with B943/B945 through the mock
+  provider.
 
-  Register exactly these routes in this task: WEBSOCKET /v1/responses; WEBSOCKET /responses. Each alias is exercised
-  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
-  re-registering their methods/paths.
+  For a raised exception, _responses_ws_failure_frame reads status_code only
+  when it is an integer other than bool: status_code=429 serializes status
+  429 and nested type="rate_limit_exceeded"; status_code=400 and 499
+  serialize nested type="invalid_request_error"; status_code=422 also maps to
+  nested type="invalid_request_error", including the default
+  BudgetExceededError value litellm.budget_exceeded_status_code=422;
+  status_code=500, 503, a missing attribute, status_code="429", and
+  status_code=True serialize status 500 and nested type="server_error". Other
+  valid integer statuses such as 300 and 600 retain status 300 or 600 and use
+  nested type="server_error". Every case has outer type="error",
+  nested message=str(exception), and no param or code field are present. The
+  failure text is sent before the failure hook, then the socket closes with
+  1011 reason="Internal server error". The raised-route log message is
+  "Responses WebSocket error". If route_request returns an Exception
+  value instead of raising it, run the failure hook and return with no failure
+  frame and no close: this is the warn-and-drop path. The owned endpoints.py
+  range performs no database write; database/cache work in auth, common
+  processing, hooks, and providers belongs to the owners listed below.
 
+  Use typed constructors with injected clock, repositories, transports,
+  logger/failure-hook seam and settings. Reuse B1087 ApiLimits and B002's YAML
+  decoder. The production byte entry point is
+  betterlite-server::api::responses_ws_auth::decode_responses_ws_auth(bytes:
+  &[u8], limits: &ApiLimits); invoke it at the first-frame boundary and from a
+  cargo-fuzz target with replay seeds. It must enforce
+  ApiLimits.max_json_bytes before JSON allocation; that bounded-input behavior
+  is the deliberate deviation below.
 
-  Extraction uses the typed path/query/body records named by the owned handler signatures.
+  Add adjacent tests.rs functions model_in_first_frame,
+  nested_model_precedence, missing_model_close, malformed_first_frame,
+  wrong_first_frame_type, query_model_skips_first_auth, first_frame_timeout,
+  first_receive_disconnect, first_receive_internal_error,
+  route_hints_retained, model_access_gates, precall_error_frame,
+  subprotocol_selection, synthetic_request_order, failure_frame_statuses,
+  returned_failure_drop, route_aliases, auth_missing, auth_invalid and
+  loads_settings under api::responses_ws_auth::tests, plus replays_corpus.
+  Assert exact frame JSON fields, absent fields, status and close codes,
+  close reasons, handshake status, selected protocol, hook order, synthetic
+  request fields, route_type and provider request. B901 gateway transcripts
+  must exercise both route aliases and the mock provider; compare handshake
+  status, protocol, direction/order, text, and close code/reason. Do not call
+  a WebSocket route from a helper oracle.
 
-
-  Write adjacent tests.rs behavior functions model_in_first_frame, missing_model_close, unauthorized_first_frame,
-  route_hints_retained, malformed_first_frame, query_model_skips_first_auth, first_frame_timeout, first_frame_wrong_type,
-  upstream_failure_frame, first_subprotocol_echo, route_aliases, auth_missing, auth_invalid under api::responses_ws_auth::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.custom_auth_run_common_checks
-  defaults to False; general_settings.enable_jwt_auth defaults to False; general_settings.enable_oauth2_auth defaults
-  to False; general_settings.enable_oauth2_proxy_auth defaults to False. No environment reads occur outside betterlite-config.
-  Test api::responses_ws_auth::tests::loads_settings uses the production Config loader and an injected environment
-  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
-  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
-  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
-  parser.
-
-
-  The production external-byte decoder is betterlite-server::api::responses_ws_auth::decode_responses_ws_auth(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input first_message at litellm/proxy/response_api_endpoints/endpoints.py:1337;
-  _ResponseCreateRoutingHints.model_validate_json input first_message at litellm/proxy/response_api_endpoints/endpoints.py:1409.
-  Place its implementation in crates/betterlite-server/src/api/responses_ws_auth.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs passes arbitrary
-  bounded bytes to that exact decoder; api::responses_ws_auth::tests::replays_corpus replays newly committed seeds
-  through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Use B901 kind: websocket transcripts with the default gateway driver against both booted proxies, comparing upstream
-  handshake status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases
-  also compare pre-accept HTTP status. No helper calls a WebSocket route function.
-
-
-  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: _read_ws_model_from_first_frame (L1316-L1384);
-  litellm/proxy/response_api_endpoints/endpoints.py: _extract_model_from_first_ws_event (L1387-L1396); litellm/proxy/response_api_endpoints/endpoints.py:
-  _routing_hints_from_first_ws_frame (L1407-L1419); litellm/proxy/response_api_endpoints/endpoints.py: _responses_ws_failure_frame
-  (L1422-L1428); litellm/proxy/response_api_endpoints/endpoints.py: _enforce_responses_ws_first_frame_model_auth
-  (L1431-L1471); litellm/proxy/response_api_endpoints/endpoints.py: responses_websocket_endpoint (L1476-L1620).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 252 owned nonblank/non-comment/non-docstring Python lines (268 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 272 implementation,
-  118 behavior tests, 156 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 42 config tests/seeds
-  and 38 wiring; 686 total within the 690-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
-  URL path encoding), B901 (Websocket oracle), B943 (Responses ws native), B945 (Responses ws managed), B1087 (Api
-  boundaries), B754 (Shared authenticated request policy ordering), B748 (Combine key, team, user and organization
-  model grants), B756 (Authentication header selection and mode dispatch), B732 (Typed authentication principals
-  and grant resolution), B855 (Authenticated request admission and budget handoff), B1139 (Stateful HTTP oracle
-  scenarios), B856 (Management oracle namespaces and Postgres test fixture), B002 (Load LiteLLM config.yaml into
-  typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  The whole owned callables are _read_ws_model_from_first_frame
+  (endpoints.py:1316-1384), _extract_model_from_first_ws_event
+  (1387-1396), _ResponseCreateRoutingHints (1399-1405),
+  _routing_hints_from_first_ws_frame (1407-1419),
+  _responses_ws_failure_frame (1422-1428),
+  _enforce_responses_ws_first_frame_model_auth (1431-1471), and
+  responses_websocket_endpoint (1474-1620). The owned slice is 252 nonblank,
+  non-comment, non-docstring Python lines; budget 760 changed lines.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -129,183 +176,228 @@ scope:
   - tools/oracle/fixtures/responses-ws-auth/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1456-L1456
-  why: Setting general_settings.custom_auth_run_common_checks and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1451-L1451
-  why: Setting general_settings.enable_jwt_auth and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1452-L1452
-  why: Setting general_settings.enable_oauth2_auth and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1453-L1453
-  why: Setting general_settings.enable_oauth2_proxy_auth and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1316-L1620
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1316-L1384
+  why: The first receive timeout, disconnect/exception exits, JSON error frames, model query precedence, and exact close reasons are implemented together here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1387-L1419
+  why: These lines define nested-versus-flat model selection, the three routing-hint fields, ignored extras, null fallback, and empty-hint validation failure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1422-L1428
+  why: The failure-frame serializer's getattr default, bool exclusion, status buckets, and omission of param/code are visible in this exact return expression.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1431-L1471
+  why: The access gate reads master_key and four general_settings booleans, derives its route from the synthetic path, and calls the two dependency-owned checks in order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1474-L1520
+  why: Both decorators, the optional model query, first dependency, comma-separated subprotocol selection, accept timing, and first-frame handoff are defined by this route signature and prologue.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1522-L1595
+  why: This block fixes the route-data keys, synthetic POST /v1/responses scope, retained URL and headers, json.dumps body, pre-call ordering, and hint merge.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1597-L1620
+  why: The raised-versus-returned failure split, failure-hook placement, suppressed send failure, and 1011 close are controlled by this final block.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L644-L707
+  why: The dependency owns WebSocket header precedence, Bearer validation, HTTP 403 details, and policy close 1008 before the endpoint can accept.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19952
+  why: response_router is included once at application startup; this prevents a second route registration when the Rust route factory composes the gateway.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3197-L3314
+  why: The endpoint invokes ProxyLogging.post_call_failure_hook for both a returned Exception and a raised exception; the hook mutates request data, updates failure status, and runs callbacks before returning.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L240
+  why: BadRequestError assigns status_code=400 and prefixes its message, the 4xx source that reaches the owned status classifier.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L501
+  why: RateLimitError actually assigns status_code=429 and constructs the message consumed by _responses_ws_failure_frame.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L552
+  why: ContextWindowExceededError inherits the bad-request path and explicitly sets status_code=400, covering a raised nested error class.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L760-L788
+  why: InternalServerError assigns status_code=500 and prefixes its message, the server-error source for the fallback bucket.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L998-L1018
+  why: BudgetExceededError exposes a status_code from litellm.budget_exceeded_status_code rather than ProxyException, so the implementation must preserve that integer and test its mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L409-L409
+  why: The default litellm.budget_exceeded_status_code is 422, which the owned classifier treats as a 4xx invalid_request_error rather than the 500 fallback.
 dod:
-- text: 'model in first frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-model-in-first-frame
-  - oracle
-- text: 'missing model close: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-missing-model-close
-  - oracle
-- text: 'unauthorized first frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unauthorized-first-frame
-  - oracle
-- text: 'route hints retained: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-hints-retained
-  - oracle
-- text: 'malformed first frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-malformed-first-frame
-  - oracle
-- text: 'query model skips first auth: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-query-model-skips-first-auth
-  - oracle
-- text: 'first frame timeout: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-first-frame-timeout
-  - oracle
-- text: 'first frame wrong type: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-first-frame-wrong-type
-  - oracle
-- text: 'upstream failure frame: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-upstream-failure-frame
-  - oracle
-- text: 'first subprotocol echo: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-first-subprotocol-echo
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    model_in_first_frame sends text {"type":"response.create","model":"gpt-4o","extra":"keep"} to both
+    /v1/responses and /responses; each handshake is 101, the resolved model is gpt-4o, and the exact original text
+    including the extra field reaches the mock Responses service.
+  proof: [case-model-in-first-frame, oracle]
+- text: >-
+    nested_model_precedence sends top="top" with response.model="nested", then response.model=null and response.model=""
+    with top="top"; nested resolves first, and both falsey nested values resolve top. response=1 and response=[] also
+    fall back to top, while a scalar first event has no model. A frame with no model and no query emits nested
+    error.type="invalid_request_error", exact message="No model provided. Supply ?model=<model> in the URL or include
+    'model' in the first response.create event.", and closes 1008 reason="No model provided".
+  proof: [case-nested-model-precedence, case-missing-model-close, oracle]
+- text: >-
+    malformed_first_frame sends text { and receives one frame with outer type="error", nested type="invalid_request_error"
+    and message="First message is not valid JSON.", followed by close 1008 reason="Invalid JSON in first message";
+    wrong_first_frame_type repeats the type fields for inputs 1, [] and {"type":"response.done"}, with message="First
+    message must be a response.create JSON object." and reason="Invalid first message".
+  proof: [case-malformed-first-frame, case-wrong-first-frame-type, oracle]
+- text: >-
+    query_model_skips_first_auth sends ?model=gpt-4o with {"type":"response.create"}; it validates the frame, resolves
+    gpt-4o, and still retains the original text. Sending ?model= with frame model="frame-model" resolves frame-model,
+    while omitting the query invokes the first-frame model access gate before common processing.
+  proof: [case-query-model-skips-first-auth, case-model-access-gates, oracle]
+- text: >-
+    receive_failures covers the 30-second wait: timeout has no text frame and close 1008 reason="Timed out waiting for
+    first message", disconnect has no second close, and an injected receive exception has no frame and close 1011
+    reason="Internal server error".
+  proof: [case-first-frame-timeout, case-first-receive-errors, oracle]
+- text: >-
+    route_hints_retained forwards nested input="nested" and previous_response_id="resp_nested" over top-level
+    input="top" and previous_response_id="resp_top", drops extra="discard-me" and null hints, falls back when nested
+    fields are absent or null, and passes no hints when input=7 or previous_response_id=9 makes routing validation fail;
+    response.create validation still emits only its own frame. A truthy numeric
+    model=1 is retained as the extractor result rather than treated as absent.
+  proof: [case-route-hints-retained, oracle]
+- text: >-
+    model_access_gates proves absent master_key plus enable_jwt_auth=false, enable_oauth2_auth=false,
+    enable_oauth2_proxy_auth=false skips access; master_key="sk-master" alone and each flag true run it; custom auth with
+    custom_auth_run_common_checks=false skips and true runs. An access exception emits only outer type="error", nested
+    type="invalid_request_error" and str(exception), with no status/param/code, then closes 1008 reason="Pre-call error".
+  proof: [case-model-access-gates, case-precall-error-frame, config-tests, oracle]
+- text: >-
+    subprotocol_selection sends Sec-WebSocket-Protocol=" beta , responses.v1 " and negotiates "beta", while absent,
+    ", ," and whitespace-only values negotiate no protocol; a first non-empty openai-insecure-api-key.fixed-key token
+    is selected verbatim when B756 uses that dependency path.
+  proof: [case-subprotocol-selection, oracle]
+- text: >-
+    synthetic_request_order records a /responses connection whose pre-call Request still has type="http", method="POST",
+    path="/v1/responses", original WebSocket headers and URL, body bytes for {"model": "gpt-4o"}, route_type
+    "_aresponses_websocket", common processing before route_request, and only non-null input/previous_response_id hints.
+  proof: [case-synthetic-request-order, oracle]
+- text: >-
+    failure_frame_statuses injects status_code=429, 400, 422, 499, 500, 503, 300, 600, missing, "429" and True
+    with message="upstream failed". It expects 429/rate_limit_exceeded, 400/invalid_request_error,
+    422/invalid_request_error, 499/invalid_request_error, 500/server_error, 503/server_error, 300/server_error and
+    600/server_error; missing, "429" and True become 500/server_error. Every frame has outer type="error", nested
+    message="upstream failed", no param/code, then the hook runs and close 1011 reason="Internal server error" follows.
+  proof: [case-failure-frame-statuses, oracle]
+- text: >-
+    returned_failure_drop makes route_request yield an Exception with message="returned failure"; the failure hook runs,
+    but the gateway sends no failure frame and no close. The raised-exception fixture separately verifies send-frame, hook,
+    and close order.
+  proof: [case-returned-failure-drop, case-failure-frame-statuses, oracle]
+- text: >-
+    route_aliases and auth_missing/auth_invalid exercise /v1/responses and /responses with Authorization: Bearer sk-fixed,
+    plus absent credentials and Authorization: Basic wrong-format. Valid handshakes are HTTP 101; the two dependency-owned
+    refusals are pre-accept HTTP 403 details "No API key provided" and "Invalid Authorization header format", close 1008,
+    and no WebSocket error JSON object.
+  proof: [case-auth, oracle]
+- text: >-
+    loads_settings loads enable_jwt_auth, enable_oauth2_auth, enable_oauth2_proxy_auth and custom_auth_run_common_checks
+    from general_settings; each absent key is false, each explicit true is true, and the loader performs no environment
+    lookup. A YAML seed containing these exact keys reaches the production decoder.
+  proof: [config-tests, config-corpus]
+- text: >-
+    The shared decoder enforces ApiLimits.max_json_bytes before JSON parsing, fuzz/replay covers malformed and oversized
+    bytes without a panic, and each listed WebSocket oracle fixture is newly added and compares independent pinned and
+    betterlite gateway transcripts.
+  proof: [parser-corpus, new-oracle-cases, oracle]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
-      -E 'test(/^api::responses_ws_auth::/) - test(/::replays_corpus$/)'
+    why: The named server, core, and config behavior tests are absent or a non-replay contract fails.
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_auth::/) - test(/::replays_corpus$/)'
   - id: case-model-in-first-frame
-    why: the model-in-first-frame behavior or its assertions are absent
+    why: A flat frame, either route alias, original text, or resolved gpt-4o is not preserved.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::model_in_first_frame($|::)/)'
+  - id: case-nested-model-precedence
+    why: Nested truthy selection or null/empty fallback is missing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::nested_model_precedence($|::)/)'
   - id: case-missing-model-close
-    why: the missing-model-close behavior or its assertions are absent
+    why: The no-model message or 1008 reason differs from the pinned literal.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::missing_model_close($|::)/)'
-  - id: case-unauthorized-first-frame
-    why: the unauthorized-first-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::unauthorized_first_frame($|::)/)'
-  - id: case-route-hints-retained
-    why: the route-hints-retained behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::route_hints_retained($|::)/)'
   - id: case-malformed-first-frame
-    why: the malformed-first-frame behavior or its assertions are absent
+    why: The invalid-JSON frame fields or close reason are absent or altered.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::malformed_first_frame($|::)/)'
+  - id: case-wrong-first-frame-type
+    why: Scalar, array, and wrong-event input do not share the exact response.create diagnostic.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::wrong_first_frame_type($|::)/)'
   - id: case-query-model-skips-first-auth
-    why: the query-model-skips-first-auth behavior or its assertions are absent
+    why: Query model precedence or the distinction between frame validation and model access is absent.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::query_model_skips_first_auth($|::)/)'
   - id: case-first-frame-timeout
-    why: the first-frame-timeout behavior or its assertions are absent
+    why: The 30-second timeout or exact 1008 close is missing.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_frame_timeout($|::)/)'
-  - id: case-first-frame-wrong-type
-    why: the first-frame-wrong-type behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_frame_wrong_type($|::)/)'
-  - id: case-upstream-failure-frame
-    why: the upstream-failure-frame behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::upstream_failure_frame($|::)/)'
-  - id: case-first-subprotocol-echo
-    why: the first-subprotocol-echo behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_subprotocol_echo($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_invalid($|::)/)'
+  - id: case-first-receive-errors
+    why: Disconnect or receive-exception behavior sends an unexpected frame or close.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_receive_(disconnect|internal_error)($|::)/)'
+  - id: case-route-hints-retained
+    why: Nested hint precedence, null omission, extra filtering, or validation-failure suppression is wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::route_hints_retained($|::)/)'
+  - id: case-model-access-gates
+    why: One of the five master-key/mode/custom-auth gate combinations or its default is missing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::model_access_gates($|::)/)'
+  - id: case-precall-error-frame
+    why: Pre-call exception fields, send-failure close, or 1008 Pre-call error is not enforced.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::precall_error_frame($|::)/)'
+  - id: case-subprotocol-selection
+    why: Comma splitting, trimming, first-token choice, or blank-header behavior differs.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::subprotocol_selection($|::)/)'
+  - id: case-synthetic-request-order
+    why: The synthetic path/body/headers, route_type, hint merge, or pre-call order is wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::synthetic_request_order($|::)/)'
+  - id: case-failure-frame-statuses
+    why: Status buckets, bool exclusion, absent fields, hook order, or 1011 close is wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::failure_frame_statuses($|::)/)'
+  - id: case-returned-failure-drop
+    why: A returned Exception incorrectly emits a frame or close, or skips the failure hook.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::returned_failure_drop($|::)/)'
+  - id: case-auth
+    why: Dependency-owned missing and malformed credential refusals differ from the two exact HTTP details.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_(missing|invalid)($|::)/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    why: A named general_settings boolean is not loaded, defaulted false, set true, or kept out of environment lookup.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::loads_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: No new YAML seed carries the four exact keys through the production loader.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/responses_ws_auth)"
-      && test -f crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && grep -qF "decode_responses_ws_auth"
-      crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::replays_corpus$/)'
+    why: The bounded route decoder, fuzz target, or replay corpus is absent.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/responses_ws_auth)" && test -f crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && grep -qF 'decode_responses_ws_auth' crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::replays_corpus$/)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The route fixtures named by this task were not added on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/responses-ws-auth)"
 oracle_cases:
 - tools/oracle/cases/websocket/responses-ws-auth/model-in-first-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/nested-model-precedence.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/missing-model-close.yaml
-- tools/oracle/cases/websocket/responses-ws-auth/unauthorized-first-frame.yaml
-- tools/oracle/cases/websocket/responses-ws-auth/route-hints-retained.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/malformed-first-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/wrong-first-frame-type.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/query-model-skips-first-auth.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/first-frame-timeout.yaml
-- tools/oracle/cases/websocket/responses-ws-auth/first-frame-wrong-type.yaml
-- tools/oracle/cases/websocket/responses-ws-auth/upstream-failure-frame.yaml
-- tools/oracle/cases/websocket/responses-ws-auth/first-subprotocol-echo.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/first-receive-errors.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/route-hints-retained.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/model-access-gates.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/precall-error-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/subprotocol-selection.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/synthetic-request-order.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/failure-frame-statuses.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/returned-failure-drop.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/route-aliases.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/auth-missing.yaml
 - tools/oracle/cases/websocket/responses-ws-auth/auth-invalid.yaml
-deviations: []
+deviations:
+- what: A first frame larger than ApiLimits.max_json_bytes is rejected by betterlite's bounded decoder with the shared request-too-large error before JSON parsing, instead of allowing Python json.loads to allocate for the whole text.
+  why: The bounded-inputs rule requires a finite WebSocket JSON allocation; the owned LiteLLM code has no byte cap.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1336-L1337
 out_of_scope:
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
-  L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant
-  L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth
-  L182-L191, cursor_model_list L471-L485, cursor_chat_completions L496-L674.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B938 owns get_response L695-L790, delete_response L811-L899,
-  get_response_input_items L920-L970, cancel_response L1216-L1313.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B939 owns compact_response L988-L1052, _TokenCounter.__call__
-  L1078-L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response
-  L1102-L1107, _responses_input_as_token_count_messages L1110-L1125, responses_input_tokens L1143-L1198.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth L182-L191, cursor_model_list L471-L485 and cursor_chat_completions L496-L674.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458; B938 owns get_response L695-L790, delete_response L811-L899, get_response_input_items L920-L970 and cancel_response L1216-L1313; B939 owns compact_response L988-L1052, _TokenCounter.__call__ L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response L1102-L1107, _responses_input_as_token_count_messages L1110-L1125 and responses_input_tokens L1143-L1198.'
+- 'litellm/proxy/auth/user_api_key_auth.py: B756 owns user_api_key_auth_websocket L644-L707, including Authorization, api-key and openai-insecure-api-key.<token> extraction and pre-accept 403/1008; B732 and B748 own identity, key and model-grant resolution reached by the first-frame access check.'
+- 'litellm/proxy/auth/user_api_key_auth.py: B754 owns _run_centralized_common_checks called after _enforce_key_and_fallback_model_access; B941 owns only the gate conditions and its pre-call error frame.'
+- 'litellm/proxy/common_request_processing.py: B014 owns ProxyBaseLLMRequestProcessing and common_processing_pre_call_logic; B941 records its call-before-route ordering and route_type without reimplementing admission, guardrails, rate limits, or budgets.'
+- 'litellm/proxy/route_llm_request.py: B014 owns route_request dispatch; B943 owns native Responses WebSocket execution and B945 owns managed turn execution. B941 supplies routed_data and handles only the surrounding failure control flow.'
+- 'litellm/proxy/utils.py: B124 owns ProxyLogging.post_call_failure_hook L3197-L3314 and B012 owns logger/event integration; B941 records hook order without implementing callback, persistence, or redaction.'
+- 'Database/cache reads or writes reached through auth, common processing, failure hooks, and provider execution belong to B732, B748, B754, B124, B856, B943, and B945. The owned endpoints.py slice performs no database write.'
+- 'Provider and Python package/event-loop facades belong to B943, B945, and B158-B161; this task forwards the prepared operation and does not create a helper oracle for a provider call.'
+- 'litellm/proxy/proxy_server.py: B003 owns application startup and the single app.include_router(response_router) registration at L19949-L19952; B941 supplies one Rust route factory and must not duplicate that mount.'
 pitfalls:
-- Within _read_ws_model_from_first_frame\'s not isinstance(first_event, dict) or first_event.get('type') != 'response.create'
-  branch, preserve return None and its nested guards.
-- Within _read_ws_model_from_first_frame\'s not model branch, preserve return None and its nested guards.
+- 'The endpoint accepts before reading the first frame, so malformed JSON/model errors are post-accept text plus close 1008; only dependency admission failures are pre-accept HTTP 403.'
+- 'Every endpoint-created synthetic Request has scope path /v1/responses, including a connection made to /responses; passing the alias path into the access policy changes LiteLLM behavior.'
+- 'The handler echoes the first non-empty comma-separated Sec-WebSocket-Protocol token verbatim; a browser credential token beginning openai-insecure-api-key. can therefore become the negotiated subprotocol unless the dependency-owned header path is isolated.'
+- 'The model gate tests if the query string is truthy, but the frame extractor tests nested and top-level model values for truthiness; ?model= and nested model="" both fall through rather than resolving an empty model.'
+- 'Routing-hint validation is a second Pydantic parse after response.create validation: input=7 or previous_response_id=9 returns EMPTY_MAPPING silently, so adding a second client error would diverge from the route.'
+- 'status_code=True must not be accepted as integer 1: the explicit bool exclusion sends status 500/server_error, just like missing, string, or non-integer status.'
+- 'A returned Exception is not the raised-exception path: it triggers post_call_failure_hook and then returns with neither _responses_ws_failure_frame output nor a close; the raised path sends, hooks, and closes 1011 in that order.'
+- 'json.dumps({"model": resolved_model}).encode() retains its default separator, so the synthetic body for gpt-4o is bytes for {"model": "gpt-4o"}, not the compact spelling {"model":"gpt-4o"}.'
 review_level: security
 budget:
-  max_changed_lines: 690
+  max_changed_lines: 760
   max_new_expects: 0

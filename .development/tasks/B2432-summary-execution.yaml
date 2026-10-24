@@ -1,0 +1,137 @@
+id: B2432
+title: Execute a compaction summary with parent policy and attribution
+description: >-
+  Split the complete _call_summary_model, _extract_response_text, _extract_usage and apply_compact_20260112
+  functions from B972 into betterlite-core::api::summary_execution. Their 228 nonblank/non-comment physical
+  lines are compact.py L1019-L1111 and L1160-L1380. B972 becomes the editor dispatcher and depends on this task.
+  Use B968 result/constants, B969 settings/access, B970 budget/rate checks and B971 history/prompt helpers.
+  Call B014's completion pipeline; B162 owns Router.acompletion but has no task file, so inject a typed optional
+  routed-completion interface, with a concrete B004 mock-provider executor in tests. Do not implement the router
+  or depend on the later Messages handler. General settings are read through B969; no DEFAULT_MAX_TOKENS read.
+
+  Add B2401 SdkHttpCall::SummaryExecution. Run the real editor against a loopback OpenAI-compatible summary
+  provider; compare actual HTTP, result, diagnostics and the policy/call-context effects. Zero-summary cases must
+  assert zero requests. Router aliases are exercised by the routed interface delegating to the real executor,
+  never by returning canned results. Only the pure extraction helpers use HelperCall::SummaryExtraction.
+  Parser and transport bounds come from the provider/B2401; these functions consume decoded records.
+  Budget 255 implementation, 160 tests, 185 fixtures, 130 adapters and 35 wiring, 765 total. Tests use
+  api::summary_execution; summary requests carry parent credentials only through normal provider resolution.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/summary_execution.rs
+  - crates/betterlite-core/src/api/summary_execution/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/summary_execution.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/summary_execution.py
+  - tools/oracle/cases/sdk-http/summary-execution/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/summary-execution-*
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/summary_extraction.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/summary_extraction.py
+  - tools/oracle/cases/helpers/summary-extraction/**
+  - tools/oracle/fuzz/corpus/helper_case/summary_extraction-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1019-L1111
+  why: Own summary invocation, top-level user/region forwarding and extraction from the returned completion object.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1160-L1380
+  why: Own the entire editor, including validation before slicing, strict threshold and all nonfatal summary errors.
+dod:
+- text: >-
+    compaction_validation_precedes_calls gives trigger.value=49999 and gets B968's exception status 400,
+    message "context_management.compact_20260112.trigger.value must be at least 50000 tokens", with no policy,
+    count or HTTP work. Valid absent trigger logs info "compact_20260112: request has compaction trigger (input_tokens threshold=150000)".
+    pause_after_compaction=true adds pause_after_compaction_ignored after trigger warnings and does not pause or
+    abort; false/missing adds none. Applied type is compact_20260112.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    disabled_and_under_threshold uses a prior compaction S plus two recent turns. Missing configured summary_model
+    returns error=summary_model_not_configured, system prefixed with S and both recent turns, without counting or
+    HTTP. Configured summary=sum and count=150000 makes no call and returns no error; 150001 proceeds. Both paths
+    use last-question fallback only if stripped history is empty. Count receives compaction_block=null and the
+    augmented system so S counts once. Counter exception "broken" warns
+    "compact_20260112: token_counter failed; assuming under threshold: broken", uses 0 and forwards the tail.
+    The debug count line carries the actual current_tokens and trigger.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    summary_policy_short_circuit runs access then budget then rate after an above-threshold count. A false result
+    emits respectively summary_model_access_denied,summary_model_budget_exceeded,summary_model_rate_limit_exceeded
+    in applied.error, skips later checks and sends zero HTTP. Warnings are "compact_20260112: caller not authorized for summary_model=sum; skipping summary call",
+    "compact_20260112: caller over model budget for summary_model=sum; skipping summary call" and
+    "compact_20260112: caller over rate limit for summary_model=sum; skipping summary call". These returns keep
+    stripped history and augmented system, even if that history is empty; they do not add a continuation prompt.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    summary_request_arguments sets model alias=sum to mock gpt-4o-mini and expects one POST /v1/chat/completions
+    with model=gpt-4o-mini, B971-built messages, max_tokens=4096, Authorization="Bearer sk-test" and no tools,
+    stream or client-requested summary model override. Override general_settings.context_management_summary_max_tokens=512
+    sends 512. Call context has timeout=60.0 and litellm_metadata equal to B971's allowlist, not provider metadata.
+    Nonempty string user_api_key_end_user_id becomes top-level user, absent/empty/numeric does not. Non-null
+    allowed_model_region, including "", is passed top-level to routing and is not sent in the provider body.
+    With no router or no acompletion capability use direct completion; an available router gets the call once.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    summary_success_replaces_old_prefix supplies old summary S and mock text "<summary> NEW </summary>" with
+    usage prompt_tokens=12,completion_tokens=3. The summary request sees old S, while returned system prefixes
+    NEW onto the original system, never stacks S twice. Return compaction_block={type:compaction,content:NEW},
+    applied.summary_input_tokens=12,summary_output_tokens=3 and iterations_usage=[{type:compaction,input_tokens:12,output_tokens:3}].
+    Keep only B971's last real user question with tool results stripped. Log info summary-prefix length=3.
+    The result does not itself invoke the main answer or expose HTTP status fields.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    summary_failures_preserve_tail makes the provider return 429,500 or disconnect, with retries disabled, and
+    expects applied.error=summary_call_failed plus warning "compact_20260112: summary call failed: <exception>";
+    capture the exception but permit only B011's documented wording normalization. A stalled mock reaches the
+    60-second injected deadline with the same result. A 200 without a usable <summary> block yields
+    summary_extraction_failed without that call-failure warning. All keep stripped tail/augmented system and
+    leave compaction_block and iterations_usage null; they are not HTTP errors for the parent request.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: >-
+    summary_response_extractors uses typed objects: missing choices,empty choices,missing message or nontext
+    content returns null; string "" remains ""; list text parts A,B concatenate AB, ignore nontext and empty
+    join returns null. Nonstring text part raises TypeError outside the caught AttributeError/IndexError/KeyError.
+    Missing usage returns [0,0]; null counters become 0 and numeric strings "12","3" become [12,3]; invalid
+    "bad" raises ValueError. Native equivalents use typed internal errors without inventing provider statuses.
+  proof: [behavior-tests, oracle, python-adapters]
+- text: Both new operation tags replay through their existing decoders and every provider-reaching fixture uses sdk_http.
+  proof: [new-cases, corpus, oracle, python-adapters]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: summary errors, policy order or emitted request fields are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::summary_execution::/)'
+  - id: python-adapters
+    why: summary invocation or extraction lacks an independently checked adapter
+    run: test -f tools/oracle/sdk_http/summary_execution.py && test -f tools/oracle/helpers/summary_extraction.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: summary invocation or extraction cannot be decoded by the oracle
+    run: grep -qE '^[[:space:]]+summary_execution:' tools/oracle/fuzz/corpus/sdk_http_case/summary-execution-* && grep -qE '^[[:space:]]+summary_extraction:' tools/oracle/fuzz/corpus/helper_case/summary_extraction-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: actual summary HTTP and extraction fixtures were not added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/summary-execution)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/summary-extraction)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/summary-execution/compaction-validation-precedes-calls.yaml
+- tools/oracle/cases/sdk-http/summary-execution/disabled-and-under-threshold.yaml
+- tools/oracle/cases/sdk-http/summary-execution/summary-policy-short-circuit.yaml
+- tools/oracle/cases/sdk-http/summary-execution/summary-request-arguments.yaml
+- tools/oracle/cases/sdk-http/summary-execution/summary-success-replaces-old-prefix.yaml
+- tools/oracle/cases/sdk-http/summary-execution/summary-failures-preserve-tail.yaml
+- tools/oracle/cases/helpers/summary-extraction/summary-response-extractors.yaml
+deviations: []
+out_of_scope:
+- B969 owns compact.py L97-L392; B970 owns L395-L627; B971 owns L73-L92,L630-L1016,L1114-L1157.
+- B972 owns dispatcher.py, B973/B974 integrate this editor into Messages calls, and B081 converts trigger validation to HTTP.
+- B014/B162 own direct/routed completion orchestration and B071/B072/B068 own actual summary usage charging.
+pitfalls:
+- No configured summary model disables summarization; it does not silently use the main request model.
+- Summary errors preserve the already-sliced history, not the original pre-compaction history.
+- Parent spend attribution uses litellm_metadata and end-user user, never the upstream metadata field.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,100 @@
+id: B2484
+title: Execute HTTP and direct vector searches
+description: >-
+  Own _pre_call_direct_vector_store_search and complete sync/async vector_store_search_handler methods
+  at llm_http_handler.py:9819-10100. Implement core::api::vector_search_execution beneath B1064's SDK
+  wrapper. B1058/B1059 provide provider/executor contracts, B173 clients, B595 AWS signing dispatch,
+  B012 logs and B2402 _handle_error. Direct providers bypass HTTP setup and call their execute/aexecute
+  method with id,query,optional params,logging,litellm_params,embedding executor and timeout.
+
+  HTTP providers reuse a mode-matching client or a pool with ssl_verify=null by default, validate headers
+  before the final extra_headers overlay, then resolve URL and transform. Query-embedding configs receive
+  the executor and a read-only litellm_params map with timeout overridden; other configs receive neither
+  extra executor nor timeout override. Merge litellm_params then search optional params for signing.
+  Async AWS signing goes off loop through B595. Log the transformed body and signed headers, then send
+  signed bytes when non-null, otherwise json.dumps(request_body), as data rather than json. Both sends
+  pass timeout. TimeoutException gets the special 408 error below; other send failures use _handle_error.
+
+  Add VectorSearchTransport to B2401, exercising actual OpenAI HTTP handlers. Native tests use typed
+  direct-provider/signing seams for non-HTTP behavior; they do not replace the HTTP oracle. No new decoder
+  is needed. The three functions contain 258 nonblank/non-comment lines; estimate 250 implementation,
+  170 tests, 95 adapters, 120 fixtures, 35 wiring/corpus, 670 total within 710.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/vector_search_execution.rs
+  - crates/betterlite-core/src/api/vector_search_execution/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/vector_search_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/vector_search_transport.py
+  - tools/oracle/cases/sdk-http/vector-search-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/vector-search-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9819-L10100
+  why: Whole direct/HTTP search handlers distinguish embedding providers, sign serialized data and map caller timeouts to 408.
+dod:
+- text: >-
+    search_http_body sends vs/a,query=[a,b],optional={max_num_results:2,rewrite_query:false},extra_body={query:override}.
+    OpenAI sends POST /v1/vector_stores/vs%2Fa/search with query=override,max_num_results=2,rewrite_query=false;
+    body is serialized once when signing returns null. Mock 200 {object:vector_store.search_results.page,
+    search_query:override,data:[]} returns through its response transform. Both modes supply timeout=7
+    and default null when omitted. Null/empty extra_body does not alter the transformed request.
+  proof: [execution-tests, oracle, python-adapter]
+- text: >-
+    search_validated_headers uses provider key=sk-p and caller Authorization=caller,Content-Type=text/plain,
+    OpenAI-Beta=assistants=v1,X-Trace=t. Send Bearer sk-p,application/json,assistants=v1,t respectively;
+    missing beta becomes assistants=v2. Matching-mode client is reused; mismatches select the pool with
+    ssl_verify=null or false. pre_call input="",api_key="",complete_input_dict=transformed body,api_base
+    and signed headers precedes the POST. Header/URL/transform/sign/log failures issue zero requests.
+  proof: [execution-tests, oracle, python-adapter]
+- text: >-
+    search_signing_and_embedding passes litellm_params={timeout:99,region:r} and optional={region:override},
+    timeout=7. Query-embedding transforms see a read-only timeout=7 map and the supplied executor; ordinary
+    transforms see timeout=99 and no executor argument. Signing receives region=override and timeout=99,
+    the final transformed URL and body. Signed bytes "signed-body" are sent unchanged, including empty
+    bytes when provided; null selects JSON serialization. Native tests observe async AWS off-loop dispatch
+    and ordinary inline signing. Neither mode signs again after logging.
+  proof: [execution-tests]
+- text: >-
+    direct_search_bypasses_http uses provider=valkey,id=store-a,query=q. pre_call logs api_base="valkey://store-a",
+    request_str="direct vector store search: valkey://store-a",query=q,vector_store_id=store-a,input="",api_key="".
+    It never dumps credential-bearing model_call_details or selects an HTTP client. Direct execution receives
+    timeout=7 and the same embedding executor, returns its response unchanged and propagates its own errors
+    without HTTP error conversion. extra_headers/extra_body do not enter direct execution.
+  proof: [execution-tests]
+- text: >-
+    search_timeout_and_errors injects a transport TimeoutException and expects provider error status=408,
+    message="Vector store search exceeded the caller timeout.",headers={} with suppressed chained cause.
+    A mock HTTP 429 text="slow",Retry-After=3 uses _handle_error and preserves 429,slow,that header without
+    retry. Response transform failure remains outside the send catch. Added SDK seeds replay through B2401.
+  proof: [execution-tests, oracle, python-adapter, sdk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: execution-tests
+    why: search execution loses direct-provider isolation, signed bytes or timeout classification
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_search_execution::tests::/) - test(/::replays_corpus$/)'
+  - id: python-adapter
+    why: search transport parity lacks actual pinned HTTP calls
+    run: test -f tools/oracle/sdk_http/vector_search_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: the transport variant lacks new input-parser coverage
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-search-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/sdk-http/vector-search-transport/search-http-body.yaml
+- tools/oracle/cases/sdk-http/vector-search-transport/search-validated-headers.yaml
+- tools/oracle/cases/sdk-http/vector-search-transport/search-timeout-and-errors.yaml
+deviations: []
+out_of_scope:
+- B1064 owns SDK provider resolution/filtering/mocks; B527 and other provider adapters own request/response transforms and actual direct datastore drivers.
+- B2485 owns store create/read HTTP functions, B2402 store writes and shared _handle_error, B2480-B2482 file HTTP functions; all other handler families keep their API owners.
+pitfalls:
+- A non-null signed body, even empty bytes, must bypass JSON serialization.
+- Timeout conversion covers the HTTP POST only, not query embedding, signing or a direct datastore call.
+- Direct logging requires a nonempty synthetic api_base to avoid the logger dumping stored credentials.
+review_level: security
+budget:
+  max_changed_lines: 710
+  max_new_expects: 0

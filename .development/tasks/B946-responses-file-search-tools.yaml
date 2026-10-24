@@ -1,63 +1,129 @@
 id: B946
 title: Responses file search tools
 description: >-
-  Define file_search function-tool replacement, result/citation shaping and query extraction using typed vector-search
-  results from B090. Preserve include selection and file_citation indexes while keeping provider response assembly
-  independent from retrieval execution.
+  Implement the pure file-search tool conversion and Responses output builders from
+  litellm/responses/file_search/emulated_handler.py. The owned functions consume
+  already-decoded mappings, objects, and VectorStoreSearchResult records. They do
+  not read environment variables, config keys, query parameters, or databases, and
+  they do not make provider or HTTP calls. B947 owns the enclosing call flow and
+  every provider/vector-search call.
 
+  Implement crates/betterlite-core/src/api/responses_file_search_tools.rs and
+  tests under api::responses_file_search_tools::tests. The task owns
+  _build_function_tool (L65-L105), _replace_file_search_tools (L108-L132),
+  _get_field (L186-L190), _joined_content_text (L193-L197),
+  _format_search_results_as_tool_output (L200-L225),
+  _build_search_results_for_include (L228-L252),
+  _build_file_search_call_output (L255-L279),
+  _build_file_citation_annotations (L282-L309), _build_message_output (L312-L328),
+  _extract_text_from_responses_output (L331-L342),
+  _synthesize_responses_api_response (L345-L384),
+  _prepare_emulated_file_search_call (L398-L413),
+  _extract_tool_call_fields (L416-L425), and _resolve_queries_from_args (L428-L437).
+  B947 owns _run_vector_searches (L140-L178), _call_aresponses (L392-L395),
+  _execute_file_search_tool_calls (L440-L486), _build_follow_up_input (L489-L512),
+  and aresponses_with_emulated_file_search (L515-L629); do not reimplement them.
 
-  should_use_emulated_file_search (litellm/responses/file_search/emulated_handler.py:L47-L57) has no MIT runtime
-  caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case
-  exercises that unused entry point.
+  The tool_schema case calls _build_function_tool with vector_store_ids
+  ["vs_a", "vs_b"]. It expects one mapping with type "function", name
+  "litellm_file_search", the exact description "Search the knowledge base for
+  information relevant to the query. Use this whenever you need to look up specific
+  facts, documents, or content from the vector store. You can provide multiple
+  queries to search for different aspects of the information.", and parameters
+  {type: "object", properties: {queries: {type: "array", items: {type: "string"},
+  description: "One or more search queries to look up in the vector store. Multiple
+  queries help find comprehensive information from different angles."},
+  vector_store_id: {type: "string", description: "ID of the vector store to
+  search.", enum: ["vs_a", "vs_b"]}}, required: ["queries"]}. No function wrapper
+  may be added around parameters.
 
+  The tool_replacement case passes None and [] and expects ([], []). It passes
+  mappings {type: "custom"}, {}, and {name: "x"} and expects them unchanged and
+  in input order. A mapping with type "file_search" is removed, its
+  vector_store_ids value is read with falsey default [], and ids from several such
+  mappings are concatenated in input order, deduplicated by first occurrence, and
+  not sorted. For ["vs_b", "vs_a", "vs_b"], the returned ids are ["vs_b",
+  "vs_a"] and one function tool is appended; if every file-search mapping has an
+  absent, None, or [] vector_store_ids value, no function tool is appended. A
+  non-mapping object is retained because removal requires a mapping whose type is
+  exactly "file_search".
 
-  Implement crates/betterlite-core/src/api/responses_file_search_tools.rs. Use ResponsesFileSearchTooInput and ResponsesFileSearchTooResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  The result_rendering case calls _get_field on {file_id: "file_1"} and an object
+  with a filename attribute and gets those values; an absent key or attribute gets
+  None, while default="fallback" returns "fallback". A result with filename
+  "report.txt", file_id "file_1", score 0.87654, and content chunks with text
+  "hello" and "world" renders exactly
+  "[Result 1 | report.txt | file_id=file_1 | score=0.877]\nhello world". Empty or
+  missing filename and file_id omit their header segments; score=None omits only
+  the score segment, while score=0 renders score=0.000. A missing, None, or empty
+  content value produces the header followed by a newline and an empty text line.
+  A chunk with no text contributes ""; falsey chunk text is dropped and remaining
+  chunk text is joined with one space. Include projection retains repeated results
+  in input order and emits file_id "", filename "", score None, joined text, and
+  attributes {} for falsey or missing fields.
 
+  The output_items case calls _build_file_search_call_output with call_id
+  "fs_0123456789abcdef01234567", queries ["q1"], include_search_results False,
+  results None, and results []; each result is exactly {type: "file_search_call",
+  id: "fs_0123456789abcdef01234567", status: "completed", queries: ["q1"],
+  search_results: null}. With include_search_results=True and one result, the
+  search_results list contains the include projection above; a truthy flag with an
+  empty list still produces null. For response text "answer" and results whose
+  file ids are missing, "file_1", "file_1", and "file_2", citations are only
+  first-seen ids, each has type "file_citation", index 6, its file_id, and
+  filename or "". _build_message_output returns exactly type "message", role
+  "assistant", and one content item with type "output_text", text "answer", and
+  those annotations.
 
-  Write adjacent tests.rs behavior functions file_search_tool_replacement, include_search_results, file_citation_offsets,
-  multiple_queries under api::responses_file_search_tools::tests. Each named function drives production code and
-  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  The response_synthesis case gives _extract_text_from_responses_output output
+  items in order and expects the first message content block with type
+  "output_text" to win. Its non-None text is converted with str; None becomes "",
+  and no message/output_text returns "". It gives synthesis an original response
+  with id "resp_original", created_at 1700000000, model "gpt-test", usage
+  {input_tokens: 1}, and an error value, plus the two output mappings; id, created_at,
+  model, and usage are copied, while object is "response", status is "completed",
+  error is None, and output is [file_search_call_output, message_output]. With
+  those attributes absent, an injected UUID source returning the full lowercase
+  hex value 0123456789abcdef0123456789abcdef yields id
+  "resp_0123456789abcdef0123456789abcdef", an injected clock returning
+  1700000000.75 yields created_at 1700000000, model is "", and usage is None.
+  The UUID and clock sources are invoked even when original id and created_at are
+  present, matching the eager Python default expressions. If original
+  _hidden_params is {response_cost: 2.5} and first_response._hidden_params is
+  {response_cost: 1.25}, the synthesized hidden response_cost is 3.75; with no
+  current cost it is 1.25. Copy the original hidden mapping, but do not create a
+  hidden mapping when the original object has no _hidden_params attribute. With
+  first_response omitted (the default None), no first-response cost is added.
 
+  The argument_preparation case passes kwargs without include, include=None, and
+  include=[] and expects include [] and false for each; include
+  ["file_search_call.results"] expects true, while ["message.output_text"]
+  expects false. A truthy stream value 1 returns
+  a shallow copy with stream false and emits exactly the DEBUG message
+  "Streaming is not yet supported for emulated file_search. Disabling stream for
+  this request."; a falsey stream value leaves the original mapping and values
+  unchanged. For a mapping with call_id "call_1", id "id_1", and arguments
+  "{\"queries\":[\"q\"]}", extraction returns ("call_1", that JSON string); with
+  only id "id_2" it returns ("id_2", "{}"); with neither it returns the supplied
+  fallback "fs_fallback" and "{}". Object attributes use the same call_id/id
+  precedence; arguments 0, None, or "" become "{}", while a truthy non-string
+  argument is preserved for B947's parser. Query resolution returns ["q1", "q2"]
+  for that truthy list, ["q"] for scalar "q", ["legacy"] when queries=[] and
+  query="legacy", and ["42"] when both query fields are falsey and input is 42.
 
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
+  Register HelperCall::ResponsesFileSearchTools and its Python adapter. Each helper
+  fixture uses call: {responses_file_search_tools: <typed input>} and independently
+  computes ordered values and the DEBUG diagnostic. These functions transform
+  decoded values, so this task adds no byte decoder or fuzz target. There is no
+  HTTP status, error type/message/param/code, authentication decision, database
+  write, warning-and-drop path, environment variable, config key, or query
+  parameter in this owned slice.
 
-
-  Register HelperCall::ResponsesFileSearchTools in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_file_search_tools: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/file_search/emulated_handler.py: _build_function_tool (L65-L105); litellm/responses/file_search/emulated_handler.py:
-  _replace_file_search_tools (L108-L132); litellm/responses/file_search/emulated_handler.py: _get_field (L186-L190);
-  litellm/responses/file_search/emulated_handler.py: _joined_content_text (L193-L197); litellm/responses/file_search/emulated_handler.py:
-  _format_search_results_as_tool_output (L200-L225); litellm/responses/file_search/emulated_handler.py: _build_search_results_for_include
-  (L228-L252); litellm/responses/file_search/emulated_handler.py: _build_file_search_call_output (L255-L279); litellm/responses/file_search/emulated_handler.py:
-  _build_file_citation_annotations (L282-L309); litellm/responses/file_search/emulated_handler.py: _build_message_output
-  (L312-L328); litellm/responses/file_search/emulated_handler.py: _extract_text_from_responses_output (L331-L342);
-  litellm/responses/file_search/emulated_handler.py: _synthesize_responses_api_response (L345-L384); litellm/responses/file_search/emulated_handler.py:
-  _prepare_emulated_file_search_call (L398-L413); litellm/responses/file_search/emulated_handler.py: _extract_tool_call_fields
-  (L416-L425); litellm/responses/file_search/emulated_handler.py: _resolve_queries_from_args (L428-L437). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 219 owned nonblank/non-comment/non-docstring Python lines (267 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 239 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 471 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B090 (Vector stores), B171 (Direct helper oracle and URL path encoding), B902 (Responses
-  shapes), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
+  Direct dependencies are B1058 for VectorStoreSearchResult and
+  VectorStoreResultContent, B1064 for the asearch-produced result shape, B171 for
+  the helper oracle, and B902 for ResponsesAPIResponse and ResponseOutputItem.
+  B090 is not called by an owned function, and B1087 limits are not read by an
+  owned function.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -80,94 +146,107 @@ scope:
   - tools/oracle/cases/helpers/responses-file-search-tools/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L58-L132
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L186-L384
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L65-L132
+  why: _build_function_tool emits the named Responses function schema, and _replace_file_search_tools preserves non-file mappings while collecting and first-seen-deduplicating vector_store_ids.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L186-L225
+  why: _get_field chooses dict-key or attribute lookup; the joined text, empty-result sentence, optional header segments, and score format come from these branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L228-L328
+  why: These builders define include-record defaults, repeated-result retention, completed file_search_call fields, first-seen citation annotations, and the assistant output item.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L331-L384
+  why: These lines select the first output_text block and construct the response defaults, eager UUID/clock fallbacks, fixed output fields, and conditional hidden response_cost.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L398-L437
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: These helpers read include and stream, emit the exact debug fallback, select tool-call ids and arguments, and apply the queries/query/input fallback order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L76-L100
+  why: VectorStoreResultContent and VectorStoreSearchResult define the optional text, score, content, file_id, filename, and attributes values consumed by the owned builders.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388-L1425
+  why: ResponsesAPIResponse supplies the copied id, created_at, model, output, usage, error, status, and private _hidden_params fields used by synthesis.
 dod:
-- text: 'file search tool replacement: the named production behavior test asserts the result and effects described
-    above.'
+- text: 'tool_schema: with vector_store_ids ["vs_a", "vs_b"], the production test asserts the complete function mapping, all three description strings, nested object/array/string types, enum order, and required ["queries"]; the helper case asserts the same ordered mapping.'
   proof:
-  - case-file-search-tool-replacement
-  - oracle
-- text: 'include search results: the named production behavior test asserts the result and effects described above.'
+  - case-tool-schema
+  - helper-python
+- text: 'tool_replacement: the production test asserts None/[] become ([], []), non-file mappings retain input order, exactly-typed file_search mappings are removed, ["vs_b", "vs_a", "vs_b"] becomes ["vs_b", "vs_a"], and empty id sources add no function mapping.'
   proof:
-  - case-include-search-results
-  - oracle
-- text: 'file citation offsets: the named production behavior test asserts the result and effects described above.'
+  - case-tool-replacement
+  - helper-python
+- text: 'result_rendering: the production test asserts the exact no-results sentence, 0.87654 rounds to 0.877, falsey header fields disappear, score 0 remains 0.000, missing content leaves a newline, chunks join with one space, and include records retain duplicate inputs with their stated defaults.'
   proof:
-  - case-file-citation-offsets
-  - oracle
-- text: 'multiple queries: the named production behavior test asserts the result and effects described above.'
+  - case-result-rendering
+  - helper-python
+- text: 'output_items: the production test asserts completed file_search_call fields with null search_results for falsey inclusion inputs, populated include records when enabled, first-seen citations at index 6 for "answer", and the exact assistant message/output_text shape.'
   proof:
-  - case-multiple-queries
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  - case-output-items
+  - helper-python
+- text: 'response_synthesis: the production test asserts first-block text extraction, None-to-empty text, copied and missing response fields, eager deterministic UUID/clock fallback values, fixed response output/error/status, output order, omitted-first-response behavior, hidden-parameter copying, and response_cost addition.'
   proof:
-  - oracle
+  - case-response-synthesis
+  - helper-python
+- text: 'argument_preparation: the production test asserts include defaults and token matching, the exact DEBUG stream message and stream=false copy, mapping/object call-id precedence, "{}" argument fallback, preserved truthy non-string arguments, and all four query fallback results.'
+  proof:
+  - case-argument-preparation
+  - helper-python
+- text: 'The Rust and Python adapters independently execute each typed responses_file_search_tools fixture, compare ordered values and the debug diagnostic, and replay a committed tagged helper seed.'
+  proof:
   - helper-python
   - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
   - new-oracle-cases
   - oracle
-  - helper-python
-  - helper-corpus
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::/)
-      - test(/::replays_corpus$/)'
-  - id: case-file-search-tool-replacement
-    why: the file-search-tool-replacement behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::file_search_tool_replacement($|::)/)'
-  - id: case-include-search-results
-    why: the include-search-results behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::include_search_results($|::)/)'
-  - id: case-file-citation-offsets
-    why: the file-citation-offsets behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::file_citation_offsets($|::)/)'
-  - id: case-multiple-queries
-    why: the multiple-queries behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::multiple_queries($|::)/)'
+    why: The scoped production module lacks one of its named transformation cases, or only corpus replay exists.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::/) - test(/::replays_corpus$/)'
+  - id: case-tool-schema
+    why: The exact function-tool strings, nested types, enum order, or required list are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::tool_schema($|::)/)'
+  - id: case-tool-replacement
+    why: File-search removal, non-file retention, empty-id handling, or first-seen input ordering is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::tool_replacement($|::)/)'
+  - id: case-result-rendering
+    why: Empty output, field lookup defaults, score formatting, content joining, or include projection is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::result_rendering($|::)/)'
+  - id: case-output-items
+    why: Completed output fields, null/populated search_results, citation deduplication, or message annotations are absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::output_items($|::)/)'
+  - id: case-response-synthesis
+    why: First text selection, response fallback fields, fixed output fields, UUID/clock injection, or hidden cost handling is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::response_synthesis($|::)/)'
+  - id: case-argument-preparation
+    why: Include matching, stream diagnostic, call-field precedence, non-string preservation, or query fallback is absent.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::argument_preparation($|::)/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_file_search_tools.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The file-search helper adapter is absent or fails its Python lint and type checks.
+    run: test -f tools/oracle/helpers/responses_file_search_tools.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*)"
-      && grep -qE "^[[:space:]]+responses_file_search_tools:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: No newly added tagged helper seed exists, or shared helper replay rejects responses_file_search_tools.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*)" && grep -qE "^[[:space:]]+responses_file_search_tools:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: No newly added file-search-tools parity fixture directory exists on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-file-search-tools)"
 oracle_cases:
-- tools/oracle/cases/helpers/responses-file-search-tools/file-search-tool-replacement.yaml
-- tools/oracle/cases/helpers/responses-file-search-tools/include-search-results.yaml
-- tools/oracle/cases/helpers/responses-file-search-tools/file-citation-offsets.yaml
-- tools/oracle/cases/helpers/responses-file-search-tools/multiple-queries.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/tool-schema.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/tool-replacement.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/result-rendering.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/output-items.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/response-synthesis.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/argument-preparation.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/file_search/emulated_handler.py: should_use_emulated_file_search L47-L57 are out of scope:
-  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/file_search/emulated_handler.py: B947 owns _run_vector_searches L140-L178, _call_aresponses
-  L392-L395, _execute_file_search_tool_calls L440-L486, _build_follow_up_input L489-L512, aresponses_with_emulated_file_search
-  L515-L629.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- 'litellm/responses/file_search/emulated_handler.py: should_use_emulated_file_search (L47-L57) has no MIT runtime caller at the pinned commit; its provider_config capability decision and its test-only uses therefore have no B946 case or implementation owner here.'
+- 'litellm/responses/file_search/emulated_handler.py: B947 owns _run_vector_searches (L140-L178), _call_aresponses (L392-L395), _execute_file_search_tool_calls (L440-L486), _build_follow_up_input (L489-L512), and aresponses_with_emulated_file_search (L515-L629), including provider calls, search-failure WARNING fallback, internal-call state, generated fs_ fallback ids, and follow-up ordering.'
+- 'litellm/types/vector_stores.py: B1058 owns VectorStoreSearchResult and VectorStoreResultContent (L76-L90); B1064 owns asearch (L286-L355) and its produced list. B946 only consumes those decoded values.'
+- 'litellm/types/llms/openai.py: B902 owns the ResponsesAPIResponse and ResponseOutputItem wire records (L1388-L1425). B946 copies their declared fields and does not redefine their validation or serialization.'
+- 'Routes, aliases, authentication, HTTP status/error payloads, query parameters, environment/config resolution, database writes, and enterprise-only hooks are absent from every B946-owned call path; their cases remain with the route/call owners.'
 pitfalls:
-- emulated_handler.py:408 emits the diagnostic 'Streaming is not yet supported for emulated file_search. Disabling
-  stream for this request.'; retain its level and fallback instead of turning it into a hard error.
-- _replace_file_search_tools uses tool.get('type'); retain its missing-value behavior and field spelling in the
-  typed projection.
+- 'Only a dict with type exactly "file_search" is removed; a non-mapping object, a mapping with no type, or a mapping with type "custom" remains in place, even if it has file-search-looking fields.'
+- 'Human-readable formatting omits falsey filename/file_id but include projection substitutes ""; include projection keeps score=None, whereas formatting omits only score=None and renders score=0 as 0.000.'
+- 'Citation ids are deduplicated before annotations only; repeated results remain repeated in search_results, and a missing citation filename is the literal empty string.'
+- 'The stream branch tests truthiness rather than type: stream=1 emits a DEBUG diagnostic and changes only the shallow-copy value to false, while stream=0 leaves the original mapping unchanged.'
+- 'Query selection tests truthiness before list type: queries=[] falls through to query, a truthy scalar becomes one str element, and a truthy list is forwarded without validating its elements.'
+- 'Python evaluates uuid.uuid4().hex and int(time.time()) as call defaults before getattr chooses existing id/created_at; deterministic tests must observe those injected calls even when fields are present.'
+- 'Hidden response_cost is added only when the original object exposes _hidden_params; a missing current cost contributes zero, and an object without that attribute receives no synthesized hidden mapping.'
 review_level: standard
 budget:
-  max_changed_lines: 480
+  max_changed_lines: 560
   max_new_expects: 1

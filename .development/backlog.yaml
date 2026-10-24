@@ -827,7 +827,7 @@ tasks:
     milestone: M5 api families
     title: Responses routes
     status: todo
-    depends_on: [B003, B014, B171, B921, B924, B929, B930, B932, B936, B937, B938, B939, B940, B941, B955, B957, B1087, B1113, B1100, B935, B1139, B732, B855, B756, B856]
+    depends_on: [B003, B004, B014, B104, B124, B158, B921, B929, B932, B1078, B2415, B936, B937, B938, B939, B940, B941, B955, B1100, B935, B1139, B732, B855, B756, B2401]
     file: tasks/B080-responses-routes.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -841,7 +841,7 @@ tasks:
     milestone: M5 api families
     title: Anthropic messages routes
     status: todo
-    depends_on: [B014, B171, B958, B960, B977, B980, B981, B982, B987, B988, B990, B992, B993, B994, B995, B996, B1087, B1132, B1100, B1134, B732, B855, B756, B003, B1139, B856, B002]
+    depends_on: [B002, B003, B004, B011, B104, B124, B958, B1132, B1100, B1134, B855, B756, B2401]
     file: tasks/B081-anthropic-messages-routes.yaml
     covers:
       - "litellm/proxy/anthropic_endpoints/endpoints.py"
@@ -862,7 +862,7 @@ tasks:
     milestone: M5 api families
     title: Image routes
     status: todo
-    depends_on: [B014, B171, B900, B998, B999, B1000, B1087, B001, B1100, B1101, B1102, B1103, B732, B855, B756, B003, B1139, B856]
+    depends_on: [B014, B004, B900, B1121, B999, B1087, B001, B1100, B1101, B1102, B1103, B218, B124, B756, B003, B1139, B856]
     file: tasks/B082-image-routes.yaml
     covers:
       - "litellm/proxy/image_endpoints/endpoints.py"
@@ -872,16 +872,16 @@ tasks:
     milestone: M5 api families
     title: Audio routes
     status: todo
-    depends_on: [B014, B171, B900, B1001, B1002, B1003, B1082, B1084, B1087, B1101, B1102, B1103, B732, B1137, B003, B756, B002, B1139]
+    depends_on: [B014, B004, B124, B900, B1003, B1082, B1083, B1087, B1101, B1102, B1103, B003, B756, B002, B1139, B856]
     file: tasks/B083-audio-routes.yaml
     covers:
       - "litellm/llms/base_llm/audio_transcription/transformation.py"
       - "litellm/proxy/proxy_server.py"
   - id: B084
     milestone: M5 api families
-    title: Realtime routes
+    title: Realtime WebRTC SDP routes
     status: todo
-    depends_on: [B003, B171, B901, B1010, B1011, B1012, B1087, B1125, B1126, B1103, B732, B855, B756, B1139, B856]
+    depends_on: [B001, B003, B014, B061, B124, B732, B856, B1010, B1012, B1087, B1103, B1139]
     file: tasks/B084-realtime-routes.yaml
     covers:
       - "litellm/proxy/realtime_endpoints/endpoints.py"
@@ -890,7 +890,7 @@ tasks:
     milestone: M5 api families
     title: Rerank routes
     status: todo
-    depends_on: [B003, B014, B171, B1014, B1087, B001, B1103, B732, B855, B756, B1139, B856]
+    depends_on: [B001, B003, B004, B014, B124, B756, B856, B1014, B1087, B1103, B1139]
     file: tasks/B085-rerank-routes.yaml
     covers:
       - "litellm/proxy/rerank_endpoints/endpoints.py"
@@ -898,7 +898,7 @@ tasks:
     milestone: M5 api families
     title: Batch routes
     status: todo
-    depends_on: [B171, B1017, B1038, B1041, B1043, B1049, B1050, B1051, B1087, B1112, B1103, B1133, B162, B1019, B1020, B1021, B1139, B732, B855, B756, B1048, B003, B856, B2400]
+    depends_on: [B1038, B1041, B1050, B1051, B1112, B1103, B1133, B162, B1019, B1020, B1021, B844, B900, B1139, B732, B855, B756, B1048, B003, B004, B124, B856, B2400]
     file: tasks/B086-batch-routes.yaml
     covers:
       - "litellm/proxy/batches_endpoints/endpoints.py"
@@ -906,7 +906,7 @@ tasks:
     milestone: M5 api families
     title: Managed file routes
     status: todo
-    depends_on: [B171, B1017, B1018, B1020, B1027, B1028, B1032, B1033, B1034, B1087, B1103, B732, B855, B756, B1021, B1019, B003, B1139, B856, B2208, B2400]
+    depends_on: [B1020, B1028, B1032, B1033, B1034, B1103, B732, B855, B756, B1021, B1019, B003, B004, B124, B900, B1139, B856, B2208, B2400]
     file: tasks/B087-managed-file-routes.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -914,7 +914,7 @@ tasks:
     milestone: M5 api families
     title: Fine tuning routes
     status: todo
-    depends_on: [B014, B171, B1020, B1052, B1053, B1087, B732, B855, B756, B1021, B1019, B1141, B003, B1139, B856]
+    depends_on: [B003, B004, B012, B1052, B1053, B518, B732, B1021, B1019, B1141, B2400, B1100, B1139, B302, B303]
     file: tasks/B088-fine-tuning-routes.yaml
     covers:
       - "litellm/proxy/fine_tuning_endpoints/endpoints.py"
@@ -922,16 +922,15 @@ tasks:
     milestone: M5 api families
     title: Assistant runs
     status: todo
-    depends_on: [B005, B010, B171, B1055, B1056, B1057, B1085, B1086, B1087, B1103, B521, B732, B1137, B003, B756, B1139, B856, B002]
+    depends_on: [B002, B003, B004, B005, B012, B732, B1103, B2488, B2489]
     file: tasks/B089-assistant-runs.yaml
     covers:
-      - "litellm/assistants/main.py"
       - "litellm/proxy/proxy_server.py"
   - id: B090
     milestone: M5 api families
     title: Vector stores
     status: todo
-    depends_on: [B014, B171, B1064, B1067, B1068, B1070, B1076, B1077, B1081, B1087]
+    depends_on: [B004, B902, B012, B1131, B171]
     file: tasks/B090-vector-stores.yaml
     covers:
       - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
@@ -5173,18 +5172,16 @@ tasks:
     milestone: M5 api families
     title: Responses codex tools
     status: todo
-    depends_on: [B171, B902, B1087]
+    depends_on: [B171, B004, B1087, B2410]
     file: tasks/B907-responses-codex-tools.yaml
     covers:
-      - "litellm/llms/base_llm/responses/codex_compat.py"
-      - "litellm/responses/additional_tools.py"
       - "litellm/responses/litellm_completion_transformation/custom_tools.py"
       - "litellm/responses/litellm_completion_transformation/transformation.py"
   - id: B997
     milestone: M5 api families
     title: Image contracts
     status: todo
-    depends_on: [B010, B171, B175, B183, B1087, B1120, B2202]
+    depends_on: [B010, B171, B2202]
     file: tasks/B997-image-contracts.yaml
     covers:
       - "litellm/llms/base_llm/image_generation/transformation.py"
@@ -5196,7 +5193,7 @@ tasks:
     milestone: M5 api families
     title: Realtime contracts
     status: todo
-    depends_on: [B009, B010, B171, B1087, B1123]
+    depends_on: [B010, B011, B171, B1087]
     file: tasks/B1004-realtime-contracts.yaml
     covers:
       - "litellm/llms/base_llm/realtime/transformation.py"
@@ -5210,7 +5207,7 @@ tasks:
     milestone: M5 api families
     title: Realtime beta protocol
     status: todo
-    depends_on: [B171, B1004, B1087]
+    depends_on: [B171, B1004]
     file: tasks/B1005-realtime-beta-protocol.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -5218,7 +5215,7 @@ tasks:
     milestone: M5 api families
     title: Realtime session state
     status: todo
-    depends_on: [B012, B171, B1004, B1087, B1124, B1005, B002]
+    depends_on: [B002, B012, B171, B191, B1004, B1005]
     file: tasks/B1006-realtime-session-state.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -5226,7 +5223,7 @@ tasks:
     milestone: M5 api families
     title: Realtime backend relay
     status: todo
-    depends_on: [B171, B1005, B1006, B1007, B1087, B1110, B1124, B1004]
+    depends_on: [B012, B191, B901, B1004, B1005, B1006, B1007, B1110, B1124, B2455]
     file: tasks/B1008-realtime-backend-relay.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -5234,7 +5231,7 @@ tasks:
     milestone: M5 api families
     title: Realtime client relay
     status: todo
-    depends_on: [B171, B1005, B1006, B1007, B1008, B1087, B1110, B1124, B1004]
+    depends_on: [B012, B901, B1004, B1005, B1006, B1007, B1008, B1110, B1124, B2455]
     file: tasks/B1009-realtime-client-relay.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -5242,7 +5239,7 @@ tasks:
     milestone: M5 api families
     title: Anthropic beta filter
     status: todo
-    depends_on: [B171, B959, B1087]
+    depends_on: [B171, B959, B568]
     file: tasks/B960-anthropic-beta-filter.yaml
     covers:
       - "litellm/anthropic_beta_headers_manager.py"
@@ -5251,7 +5248,7 @@ tasks:
     milestone: M5 api families
     title: Messages native prepare
     status: todo
-    depends_on: [B010, B171, B176, B958, B1087, B960, B570]
+    depends_on: [B010, B171, B958, B960, B567, B571, B2221]
     file: tasks/B961-messages-native-prepare.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/transformation.py"
@@ -5261,7 +5258,7 @@ tasks:
     milestone: M5 api families
     title: Messages options
     status: todo
-    depends_on: [B171, B175, B902, B958, B1087]
+    depends_on: [B171, B902, B958, B569, B688, B011]
     file: tasks/B963-messages-options.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/utils.py"
@@ -5269,7 +5266,7 @@ tasks:
     milestone: M5 api families
     title: Messages native stream
     status: todo
-    depends_on: [B002, B003, B012, B171, B978, B1087]
+    depends_on: [B002, B978, B1087, B2436, B102, B2401, B009]
     file: tasks/B979-messages-native-stream.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
@@ -5277,18 +5274,17 @@ tasks:
     milestone: M5 api families
     title: File storage contracts
     status: todo
-    depends_on: [B171, B908, B909, B1087, B726, B858]
+    depends_on: [B171, B908, B726]
     file: tasks/B1025-file-storage-contracts.yaml
     covers:
       - "litellm/llms/base_llm/files/storage_backend.py"
-      - "litellm/llms/base_llm/files/storage_backend_factory.py"
       - "litellm/llms/base_llm/files/litellm_db_storage_backend.py"
       - "litellm/llms/base_llm/files/batch_records.py"
   - id: B902
     milestone: M5 api families
     title: Responses shapes
     status: todo
-    depends_on: [B004, B010, B171, B1087, B1114, B1138, B1113]
+    depends_on: [B004, B171]
     file: tasks/B902-responses-shapes.yaml
     covers:
       - "litellm/types/responses/main.py"
@@ -5305,7 +5301,7 @@ tasks:
     milestone: M5 api families
     title: Realtime guardrails
     status: todo
-    depends_on: [B104, B171, B1004, B1087, B1110]
+    depends_on: [B104, B901, B1004, B1006, B1110]
     file: tasks/B1007-realtime-guardrails.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -5313,7 +5309,7 @@ tasks:
     milestone: M5 api families
     title: Anthropic beta config
     status: todo
-    depends_on: [B002, B009, B171, B1087]
+    depends_on: [B002, B009, B171, B1087, B2401]
     file: tasks/B959-anthropic-beta-config.yaml
     covers:
       - "litellm/anthropic_beta_headers_manager.py"
@@ -5322,7 +5318,7 @@ tasks:
     milestone: M5 api families
     title: Messages errors
     status: todo
-    depends_on: [B011, B171, B184, B1087]
+    depends_on: [B171, B184]
     file: tasks/B958-messages-errors.yaml
     covers:
       - "litellm/anthropic_interface/exceptions/exception_mapping_utils.py"
@@ -5334,16 +5330,17 @@ tasks:
     milestone: M5 api families
     title: Messages sse events
     status: todo
-    depends_on: [B005, B171, B958, B1087]
+    depends_on: [B171, B958, B963, B1087, B206, B2435, B009, B2401]
     file: tasks/B978-messages-sse-events.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
       - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
+      - "litellm/llms/anthropic/common_utils.py"
   - id: B908
     milestone: M5 api families
     title: Responses chat options
     status: todo
-    depends_on: [B171, B175, B902, B1087, B913, B909, B907]
+    depends_on: [B171, B175, B158, B913, B909, B907, B1138]
     file: tasks/B908-responses-chat-options.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5351,7 +5348,7 @@ tasks:
     milestone: M5 api families
     title: Responses input messages
     status: todo
-    depends_on: [B171, B183, B234, B902, B1087, B004, B910, B911, B912, B907]
+    depends_on: [B171, B1087, B004, B910, B911, B912, B907, B2411]
     file: tasks/B909-responses-input-messages.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5381,7 +5378,7 @@ tasks:
     milestone: M5 api families
     title: Response id codecs
     status: todo
-    depends_on: [B171, B1087]
+    depends_on: [B171, B1087, B902]
     file: tasks/B903-response-id-codecs.yaml
     covers:
       - "litellm/responses/utils.py"
@@ -5389,7 +5386,7 @@ tasks:
     milestone: M5 api families
     title: Response id traversal
     status: todo
-    depends_on: [B171, B902, B903, B1087, B905]
+    depends_on: [B171, B902, B903, B905, B1138]
     file: tasks/B904-response-id-traversal.yaml
     covers:
       - "litellm/responses/utils.py"
@@ -5397,7 +5394,7 @@ tasks:
     milestone: M5 api families
     title: Responses parameters
     status: todo
-    depends_on: [B171, B175, B206, B213, B902, B903, B1087, B002, B668]
+    depends_on: [B171, B175, B206, B213, B903, B002, B668, B1114, B1138, B2202, B137]
     file: tasks/B905-responses-parameters.yaml
     covers:
       - "litellm/responses/utils.py"
@@ -5405,7 +5402,7 @@ tasks:
     milestone: M5 api families
     title: Responses usage
     status: todo
-    depends_on: [B171, B902, B1087, B004, B905]
+    depends_on: [B171, B004, B1138]
     file: tasks/B906-responses-usage.yaml
     covers:
       - "litellm/responses/utils.py"
@@ -5413,7 +5410,7 @@ tasks:
     milestone: M5 api families
     title: Responses reasoning merge
     status: todo
-    depends_on: [B171, B1087]
+    depends_on: [B171, B004]
     file: tasks/B910-responses-reasoning-merge.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5421,7 +5418,7 @@ tasks:
     milestone: M5 api families
     title: Responses tool repair
     status: todo
-    depends_on: [B171, B178, B902, B1087, B907]
+    depends_on: [B171, B004, B2226, B907]
     file: tasks/B911-responses-tool-repair.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5429,7 +5426,7 @@ tasks:
     milestone: M5 api families
     title: Responses tool results
     status: todo
-    depends_on: [B171, B902, B907, B1087]
+    depends_on: [B171, B004, B907, B2226]
     file: tasks/B912-responses-tool-results.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5437,7 +5434,7 @@ tasks:
     milestone: M5 api families
     title: Responses tool namespaces
     status: todo
-    depends_on: [B171, B178, B907, B1087]
+    depends_on: [B171, B004, B902, B907, B2226]
     file: tasks/B913-responses-tool-namespaces.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5445,7 +5442,7 @@ tasks:
     milestone: M5 api families
     title: Responses chat output
     status: todo
-    depends_on: [B171, B198, B902, B906, B912, B913, B1087, B1115, B907, B909]
+    depends_on: [B171, B004, B902, B1138, B913, B1115, B907]
     file: tasks/B914-responses-chat-output.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -5453,7 +5450,7 @@ tasks:
     milestone: M5 api families
     title: Responses session history
     status: todo
-    depends_on: [B069, B127, B171, B903, B909, B1087, B726, B858, B911, B002]
+    depends_on: [B069, B171, B903, B909, B1087, B726, B858, B911, B002, B004]
     file: tasks/B915-responses-session-history.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/session_handler.py"
@@ -5462,7 +5459,7 @@ tasks:
     milestone: M5 api families
     title: Responses chat call
     status: todo
-    depends_on: [B014, B171, B908, B909, B910, B911, B912, B913, B914, B915, B1087, B907]
+    depends_on: [B014, B004, B011, B908, B914, B915, B924, B2410, B2401]
     file: tasks/B916-responses-chat-call.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/handler.py"
@@ -5470,7 +5467,7 @@ tasks:
     milestone: M5 api families
     title: Response chat history
     status: todo
-    depends_on: [B004, B171, B902, B1087, B1136, B903, B912]
+    depends_on: [B004, B171, B902, B1138, B1136, B903, B912, B220]
     file: tasks/B917-response-chat-history.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
@@ -5478,7 +5475,7 @@ tasks:
     milestone: M5 api families
     title: Response chat request
     status: todo
-    depends_on: [B171, B175, B183, B917, B1087, B1136, B905, B002]
+    depends_on: [B171, B917, B1136, B1138, B216, B905, B002, B012, B247]
     file: tasks/B918-response-chat-request.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
@@ -5486,16 +5483,15 @@ tasks:
     milestone: M5 api families
     title: Response chat result
     status: todo
-    depends_on: [B005, B171, B902, B906, B1087, B917, B1136, B912]
+    depends_on: [B004, B171, B1138, B906, B917, B1136, B912, B2412]
     file: tasks/B919-response-chat-result.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
-      - "litellm/responses/sse_output_recovery.py"
   - id: B920
     milestone: M5 api families
     title: Responses to chat stream
     status: todo
-    depends_on: [B005, B171, B912, B919, B1087, B917, B906]
+    depends_on: [B004, B005, B010, B2214, B171, B1113, B1087, B917, B906]
     file: tasks/B920-responses-to-chat-stream.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
@@ -5503,7 +5499,7 @@ tasks:
     milestone: M5 api families
     title: Response chat dispatch
     status: todo
-    depends_on: [B014, B171, B918, B919, B920, B1087]
+    depends_on: [B004, B005, B010, B011, B012, B918, B919, B920, B1078, B932, B2230, B2202, B2401]
     file: tasks/B921-response-chat-dispatch.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/handler.py"
@@ -5511,7 +5507,7 @@ tasks:
     milestone: M5 api families
     title: Chat response stream tools
     status: todo
-    depends_on: [B171, B902, B912, B913, B1087, B907]
+    depends_on: [B004, B005, B171, B902, B1113, B1138, B913, B907]
     file: tasks/B922-chat-response-stream-tools.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/streaming_iterator.py"
@@ -5519,7 +5515,7 @@ tasks:
     milestone: M5 api families
     title: Chat response stream items
     status: todo
-    depends_on: [B005, B171, B903, B914, B1087, B904, B907, B1115]
+    depends_on: [B004, B171, B922, B1113, B1138, B904, B907, B1115, B2227]
     file: tasks/B923-chat-response-stream-items.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/streaming_iterator.py"
@@ -5527,7 +5523,7 @@ tasks:
     milestone: M5 api families
     title: Chat response stream
     status: todo
-    depends_on: [B171, B916, B922, B923, B1087, B1115, B914]
+    depends_on: [B004, B005, B011, B922, B923, B1113, B1138, B1115, B914, B2401]
     file: tasks/B924-chat-response-stream.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/streaming_iterator.py"
@@ -5535,7 +5531,7 @@ tasks:
     milestone: M5 api families
     title: Responses stream events
     status: todo
-    depends_on: [B005, B171, B198, B904, B906, B1087, B002]
+    depends_on: [B171, B2413, B926, B928, B904, B903, B508, B1114, B247]
     file: tasks/B925-responses-stream-events.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5543,7 +5539,7 @@ tasks:
     milestone: M5 api families
     title: Responses stream hooks
     status: todo
-    depends_on: [B012, B125, B171, B925, B1087, B928, B906, B002]
+    depends_on: [B012, B125, B171, B2413, B928, B906, B250, B251, B068, B004, B157, B189, B198]
     file: tasks/B926-responses-stream-hooks.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5551,7 +5547,7 @@ tasks:
     milestone: M5 api families
     title: Responses stream driver
     status: todo
-    depends_on: [B171, B925, B926, B928, B1087, B903]
+    depends_on: [B005, B011, B173, B198, B2413, B925, B926, B928, B508, B1138, B2401]
     file: tasks/B927-responses-stream-driver.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5559,7 +5555,7 @@ tasks:
     milestone: M5 api families
     title: Response synthetic events
     status: todo
-    depends_on: [B013, B068, B171, B902, B1087, B925, B909]
+    depends_on: [B068, B171, B902, B1113, B1138, B196, B2413, B909]
     file: tasks/B928-response-synthetic-events.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5567,7 +5563,7 @@ tasks:
     milestone: M5 api families
     title: Responses id security
     status: todo
-    depends_on: [B002, B061, B171, B902, B903, B1087, B732]
+    depends_on: [B002, B061, B171, B1138, B1113, B1087, B732]
     file: tasks/B929-responses-id-security.yaml
     covers:
       - "litellm/proxy/hooks/responses_id_security.py"
@@ -5575,7 +5571,7 @@ tasks:
     milestone: M5 api families
     title: Responses affinity
     status: todo
-    depends_on: [B171, B303, B368, B903, B904, B1087]
+    depends_on: [B171, B844, B061, B903, B904, B220]
     file: tasks/B930-responses-affinity.yaml
     covers:
       - "litellm/router_utils/pre_call_checks/responses_api_deployment_check.py"
@@ -5584,15 +5580,16 @@ tasks:
     milestone: M5 api families
     title: Responses provider selection
     status: todo
-    depends_on: [B010, B171, B174, B234, B905, B909, B1087, B002]
+    depends_on: [B010, B184, B185, B186, B171, B174, B234, B905, B1114, B506, B507, B508, B509, B117, B157, B129, B002]
     file: tasks/B931-responses-provider-selection.yaml
     covers:
       - "litellm/responses/main.py"
+      - "litellm/llms/openai_like/responses/transformation.py"
   - id: B932
     milestone: M5 api families
-    title: Responses create call
+    title: Responses asynchronous create entry point
     status: todo
-    depends_on: [B010, B011, B014, B171, B916, B927, B931, B1078, B1087, B508, B905, B904, B002]
+    depends_on: [B1078, B905, B931, B117, B174, B904, B185, B186, B2401]
     file: tasks/B932-responses-create-call.yaml
     covers:
       - "litellm/responses/main.py"
@@ -5600,7 +5597,7 @@ tasks:
     milestone: M5 api families
     title: Responses lifecycle call
     status: todo
-    depends_on: [B009, B010, B011, B171, B903, B1087, B1116, B509, B904, B002]
+    depends_on: [B010, B185, B186, B903, B904, B198, B247, B157, B2416, B2401]
     file: tasks/B933-responses-lifecycle-call.yaml
     covers:
       - "litellm/responses/main.py"
@@ -5608,7 +5605,7 @@ tasks:
     milestone: M5 api families
     title: Responses compact call
     status: todo
-    depends_on: [B009, B010, B011, B171, B904, B1087, B509, B931, B905, B002]
+    depends_on: [B010, B185, B186, B904, B931, B905, B198, B247, B157, B174, B206, B500, B2418, B2401]
     file: tasks/B934-responses-compact-call.yaml
     covers:
       - "litellm/responses/main.py"
@@ -5616,15 +5613,16 @@ tasks:
     milestone: M5 api families
     title: Responses poll state
     status: todo
-    depends_on: [B002, B126, B171, B198, B902, B1087, B732, B929]
+    depends_on: [B002, B126, B171, B1138, B1087, B732, B929]
     file: tasks/B935-responses-poll-state.yaml
     covers:
       - "litellm/proxy/response_polling/polling_handler.py"
+      - "litellm/proxy/proxy_server.py"
   - id: B936
     milestone: M5 api families
     title: Responses poll stream
     status: todo
-    depends_on: [B003, B171, B932, B935, B1087]
+    depends_on: [B003, B004, B171, B935, B1087, B1138, B184, B187, B2401]
     file: tasks/B936-responses-poll-stream.yaml
     covers:
       - "litellm/proxy/response_polling/background_streaming.py"
@@ -5632,7 +5630,7 @@ tasks:
     milestone: M5 api families
     title: Responses stream errors
     status: todo
-    depends_on: [B011, B171, B925, B1087]
+    depends_on: [B184, B198, B171, B1113, B1138, B012]
     file: tasks/B937-responses-stream-errors.yaml
     covers:
       - "litellm/proxy/common_utils/responses_stream_errors.py"
@@ -5648,7 +5646,7 @@ tasks:
     milestone: M5 api families
     title: Responses input tokens
     status: todo
-    depends_on: [B003, B013, B171, B909, B934, B1087, B1100, B732, B855, B756, B1139]
+    depends_on: [B003, B013, B171, B909, B934, B1087, B1100, B732, B855, B756, B1139, B014]
     file: tasks/B939-responses-input-tokens.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -5656,7 +5654,7 @@ tasks:
     milestone: M5 api families
     title: Cursor responses compat
     status: todo
-    depends_on: [B014, B171, B302, B368, B919, B932, B1087, B1100, B732, B855, B756, B003, B1139, B856]
+    depends_on: [B014, B302, B919, B932, B1087, B1100, B732, B855, B756, B003, B1139, B856, B004, B007, B216]
     file: tasks/B940-cursor-responses-compat.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -5664,7 +5662,7 @@ tasks:
     milestone: M5 api families
     title: Responses ws auth
     status: todo
-    depends_on: [B003, B171, B901, B943, B945, B1087, B754, B748, B756, B732, B855, B1139, B856, B002]
+    depends_on: [B003, B171, B901, B943, B945, B1087, B754, B748, B756, B732, B855, B1139, B856, B002, B014, B124]
     file: tasks/B941-responses-ws-auth.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -5672,7 +5670,7 @@ tasks:
     milestone: M5 api families
     title: Responses ws frame policy
     status: todo
-    depends_on: [B071, B104, B171, B902, B904, B1087, B732, B925, B903]
+    depends_on: [B071, B104, B171, B902, B904, B1087, B732, B925, B903, B163]
     file: tasks/B942-responses-ws-frame-policy.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5689,7 +5687,7 @@ tasks:
     milestone: M5 api families
     title: Responses ws history
     status: todo
-    depends_on: [B010, B171, B903, B909, B1087, B732, B925]
+    depends_on: [B010, B171, B903, B909, B732, B925, B174]
     file: tasks/B944-responses-ws-history.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5697,7 +5695,7 @@ tasks:
     milestone: M5 api families
     title: Responses ws managed
     status: todo
-    depends_on: [B171, B932, B942, B944, B1087, B925, B901]
+    depends_on: [B932, B942, B944, B1087, B925, B901]
     file: tasks/B945-responses-ws-managed.yaml
     covers:
       - "litellm/responses/streaming_iterator.py"
@@ -5713,7 +5711,7 @@ tasks:
     milestone: M5 api families
     title: Responses file search loop
     status: todo
-    depends_on: [B090, B171, B928, B932, B946, B1087, B732]
+    depends_on: [B090, B171, B932, B946, B1087, B732, B1064, B2401]
     file: tasks/B947-responses-file-search-loop.yaml
     covers:
       - "litellm/responses/file_search/emulated_handler.py"
@@ -5738,7 +5736,7 @@ tasks:
     milestone: M5 api families
     title: Responses mcp execute
     status: todo
-    depends_on: [B136, B137, B171, B949, B1087, B732, B1106, B002]
+    depends_on: [B136, B137, B171, B949, B1087, B732, B1106, B002, B200, B710]
     file: tasks/B950-responses-mcp-execute.yaml
     covers:
       - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
@@ -5754,7 +5752,7 @@ tasks:
     milestone: M5 api families
     title: Responses mcp events
     status: todo
-    depends_on: [B171, B198, B902, B1087]
+    depends_on: [B171, B198, B902]
     file: tasks/B952-responses-mcp-events.yaml
     covers:
       - "litellm/responses/mcp/mcp_streaming_iterator.py"
@@ -5762,7 +5760,7 @@ tasks:
     milestone: M5 api families
     title: Responses mcp stream round
     status: todo
-    depends_on: [B171, B925, B949, B952, B1087, B950, B932]
+    depends_on: [B171, B925, B949, B952, B950, B932]
     file: tasks/B953-responses-mcp-stream-round.yaml
     covers:
       - "litellm/responses/mcp/mcp_streaming_iterator.py"
@@ -5802,7 +5800,7 @@ tasks:
     milestone: M5 api families
     title: Messages thinking
     status: todo
-    depends_on: [B171, B175, B961, B1087, B569, B002]
+    depends_on: [B171, B1087, B002, B2430, B2436, B323, B2225, B567, B958, B012, B2401]
     file: tasks/B962-messages-thinking.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/transformation.py"
@@ -5811,7 +5809,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat content
     status: todo
-    depends_on: [B004, B171, B180, B183, B1087, B1117, B965, B961]
+    depends_on: [B171, B1117, B965, B961, B571, B220]
     file: tasks/B964-messages-chat-content.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
@@ -5819,7 +5817,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat options
     status: todo
-    depends_on: [B171, B175, B178, B180, B1087, B1117, B962]
+    depends_on: [B171, B175, B1117, B962, B2431]
     file: tasks/B965-messages-chat-options.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
@@ -5827,7 +5825,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat output
     status: todo
-    depends_on: [B004, B171, B958, B1087, B1117, B963]
+    depends_on: [B171, B958, B1117, B963, B571, B216, B968, B068, B198]
     file: tasks/B966-messages-chat-output.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
@@ -5835,7 +5833,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat transform
     status: todo
-    depends_on: [B171, B964, B965, B966, B1087]
+    depends_on: [B171, B964, B965, B966, B2431, B968, B977, B2401, B004]
     file: tasks/B967-messages-chat-transform.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
@@ -5843,7 +5841,7 @@ tasks:
     milestone: M5 api families
     title: Messages context clear
     status: todo
-    depends_on: [B171, B958, B1087]
+    depends_on: [B171, B958, B013]
     file: tasks/B968-messages-context-clear.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/constants.py"
@@ -5856,7 +5854,7 @@ tasks:
     milestone: M5 api families
     title: Summary model access
     status: todo
-    depends_on: [B002, B171, B198, B1087, B732]
+    depends_on: [B002, B171, B732, B736, B747, B879, B886, B968]
     file: tasks/B969-summary-model-access.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
@@ -5864,7 +5862,7 @@ tasks:
     milestone: M5 api families
     title: Summary model limits
     status: todo
-    depends_on: [B072, B071, B171, B969, B1087]
+    depends_on: [B072, B071, B171, B969, B732]
     file: tasks/B970-summary-model-limits.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
@@ -5872,7 +5870,7 @@ tasks:
     milestone: M5 api families
     title: Summary history
     status: todo
-    depends_on: [B013, B171, B958, B1087, B969]
+    depends_on: [B013, B171, B968, B969, B964, B2431]
     file: tasks/B971-summary-history.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
@@ -5880,15 +5878,16 @@ tasks:
     milestone: M5 api families
     title: Messages compaction
     status: todo
-    depends_on: [B014, B171, B968, B969, B970, B971, B1087, B002]
+    depends_on: [B171, B968, B2432, B2201, B2401]
     file: tasks/B972-messages-compaction.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
+      - "litellm/llms/anthropic/pass_through/context_management/dispatcher.py"
   - id: B973
     milestone: M5 api families
     title: Messages chat prepare
     status: todo
-    depends_on: [B171, B198, B931, B967, B972, B1087, B971, B968, B962]
+    depends_on: [B171, B972, B971, B968, B2433, B2401, B732]
     file: tasks/B973-messages-chat-prepare.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/handler.py"
@@ -5896,7 +5895,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat call
     status: todo
-    depends_on: [B014, B171, B958, B967, B973, B1087, B962, B002]
+    depends_on: [B014, B171, B958, B967, B973, B962, B2433, B2401]
     file: tasks/B974-messages-chat-call.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/handler.py"
@@ -5904,7 +5903,7 @@ tasks:
     milestone: M5 api families
     title: Messages stream split
     status: todo
-    depends_on: [B005, B171, B966, B1087, B958, B963]
+    depends_on: [B005, B171, B958, B963]
     file: tasks/B975-messages-stream-split.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
@@ -5912,7 +5911,7 @@ tasks:
     milestone: M5 api families
     title: Messages stream usage
     status: todo
-    depends_on: [B171, B968, B975, B1087, B966, B963]
+    depends_on: [B171, B968, B975, B966, B963, B571, B247]
     file: tasks/B976-messages-stream-usage.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
@@ -5920,7 +5919,7 @@ tasks:
     milestone: M5 api families
     title: Messages chat stream
     status: todo
-    depends_on: [B171, B974, B975, B976, B1087]
+    depends_on: [B975, B976, B966, B2434, B005, B2401]
     file: tasks/B977-messages-chat-stream.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
@@ -6070,7 +6069,7 @@ tasks:
     milestone: M5 api families
     title: Image generation call
     status: todo
-    depends_on: [B010, B014, B171, B997, B1087, B1121, B511, B002]
+    depends_on: [B010, B157, B174, B175, B176, B997, B511, B536, B549, B634, B044, B673, B012, B011, B249, B002, B2401, B2450]
     file: tasks/B998-image-generation-call.yaml
     covers:
       - "litellm/images/main.py"
@@ -6078,7 +6077,7 @@ tasks:
     milestone: M5 api families
     title: Image edit call
     status: todo
-    depends_on: [B009, B010, B171, B997, B1087, B512]
+    depends_on: [B010, B174, B176, B157, B1120, B997, B512, B044, B2451, B011, B012, B002, B2401]
     file: tasks/B999-image-edit-call.yaml
     covers:
       - "litellm/images/main.py"
@@ -6086,7 +6085,7 @@ tasks:
     milestone: M5 api families
     title: Image variations
     status: todo
-    depends_on: [B014, B171, B997, B1087, B513]
+    depends_on: [B010, B174, B176, B2220, B997, B513, B011, B002, B2401]
     file: tasks/B1000-image-variations.yaml
     covers:
       - "litellm/images/main.py"
@@ -6094,7 +6093,7 @@ tasks:
     milestone: M5 api families
     title: Audio file input
     status: todo
-    depends_on: [B171, B235, B1087, B1128]
+    depends_on: [B171, B1087, B1128]
     file: tasks/B1001-audio-file-input.yaml
     covers:
       - "litellm/litellm_core_utils/audio_utils/utils.py"
@@ -6103,7 +6102,7 @@ tasks:
     milestone: M5 api families
     title: Audio subtitles
     status: todo
-    depends_on: [B171, B204, B1087]
+    depends_on: [B171, B1087]
     file: tasks/B1002-audio-subtitles.yaml
     covers:
       - "litellm/litellm_core_utils/audio_utils/subtitle_utils.py"
@@ -6111,7 +6110,7 @@ tasks:
     milestone: M5 api families
     title: Speech chat bridge
     status: todo
-    depends_on: [B014, B171, B1087, B1135, B002]
+    depends_on: [B004, B011, B1128, B171, B1087, B2401]
     file: tasks/B1003-speech-chat-bridge.yaml
     covers:
       - "litellm/endpoints/speech/speech_to_completion_bridge/handler.py"
@@ -6122,7 +6121,7 @@ tasks:
     milestone: M5 api families
     title: Realtime http calls
     status: todo
-    depends_on: [B010, B061, B171, B1004, B1087, B528, B002]
+    depends_on: [B002, B012, B157, B174, B198, B528, B545, B1004, B2401, B2456]
     file: tasks/B1010-realtime-http-calls.yaml
     covers:
       - "litellm/realtime_api/main.py"
@@ -6130,7 +6129,7 @@ tasks:
     milestone: M5 api families
     title: Realtime connect
     status: todo
-    depends_on: [B009, B010, B171, B1009, B1087, B1127, B901, B1001, B528, B1010, B002]
+    depends_on: [B002, B012, B036, B039, B157, B174, B176, B528, B529, B545, B666, B901, B1004, B1303, B1365, B1378, B1382, B2457]
     file: tasks/B1011-realtime-connect.yaml
     covers:
       - "litellm/realtime_api/main.py"
@@ -6138,7 +6137,7 @@ tasks:
     milestone: M5 api families
     title: Realtime ephemeral ids
     status: todo
-    depends_on: [B061, B171, B1004, B1087, B732, B855, B756]
+    depends_on: [B171, B886, B1004, B1087]
     file: tasks/B1012-realtime-ephemeral-ids.yaml
     covers:
       - "litellm/proxy/realtime_endpoints/endpoints.py"
@@ -6146,7 +6145,7 @@ tasks:
     milestone: M5 api families
     title: Rerank contracts
     status: todo
-    depends_on: [B010, B171, B175, B204, B1087]
+    depends_on: [B010, B171, B2202, B204, B1087]
     file: tasks/B1013-rerank-contracts.yaml
     covers:
       - "litellm/llms/base_llm/rerank/transformation.py"
@@ -6154,9 +6153,9 @@ tasks:
       - "litellm/types/rerank.py"
   - id: B1014
     milestone: M5 api families
-    title: Rerank call
+    title: Async rerank SDK wrapper
     status: todo
-    depends_on: [B010, B011, B014, B037, B171, B1013, B1079, B1087, B556, B002]
+    depends_on: [B011, B012, B174, B209, B1079, B2401]
     file: tasks/B1014-rerank-call.yaml
     covers:
       - "litellm/rerank_api/main.py"
@@ -6164,11 +6163,9 @@ tasks:
     milestone: M5 api families
     title: File contracts
     status: todo
-    depends_on: [B004, B010, B171, B1087, B1128]
+    depends_on: [B010, B171, B1128, B2202]
     file: tasks/B1015-file-contracts.yaml
     covers:
-      - "litellm/types/files.py"
-      - "litellm/files/types.py"
       - "litellm/files/utils.py"
       - "litellm/llms/base_llm/files/transformation.py"
   - id: B1016
@@ -6179,21 +6176,19 @@ tasks:
     file: tasks/B1016-managed-resource-ids.yaml
     covers:
       - "litellm/llms/base_llm/managed_resources/utils.py"
-      - "litellm/llms/base_llm/managed_resources/base_managed_resource.py"
   - id: B1017
     milestone: M5 api families
     title: Managed resource access
     status: todo
-    depends_on: [B171, B1016, B1087, B732]
+    depends_on: [B171, B732]
     file: tasks/B1017-managed-resource-access.yaml
     covers:
       - "litellm/llms/base_llm/managed_resources/isolation.py"
-      - "litellm/llms/base_llm/managed_resources/base_managed_resource.py"
   - id: B1018
     milestone: M5 api families
     title: MIT resource owner compatibility
     status: todo
-    depends_on: [B732, B171, B1087]
+    depends_on: [B732, B171]
     file: tasks/B1018-managed-resource-store.yaml
     covers:
       - "litellm/llms/base_llm/managed_resources/base_managed_resource.py"
@@ -6203,7 +6198,7 @@ tasks:
     milestone: M5 api families
     title: File routing ids
     status: todo
-    depends_on: [B171, B1015, B1016, B1087]
+    depends_on: [B171, B1087, B1035, B732]
     file: tasks/B1019-file-routing-ids.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/common_utils.py"
@@ -6211,7 +6206,7 @@ tasks:
     milestone: M5 api families
     title: File credentials
     status: todo
-    depends_on: [B061, B171, B302, B303, B396, B1019, B1087, B732, B855, B756]
+    depends_on: [B171, B303, B1019, B732, B886, B844, B847, B759, B004]
     file: tasks/B1020-file-credentials.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/common_utils.py"
@@ -6219,7 +6214,7 @@ tasks:
     milestone: M5 api families
     title: File upload options
     status: todo
-    depends_on: [B171, B1015, B1016, B1087, B1100, B1019, B002]
+    depends_on: [B171, B1100, B1101, B1019, B002, B732]
     file: tasks/B1021-file-upload-options.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/common_utils.py"
@@ -6227,7 +6222,7 @@ tasks:
     milestone: M5 api families
     title: File upload validation
     status: todo
-    depends_on: [B002, B171, B1015, B1087]
+    depends_on: [B002, B171, B1087, B2460]
     file: tasks/B1022-file-upload-validation.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/general_upload_validation.py"
@@ -6236,7 +6231,7 @@ tasks:
     milestone: M5 api families
     title: File batch guardrails
     status: todo
-    depends_on: [B104, B171, B207, B1022, B1087]
+    depends_on: [B104, B171, B207, B1022, B732, B124]
     file: tasks/B1023-file-batch-guardrails.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/batch_guardrails.py"
@@ -6244,7 +6239,7 @@ tasks:
     milestone: M5 api families
     title: File batch rewrite
     status: todo
-    depends_on: [B171, B192, B1023, B1087]
+    depends_on: [B171, B1023]
     file: tasks/B1024-file-batch-rewrite.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/batch_guardrails.py"
@@ -6252,7 +6247,7 @@ tasks:
     milestone: M5 api families
     title: File azure storage
     status: todo
-    depends_on: [B002, B009, B129, B171, B1025, B1087]
+    depends_on: [B002, B173, B115, B171, B1025, B2460, B2401]
     file: tasks/B1026-file-azure-storage.yaml
     covers:
       - "litellm/llms/base_llm/files/azure_blob_storage_backend.py"
@@ -6260,15 +6255,16 @@ tasks:
     milestone: M5 api families
     title: File storage service
     status: todo
-    depends_on: [B171, B1018, B1021, B1025, B1026, B1087]
+    depends_on: [B171, B1015, B1025, B1026, B732, B726, B2401]
     file: tasks/B1027-file-storage-service.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/storage_backend_service.py"
+      - "litellm/llms/base_llm/files/storage_backend_factory.py"
   - id: B1028
     milestone: M5 api families
     title: File provider write
     status: todo
-    depends_on: [B009, B010, B171, B1015, B1087, B516]
+    depends_on: [B010, B012, B174, B176, B500, B516, B694, B2200, B1015, B2401, B2461, B2462, B2464]
     file: tasks/B1028-file-provider-write.yaml
     covers:
       - "litellm/files/main.py"
@@ -6276,7 +6272,7 @@ tasks:
     milestone: M5 api families
     title: File provider read
     status: todo
-    depends_on: [B009, B010, B171, B1015, B1087, B516]
+    depends_on: [B010, B012, B176, B500, B516, B694, B2200, B1015, B2401, B2462, B2464]
     file: tasks/B1029-file-provider-read.yaml
     covers:
       - "litellm/files/main.py"
@@ -6284,7 +6280,7 @@ tasks:
     milestone: M5 api families
     title: File content stream
     status: todo
-    depends_on: [B009, B012, B171, B1015, B1020, B1080, B1087, B516, B002, B645, B646]
+    depends_on: [B010, B012, B036, B174, B176, B500, B516, B694, B2200, B1015, B1080, B2401, B2463, B2464]
     file: tasks/B1030-file-content-stream.yaml
     covers:
       - "litellm/files/main.py"
@@ -6292,7 +6288,7 @@ tasks:
     milestone: M5 api families
     title: File upload routing
     status: todo
-    depends_on: [B002, B171, B1020, B1021, B1022, B1024, B1087, B1048, B1023, B1027, B1019]
+    depends_on: [B002, B171, B1020, B1022, B1024, B1087, B1048, B1023, B1027, B1019, B1028, B303, B844, B235, B162, B124, B2401]
     file: tasks/B1031-file-upload-routing.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6308,15 +6304,16 @@ tasks:
     milestone: M5 api families
     title: File content route
     status: todo
-    depends_on: [B171, B1017, B1019, B1027, B1030, B1087, B732, B855, B756, B1021, B1080, B1020, B1025, B003, B1139, B856, B2208, B2400]
+    depends_on: [B1019, B1030, B732, B855, B756, B1021, B1080, B1020, B003, B004, B124, B900, B1139, B856, B2208, B2400]
     file: tasks/B1033-file-content-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
+      - "litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py"
   - id: B1034
     milestone: M5 api families
     title: File read route
     status: todo
-    depends_on: [B171, B1017, B1018, B1019, B1029, B1087, B732, B855, B756, B1021, B1020, B003, B1139, B856, B2400]
+    depends_on: [B1017, B1019, B1029, B732, B855, B756, B1021, B1020, B003, B004, B124, B900, B1139, B856, B2400]
     file: tasks/B1034-file-read-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6465,7 +6462,7 @@ tasks:
     milestone: M5 api families
     title: Fine tuning create
     status: todo
-    depends_on: [B010, B171, B1087, B518, B002]
+    depends_on: [B010, B012, B518, B542, B1384, B2487, B2401]
     file: tasks/B1052-fine-tuning-create.yaml
     covers:
       - "litellm/fine_tuning/main.py"
@@ -6474,7 +6471,7 @@ tasks:
     milestone: M5 api families
     title: Fine tuning read
     status: todo
-    depends_on: [B010, B171, B1020, B1087, B518, B002]
+    depends_on: [B010, B011, B012, B518, B542, B2487, B2401]
     file: tasks/B1053-fine-tuning-read.yaml
     covers:
       - "litellm/fine_tuning/main.py"
@@ -6482,16 +6479,15 @@ tasks:
     milestone: M5 api families
     title: Fine tuning cancel
     status: todo
-    depends_on: [B002, B010, B171, B1020, B1087, B518, B732, B855, B756, B1021, B1019, B1141, B003, B1139, B856]
+    depends_on: [B003, B004, B012, B1021, B1019, B1141, B2400, B732, B1100, B1139]
     file: tasks/B1054-fine-tuning-cancel.yaml
     covers:
-      - "litellm/fine_tuning/main.py"
       - "litellm/proxy/fine_tuning_endpoints/endpoints.py"
   - id: B1055
     milestone: M5 api families
     title: Assistant records
     status: todo
-    depends_on: [B010, B171, B1019, B1087, B1130, B519, B002]
+    depends_on: [B010, B011, B174, B176, B519, B686, B2487, B2401]
     file: tasks/B1055-assistant-records.yaml
     covers:
       - "litellm/assistants/main.py"
@@ -6499,7 +6495,7 @@ tasks:
     milestone: M5 api families
     title: Assistant threads
     status: todo
-    depends_on: [B010, B171, B1019, B1020, B1087, B520, B002]
+    depends_on: [B010, B011, B174, B176, B520, B687, B2487, B2401]
     file: tasks/B1056-assistant-threads.yaml
     covers:
       - "litellm/assistants/main.py"
@@ -6507,7 +6503,7 @@ tasks:
     milestone: M5 api families
     title: Assistant messages
     status: todo
-    depends_on: [B010, B171, B183, B1019, B1087, B520, B002]
+    depends_on: [B010, B011, B171, B174, B176, B520, B697, B2487, B2401]
     file: tasks/B1057-assistant-messages.yaml
     covers:
       - "litellm/assistants/main.py"
@@ -6516,7 +6512,7 @@ tasks:
     milestone: M5 api families
     title: Vector store contracts
     status: todo
-    depends_on: [B010, B171, B204, B1087, B1131]
+    depends_on: [B006, B171, B1131, B2401]
     file: tasks/B1058-vector-store-contracts.yaml
     covers:
       - "litellm/llms/base_llm/vector_store/transformation.py"
@@ -6528,7 +6524,7 @@ tasks:
     milestone: M5 api families
     title: Vector query embedding
     status: todo
-    depends_on: [B006, B014, B171, B1058, B1087]
+    depends_on: [B171, B1058, B1131, B204, B2401]
     file: tasks/B1059-vector-query-embedding.yaml
     covers:
       - "litellm/llms/base_llm/vector_store/transformation.py"
@@ -6536,7 +6532,7 @@ tasks:
     milestone: M5 api families
     title: Vector store access
     status: todo
-    depends_on: [B058, B171, B1087, B137, B732, B855, B756]
+    depends_on: [B171, B1087, B137, B732, B735, B737, B1131]
     file: tasks/B1060-vector-store-access.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/utils.py"
@@ -6544,7 +6540,7 @@ tasks:
     milestone: M5 api families
     title: Vector endpoint access
     status: todo
-    depends_on: [B171, B207, B1060, B1087, B726, B858, B002]
+    depends_on: [B171, B010, B1060, B1062, B749, B741, B1058, B1071, B527, B558]
     file: tasks/B1061-vector-endpoint-access.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/utils.py"
@@ -6552,7 +6548,7 @@ tasks:
     milestone: M5 api families
     title: Vector store registry
     status: todo
-    depends_on: [B002, B061, B171, B1058, B1087, B726, B858]
+    depends_on: [B002, B061, B171, B1131, B726, B858]
     file: tasks/B1062-vector-store-registry.yaml
     covers:
       - "litellm/vector_stores/vector_store_registry.py"
@@ -6560,7 +6556,7 @@ tasks:
     milestone: M5 api families
     title: Vector tool selection
     status: todo
-    depends_on: [B171, B1061, B1062, B1087]
+    depends_on: [B171, B206, B1062, B1131, B726, B858]
     file: tasks/B1063-vector-tool-selection.yaml
     covers:
       - "litellm/vector_stores/vector_store_registry.py"
@@ -6568,7 +6564,7 @@ tasks:
     milestone: M5 api families
     title: Vector store search
     status: todo
-    depends_on: [B010, B171, B1058, B1059, B1087, B527, B002]
+    depends_on: [B010, B011, B012, B174, B1058, B1059, B1062, B527, B002, B2484, B2485, B2401]
     file: tasks/B1064-vector-store-search.yaml
     covers:
       - "litellm/vector_stores/main.py"
@@ -6576,7 +6572,7 @@ tasks:
     milestone: M5 api families
     title: Vector store read
     status: todo
-    depends_on: [B010, B171, B1058, B1087, B527, B002]
+    depends_on: [B010, B011, B012, B174, B1131, B527, B002, B2485, B2401]
     file: tasks/B1065-vector-store-read.yaml
     covers:
       - "litellm/vector_stores/main.py"
@@ -6584,7 +6580,7 @@ tasks:
     milestone: M5 api families
     title: Vector store write
     status: todo
-    depends_on: [B010, B171, B1058, B1087, B527, B002, B2402]
+    depends_on: [B010, B011, B012, B174, B1058, B527, B002, B2402, B2401]
     file: tasks/B1066-vector-store-write.yaml
     covers:
       - "litellm/vector_stores/main.py"
@@ -6592,7 +6588,7 @@ tasks:
     milestone: M5 api families
     title: Vector search routes
     status: todo
-    depends_on: [B171, B1061, B1062, B1064, B1087, B1100, B732, B855, B756, B1060, B003, B1139, B856]
+    depends_on: [B004, B1062, B1064, B1100, B732, B1060, B003, B726, B1131]
     file: tasks/B1067-vector-search-routes.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/endpoints.py"
@@ -6600,7 +6596,7 @@ tasks:
     milestone: M5 api families
     title: Vector store routes
     status: todo
-    depends_on: [B171, B1061, B1062, B1065, B1066, B1087, B1100, B1067, B732, B855, B756, B003, B1139, B856]
+    depends_on: [B004, B1065, B1066, B1100, B1067, B732, B003]
     file: tasks/B1068-vector-store-routes.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/endpoints.py"
@@ -6608,7 +6604,7 @@ tasks:
     milestone: M5 api families
     title: Vector management write
     status: todo
-    depends_on: [B171, B187, B1060, B1062, B1087, B726, B858, B732, B855, B756, B003, B1139, B856, B002]
+    depends_on: [B2486, B1062, B726, B858, B732, B003, B864, B192, B1131, B010]
     file: tasks/B1069-vector-management-write.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
@@ -6616,7 +6612,7 @@ tasks:
     milestone: M5 api families
     title: Vector management read
     status: todo
-    depends_on: [B171, B1060, B1069, B1087, B726, B858, B1062, B003, B756, B1139, B856, B002]
+    depends_on: [B2486, B1060, B1062, B003, B864, B1131, B732]
     file: tasks/B1070-vector-management-read.yaml
     covers:
       - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
@@ -6624,7 +6620,7 @@ tasks:
     milestone: M5 api families
     title: Vector file contracts
     status: todo
-    depends_on: [B010, B171, B1015, B1087]
+    depends_on: [B171, B204]
     file: tasks/B1071-vector-file-contracts.yaml
     covers:
       - "litellm/llms/base_llm/vector_store_files/transformation.py"
@@ -6634,7 +6630,7 @@ tasks:
     milestone: M5 api families
     title: Vector file create
     status: todo
-    depends_on: [B010, B171, B1062, B1071, B1087, B1111, B527, B002]
+    depends_on: [B010, B011, B012, B174, B1071, B1111, B527, B002, B2480, B2401]
     file: tasks/B1072-vector-file-create.yaml
     covers:
       - "litellm/vector_store_files/main.py"
@@ -6642,7 +6638,7 @@ tasks:
     milestone: M5 api families
     title: Vector file read
     status: todo
-    depends_on: [B010, B171, B1071, B1087, B527, B1111, B002]
+    depends_on: [B010, B011, B012, B174, B1071, B527, B1111, B002, B2481, B2401]
     file: tasks/B1073-vector-file-read.yaml
     covers:
       - "litellm/vector_store_files/main.py"
@@ -6650,7 +6646,7 @@ tasks:
     milestone: M5 api families
     title: Vector file write
     status: todo
-    depends_on: [B010, B171, B1071, B1087, B527, B1111, B002]
+    depends_on: [B010, B011, B012, B174, B1071, B527, B1111, B002, B2482, B2401]
     file: tasks/B1074-vector-file-write.yaml
     covers:
       - "litellm/vector_store_files/main.py"
@@ -6658,7 +6654,7 @@ tasks:
     milestone: M5 api families
     title: Vector file resolution
     status: todo
-    depends_on: [B171, B1017, B1020, B1061, B1062, B1087, B1016, B1021, B002, B2400]
+    depends_on: [B171, B174, B1020, B1061, B1062, B1016, B1019, B1021, B2400, B732]
     file: tasks/B1075-vector-file-resolution.yaml
     covers:
       - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
@@ -6666,31 +6662,32 @@ tasks:
     milestone: M5 api families
     title: Vector file routes
     status: todo
-    depends_on: [B171, B1072, B1073, B1075, B1087, B732, B855, B756, B1061, B003, B1139]
+    depends_on: [B004, B1072, B1073, B1075, B732, B1061, B003]
     file: tasks/B1076-vector-file-routes.yaml
     covers:
       - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
+      - "litellm/proxy/rag_endpoints/upload_security.py"
   - id: B1077
     milestone: M5 api families
     title: Vector retrieval context
     status: todo
-    depends_on: [B002, B014, B104, B171, B1063, B1064, B1087]
+    depends_on: [B011, B012, B104, B1063, B1064, B1131, B2483, B2401]
     file: tasks/B1077-vector-retrieval-context.yaml
     covers:
       - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
   - id: B1078
     milestone: M5 api families
-    title: Responses create plan
+    title: Responses synchronous create execution
     status: todo
-    depends_on: [B171, B176, B198, B905, B931, B1087]
+    depends_on: [B010, B171, B174, B176, B198, B206, B905, B931, B918, B916, B2414, B904, B247, B500, B185, B186, B2401]
     file: tasks/B1078-responses-create-plan.yaml
     covers:
       - "litellm/responses/main.py"
   - id: B1079
     milestone: M5 api families
-    title: Rerank provider plan
+    title: Complete rerank SDK dispatch
     status: todo
-    depends_on: [B010, B171, B174, B175, B1013, B1087, B002]
+    depends_on: [B002, B010, B011, B012, B037, B041, B042, B157, B174, B556, B639, B1013, B2401, B2454]
     file: tasks/B1079-rerank-provider-plan.yaml
     covers:
       - "litellm/rerank_api/main.py"
@@ -6698,7 +6695,7 @@ tasks:
     milestone: M5 api families
     title: File stream logging
     status: todo
-    depends_on: [B009, B012, B171, B1020, B1087]
+    depends_on: [B012, B171, B1020, B1128, B173, B2401]
     file: tasks/B1080-file-stream-logging.yaml
     covers:
       - "litellm/files/streaming.py"
@@ -6707,7 +6704,7 @@ tasks:
     milestone: M5 api families
     title: Vector file mutation routes
     status: todo
-    depends_on: [B171, B1072, B1074, B1075, B1087, B1100, B732, B855, B756, B1061, B003, B1139, B856]
+    depends_on: [B004, B1072, B1074, B1075, B1100, B732, B1061, B003]
     file: tasks/B1081-vector-file-mutation-routes.yaml
     covers:
       - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
@@ -6715,16 +6712,16 @@ tasks:
     milestone: M5 api families
     title: Transcription call
     status: todo
-    depends_on: [B010, B011, B171, B1001, B1087, B1122, B515, B002]
+    depends_on: [B010, B174, B175, B176, B157, B011, B012, B1001, B1122, B515, B539, B2453, B002, B2401]
     file: tasks/B1082-transcription-call.yaml
     covers:
       - "litellm/llms/base_llm/audio_transcription/transformation.py"
       - "litellm/main.py"
   - id: B1083
     milestone: M5 api families
-    title: Speech call plan
+    title: Async speech invocation
     status: todo
-    depends_on: [B010, B171, B174, B1003, B1087, B002]
+    depends_on: [B1084, B174, B011, B2401]
     file: tasks/B1083-speech-call-plan.yaml
     covers:
       - "litellm/llms/base_llm/text_to_speech/transformation.py"
@@ -6733,7 +6730,7 @@ tasks:
     milestone: M5 api families
     title: Speech call
     status: todo
-    depends_on: [B009, B010, B011, B171, B1003, B1083, B1087, B514]
+    depends_on: [B010, B174, B176, B157, B011, B012, B1003, B1135, B2452, B514, B002, B2401]
     file: tasks/B1084-speech-call.yaml
     covers:
       - "litellm/llms/base_llm/text_to_speech/transformation.py"
@@ -6742,7 +6739,7 @@ tasks:
     milestone: M5 api families
     title: Assistant object routes
     status: todo
-    depends_on: [B171, B1055, B1087, B1130, B162, B732, B1103, B1137, B003, B756, B1139, B856, B002]
+    depends_on: [B003, B004, B012, B732, B1103, B2489]
     file: tasks/B1085-assistant-object-routes.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -6750,10 +6747,9 @@ tasks:
     milestone: M5 api families
     title: Assistant thread routes
     status: todo
-    depends_on: [B171, B1056, B1057, B1087, B732, B1103, B1137, B003, B756, B1139, B856]
+    depends_on: [B003, B004, B012, B732, B1103, B2489]
     file: tasks/B1086-assistant-thread-routes.yaml
     covers:
-      - "litellm/assistants/main.py"
       - "litellm/proxy/proxy_server.py"
   - id: B700
     milestone: M4 keys, spend and management
@@ -7157,7 +7153,7 @@ tasks:
     milestone: M5 API families
     title: Realtime send boundary
     status: todo
-    depends_on: [B1004, B1005, B171, B1087]
+    depends_on: [B901, B1004, B1005, B1006, B2455]
     file: tasks/B1110-realtime-sender.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -7165,7 +7161,7 @@ tasks:
     milestone: M5 API families
     title: Vector file provider selection
     status: todo
-    depends_on: [B1062, B171, B1087, B002]
+    depends_on: [B1062, B171]
     file: tasks/B1111-vector-file-provider.yaml
     covers:
       - "litellm/vector_store_files/main.py"
@@ -7181,7 +7177,7 @@ tasks:
     milestone: M5 API families
     title: Responses streaming event records
     status: todo
-    depends_on: [B004, B171, B1087, B1138]
+    depends_on: [B004, B171, B902, B1138]
     file: tasks/B1113-responses-event-records.yaml
     covers:
       - "litellm/types/llms/openai.py"
@@ -7189,7 +7185,7 @@ tasks:
     milestone: M5 API families
     title: Responses provider contract
     status: todo
-    depends_on: [B010, B171, B1087, B1138, B2202]
+    depends_on: [B010, B171, B902, B1138, B1113, B2202]
     file: tasks/B1114-responses-provider-contract.yaml
     covers:
       - "litellm/llms/base_llm/responses/transformation.py"
@@ -7197,7 +7193,7 @@ tasks:
     milestone: M5 API families
     title: Responses output detail conversion
     status: todo
-    depends_on: [B906, B171, B1087]
+    depends_on: [B004, B902, B1138, B171]
     file: tasks/B1115-responses-output-details.yaml
     covers:
       - "litellm/responses/litellm_completion_transformation/transformation.py"
@@ -7205,7 +7201,7 @@ tasks:
     milestone: M5 API families
     title: Responses delete and cancel calls
     status: todo
-    depends_on: [B010, B011, B509, B903, B171, B1087, B002]
+    depends_on: [B010, B185, B186, B903, B198, B247, B157, B2417, B2401]
     file: tasks/B1116-responses-lifecycle-write.yaml
     covers:
       - "litellm/responses/main.py"
@@ -7213,7 +7209,7 @@ tasks:
     milestone: M5 API families
     title: Messages content primitives
     status: todo
-    depends_on: [B180, B183, B171, B1087]
+    depends_on: [B171, B218, B216, B568, B2221]
     file: tasks/B1117-messages-content-primitives.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
@@ -7221,7 +7217,7 @@ tasks:
     milestone: M5 API families
     title: Messages native execution
     status: todo
-    depends_on: [B010, B011, B961, B962, B963, B979, B981, B171, B1087, B570, B002]
+    depends_on: [B174, B011, B571, B572, B189, B987, B2435, B961, B2430, B962, B009, B2401]
     file: tasks/B1118-messages-native-execute.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/messages/handler.py"
@@ -7229,7 +7225,7 @@ tasks:
     milestone: M5 API families
     title: Responses to Messages event transitions
     status: todo
-    depends_on: [B902, B983, B1113, B171, B1087, B925, B963, B958]
+    depends_on: [B983, B1113, B171, B925, B963, B958, B220, B012]
     file: tasks/B1119-messages-response-events.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py"
@@ -7237,16 +7233,16 @@ tasks:
     milestone: M5 API families
     title: Image edit parameters and MIME
     status: todo
-    depends_on: [B175, B171, B1087, B002]
+    depends_on: [B175, B258, B171, B1087, B002]
     file: tasks/B1120-image-input-options.yaml
     covers:
       - "litellm/images/utils.py"
       - "litellm/types/images/main.py"
   - id: B1121
     milestone: M5 API families
-    title: Image generation call preparation
+    title: Async image generation entry point
     status: todo
-    depends_on: [B010, B174, B175, B997, B511, B171, B1087, B002]
+    depends_on: [B998, B174, B011, B2401]
     file: tasks/B1121-image-generation-plan.yaml
     covers:
       - "litellm/images/main.py"
@@ -7254,7 +7250,7 @@ tasks:
     milestone: M5 API families
     title: Transcription provider contract
     status: todo
-    depends_on: [B010, B171, B1087]
+    depends_on: [B010, B2202, B171]
     file: tasks/B1122-transcription-contract.yaml
     covers:
       - "litellm/llms/base_llm/audio_transcription/transformation.py"
@@ -7270,7 +7266,7 @@ tasks:
     milestone: M5 API families
     title: Realtime setup buffering
     status: todo
-    depends_on: [B1110, B1004, B171, B1087]
+    depends_on: [B901, B1004, B1006, B1110]
     file: tasks/B1124-realtime-setup-buffer.yaml
     covers:
       - "litellm/litellm_core_utils/realtime_streaming.py"
@@ -7278,7 +7274,7 @@ tasks:
     milestone: M5 API families
     title: Realtime WebSocket route
     status: todo
-    depends_on: [B003, B855, B756, B901, B1011, B1004, B004, B014, B012, B886, B071, B2400, B1087, B1139, B856]
+    depends_on: [B003, B004, B012, B014, B071, B124, B756, B856, B886, B901, B1004, B1011, B1139, B2400]
     file: tasks/B1125-realtime-websocket-route.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -7286,15 +7282,15 @@ tasks:
     milestone: M5 API families
     title: Realtime client secrets and transcription sessions
     status: todo
-    depends_on: [B003, B855, B1010, B1012, B1103, B1100, B171, B1087, B756, B1139]
+    depends_on: [B001, B003, B014, B061, B124, B756, B856, B886, B1004, B1010, B1012, B1100, B1103, B1139]
     file: tasks/B1126-realtime-secret-routes.yaml
     covers:
       - "litellm/proxy/realtime_endpoints/endpoints.py"
   - id: B1127
     milestone: M5 API families
-    title: Realtime connection preparation
+    title: Realtime health probes and stored credentials
     status: todo
-    depends_on: [B010, B174, B528, B545, B171, B1087, B1010, B002]
+    depends_on: [B002, B036, B061, B173, B528, B529, B545, B901, B1011, B1301, B1304, B1356, B1365, B2225]
     file: tasks/B1127-realtime-connection-plan.yaml
     covers:
       - "litellm/realtime_api/main.py"
@@ -7302,7 +7298,7 @@ tasks:
     milestone: M5 API families
     title: File type and MIME records
     status: todo
-    depends_on: [B004, B171, B1087]
+    depends_on: [B171]
     file: tasks/B1128-file-type-records.yaml
     covers:
       - "litellm/types/files.py"
@@ -7319,7 +7315,7 @@ tasks:
     milestone: M5 API families
     title: Assistant list and delete calls
     status: todo
-    depends_on: [B010, B011, B519, B171, B1087, B002]
+    depends_on: [B010, B011, B174, B176, B519, B686, B2487, B2401]
     file: tasks/B1130-assistant-read-delete.yaml
     covers:
       - "litellm/assistants/main.py"
@@ -7327,7 +7323,7 @@ tasks:
     milestone: M5 API families
     title: Vector store wire records
     status: todo
-    depends_on: [B004, B171, B1087]
+    depends_on: [B171, B204]
     file: tasks/B1131-vector-store-records.yaml
     covers:
       - "litellm/types/vector_stores.py"
@@ -7361,7 +7357,7 @@ tasks:
     milestone: M5 API families
     title: Speech provider contract
     status: todo
-    depends_on: [B010, B171, B1087]
+    depends_on: [B010, B2202, B171]
     file: tasks/B1135-speech-provider-contract.yaml
     covers:
       - "litellm/llms/base_llm/text_to_speech/transformation.py"
@@ -7369,7 +7365,7 @@ tasks:
     milestone: M5 API families
     title: Responses chat content projection
     status: todo
-    depends_on: [B183, B171, B1087]
+    depends_on: [B004, B902, B171]
     file: tasks/B1136-response-chat-content.yaml
     covers:
       - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
@@ -7377,7 +7373,7 @@ tasks:
     milestone: M5 API families
     title: Request intake and safe snapshots
     status: todo
-    depends_on: [B1100, B1104, B1105, B1109, B1102, B732, B171, B1087, B1106, B002, B004, B855, B1139]
+    depends_on: [B1100, B1104, B1105, B1109, B1102, B732, B171, B1087, B1106, B002, B004, B855, B1139, B1107, B1108]
     file: tasks/B1137-request-intake.yaml
     covers:
       - "litellm/proxy/litellm_pre_call_utils.py"
@@ -7385,7 +7381,7 @@ tasks:
     milestone: M5 API families
     title: Responses objects and usage
     status: todo
-    depends_on: [B004, B171, B1087]
+    depends_on: [B004, B171, B902]
     file: tasks/B1138-responses-objects.yaml
     covers:
       - "litellm/types/llms/openai.py"
@@ -7393,7 +7389,7 @@ tasks:
     milestone: M5 API families
     title: Stateful HTTP oracle scenarios
     status: todo
-    depends_on: [B001, B171, B856, B126, B900]
+    depends_on: [B001, B126, B900, B860]
     file: tasks/B1139-http-scenarios.yaml
     covers: []
   - id: B1140
@@ -7410,7 +7406,7 @@ tasks:
     milestone: M5 API families
     title: Fine tuning cancel call and settings
     status: todo
-    depends_on: [B010, B011, B518, B002, B171, B1087]
+    depends_on: [B010, B011, B012, B171, B518, B542, B2487, B002, B2401]
     file: tasks/B1141-fine-tuning-cancel-call.yaml
     covers:
       - "litellm/fine_tuning/main.py"
@@ -11760,3 +11756,328 @@ tasks:
     covers:
       - "litellm/proxy/db/db_spend_update_writer.py"
       - "litellm/proxy/utils.py"
+  - id: B2410
+    milestone: M5 API families
+    title: Codex history normalization and additional tools
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2410-codex-history-tools.yaml
+    covers:
+      - "litellm/llms/base_llm/responses/codex_compat.py"
+      - "litellm/responses/additional_tools.py"
+  - id: B2411
+    milestone: M5 API families
+    title: Responses input content and instruction conversion
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2411-responses-input-content.yaml
+    covers:
+      - "litellm/responses/litellm_completion_transformation/transformation.py"
+  - id: B2412
+    milestone: M5 API families
+    title: Recover Responses output from recorded SSE
+    status: todo
+    depends_on: [B005, B012, B1087, B171]
+    file: tasks/B2412-responses-sse-recovery.yaml
+    covers:
+      - "litellm/responses/sse_output_recovery.py"
+      - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
+  - id: B2413
+    milestone: M5 API families
+    title: Responses stream primitives and duration settings
+    status: todo
+    depends_on: [B004, B010, B184, B185, B186, B012, B198, B206, B247, B1114, B1138, B1087, B002, B171]
+    file: tasks/B2413-responses-stream-primitives.yaml
+    covers:
+      - "litellm/responses/streaming_iterator.py"
+      - "litellm/constants.py"
+  - id: B2416
+    milestone: M5 API families
+    title: Responses retrieve and input-items HTTP transport
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B2402, B2401]
+    file: tasks/B2416-responses-read-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2417
+    milestone: M5 API families
+    title: Responses delete and cancel HTTP transport
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B2402, B2401]
+    file: tasks/B2417-responses-write-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2418
+    milestone: M5 API families
+    title: Responses compact HTTP and signed-body selection
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B595, B2402, B2401]
+    file: tasks/B2418-responses-compact-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2419
+    milestone: M5 API families
+    title: Responses deployment-hook and agentic policy
+    status: todo
+    depends_on: [B002, B010, B171, B189, B248, B247, B902, B157]
+    file: tasks/B2419-responses-hook-policy.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+      - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
+  - id: B2415
+    milestone: M5 API families
+    title: Responses agentic continuation execution
+    status: todo
+    depends_on: [B2419, B189, B247, B157, B978, B173, B507, B508, B2401]
+    file: tasks/B2415-responses-agentic-execution.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2414
+    milestone: M5 API families
+    title: Native Responses create HTTP transport
+    status: todo
+    depends_on: [B2419, B2415, B1114, B507, B508, B173, B595, B2418, B249, B2402, B927, B189, B2401]
+    file: tasks/B2414-responses-create-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2430
+    milestone: M5 API families
+    title: Native Messages reasoning and request transformation
+    status: todo
+    depends_on: [B171, B961, B569, B571, B2201, B567, B688]
+    file: tasks/B2430-messages-native-transform.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/transformation.py"
+  - id: B2431
+    milestone: M5 API families
+    title: Messages tool and structured-output conversion
+    status: todo
+    depends_on: [B171, B1117]
+    file: tasks/B2431-messages-chat-tools-schema.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
+  - id: B2432
+    milestone: M5 API families
+    title: Compaction summary execution
+    status: todo
+    depends_on: [B014, B162, B004, B171, B968, B969, B970, B971, B2401]
+    file: tasks/B2432-summary-execution.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
+  - id: B2433
+    milestone: M5 API families
+    title: Messages reasoning route policy
+    status: todo
+    depends_on: [B171, B174, B205, B962, B158]
+    file: tasks/B2433-messages-reasoning-route.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/handler.py"
+  - id: B2434
+    milestone: M5 API families
+    title: Synchronous Messages stream transitions
+    status: todo
+    depends_on: [B976, B966, B005, B2401]
+    file: tasks/B2434-messages-sync-stream.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
+  - id: B2435
+    milestone: M5 API families
+    title: Legacy fake Messages stream rendering
+    status: todo
+    depends_on: [B171, B958]
+    file: tasks/B2435-messages-fake-stream.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
+  - id: B2436
+    milestone: M5 API families
+    title: Messages stream logging and teardown
+    status: todo
+    depends_on: [B102, B191, B247, B978, B009, B2401]
+    file: tasks/B2436-messages-stream-logging.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
+  - id: B2450
+    milestone: M5 API families
+    title: Image generation HTTP execution
+    status: todo
+    depends_on: [B997, B173, B2402, B206, B012, B2401]
+    file: tasks/B2450-image-generation-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2451
+    milestone: M5 API families
+    title: Image edit HTTP execution
+    status: todo
+    depends_on: [B997, B173, B2402, B206, B012, B2401]
+    file: tasks/B2451-image-edit-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2452
+    milestone: M5 API families
+    title: Generic speech HTTP execution
+    status: todo
+    depends_on: [B1135, B173, B2402, B004, B206, B012, B2401]
+    file: tasks/B2452-speech-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2453
+    milestone: M5 API families
+    title: Native transcription HTTP and subtitle replies
+    status: todo
+    depends_on: [B1122, B173, B2402, B206, B1002, B012, B2401]
+    file: tasks/B2453-transcription-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2454
+    milestone: M5 API families
+    title: Rerank HTTP execution
+    status: todo
+    depends_on: [B1013, B173, B2402, B012, B2401]
+    file: tasks/B2454-rerank-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2455
+    milestone: M5 API families
+    title: Realtime guardrail selection and setup policy
+    status: todo
+    depends_on: [B104, B171, B1004]
+    file: tasks/B2455-realtime-guardrail-policy.yaml
+    covers:
+      - "litellm/litellm_core_utils/realtime_streaming.py"
+  - id: B2456
+    milestone: M5 API families
+    title: Realtime HTTP session and SDP transport
+    status: todo
+    depends_on: [B012, B173, B1004, B1087, B2401, B2402]
+    file: tasks/B2456-realtime-http-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2457
+    milestone: M5 API families
+    title: Generic realtime backend connection
+    status: todo
+    depends_on: [B002, B012, B173, B901, B1004, B1006, B1009, B2455]
+    file: tasks/B2457-realtime-backend-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2460
+    milestone: M5 API families
+    title: Shared upload filename extraction
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2460-upload-filename.yaml
+    covers:
+      - "litellm/proxy/common_utils/path_utils.py"
+  - id: B2461
+    milestone: M5 API families
+    title: Provider file upload HTTP execution
+    status: todo
+    depends_on: [B1015, B1087, B173, B012, B2401, B2402]
+    file: tasks/B2461-file-http-upload.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2462
+    milestone: M5 API families
+    title: Generic file metadata HTTP and pagination
+    status: todo
+    depends_on: [B1015, B173, B012, B2401, B2402]
+    file: tasks/B2462-file-http-metadata.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2463
+    milestone: M5 API families
+    title: Generic file byte and stream HTTP execution
+    status: todo
+    depends_on: [B1015, B173, B012, B2401, B2402]
+    file: tasks/B2463-file-http-content.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2464
+    milestone: M5 API families
+    title: File provider config and timeout selection
+    status: todo
+    depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B036, B050]
+    file: tasks/B2464-file-provider-selection.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2480
+    milestone: M5 API families
+    title: Attached-file HTTP create and list execution
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2480-vector-file-http-create-list.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2481
+    milestone: M5 API families
+    title: Attached-file HTTP retrieval and content
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2481-vector-file-http-read.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2482
+    milestone: M5 API families
+    title: Attached-file HTTP update and deletion
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2482-vector-file-http-write.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2483
+    milestone: M5 API families
+    title: Shape retrieval queries, context messages and failure policy
+    status: todo
+    depends_on: [B002, B171, B1131]
+    file: tasks/B2483-vector-context-shaping.yaml
+    covers:
+      - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
+  - id: B2484
+    milestone: M5 API families
+    title: Execute HTTP and direct vector searches
+    status: todo
+    depends_on: [B173, B1058, B1059, B527, B595, B012, B2402, B2401]
+    file: tasks/B2484-vector-search-execution.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2485
+    milestone: M5 API families
+    title: Vector-store HTTP create, retrieve and list
+    status: todo
+    depends_on: [B173, B1058, B1131, B527, B012, B171, B2402, B2401]
+    file: tasks/B2485-vector-store-http-create-read.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2486
+    milestone: M5 API families
+    title: Vector management ownership, access and credential projection
+    status: todo
+    depends_on: [B726, B858, B1062, B1060, B1131, B244, B171, B1087]
+    file: tasks/B2486-vector-management-boundaries.yaml
+    covers:
+      - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
+  - id: B2487
+    milestone: M5 API families
+    title: Fine-tuning and assistant SDK settings and timeout policy
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2487-resource-sdk-settings.yaml
+    covers:
+      - "litellm/fine_tuning/main.py"
+      - "litellm/utils.py"
+  - id: B2488
+    milestone: M5 API families
+    title: Assistant run and run-stream SDK execution
+    status: todo
+    depends_on: [B010, B011, B174, B176, B521, B543, B2487, B2401]
+    file: tasks/B2488-assistant-run-sdk.yaml
+    covers:
+      - "litellm/assistants/main.py"
+  - id: B2489
+    milestone: M5 API families
+    title: Assistant router dispatch, settings and JSON boundary
+    status: todo
+    depends_on: [B002, B1055, B1130, B1056, B1057, B2488, B2487, B1087, B2401]
+    file: tasks/B2489-assistant-dispatch-boundary.yaml
+    covers:
+      - "litellm/router.py"

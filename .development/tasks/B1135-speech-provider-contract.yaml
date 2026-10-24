@@ -1,141 +1,89 @@
 id: B1135
-title: Speech provider contract
+title: Text-to-speech provider contract
 description: >-
-  Define the typed text-to-speech provider operation and optional parameter mapping before speech execution and
-  the chat-audio bridge.
+  Define TextToSpeechRequestData and all BaseTextToSpeechConfig methods in
+  betterlite-provider::api::speech_provider_contract, with request records in betterlite-openai. The declared
+  request keys are dict_body,ssml_body,headers, all optional; the docstring's text_body is not a declared field.
+  These are typed transformation results, not a new request parser. Required provider methods expose supported
+  params, option/voice mapping, validation, URL and binary request/response conversion. The no-op constructor
+  needs no runtime wrapper. map_openai_params defaults voice=None,drop_params=false,kwargs={} at its interface;
+  avoid shared mutable defaults in Rust while retaining per-call behavior.
 
-
-  Implement crates/betterlite-core/src/api/speech_provider_contract.rs, crates/betterlite-provider/src/api/speech_provider_contract.rs.
-  Use SpeechProviderContractInput and SpeechProviderContractResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
-
-
-  Write adjacent tests.rs behavior functions speech_provider_capabilities under api::speech_provider_contract::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::SpeechProviderContract in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {speech_provider_contract: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.__init__ (L38-L39);
-  litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.get_config (L42-L58); litellm/llms/base_llm/text_to_speech/transformation.py:
-  BaseTextToSpeechConfig.get_supported_openai_params (L61-L64); litellm/llms/base_llm/text_to_speech/transformation.py:
-  BaseTextToSpeechConfig.map_openai_params (L67-L77); litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.validate_environment
-  (L80-L90); litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.get_complete_url (L93-L104);
-  litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.transform_text_to_speech_request
-  (L107-L123); litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.transform_text_to_speech_response
-  (L126-L134); litellm/llms/base_llm/text_to_speech/transformation.py: BaseTextToSpeechConfig.get_error_class (L136-L143).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 96 owned nonblank/non-comment/non-docstring Python lines (123 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 116 implementation,
-  46 behavior tests, 12 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 302 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
-  oracle and URL path encoding), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  get_config examines only own class attributes, excluding names beginning __ or _abc, functions,builtins,
+  classmethods,staticmethods and None. It preserves ordinary single-underscore attributes, properties and callable
+  objects. The inherited validation body returns {}; inherited URL body rejects only api_base=None. Error
+  conversion raises B2202's BaseLLMException preserving status,message,headers. Concrete providers may override
+  these bodies; the tests invoke finite subclasses, not network clients. Register speech_provider_contract in
+  B171 helper dispatch. Source ownership is 105 nonblank/non-comment lines including abstract documentation;
+  budget 100 interface/default code, 110 tests, 75 cases, 90 adapters and 25 wiring, 400 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/speech_provider_contract.rs
-  - crates/betterlite-core/src/api/speech_provider_contract/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-provider/Cargo.toml
-  - crates/betterlite-provider/src/lib.rs
-  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api.rs
   - crates/betterlite-provider/src/api/speech_provider_contract.rs
   - crates/betterlite-provider/src/api/speech_provider_contract/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/provider.rs
   - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/prepared.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-openai/src/api/speech_provider_contract.rs
+  - crates/betterlite-openai/src/api/speech_provider_contract/**
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/speech_provider_contract.rs
-  - tools/oracle/src/helpers/speech_provider_contract/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/speech_provider_contract.py
-  - tools/oracle/helpers/speech_provider_contract/**
-  - tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-*
   - tools/oracle/cases/helpers/speech-provider-contract/**
+  - tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/text_to_speech/transformation.py#L1-L143
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/text_to_speech/transformation.py#L25-L143
+  why: Own speech request keys, class-attribute filtering, mapping defaults, URL validation and base error construction.
 dod:
-- text: 'speech provider capabilities: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-speech-provider-capabilities
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    speech_request_contract keeps {},{dict_body:{}},{ssml_body:"<speak>hello</speak>"},{headers:{x:y}} and
+    combined dict_body/ssml_body records as supplied; the TypedDict adds no exclusivity validation or default
+    body. Mapping receives voice=None,drop_params=false,kwargs={} when omitted; explicit voice="",true and
+    kwargs={x:1} remain distinguishable. Abstract methods are required dispatch members, not silently successful
+    empty response implementations.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    speech_class_configuration supplies own speed=0,enabled=false,label="",_private=1,__hidden=2,_abc_hidden=3,
+    absent=None,method,classmethod,staticmethod,property,callable-object and inherited voice. Expect only speed,
+    enabled,label,_private,property,callable-object. Helper projection tags descriptors and never executes them.
+    Two instances do not mutate one another's mapping kwargs; inherited class values remain excluded.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    speech_base_url_and_error invokes inherited validation with headers={Authorization:secret}: expect {}.
+    get_complete_url(None) raises ValueError("api_base is required"), while "" and https://mock/speech are
+    returned unchanged. get_error_class("slow",429,{retry-after:2}) raises BaseLLMException retaining message,
+    status=429 and headers. No HTTP error type,param,code is invented by this provider contract.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Added speech_provider_contract seeds and fixtures compare the concrete base bodies independently.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-provider --no-tests=fail -E 'test(/^api::speech_provider_contract::/)
-      - test(/::replays_corpus$/)'
-  - id: case-speech-provider-capabilities
-    why: the speech-provider-capabilities behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_provider_contract::tests::speech_provider_capabilities($|::)/)'
+    why: Request representations and class/default methods must be tested in both leaf and provider crates.
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-openai --no-tests=fail -E 'test(/^api::speech_provider_contract::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/speech_provider_contract.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: Base speech methods require a checked independent Python adapter.
+    run: test -f tools/oracle/helpers/speech_provider_contract.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-*)"
-      && grep -qE "^[[:space:]]+speech_provider_contract:" tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The helper must parse the speech_provider_contract tag and descriptor fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-*)" && grep -qE '^[[:space:]]+speech_provider_contract:' tools/oracle/fuzz/corpus/helper_case/speech_provider_contract-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: Speech class filtering is distinct from the chat base's filter and needs its own fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/speech-provider-contract)"
 oracle_cases:
-- tools/oracle/cases/helpers/speech-provider-contract/speech-provider-capabilities.yaml
+- tools/oracle/cases/helpers/speech-provider-contract/speech-request-contract.yaml
+- tools/oracle/cases/helpers/speech-provider-contract/speech-class-configuration.yaml
+- tools/oracle/cases/helpers/speech-provider-contract/speech-base-url-and-error.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2202 owns BaseLLMException. B1083/B1084 own SDK speech calls and provider-specific tasks own concrete transforms; every declaration in this referenced base file is assigned here.
 pitfalls:
-- Within BaseTextToSpeechConfig.get_complete_url\'s api_base is None branch, preserve raise ValueError('api_base
-  is required') and its nested guards.
-- 'The source field dict_body: dict[str, Any] is part of the wire/default contract; preserve its omission and explicit-value
-  cases.'
+- text_body appears in documentation but not TextToSpeechRequestData; do not invent that public field.
+- A single leading underscore is retained by get_config; only __ and _abc prefixes are filtered.
+- The empty api_base string is valid to the base method even though None raises.
 review_level: standard
 budget:
   max_changed_lines: 400

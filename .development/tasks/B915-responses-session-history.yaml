@@ -1,274 +1,133 @@
 id: B915
-title: Responses session history
+title: Recover Responses sessions from spend logs
 description: >-
-  Retrieve previous-response history through injected spend-log and cold-storage readers using B051 schema records.
-  Normalize redacted arguments, traverse previous response chains with an explicit work bound, and pass the recovered
-  messages to responses-input-messages; never read storage for a caller until the response ID has been authorized.
+  Build api::responses_session_history around injected spend-log queries, cold-storage reads
+  and an async sleeper. Own every function in session_handler.py and the complete
+  async_responses_api_session_handler in transformation.py. B726 executes the parameterized
+  query using B858 rows; B069 supplies the cold-storage reader. B903 unwraps the response ID,
+  B909 rebuilds input messages and B911 repairs tool correlations. There is no recursive
+  previous_response_id traversal in this source: fetch all rows in the matching session,
+  ordered by endTime ascending. The caller must authorize the ID before invoking this service.
 
+  B002 loads RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS from default "3", clamps integer values
+  to at least 1, and loads RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL from default "0.2" seconds.
+  Invalid numbers fail configuration, not silently fall back. Reuse disable_spend_logs and
+  litellm.cold_storage_custom_logger settings; the latter is an optional injected reader,
+  never a Python callback. Put settings tests in betterlite-config, not the core module.
 
-  Implement crates/betterlite-core/src/api/responses_session_history.rs. Use ResponsesSessionHistorInput and ResponsesSessionHistorResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions previous_response_chain, redacted_tool_arguments, cold_storage_payload,
-  missing_history, cycle_bound under api::responses_session_history::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS
-  defaults to '3'; env.RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL defaults to '0.2'. No environment reads occur outside
-  betterlite-config. Test api::responses_session_history::tests::loads_settings uses the production Config loader
-  and an injected environment map, with a named rstest case for every key above, explicit override, unset/default
-  and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report;
-  a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
-  than introducing a second YAML parser.
-
-
-  The production external-byte decoder is betterlite-core::api::responses_session_history::decode_responses_session_hist(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input proxy_server_request at litellm/responses/litellm_completion_transformation/session_handler.py:174;
-  json.loads input metadata_str at litellm/responses/litellm_completion_transformation/session_handler.py:211. Place
-  its implementation in crates/betterlite-core/src/api/responses_session_history.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/responses_session_history.rs passes arbitrary
-  bounded bytes to that exact decoder; api::responses_session_history::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::ResponsesSessionHistory in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_session_history: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/litellm_completion_transformation/session_handler.py: _normalize_redacted_tool_call_arguments
-  (L33-L41); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler.get_chat_completion_message_history_for_previous_response_id
-  (L46-L88); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler.extend_chat_completion_message_with_spend_log_payload
-  (L91-L160); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler.get_proxy_server_request_from_spend_log
-  (L163-L193); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler._get_cold_storage_object_key_from_spend_log
-  (L196-L218); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler.get_proxy_server_request_from_cold_storage_with_object_key
-  (L221-L241); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler._should_check_cold_storage_for_full_payload
-  (L244-L263); litellm/responses/litellm_completion_transformation/session_handler.py: ResponsesSessionHandler.get_all_spend_logs_for_previous_response_id
-  (L266-L320); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig.async_responses_api_session_handler
-  (L535-L600). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 261 owned nonblank/non-comment/non-docstring Python lines (303 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 281 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 36 config tests/seeds
-  and 30 wiring; 627 total within the 630-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B069 (Spend tracking and spend logs), B127 (Object storage caches), B171 (Direct helper
-  oracle and URL path encoding), B903 (Response id codecs), B909 (Responses input messages), B1087 (Api boundaries),
-  B726 (Managed resources and transaction repositories), B858 (Typed managed-resource and analytics rows), B911
-  (Responses tool repair), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Decode stored request/metadata JSON in decode_session_log_json(bytes,kind,limits), bounded
+  by B1087. Request errors propagate; malformed metadata is logged and ignored. Production,
+  the session_log_json fuzz target and replays_corpus use this decoder. Register B171's
+  responses_session_history helper with scripted repository replies and record query
+  parameters, read keys, sleeps and debug messages independently on both sides.
+  The references contain 303 nonblank/non-comment source lines. Budget 280 implementation,
+  175 tests, 95 cases, 80 adapters, 55 fuzz/replay, 45 config/seeds and 25 wiring: 755 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_session_history.rs
   - crates/betterlite-core/src/api/responses_session_history/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/session_log_json.rs
+  - crates/betterlite-core/fuzz/corpus/session_log_json/**
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/responses_session_history.rs
   - crates/betterlite-config/src/api/responses_session_history/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-session-history-*
-  - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/responses_session_history.rs
-  - crates/betterlite-core/fuzz/corpus/responses_session_history/**
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_session_history.rs
-  - tools/oracle/src/helpers/responses_session_history/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_session_history.py
-  - tools/oracle/helpers/responses_session_history/**
   - tools/oracle/fuzz/corpus/helper_case/responses_session_history-*
   - tools/oracle/cases/helpers/responses-session-history/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1807-L1807
-  why: Setting env.RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1808-L1808
-  why: Setting env.RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL and its pinned default/precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L1-L320
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Session SQL, retry ordering, stored input/output replay and cold-storage fallback are implemented together.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L535-L600
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: History precedes current messages; repair has a nonempty fallback and carries the session trace ID.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1807-L1808
+  why: Lookup attempts are clamped integers while the delay is an un-clamped float.
 dod:
-- text: 'previous response chain: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-previous-response-chain
-  - oracle
-- text: 'redacted tool arguments: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-redacted-tool-arguments
-  - oracle
-- text: 'cold storage payload: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cold-storage-payload
-  - oracle
-- text: 'missing history: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-missing-history
-  - oracle
-- text: 'cycle bound: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cycle-bound
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    session_query unwraps an encoded response ID to resp_a and binds it as $1 against
+    LiteLLM_SpendLogs.request_id, selects every matching session_id and sorts endTime ASC.
+    No repository returns [] without a query. Replies [],[],[row] cause three queries and
+    two sleeps of 0.2; first nonempty reply stops retries. disable_spend_logs=true makes
+    exactly one query and no sleep. No rows returns messages=[],litellm_session_id=null;
+    multiple rows use the first row's session_id. Debug output includes "decoding response id=%s",
+    "Found no spend logs for previous response id %s", and on success
+    "Found the following spend logs for previous response id %s: %s" with decoded ID and rows.
+  proof: [session-tests, oracle, session-adapter]
+- text: >-
+    stored_turn_replay prefers truthy input over messages, wraps a dict input in a list,
+    and replays reasoning through B909. Empty input falls back to truthy messages. It appends
+    every response choice.message only when response is a nonempty dict; missing response,
+    string JSON and {} add no output. Both tool_calls[].function.arguments and legacy
+    function_call.arguments equal to "redacted-by-litellm" become "{}"; all other strings
+    stay byte-for-byte unchanged. Invalid response dictionaries propagate B004 validation.
+  proof: [session-tests, oracle, session-adapter]
+- text: >-
+    cold_payload_selection treats missing/falsy proxy_server_request as {}, passes dicts
+    directly and parses strings. Without a cold logger it never fetches. With a logger,
+    null,{},or any representation containing "litellm_truncated" qualifies, including a
+    nested string value containing that substring. Read metadata.cold_storage_object_key
+    from dict or JSON string; absent/empty key skips the read. A truthy cold result replaces
+    the stored request; {} or null keeps it. Malformed metadata or a scalar logs
+    "Failed to parse metadata from spend log to extract cold storage object key" and returns
+    no key; malformed request JSON propagates a decode error. Storage errors propagate.
+  proof: [session-tests, oracle, session-adapter, session-corpus]
+- text: >-
+    session_merge sends history [old] and current [new] to B911 as [old,new]. If repair
+    removes everything, keep nonempty current messages, otherwise nonempty history.
+    If both are empty, return BadRequestError status=400 with message
+    "Unable to create messages for completion request. This can happen when: 1) Using previous_response_id without a session database, AND 2) Input contains only function_call_output with empty or invalid call_id. Please ensure function_call_output has a valid call_id from a previous response. Original request: previous_response_id=resp_a",
+    model/provider defaulting to "" and SDK body/type/param/code null. Set litellm_trace_id
+    to the recovered session ID, including null. Debug records include
+    "inside get_chat_completion_message_history_for_previous_response_id",
+    "found %s spend logs for this response id", "chat_completion_message_history %s" and
+    "inside get_proxy_server_request_from_cold_storage_with_object_key..." on their paths.
+  proof: [session-tests, oracle, session-adapter]
+- text: >-
+    loads_session_lookup_settings uses the real loader: unset gives 3 and 0.2, attempts=0
+    or -2 gives 1, attempts=5 gives 5, interval=0 gives 0, and interval=-1 remains -1.
+    attempts=bad and interval=bad are configuration errors. The keys are recognized and
+    affect query/sleep behavior; config seeds replay through B002's YAML decoder.
+  proof: [session-settings, session-config-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_session_history::/)
-      - test(/::replays_corpus$/)'
-  - id: case-previous-response-chain
-    why: the previous-response-chain behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::previous_response_chain($|::)/)'
-  - id: case-redacted-tool-arguments
-    why: the redacted-tool-arguments behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::redacted_tool_arguments($|::)/)'
-  - id: case-cold-storage-payload
-    why: the cold-storage-payload behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::cold_storage_payload($|::)/)'
-  - id: case-missing-history
-    why: the missing-history behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::missing_history($|::)/)'
-  - id: case-cycle-bound
-    why: the cycle-bound behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::cycle_bound($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_session_history::tests::loads_settings($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-session-history-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_session_history)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/responses_session_history.rs && grep -qF "decode_responses_session_hist"
-      crates/betterlite-core/fuzz/fuzz_targets/responses_session_history.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::responses_session_history::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_session_history.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_session_history-*)"
-      && grep -qE "^[[:space:]]+responses_session_history:" tools/oracle/fuzz/corpus/helper_case/responses_session_history-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-session-history)"
+  - id: session-tests
+    why: query timing, replay ordering or cold-storage fallback is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::/) - test(/::replays_corpus$/)'
+  - id: session-settings
+    why: environment values do not reach the production lookup settings
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_session_history::tests::loads_session_lookup_settings($|::)/)'
+  - id: session-config-corpus
+    why: the shared config decoder has no new lookup-setting seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-session-history-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: session-corpus
+    why: stored JSON bypasses the bounded production decoder or lacks replay
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/session_log_json.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/session_log_json)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_session_history::tests::replays_corpus$/)'
+  - id: session-adapter
+    why: repository effects are not independently compared with the pinned helper
+    run: test -f tools/oracle/helpers/responses_session_history.py && grep -qE '^[[:space:]]+responses_session_history:' tools/oracle/fuzz/corpus/helper_case/responses_session_history-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-session-history/previous-response-chain.yaml
-- tools/oracle/cases/helpers/responses-session-history/redacted-tool-arguments.yaml
-- tools/oracle/cases/helpers/responses-session-history/cold-storage-payload.yaml
-- tools/oracle/cases/helpers/responses-session-history/missing-history.yaml
-- tools/oracle/cases/helpers/responses-session-history/cycle-bound.yaml
+- tools/oracle/cases/helpers/responses-session-history/session-query.yaml
+- tools/oracle/cases/helpers/responses-session-history/stored-turn-replay.yaml
+- tools/oracle/cases/helpers/responses-session-history/cold-payload-selection.yaml
+- tools/oracle/cases/helpers/responses-session-history/session-merge.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B908 owns _SupportsIter.__iter__ L152-L152,
-  _ResponsesToolCallItem.get L169-L169, LiteLLMCompletionResponsesConfig.get_supported_openai_params L205-L225,
-  LiteLLMCompletionResponsesConfig._should_drop_derived_web_search_options L311-L324, LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api
-  L327-L357, LiteLLMCompletionResponsesConfig._transform_reasoning_for_chat_completion L360-L397, LiteLLMCompletionResponsesConfig.transform_responses_api_request_to_chat_completion_request
-  L400-L484, LiteLLMCompletionResponsesConfig._transform_text_format_to_response_format L2897-L2945.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B907 owns _attribute_fields L179-L182,
-  _input_item_role L185-L186, LiteLLMCompletionResponsesConfig._transform_tool_choice L228-L287, LiteLLMCompletionResponsesConfig._transform_tool_choice_for_responses_api_response
-  L290-L296, LiteLLMCompletionResponsesConfig._chat_tool_choice_as_responses_api_tool_choice L299-L308.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B909 owns LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages
-  L487-L532, LiteLLMCompletionResponsesConfig._transform_response_input_param_to_chat_completion_message L603-L729,
-  LiteLLMCompletionResponsesConfig._transform_responses_api_input_item_to_chat_completion_message L1326-L1423, LiteLLMCompletionResponsesConfig._reasoning_text_from_content
-  L1426-L1448, LiteLLMCompletionResponsesConfig._reasoning_text_from_summary L1451-L1466, LiteLLMCompletionResponsesConfig._extract_reasoning_text_from_input_item
-  L1469-L1478, LiteLLMCompletionResponsesConfig._decode_thinking_blocks_from_input_item L1481-L1515, LiteLLMCompletionResponsesConfig._is_replayable_thinking_block
-  L1518-L1529, LiteLLMCompletionResponsesConfig._is_input_item_tool_call_output L1532-L1541, LiteLLMCompletionResponsesConfig._is_input_item_function_call
-  L1544-L1550, LiteLLMCompletionResponsesConfig._resolve_file_id L1741-L1747, LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item
-  L1750-L1772, LiteLLMCompletionResponsesConfig._transform_input_image_item_to_image_item L1775-L1785, LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content
-  L1788-L1842, LiteLLMCompletionResponsesConfig._get_chat_completion_request_content_type L1845-L1875, LiteLLMCompletionResponsesConfig.transform_instructions_to_system_message
-  L1878-L1884.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B910 owns LiteLLMCompletionResponsesConfig._reasoning_only_assistant_message
-  L732-L746, LiteLLMCompletionResponsesConfig._merge_reasoning_only_assistant_messages L749-L872, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message
-  L875-L922.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._deduplicate_tool_call_output_messages
-  L925-L985, LiteLLMCompletionResponsesConfig._ensure_tool_call_output_has_corresponding_tool_call L988-L997, LiteLLMCompletionResponsesConfig._transform_responses_api_outputs_to_chat_completion_messages
-  L2725-L2752 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B911 owns LiteLLMCompletionResponsesConfig._find_previous_assistant_idx
-  L1000-L1014, LiteLLMCompletionResponsesConfig._recover_tool_call_id_from_assistant L1017-L1043, LiteLLMCompletionResponsesConfig._get_tool_calls_list
-  L1046-L1065, LiteLLMCompletionResponsesConfig._check_tool_call_exists L1068-L1078, LiteLLMCompletionResponsesConfig._reconstruct_tool_call_from_tools
-  L1081-L1097, LiteLLMCompletionResponsesConfig._get_mapping_or_attr_value L1100-L1117, LiteLLMCompletionResponsesConfig._create_tool_call_chunk
-  L1120-L1143, LiteLLMCompletionResponsesConfig._normalize_tool_use_definition L1146-L1184, LiteLLMCompletionResponsesConfig._add_tool_call_to_assistant
-  L1187-L1200, LiteLLMCompletionResponsesConfig._ensure_tool_results_have_corresponding_tool_calls L1203-L1323.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B912 owns LiteLLMCompletionResponsesConfig._transform_responses_api_tool_call_output_to_chat_completion_message
-  L1553-L1686, LiteLLMCompletionResponsesConfig._transform_responses_api_function_call_to_chat_completion_message
-  L1689-L1738, LiteLLMCompletionResponsesConfig._tool_call_id_from_responses_item L2307-L2316, LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call
-  L2319-L2370, LiteLLMCompletionResponsesConfig.convert_apply_patch_tool_call_to_chat_completion_tool_call L2373-L2403.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B913 owns LiteLLMCompletionResponsesConfig._build_ns_chat_tool
-  L1887-L1926, LiteLLMCompletionResponsesConfig._namespace_chat_tools L1929-L1951, LiteLLMCompletionResponsesConfig._validate_namespace_name_collisions
-  L1954-L1972, LiteLLMCompletionResponsesConfig._responses_tool_to_chat_form L1975-L2034, LiteLLMCompletionResponsesConfig.responses_tools_to_chat_forms
-  L2037-L2039, LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools L2042-L2058,
-  LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools L2061-L2099, LiteLLMCompletionResponsesConfig.namespace_tool_name_map
-  L2102-L2129, LiteLLMCompletionResponsesConfig._restore_namespace_tool_name L2132-L2137, LiteLLMCompletionResponsesConfig.transform_chat_completion_tools_to_responses_tools
-  L2140-L2235, LiteLLMCompletionResponsesConfig._web_search_calls_by_call_id L2238-L2264.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B914 owns LiteLLMCompletionResponsesConfig._map_chat_completion_finish_reason_to_responses_status
-  L2267-L2292, LiteLLMCompletionResponsesConfig._incomplete_details_for_finish_reason L2295-L2304, LiteLLMCompletionResponsesConfig.transform_chat_completion_response_to_responses_api_response
-  L2406-L2468, LiteLLMCompletionResponsesConfig._transform_chat_completion_choices_to_responses_output L2471-L2526,
-  LiteLLMCompletionResponsesConfig._extract_tool_result_output_items L2529-L2557, LiteLLMCompletionResponsesConfig._encode_thinking_blocks
-  L2560-L2563, LiteLLMCompletionResponsesConfig._extract_reasoning_output_items L2566-L2597, LiteLLMCompletionResponsesConfig._extract_message_output_items
-  L2693-L2722, LiteLLMCompletionResponsesConfig._transform_responses_output_tool_call_to_chat_completion_output_tool_call
-  L2755-L2765, LiteLLMCompletionResponsesConfig._transform_chat_message_to_response_output_text L2768-L2782.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B1115 owns LiteLLMCompletionResponsesConfig._extract_image_generation_output_items
-  L2600-L2646, LiteLLMCompletionResponsesConfig._map_finish_reason_to_image_generation_status L2649-L2666, LiteLLMCompletionResponsesConfig._extract_base64_from_data_url
-  L2669-L2690, LiteLLMCompletionResponsesConfig._transform_chat_completion_annotations_to_response_output_annotations
-  L2785-L2808, LiteLLMCompletionResponsesConfig._transform_chat_completion_usage_to_responses_usage L2811-L2894.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B069 owns cold-storage credentials and downloads; B726 owns database execution and B858 the row representation.
+- Other transformation.py functions stay with B907-B914, B1115 and B2411; unreachable helpers are excluded in those owners.
+- B929 and route callers authorize IDs; this service receives authorized identifiers and adds no authorization shortcut.
 pitfalls:
-- session_handler.py:56 emits the diagnostic 'inside get_chat_completion_message_history_for_previous_response_id';
-  retain its level and fallback instead of turning it into a hard error.
-- session_handler.py:60 emits the diagnostic 'found %s spend logs for this response id'; retain its level and fallback
-  instead of turning it into a hard error.
+- The SQL matches request_id, not a response_id column, and recovers a session rather than walking a response chain.
+- The truncation check searches str(request), so a nested value containing litellm_truncated also triggers cold storage.
+- Empty cold-storage results do not erase the stored request and malformed metadata does not fail the request.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 755
   max_new_expects: 1

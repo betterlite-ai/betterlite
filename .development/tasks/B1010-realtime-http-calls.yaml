@@ -1,209 +1,121 @@
 id: B1010
-title: Realtime http calls
+title: Realtime HTTP SDK calls
 description: >-
-  Implement provider-facing create_client_secret, transcription_session and SDP realtime_calls operations using
-  B010 transforms and configured credentials. Preserve stored-credential precedence and internal guardrail metadata
-  separation; treat SDP as bounded opaque bytes and binary content types through B900.
+  Implement _with_resolved_session_model,_get_realtime_http_provider_config and the three complete
+  decorated SDK methods acreate_realtime_client_secret,acreate_realtime_transcription_session,
+  arealtime_calls in betterlite-core::api::realtime_http_calls. B174 resolves model/key/base;
+  B157 selects HTTP config, B528/B545 own OpenAI/Azure config methods and B2456 performs HTTP.
+  This task no longer owns _model_params_with_stored_credentials (B1127) or _build_litellm_metadata
+  (B1011), neither of which these SDK methods call. B1004 supplies typed request records.
 
+  With a known provider, call get_provider_realtime_http_config(model="",provider=enum); unknown names
+  skip that selector. Raw key/base choose dynamic > GenericLiteLLMParams. With a config, delegate its
+  get_api_base/get_api_key. Without one, base is raw > litellm.api_base > https://api.openai.com and key
+  raw > litellm.api_key > litellm.openai_key > OPENAI_API_KEY > "". Trim trailing base slashes.
+  These are HTTP fallbacks, not the different WebSocket branch rules. custom_llm_provider in kwargs
+  is not supplied to get_llm_provider by these methods.
 
-  Implement crates/betterlite-core/src/api/realtime_http_calls.rs. Use RealtimeHttpCallsInput and RealtimeHttpCallsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions client_secret_provider_request, transcription_session_model, sdp_answer,
-  stored_credential_precedence, provider_http_error under api::realtime_http_calls::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
-  defaults to None; litellm_settings.api_key defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY
-  defaults to unset (None); env.REQUEST_TIMEOUT defaults to 6000 seconds. No environment reads occur outside betterlite-config.
-  Test api::realtime_http_calls::tests::loads_settings uses the production Config loader and an injected environment
-  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
-  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
-  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
-  parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::RealtimeHttpCalls in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {realtime_http_calls: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/realtime_api/main.py: _model_params_with_stored_credentials (L62-L69); litellm/realtime_api/main.py:
-  _with_resolved_session_model (L72-L75); litellm/realtime_api/main.py: _build_litellm_metadata (L78-L84); litellm/realtime_api/main.py:
-  _get_realtime_http_provider_config (L87-L124); litellm/realtime_api/main.py: acreate_realtime_client_secret (L128-L185);
-  litellm/realtime_api/main.py: acreate_realtime_transcription_session (L189-L257); litellm/realtime_api/main.py:
-  arealtime_calls (L261-L310). Abstract/protocol declarations map to native types and synchronous/async wrappers
-  share one implementation; a partial function span is the explicit preparation/transition stage described above,
-  with typed values passed to the following stage.
-
-
-  Sizing: 208 owned nonblank/non-comment/non-docstring Python lines (223 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 228 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 45 config tests/seeds and
-  30 wiring; 523 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B061 (Stored credentials
-  and their encryption), B171 (Direct helper oracle and URL path encoding), B1004 (Realtime contracts), B1087 (Api
-  boundaries), B528 (OpenAI realtime connection and session requests), B002 (Load LiteLLM config.yaml into typed
-  config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
-  ownership on the provider and keys/data branches.
+  B002 loads litellm_settings.api_base,api_key,openai_key and OPENAI_API_KEY, all None/unset by default.
+  Reuse B198 REQUEST_TIMEOUT=6000 seconds; timeout=None or 0 selects that value. Named
+  loads_realtime_http_settings tests invoke the real loader for defaults, overrides and invalid types,
+  with new config_yaml seeds. B2456 owns SDP UTF-8 parsing and B1004 record decoding. Register
+  sdk_http.realtime_http_calls through B2401 and compare each operation's real provider request and raw
+  response. Own 208 nonblank/non-comment lines; budget 165 orchestration,140 tests,120 fixtures,
+  90 adapters,65 config tests/seeds and 30 wiring =610 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_http_calls.rs
   - crates/betterlite-core/src/api/realtime_http_calls/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/realtime_http_calls.rs
   - crates/betterlite-config/src/api/realtime_http_calls/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/realtime_http_calls.rs
-  - tools/oracle/src/helpers/realtime_http_calls/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/realtime_http_calls.py
-  - tools/oracle/helpers/realtime_http_calls/**
-  - tools/oracle/fuzz/corpus/helper_case/realtime_http_calls-*
-  - tools/oracle/cases/helpers/realtime-http-calls/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/realtime_http_calls.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/realtime_http_calls.py
+  - tools/oracle/cases/sdk-http/realtime-http-calls/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-calls-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
-  why: Setting litellm_settings.api_base and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
-  why: Setting litellm_settings.api_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
-  why: Setting litellm_settings.openai_key and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L121-L121
-  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
-  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L62-L310
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L72-L75
+  why: Normalize a session model only when its top-level key already exists.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L87-L310
+  why: Complete HTTP config resolver and all three SDK operations with their decorators and timeout/default logic.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577
+  why: REQUEST_TIMEOUT is an environment float with6000-second default, not an SDK timeout of600.
 dod:
-- text: 'client secret provider request: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-client-secret-provider-request
-  - oracle
-- text: 'transcription session model: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-transcription-session-model
-  - oracle
-- text: 'sdp answer: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-sdp-answer
-  - oracle
-- text: 'stored credential precedence: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-stored-credential-precedence
-  - oracle
-- text: 'provider http error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-http-error
-  - oracle
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    realtime_http_credentials exercises each first-nonempty position in the raw/global/OpenAI/environment
+    chains above and all empty/unset. Config methods receive raw resolved values and their returned base/key
+    are used, with trailing slashes removed. Unknown or known-no-config provider uses the fallback URL/key.
+    Requests capture the selected auth and make one POST; no credential value appears in logs. Explicit
+    custom_llm_provider kwargs cannot override the resolver's model-based provider in these methods.
+  proof: [behavior-tests, config-tests, oracle, sdk-python]
+- text: >-
+    realtime_client_secret_sdk defaults model to gpt-4o-realtime-preview, preferring session.model over root
+    model. Empty session/expires_after dictionaries become None and are omitted. An expiry {seconds:60}
+    sends {anchor:created_at,seconds:60}; null fields are excluded. Root model is a routing hint and never
+    sent; a supplied session.model is replaced by the normalized provider model. A session without model
+    does not gain one at this layer. Unknown session fields survive. Logger optional_params retains original
+    expires_after/session, while litellm_params contains resolved api_base. Extra headers/client/api_version
+    reach B2456. Mock200 JSON remains an unencrypted raw HTTP response.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    realtime_transcription_session_sdk defaults to gpt-realtime-whisper, choosing explicit model before
+    transcription_session.input_audio_transcription.model. With model=allowed and nested model=forbidden,
+    send nested normalized allowed, retaining language=en and extra fields. Missing nested transcription
+    is not created. A transcription_session containing a root model collides with the explicit model
+    constructor argument and fails before HTTP. All root model hints are excluded from the outgoing body;
+    logger optional_params contains the original transcription_session and resolved api_base separately.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    realtime_calls_sdk defaults model to gpt-4o-realtime-preview and passes the caller's ephemeral key unchanged
+    even when a long-lived provider key was resolved. An existing session.model (including None) is rewritten
+    to normalized model; an absent key stays absent here before B2456 supplies its defaults. Session.type=
+    transcription and nested model remain otherwise unchanged. Capture SDP multipart and raw SDP response.
+    Logger options are {realtime_calls:true,session:<normalized-or-None>}. timeout=0/None uses REQUEST_TIMEOUT,
+    explicit2.5 remains2.5. Provider429 retains SDK exception fields through the decorator; there is no route
+    ProxyException code coercion. Validation failures make zero requests.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Loader, SDK parser and provider exchange cases are newly added for all three entry points.
+  proof: [config-tests, config-corpus, sdk-corpus, new-cases, oracle, sdk-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_http_calls::/)
-      - test(/::replays_corpus$/)'
-  - id: case-client-secret-provider-request
-    why: the client-secret-provider-request behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::client_secret_provider_request($|::)/)'
-  - id: case-transcription-session-model
-    why: the transcription-session-model behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::transcription_session_model($|::)/)'
-  - id: case-sdp-answer
-    why: the sdp-answer behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::sdp_answer($|::)/)'
-  - id: case-stored-credential-precedence
-    why: the stored-credential-precedence behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::stored_credential_precedence($|::)/)'
-  - id: case-provider-http-error
-    why: the provider-http-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::provider_http_error($|::)/)'
+    why: Routing hints and nested models must become the exact HTTP arguments without duplicating transport logic.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::loads_settings($|::)/)'
+    why: The HTTP credential fallback and REQUEST_TIMEOUT must use loaded settings.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_http_calls::tests::loads_realtime_http_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_http_calls.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime_http_calls-*)"
-      && grep -qE "^[[:space:]]+realtime_http_calls:" tools/oracle/fuzz/corpus/helper_case/realtime_http_calls-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-http-calls)"
+    why: New realtime HTTP settings seeds must reach the existing YAML decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: sdk-python
+    why: Provider-facing SDK calls must run through B2401 instead of helper adapters.
+    run: test -f tools/oracle/sdk_http/realtime_http_calls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: The realtime_http_calls tag needs an added SDK decoder seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-calls-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Each SDK endpoint needs fresh request/result captures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/realtime-http-calls)"
 oracle_cases:
-- tools/oracle/cases/helpers/realtime-http-calls/client-secret-provider-request.yaml
-- tools/oracle/cases/helpers/realtime-http-calls/transcription-session-model.yaml
-- tools/oracle/cases/helpers/realtime-http-calls/sdp-answer.yaml
-- tools/oracle/cases/helpers/realtime-http-calls/stored-credential-precedence.yaml
-- tools/oracle/cases/helpers/realtime-http-calls/provider-http-error.yaml
+- tools/oracle/cases/sdk-http/realtime-http-calls/realtime-http-credentials.yaml
+- tools/oracle/cases/sdk-http/realtime-http-calls/realtime-client-secret-sdk.yaml
+- tools/oracle/cases/sdk-http/realtime-http-calls/realtime-transcription-session-sdk.yaml
+- tools/oracle/cases/sdk-http/realtime-http-calls/realtime-calls-sdk.yaml
 deviations: []
 out_of_scope:
-- 'litellm/realtime_api/main.py: B1127 owns vertex_access_token_resolver L313-L322, _resolve_vertex_access_token_bounded
-  L325-L345, _arealtime L349-L587.'
-- 'litellm/realtime_api/main.py: B1011 owns _is_transcription_only_realtime_model L590-L597, _azure_realtime_health_protocol
-  L603-L613, _realtime_health_check_auth_headers L616-L628, _realtime_health_check L631-L742.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- In realtime_api/main.py B1127 owns stored-credential merging and health probes; B1011 owns metadata merging, token resolution and the whole _arealtime connector.
+- B2456 owns actual HTTP execution, B528/B545 provider HTTP configs, B174 identity and B157 factory selection. Route token encryption is B084/B1126 using B061.
 pitfalls:
-- _model_params_with_stored_credentials uses model_params.get('litellm_credential_name'); retain its missing-value
-  behavior and field spelling in the typed projection.
-- Within _with_resolved_session_model\'s 'model' not in session branch, preserve return session and its nested guards.
+- The three SDK methods do not call _model_params_with_stored_credentials; adding that merge here would change credential precedence.
+- Empty session/expires_after dictionaries are treated as absent before Pydantic defaults are constructed.
+- timeout=0 falls back to REQUEST_TIMEOUT because the source uses a truthiness test.
 review_level: security
 budget:
-  max_changed_lines: 530
-  max_new_expects: 1
+  max_changed_lines: 650
+  max_new_expects: 0

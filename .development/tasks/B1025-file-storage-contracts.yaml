@@ -1,166 +1,110 @@
 id: B1025
-title: File storage contracts
+title: Database file storage and batch body bridge
 description: >-
-  Define the closed managed-file storage backend enum and implement pinned database-backed upload/download/delete
-  using B051. Expose typed storage references that cannot be confused with arbitrary URLs, and adapt Responses batch
-  bodies using the existing Responses-to-chat converters.
+  Define BaseFileStorageBackend's native upload/download/delete contract and implement
+  LiteLLMDbStorageBackend through B726's ManagedFileContentRepository. Put these operations and
+  batch_records.py's complete Responses-to-chat adapter in betterlite-core::api::file_storage_contracts.
+  The contract defaults path_prefix=null, file_naming_strategy=uuid and delete to a no-op. Database
+  upload stores only file_content and returns litellm_db:// plus the row id; filename, MIME, naming
+  strategy and prefix are deliberately unused. Database delete is B726's idempotent row deletion.
 
+  Move the complete get_storage_backend factory to B1027, above both concrete backends. Keeping it
+  here would call B1026, which depends on this storage contract. No dependency may point back from
+  a backend to its factory. This task owns no storage_backend_factory.py function after that move.
 
-  Implement crates/betterlite-core/src/api/file_storage_contracts.rs. Use FileStorageContractsInput and FileStorageContractsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  responses_batch_body_to_chat_body selects only keys in ResponsesAPIOptionalRequestParams, obtains
+  input separately, passes metadata separately and delegates the complete transform to B908. It
+  does not validate required nested TypedDict fields, forward arbitrary keys or call a provider.
+  B908 remains responsible for input/tool conversion; do not duplicate B909's implementation.
 
-
-  Write adjacent tests.rs behavior functions db_storage_upload_download, db_storage_delete, unknown_storage_backend,
-  responses_batch_body_proj_d06d under api::file_storage_contracts::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::FileStorageContracts in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_storage_contracts: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/base_llm/files/storage_backend.py: BaseFileStorageBackend.upload_file (L20-L43);
-  litellm/llms/base_llm/files/storage_backend.py: BaseFileStorageBackend.download_file (L46-L58); litellm/llms/base_llm/files/storage_backend.py:
-  BaseFileStorageBackend.delete_file (L60-L72); litellm/llms/base_llm/files/storage_backend_factory.py: get_storage_backend
-  (L21-L51); litellm/llms/base_llm/files/litellm_db_storage_backend.py: storage_url_to_row_id (L13-L16); litellm/llms/base_llm/files/litellm_db_storage_backend.py:
-  LiteLLMDbStorageBackend.__init__ (L20-L21); litellm/llms/base_llm/files/litellm_db_storage_backend.py: LiteLLMDbStorageBackend.upload_file
-  (L23-L31); litellm/llms/base_llm/files/litellm_db_storage_backend.py: LiteLLMDbStorageBackend.download_file (L33-L37);
-  litellm/llms/base_llm/files/litellm_db_storage_backend.py: LiteLLMDbStorageBackend.delete_file (L39-L40); litellm/llms/base_llm/files/batch_records.py:
-  _frozen_mapping (L9-L10); litellm/llms/base_llm/files/batch_records.py: _responses_request_keys (L14-L15); litellm/llms/base_llm/files/batch_records.py:
-  responses_batch_body_to_chat_body (L18-L54). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 99 owned nonblank/non-comment/non-docstring Python lines (169 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 119 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 351 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B908 (Responses chat options), B909
-  (Responses input messages), B1087 (Api boundaries), B726 (Managed resources and transaction repositories), B858
-  (Typed managed-resource and analytics rows). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Native tests under api::file_storage_contracts::tests exercise a deterministic repository port.
+  B171 file_storage_contracts cases cover only pure URI conversion and batch body transforms.
+  These typed operations add no parser. The owned spans contain 114 nonblank, non-comment physical
+  lines; budget 115 implementation, 110 tests, 75 fixtures, 75 adapters and 25 wiring lines, 400 total.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/file_storage_contracts.rs
   - crates/betterlite-core/src/api/file_storage_contracts/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/file_storage_contracts.rs
-  - tools/oracle/src/helpers/file_storage_contracts/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/file_storage_contracts.py
-  - tools/oracle/helpers/file_storage_contracts/**
   - tools/oracle/fuzz/corpus/helper_case/file_storage_contracts-*
   - tools/oracle/cases/helpers/file-storage-contracts/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/storage_backend.py#L1-L74
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/storage_backend_factory.py#L1-L51
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/litellm_db_storage_backend.py#L1-L40
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/batch_records.py#L1-L54
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/storage_backend.py#L11-L74
+  why: Owns the abstract byte storage contract, uuid naming default and optional no-op delete.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/litellm_db_storage_backend.py#L9-L40
+  why: Owns litellm_db URI validation and the repository-backed upload/download/delete methods.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/batch_records.py#L9-L54
+  why: Owns the cached request-key set, frozen projection and missing-input check before B908's bridge.
 dod:
-- text: 'db storage upload download: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-db-storage-upload-download
-  - oracle
-- text: 'db storage delete: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-db-storage-delete
-  - oracle
-- text: 'unknown storage backend: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unknown-storage-backend
-  - oracle
-- text: 'responses batch body projection: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-responses-batch-body-projection
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    database_bytes_lifecycle uploads b"\x00\xff" with filename=a, prefix=p and strategy=timestamp.
+    Repository store receives only those two bytes; row id=r yields litellm_db://r. Download returns
+    the exact bytes, including an empty stored value, while absent content raises ValueError "No
+    stored file content for litellm_db://r". Delete calls the row-id repository operation once and
+    repeated deletion succeeds. Repository failures propagate without a rollback invented here.
+  proof: [behavior-tests]
+- text: >-
+    storage_uri_validation maps litellm_db://r to r and litellm_db:// to ""; it does not percent-decode
+    litellm_db://a%2Fb. https://example.invalid/r and LITELLM_DB://r raise ValueError "Not a
+    litellm_db storage url: <input>". These pure failures have no HTTP status/type/param/code.
+    default_delete_noop proves a backend without a delete override performs no I/O and succeeds.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    responses_batch_projection sends model=m,input=hello,instructions=system,max_output_tokens=7,
+    temperature=0.2,metadata={tag:a},stream=true and unknown=drop with custom_llm_provider=openai.
+    The bridge produces model=m,messages=[{role:system,content:system},{role:user,content:hello}],
+    max_tokens=7,temperature=0.2,metadata={tag:a},custom_llm_provider=openai; stream and unknown
+    do not appear because this adapter never supplies the bridge's stream argument. Tool records
+    lacking strict and image parts lacking detail are forwarded to the bridge without validation.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    responses_batch_missing_input supplies missing or null input with model=m and gets ValueError
+    "Batch record for /v1/responses is missing required `input` field: model=m"; absent model prints
+    an empty suffix. Empty string input is accepted. Non-string model becomes "" on the transform
+    path, while metadata is passed even though it is separate from the filtered optional keys.
+    The source mapping is not mutated and repeated calls use the same key vocabulary.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Pure storage/bridge fixtures and the helper tag are independently executable.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::/)
-      - test(/::replays_corpus$/)'
-  - id: case-db-storage-upload-download
-    why: the db-storage-upload-download behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::tests::db_storage_upload_download($|::)/)'
-  - id: case-db-storage-delete
-    why: the db-storage-delete behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::tests::db_storage_delete($|::)/)'
-  - id: case-unknown-storage-backend
-    why: the unknown-storage-backend behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::tests::unknown_storage_backend($|::)/)'
-  - id: case-responses-batch-body-projection
-    why: the responses-batch-body-projection behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::tests::responses_batch_body_proj_d06d($|::)/)'
+    why: database byte preservation or batch bridge input filtering is untested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_contracts::/) - test(/::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/file_storage_contracts.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: storage URI and bridge adapter is absent or invalid
+    run: test -f tools/oracle/helpers/file_storage_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_contracts-*)"
-      && grep -qE "^[[:space:]]+file_storage_contracts:" tools/oracle/fuzz/corpus/helper_case/file_storage_contracts-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the storage contract helper tag has no new seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_contracts-*)" && grep -qE '^[[:space:]]+file_storage_contracts:' tools/oracle/fuzz/corpus/helper_case/file_storage_contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no storage URI or batch bridge cases were added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-storage-contracts)"
 oracle_cases:
-- tools/oracle/cases/helpers/file-storage-contracts/db-storage-upload-download.yaml
-- tools/oracle/cases/helpers/file-storage-contracts/db-storage-delete.yaml
-- tools/oracle/cases/helpers/file-storage-contracts/unknown-storage-backend.yaml
-- tools/oracle/cases/helpers/file-storage-contracts/responses-batch-body-projection.yaml
+- tools/oracle/cases/helpers/file-storage-contracts/storage-uri-validation.yaml
+- tools/oracle/cases/helpers/file-storage-contracts/responses-batch-projection.yaml
+- tools/oracle/cases/helpers/file-storage-contracts/responses-batch-missing-input.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1027 owns get_storage_backend in storage_backend_factory.py, and B1026 owns every Azure backend method.
+- B726 owns ManagedFileContentRepository and the Prisma schema; B908 owns Responses-to-chat field transformation.
 pitfalls:
-- 'storage_backend_factory.py:40 emits the diagnostic ''Creating storage backend: type=%s''; retain its level and
-  fallback instead of turning it into a hard error.'
-- Within get_storage_backend\'s backend_type == 'azure_storage' branch, preserve return AzureBlobStorageBackend()
-  and its nested guards.
+- litellm_db:// with an empty row id passes prefix validation; the repository determines whether content exists.
+- A stored empty byte array is a successful download, distinct from a missing row.
+- stream in a Responses batch body is filtered into options but never passed as the bridge's explicit stream argument.
 review_level: security
 budget:
   max_changed_lines: 400
-  max_new_expects: 1
+  max_new_expects: 0

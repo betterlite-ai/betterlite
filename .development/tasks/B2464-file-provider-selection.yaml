@@ -1,0 +1,87 @@
+id: B2464
+title: File provider config and timeout selection
+description: >-
+  Give the two file SDK selection callees a concrete owner instead of attributing them to B010,
+  which neither covers utils.py nor implements this registry. Own whole
+  ProviderConfigManager.get_provider_files_config and supports_httpx_timeout in
+  betterlite-provider::api::file_provider_selection. Return the existing concrete provider config
+  behind a closed FileProviderConfig enum, or None; do not add an OpenAI fallback to the registry.
+  Keep model accepted but unused. Provider implementations remain their current leaves; this task
+  only selects them. B036 owns xAI/Mistral and B050 Manus until their provider planning passes split
+  those existing owners further. Do not add network work or new provider implementations here.
+
+  Register B171 file_provider_selection helper using the actual Python registry and project its
+  returned class name, not a second handwritten Python table. Check the timeout predicate separately
+  with typed provider strings, including unknown/empty/null compatibility inputs. No configuration
+  or byte decoder is introduced. Tests live in api::file_provider_selection::tests. The two whole
+  functions contain 37 nonblank/non-comment lines; allow 80 implementation, 130 tests, 70 cases,
+  85 adapters and 35 wiring lines, totaling 400. This split keeps B1028-B1030 independent of each other.
+scope:
+  paths:
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/file_provider_selection.rs
+  - crates/betterlite-provider/src/api/file_provider_selection/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/file_provider_selection.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/file_provider_selection.py
+  - tools/oracle/cases/helpers/file-provider-selection/**
+  - tools/oracle/fuzz/corpus/helper_case/file_provider_selection-*
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9410-L9445
+  why: Complete files config factory; OpenAI-compatible and Azure providers deliberately return None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2589-L2598
+  why: Exact three-provider membership test for preserving an HTTP timeout object.
+dod:
+- text: >-
+    file_config_selection passes gemini,vertex_ai,bedrock,manus,anthropic,mistral,xai and returns
+    respectively GoogleAIStudioFilesHandler,VertexAIFilesConfig,BedrockFilesConfig,ManusFilesConfig,
+    AnthropicFilesConfig,MistralFilesConfig,XAIFilesConfig. Repeat with model="" and model=ignored:
+    selection is unchanged. openai,azure,hosted_vllm,litellm_proxy,cohere return None, with no warning
+    or provider request. Unknown text-to-enum errors are the caller's boundary, not a fallback here.
+  proof: [selection-tests, oracle, helper-python, new-cases]
+- text: >-
+    file_timeout_capability returns true for exact openai,azure,bedrock; false for gemini,vertex_ai,
+    manus,anthropic,mistral,xai,hosted_vllm,litellm_proxy,"OpenAI","",null and unknown. The predicate
+    performs no model inference, normalization, environment lookup or timeout coercion itself.
+  proof: [timeout-tests, oracle, helper-python, new-cases]
+- text: The new helper variant and explicit provider-choice fixtures replay through B171.
+  proof: [helper-corpus, oracle, helper-python, new-cases]
+checks:
+  optional: []
+  commands:
+  - id: selection-tests
+    why: the concrete file registry or None fallthrough is missing
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_provider_selection::tests::file_config_selection($|::)/)'
+  - id: timeout-tests
+    why: the exact HTTP timeout membership predicate is untested
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::file_provider_selection::tests::file_timeout_capability($|::)/)'
+  - id: helper-python
+    why: registry comparison adapter is absent or untyped
+    run: test -f tools/oracle/helpers/file_provider_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the concrete selection variant lacks a new parser seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_provider_selection-*)" && grep -qE '^[[:space:]]+file_provider_selection:' tools/oracle/fuzz/corpus/helper_case/file_provider_selection-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: registry and timeout comparisons were not added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-provider-selection)"
+oracle_cases:
+- tools/oracle/cases/helpers/file-provider-selection/file-config-selection.yaml
+- tools/oracle/cases/helpers/file-provider-selection/file-timeout-capability.yaml
+deviations: []
+out_of_scope:
+- B1367 owns Gemini files, B1376 Vertex file config, B644-B646 Bedrock file operations, B588 Anthropic files, B036 xAI/Mistral and B050 Manus. Their constructors/config records are reused, never reconstructed from this task's fixture table.
+- Other utils.py functions keep their existing owners; only the two whole functions referenced above move here. B1028/B1029/B1030 own SDK timeout coercion and subsequent provider dispatch.
+pitfalls:
+- Registry None is normal for Azure and OpenAI; those SDK dispatchers have separate handlers.
+- hosted_vllm is OpenAI-compatible for files but is absent from supports_httpx_timeout's three strings.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

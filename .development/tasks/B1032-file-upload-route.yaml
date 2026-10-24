@@ -43,18 +43,21 @@ description: >-
   HTTP 400 here has type invalid_request_error, param null, code "400"; 500 has internal_server_error,
   null, "500". Validation failures carrying param=file or purpose retain it. Compare error messages too.
 
-  Configuration tests in api::file_upload_route::tests::loads_settings load omitted/null/positive/zero/negative
-  max_file_size_mb, omitted/null/1 max_batch_file_size_mb, absent/empty/[.jsonl] allowed_file_extensions,
-  absent/empty/[.exe] blocked_file_extensions and omitted/null/false/true enable_loadbalancing_on_batch_endpoints.
-  Defaults for all five are null. Reject bool/string upload-size values and non-string extension lists via the
-  owning B1022 validators; B1022 owns the batch-size adapter. B1021 owns require_managed_files (default false).
-  Reuse their fields and B002's YAML corpus. The native B1087 request cap still applies when no source cap is set.
+  Consume B1022's loader-tested omitted/null/positive/zero/negative max_file_size_mb and
+  max_batch_file_size_mb, absent/empty/[.jsonl] allowed_file_extensions and absent/empty/[.exe]
+  blocked_file_extensions. B1031 owns loader cases for enable_loadbalancing_on_batch_endpoints.
+  Defaults for all five are null. Reject bool/string general upload-size values and non-string extension lists
+  via B1022. This handler's int-or-null batch-size adapter accepts "1" and true as 1, but rejects 1.5.
+  B1021 owns require_managed_files (default false).
+  Route cases below load those settings through the existing Config fixture setup; no duplicate config
+  module or YAML decoder is added here. The native B1087 cap still applies when no source cap is set.
 
   Tests below live in api::file_upload_route::tests, with each named case exercising production code. Callback
   return-type, empty-result and spool-lifetime branches use injected native services; all provider-reaching cases
   use HTTP with the mock provider. No helper oracle is needed. Counted source is 330 nonblank/non-comment lines,
-  316 excluding docstrings; budget 795 lines comprises 325 implementation, 205 behavior tests, 175 fixtures,
-  50 config tests/seeds and 40 wiring. Typed services and shared multipart fixtures keep the complete function
+  316 excluding docstrings; budget 790 lines comprises 325 implementation, 220 behavior tests, 205 fixtures
+  and 40 wiring. Reusing the dependency-owned config tests leaves room for coercion edge cases.
+  Typed services and shared multipart fixtures keep the complete function
   together instead of dividing its control flow across tasks.
 scope:
   paths:
@@ -74,15 +77,8 @@ scope:
   - crates/betterlite-core/src/api.rs
   - Cargo.toml
   - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/file_upload_route.rs
-  - crates/betterlite-config/src/api/file_upload_route/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-route-*
   - tools/oracle/cases/api/file-upload-route/**
-  - tools/oracle/fixtures/file-upload-route/**
+  - tools/oracle/fixtures/http-scenarios/file-upload-route/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L927
@@ -93,7 +89,7 @@ references:
   why: Missing multipart fields produce a 422 detail array before the upload handler runs.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1022-L1059
   why: The managed-file requirement rejects missing targets or a direct model before purpose validation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L78-L187
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L78-L185
   why: B1022 supplies size, extension and traversal failures; upload orchestration must preserve their order and file param.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L307-L318
   why: All ten purpose literals are accepted, including output purposes and messages.
@@ -121,8 +117,8 @@ dod:
   - case-managed-multi-model-upload
   - oracle
 - text: >-
-    storage_upload_route posts purpose=assistants,file=note.txt,target_storage=s3 to a configured mock storage
-    backend through B1031. Expect 200 with its file id and bytes=5, one storage write containing hello and zero
+    storage_upload_route posts purpose=assistants,file=note.txt,target_storage=azure_storage to a configured mock storage
+    backend through B1031. Expect 200 with its file id and bytes=5, B1026's create/append/flush sequence containing hello and zero
     model-provider calls. With target_storage=default and no targets/model, the default OpenAI mock receives one
     upload instead. B1027 owns storage id formatting and credentials; compare its full returned record unchanged.
   proof:
@@ -235,21 +231,27 @@ dod:
     The public_validation_errors projection removes input and ctx entirely, even when validation supplied them.
     There is no OpenAI error envelope and no provider call. Supplying both fields exits this validation path.
   proof: [required-fields, oracle]
-- text: loads_settings exercises the five named keys and their default/override/rejection values through B002's loader.
-  proof:
-  - config-tests
-  - config-corpus
+- text: >-
+    upload_form_and_configuration_edges posts passthrough=on/yes/1 and false/off/0: FastAPI recognizes
+    the corresponding booleans; an unrecognized value gives 422 detail with type=bool_parsing,
+    loc=[body,passthrough],msg="Input should be a valid boolean, unable to interpret input" before
+    orchestration. general_settings.max_batch_file_size_mb="1" or true is coerced to 1 by this route's
+    adapter; 1.5 fails with 500/internal_server_error/null/"500" and the adapter's int_from_float error,
+    without provider upload. Team enforced_file_expires_after={anchor:created_at,seconds:true} sends 1;
+    seconds=1.9 truncates to 1. These are not client-positive-range validations. All route exceptions
+    invoke the failure hook before EXCEPTION "litellm.proxy.proxy_server.create_file(): Exception
+    occured - <error>"; successful expiry selection emits DEBUG "create_file expires_after: <value>".
+  proof: [form-config-edges, oracle]
 - text: New multipart fixtures capture both the client envelope and the provider's received bytes through B900.
   proof:
   - new-oracle-cases
   - oracle
 checks:
-  optional:
-  - mutants
+  optional: []
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail
       -E 'test(/^api::file_upload_route::/) - test(/::replays_corpus$/)'
   - id: case-file-upload-route
     why: the file-upload-route behavior or its assertions are absent
@@ -293,16 +295,12 @@ checks:
   - id: case-auth-invalid
     why: the auth-invalid behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::auth_invalid($|::)/)'
-  - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::file_upload_route::tests::loads_settings($|::)/)'
+  - id: form-config-edges
+    why: FastAPI boolean parsing or batch-size coercion was replaced with the general-size policy
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::upload_form_and_configuration_edges($|::)/)'
   - id: required-fields
     why: missing multipart fields incorrectly enter upload orchestration
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::file_upload_route::tests::required_upload_fields($|::)/)'
-  - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/file-upload-route-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/file-upload-route)"
@@ -321,12 +319,13 @@ oracle_cases:
 - tools/oracle/cases/api/file-upload-route/auth-missing.yaml
 - tools/oracle/cases/api/file-upload-route/auth-invalid.yaml
 - tools/oracle/cases/api/file-upload-route/required-upload-fields.yaml
+- tools/oracle/cases/api/file-upload-route/upload-form-and-configuration-edges.yaml
 deviations:
 - what: >-
     Managed multi-model uploads currently return 500/internal_server_error/param=null/code="500" with "Managed files
     hook not found" and make no provider calls. Whether betterlite should implement managed files/batches remains
     Max's decision; this task does not create an enterprise replacement.
-  why: The pinned open-source installation has no managed_files hook, and README Decisions excludes enterprise behavior.
+  why: The pinned open-source installation has no managed_files hook. Max's managed files and batches choice is still open; keep MIT behavior without adding a license check.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L471-L480
 - what: >-
     The B1101 native multipart cap rejects a request over 16 MiB with 413/invalid_request_error/param=file/code=request_too_large,
@@ -351,5 +350,5 @@ pitfalls:
 - Successful remote creation and an enqueued success status survive a later success-hook failure; closing local spools is not rollback.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 790
   max_new_expects: 0

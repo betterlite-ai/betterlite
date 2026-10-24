@@ -1,192 +1,116 @@
 id: B924
-title: Chat response stream
+title: Drive chat-backed Responses streams over provider HTTP
 description: >-
-  Compose the tool and message transition stages into the incremental async stream used by responses-chat-call.
-  Preserve streamed output IDs in the completed response, stop on terminal events, and close upstream on cancellation;
-  synchronous SDK iteration later wraps this same state machine.
+  Implement api::chat_response_stream for full sync/async iteration, priming, chunk
+  translation and terminal snapshot assembly. Move all priming methods L441-L485 from
+  B923 here; do not split the two iteration functions or their shared finalization.
+  Compose B922 state/tool queues, B923 item builders, B914 result assembly and B1115
+  annotations. This driver owns stream sequencing, not a second SSE parser; B005 handles
+  network framing and B004 decodes chat chunks.
 
-
-  Implement crates/betterlite-core/src/api/chat_response_stream.rs. Use ChatResponseStreamInput and ChatResponseStreamResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions text_to_completed_order, tool_only_stream, empty_choices_usage, stream_cancel_drops_upstream,
-  interleaved_reasoning_text under api::chat_response_stream::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ChatResponseStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {chat_response_stream: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.common_done_event_logic
-  (L900-L930); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._ensure_output_item_for_chunk
-  (L932-L974); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.__anext__
-  (L976-L1079); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.__iter__
-  (L1081-L1082); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.__next__
-  (L1084-L1139); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._transform_chat_completion_chunk_to_response_api_chunk
-  (L1141-L1232); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._get_delta_string_from_streaming_choices
-  (L1234-L1246); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._output_with_streamed_item_ids
-  (L1248-L1264); litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator._emit_response_completed_event
-  (L1266-L1291). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 296 owned nonblank/non-comment/non-docstring Python lines (312 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 316 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 566 total within the 570-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B916 (Responses chat call), B922 (Chat
-  response stream tools), B923 (Chat response stream items), B1087 (Api boundaries), B1115 (Responses output detail
-  conversion), B914 (Responses chat output). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Add B2401 sdk_http operation chat_response_stream. Both sides call the real OpenAI chat
+  executor against the mock with stream=true and wrap its returned stream in this driver;
+  Python constructs LiteLLMCompletionStreamingIterator directly, without importing B916.
+  Capture the POST and emitted events for each mode, normalizing only injected UUID/time
+  and B904's encoded identity projection. Use unit tests for impossible upstream null
+  chunks and internal queue states. Count 354 nonblank/non-comment lines; budget 330
+  implementation, 180 tests, 135 HTTP cases, 100 adapters and 25 wiring: 770 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/chat_response_stream.rs
   - crates/betterlite-core/src/api/chat_response_stream/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/chat_response_stream.rs
-  - tools/oracle/src/helpers/chat_response_stream/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/chat_response_stream.py
-  - tools/oracle/helpers/chat_response_stream/**
-  - tools/oracle/fuzz/corpus/helper_case/chat_response_stream-*
-  - tools/oracle/cases/helpers/chat-response-stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/chat_response_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/chat_response_stream.py
+  - tools/oracle/cases/sdk-http/chat-response-stream/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L900-L930
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L932-L1291
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L441-L485
+  why: Priming pulls and buffers the first nonnull provider chunk before advertising a response ID.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L900-L1291
+  why: Whole iteration and translation methods expose async-only reasoning closure, priority and completed-response latching.
 dod:
-- text: 'text to completed order: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-text-to-completed-order
-  - oracle
-- text: 'tool only stream: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-only-stream
-  - oracle
-- text: 'empty choices usage: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-empty-choices-usage
-  - oracle
-- text: 'stream cancel drops upstream: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-stream-cancel-drops-upstream
-  - oracle
-- text: 'interleaved reasoning text: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-interleaved-reasoning-text
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    primed_identity sends one POST /v1/chat/completions,model=gpt-4o-mini,messages=[user hi],
+    stream=true,Bearer sk-test. Mock first chunk id=chat_a is read before response.created;
+    created,in_progress and completed all decode to chat_a, and that first chunk's text
+    is emitted exactly once. A nonempty string first ID is adopted; no usable ID uses
+    B923's resp_<UUID>. Null priming chunks are skipped and EOF is latched without another
+    read. Priming runs once, buffered take clears the slot, and later chunk IDs do not win.
+  proof: [driver-tests, oracle, driver-adapter]
+- text: >-
+    text_stream_order with delta=hi then finish=stop yields created,in_progress,message
+    added,content part added,text delta hi,text.done,content_part.done,message.done,
+    response.completed in that order, preserving B923's sequence defaults/gaps. Pending
+    response events precede pending tool events and both precede another provider read.
+    Only first-choice text is used; an initial role-only choice still creates a message
+    shell, while choices=[] does not. All chunks are snapshotted before early event returns,
+    so a finish_reason=content_filter on the first content chunk reaches the final snapshot.
+  proof: [driver-tests, oracle, driver-adapter]
+- text: >-
+    reasoning_transition emits a reasoning item at output_index=0 for truthy reasoning
+    text or any signed thinking block. On async text/tool/finish transition, join accumulated
+    reasoning fragments without separators and emit summary_text.done,summary_part.done,
+    reasoning item.done before the new content event, each with its own incremented sequence.
+    The sync iterator does not run this reasoning-close block and must not gain those events.
+    A tool-first chunk creates no message shell; the final snapshot still includes B914
+    reasoning/tools and replaces only the first typed message/reasoning IDs with streamed IDs.
+  proof: [driver-tests, oracle, driver-adapter]
+- text: >-
+    chunk_priority chooses reasoning before text before tool calls before pending annotations
+    before older pending tools. A chunk containing reasoning=x,text=y emits only reasoning
+    now, while the final B914 assembly still sees the full snapshot. Text="" emits no delta.
+    Only the first nonempty annotation batch is converted with B1115 and queued, with
+    output_index=message index,content_index=0,annotation_index starting 0; subsequent batches
+    are ignored. Annotation events need a later chunk with no higher-priority data to drain;
+    EOF does not add a new annotation-drain pass. Pin this omission in the terminal snapshot comparison.
+  proof: [driver-tests, oracle, driver-adapter]
+- text: >-
+    final_tools_and_snapshot reserves hosted-search indices before conversion and merges
+    chunk provider fields then first delta provider fields, so delta values win. At EOF,
+    assemble via B923,queue B922 missing tool done events,then message done events,then
+    response.completed. Latch completed_response for later ownership hooks. The event type
+    remains response.completed even if its response.status=incomplete from length/content_filter.
+    Cached response ID overrides assembly ID before B904 encoding; request_input and request
+    options reach B914. Null assembly ends iteration without inventing a completed response.
+  proof: [driver-tests, oracle, driver-adapter]
+- text: >-
+    transport_failure_and_split uses provider JSON split across arbitrary byte reads and
+    verifies identical text/events after B005 framing. A provider 401 before the first chunk
+    returns B011 AuthenticationError,status=401 with no created event; a transport error
+    after text sets finished=true and propagates the same mapped error, then later polls
+    stop. Async skips null chunks after priming; sync does not have that guard and its
+    invalid-chunk access fails. Releasing a cancelled driver releases the underlying
+    B005 stream without retrying or producing a false terminal success.
+  proof: [driver-tests, oracle, driver-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::/)
-      - test(/::replays_corpus$/)'
-  - id: case-text-to-completed-order
-    why: the text-to-completed-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::tests::text_to_completed_order($|::)/)'
-  - id: case-tool-only-stream
-    why: the tool-only-stream behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::tests::tool_only_stream($|::)/)'
-  - id: case-empty-choices-usage
-    why: the empty-choices-usage behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::tests::empty_choices_usage($|::)/)'
-  - id: case-stream-cancel-drops-upstream
-    why: the stream-cancel-drops-upstream behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::tests::stream_cancel_drops_upstream($|::)/)'
-  - id: case-interleaved-reasoning-text
-    why: the interleaved-reasoning-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::tests::interleaved_reasoning_text($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/chat_response_stream.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/chat_response_stream-*)"
-      && grep -qE "^[[:space:]]+chat_response_stream:" tools/oracle/fuzz/corpus/helper_case/chat_response_stream-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/chat-response-stream)"
+  - id: driver-tests
+    why: stream priming, event order or terminal state is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_response_stream::/)'
+  - id: driver-adapter
+    why: stream-pump behavior has only fabricated helper inputs instead of provider traffic
+    run: test -f tools/oracle/sdk_http/chat_response_stream.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/chat-response-stream)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/chat-response-stream/text-to-completed-order.yaml
-- tools/oracle/cases/helpers/chat-response-stream/tool-only-stream.yaml
-- tools/oracle/cases/helpers/chat-response-stream/empty-choices-usage.yaml
-- tools/oracle/cases/helpers/chat-response-stream/stream-cancel-drops-upstream.yaml
-- tools/oracle/cases/helpers/chat-response-stream/interleaved-reasoning-text.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/primed-identity.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/text-stream-order.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/reasoning-transition.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/chunk-priority.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/final-tools-and-snapshot.yaml
+- tools/oracle/cases/sdk-http/chat-response-stream/transport-failure-and-split.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: B922 owns _index_of_output_item_type
-  L56-L60, _output_items_with_id L63-L73, _delta_has_signed_thinking_block L76-L78, LiteLLMCompletionStreamingIterator.__init__
-  L86-L149, LiteLLMCompletionStreamingIterator._get_or_assign_tool_output_index L151-L158, LiteLLMCompletionStreamingIterator._normalize_tool_call_index
-  L160-L167, LiteLLMCompletionStreamingIterator._responses_namespace_tool_call_fields L169-L174, LiteLLMCompletionStreamingIterator._tool_call_item_kwargs
-  L176-L182, LiteLLMCompletionStreamingIterator._is_reasoning_end L184-L195, LiteLLMCompletionStreamingIterator._reserve_web_search_indexes
-  L197-L217, LiteLLMCompletionStreamingIterator._tool_call_id L219-L232, LiteLLMCompletionStreamingIterator._queue_tool_call_delta_events
-  L234-L296, LiteLLMCompletionStreamingIterator._queue_final_tool_call_done_events L298-L396, LiteLLMCompletionStreamingIterator._queue_web_search_events
-  L398-L439.'
-- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: B923 owns LiteLLMCompletionStreamingIterator._adopt_response_id_from_chunk
-  L441-L446, LiteLLMCompletionStreamingIterator._aprime_response_id L448-L465, LiteLLMCompletionStreamingIterator._prime_response_id
-  L467-L480, LiteLLMCompletionStreamingIterator._take_buffered_chunk L482-L485, LiteLLMCompletionStreamingIterator._with_encoded_response_id
-  L487-L492, LiteLLMCompletionStreamingIterator._default_response_created_event_data L494-L538, LiteLLMCompletionStreamingIterator.create_response_created_event
-  L540-L552, LiteLLMCompletionStreamingIterator.create_response_in_progress_event L554-L563, LiteLLMCompletionStreamingIterator.create_content_part_added_event
-  L586-L599, LiteLLMCompletionStreamingIterator._queue_message_item_added_events L601-L627, LiteLLMCompletionStreamingIterator._merge_provider_specific_fields
-  L629-L639, LiteLLMCompletionStreamingIterator.create_litellm_model_response L641-L655, LiteLLMCompletionStreamingIterator._snapshot_chunk_for_stream_chunk_builder
-  L658-L675, LiteLLMCompletionStreamingIterator.create_reasoning_summary_text_done_event L677-L703, LiteLLMCompletionStreamingIterator.create_reasoning_summary_part_done_event
-  L705-L739, LiteLLMCompletionStreamingIterator.create_output_text_done_event L741-L751, LiteLLMCompletionStreamingIterator.create_output_content_part_done_event
-  L753-L778, LiteLLMCompletionStreamingIterator.create_output_item_done_event L780-L811, LiteLLMCompletionStreamingIterator.create_reasoning_output_item_done_event
-  L813-L855, LiteLLMCompletionStreamingIterator.return_default_done_events L857-L878, LiteLLMCompletionStreamingIterator.return_default_initial_events
-  L880-L889, LiteLLMCompletionStreamingIterator.is_stream_finished L891-L898.'
-- 'litellm/responses/litellm_completion_transformation/streaming_iterator.py: LiteLLMCompletionStreamingIterator.create_output_item_added_event
-  L565-L584 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B922 owns L56-L439, B923 owns live methods L487-L898; create_output_item_added_event L565-L584 has no caller at the pin.
+- B004/B005 own chat provider HTTP, decoding and cancellation; B916 is a caller of this driver and must not be a dependency.
+- B914 assembles final Responses output and B904 encodes response identity through B923.
 pitfalls:
-- Within LiteLLMCompletionStreamingIterator._ensure_output_item_for_chunk\'s self.sent_output_item_added_event branch,
-  preserve return and its nested guards.
-- Within LiteLLMCompletionStreamingIterator._ensure_output_item_for_chunk\'s not chunk.choices branch, preserve
-  return and its nested guards.
+- response.created waits for the first upstream chunk, so provider errors can happen before any event is emitted.
+- Only async iteration closes a reasoning segment before later text or tools.
+- Pending annotation events are not drained merely because the provider reaches EOF.
 review_level: standard
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 770
   max_new_expects: 1
