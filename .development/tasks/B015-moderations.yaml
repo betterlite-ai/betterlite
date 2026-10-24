@@ -18,7 +18,7 @@ description: >-
   502, type bad_gateway, param category_scores, code decimal_out_of_range. Never round such a score to zero. Add
   the moderation variant to B014 exhaustive dispatch. Write the behavior rstest functions b015_moderation_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names.
+  separate names. Budget 270 endpoint/types, 270 tests, 90 fuzz/replay and 100 dispatch/config wiring (730 total).
 scope:
   paths:
   - Cargo.toml
