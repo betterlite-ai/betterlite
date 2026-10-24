@@ -272,13 +272,14 @@ tasks:
     - litellm/router_strategy/complexity_router/complexity_router.py
   - id: B022
     milestone: M2 routing
-    title: Request scheduler, priorities and admission control
+    title: Per-worker admission and in-flight tracking
     status: todo
     depends_on:
-    - B016
-    - B346
-    - B347
-    - B122
+    - B003
+    - B005
+    - B002
+    - B300
+    - B301
     file: tasks/B022-admission-control.yaml
     covers:
     - litellm/proxy/route_priority.py

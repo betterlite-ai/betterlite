@@ -1,74 +1,131 @@
 id: B022
 title: Per-worker admission and in-flight tracking
-description: Add the admission middleware and in-flight observations to the axum server. Parse the pinned
+description: 'Add the admission middleware and in-flight observations to the axum server. Parse the pinned
   general_settings keys in betterlite-config, use bounded queue slots and an owned response-body guard
   so streams retain admission until completion/disconnect, and preserve health/metrics exemptions under
   the configured root path. Keep route-registration priority as an axum routing audit; do not mistake
-  hot_routes_first for request priority scheduling. Reject invalid enabled admission settings at startup
-  instead of silently disabling protection. Use B300 barrier scenarios for overload, timeout and streaming
-  release. Use the existing Rust crate boundaries from B004 and B008; integrate through the server when
-  the provider dispatcher or callbacks live in another core crate. This task's source slices are the linked
-  ranges, not a port of their Python classes. Add the listed oracle cases and the matching adapters to
-  B301's component runner where state is not observable over HTTP; adapters call production logic and
-  never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons, and
-  separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target and
-  committed corpus for every newly accepted config form; unsupported keys still fail by full path. Keep
-  the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded
-  by checks.yaml.
+  hot_routes_first for request priority scheduling. For invalid enabled settings, disable admission with
+  a warning, matching the pinned fallback; do not fail startup. Use B300 barrier scenarios for overload,
+  timeout and streaming release. Configuration boundary keys introduced or consumed here: max_in_flight_requests_per_worker,
+  max_queued_requests_per_worker, admission_queue_timeout_seconds. max_in_flight_requests_per_worker is
+  absent by default (disabled); max_queued_requests_per_worker defaults to the configured in-flight maximum;
+  admission_queue_timeout_seconds defaults to 1.0. Invalid values warn and disable. Implement the owned
+  native service in crates/betterlite-server/src/admission_control.rs. Add ProbeOperation::B022 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B022 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/proxy/middleware/admission_control_middleware.py:
+  _Gauge.inc (L44-L44), _Gauge.dec (L46-L46), _CounterChild.inc (L51-L51), _Counter.labels (L56-L56),
+  AdmissionControlState.__init__ (L69-L77), AdmissionControlState.get_stats (L79-L84), AdmissionControlState.get_semaphore
+  (L86-L94), AdmissionControlState.record_admission (L96-L100), AdmissionControlState.record_release (L102-L106),
+  AdmissionControlState.record_queue (L108-L112), AdmissionControlState.record_dequeue (L114-L118), AdmissionControlState.record_rejection
+  (L120-L124), AdmissionControlState._get_metrics (L126-L130), AdmissionControlMiddleware.__init__ (L134-L142),
+  AdmissionControlMiddleware.__call__ (L144-L185), _get_route_path (L188-L198), _create_gauge (L201-L209),
+  create_prometheus_admission_metrics (L212-L234), get_admission_control_stats (L240-L241), _hashable
+  (L250-L251), _parse_admission_control_settings (L260-L281), get_admission_control_settings (L284-L292),
+  _overloaded_response (L295-L309). Implement these behaviors through the typed Rust services above; synchronous
+  facades and structural accessors reuse the same primitive instead of separate ports. Function coverage
+  in litellm/proxy/middleware/in_flight_requests_middleware.py: InFlightRequestsMiddleware.__init__ (L33-L34),
+  InFlightRequestsMiddleware.__call__ (L36-L50), InFlightRequestsMiddleware.get_count (L53-L55), InFlightRequestsMiddleware._get_gauge
+  (L58-L79), get_in_flight_requests (L82-L84). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Function coverage in litellm/proxy/route_priority.py: _is_hot (L19-L20), hot_routes_first (L23-L24).
+  Implement these behaviors through the typed Rust services above; synchronous facades and structural
+  accessors reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/admission-control/**
+  - crates/betterlite-server/src/admission_control.rs
+  - crates/betterlite-server/src/admission_control/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/admission_control.rs
+  - crates/betterlite-server/src/routing/admission_control/**
+  - tools/oracle/src/router_probes/admission_control.rs
   - tools/oracle/src/router_probes/admission_control/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/admission_control.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/admission_control.py
+  - tools/oracle/cases/routing/admission-control/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/admission_control.rs
+  - crates/betterlite-config/src/admission_control/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b022-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L18-L219
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L18-L234
   why: Exempt paths, slots, queue and cancellation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L276-L309
-  why: Settings validation and overload response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L242-L309
+  why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/in_flight_requests_middleware.py#L18-L84
   why: Per-process observations.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_priority.py#L8-L24
   why: Registration optimization, not a scheduling policy.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L212-L234
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L240-L241
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b022_behaviors and b022_boundaries under admission_control::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b022-behaviors
+  - b022-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the admission_control prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b022-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b022-invalid.yaml;
+    the valid seed contains max_in_flight_requests_per_worker. The cargo-fuzz target config_yaml and normal
+    replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
+    relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - b022-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(admission_control)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b022-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b022_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b022-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b022_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/admission_control.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/admission_control.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b022-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b022-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b022-" && grep -Fq 'max_in_flight_requests_per_worker' crates/betterlite-config/fuzz/corpus/config_yaml/b022-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/admission-control/disabled-admission.yaml
 - tools/oracle/cases/routing/admission-control/immediate-admission.yaml
@@ -79,10 +136,10 @@ oracle_cases:
 - tools/oracle/cases/routing/admission-control/root-path-boundary.yaml
 - tools/oracle/cases/routing/admission-control/stream-body-holds-slot.yaml
 - tools/oracle/cases/routing/admission-control/disconnect-releases.yaml
-deviations:
-- what: Invalid enabled admission settings fail startup instead of disabling admission control.
-  why: The no-silent-drops rule requires an explicit error for unusable configuration.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L286-L309
+- tools/oracle/cases/routing/admission-control/invalid-settings-warning-disables.yaml
+- tools/oracle/cases/routing/admission-control/omitted-queue-equals-inflight.yaml
+- tools/oracle/cases/routing/admission-control/default-queue-timeout.yaml
+deviations: []
 out_of_scope:
 - Implementing a Prometheus exporter (B111) or new health endpoints (B130).
 - Reordering middleware to bypass authentication.
@@ -90,7 +147,11 @@ pitfalls:
 - Admission overload returns 503 with retry-after, whereas a deployment capacity rejection is 429.
 - An axum handler returning a streaming response does not mean the stream has completed.
 - B122 owns root-path and request-size middleware; preserve its ordering and normalization.
-review_level: standard
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
+review_level: security
 budget:
   max_changed_lines: 800
   max_new_expects: 0
