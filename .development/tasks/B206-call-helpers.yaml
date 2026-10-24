@@ -1,0 +1,82 @@
+id: B206
+title: Common call metadata and response helpers
+description: >-
+  Implement the common pure metadata/response helpers in betterlite-core/helpers using existing typed requests,
+  errors and B198 context. Cover finish-reason normalization, checked token-limit coercion, expected-client-error
+  classification, metadata bucket choice, trusted flags, model-name reconstruction, response header projection and
+  independent snapshots. Preserve optional billing/provider fields for their future consumers without calculating
+  costs or activating budget reservations. Replace Python deep-copy/filtering of arbitrary callables/exceptions
+  with explicit typed record projections; Python object convenience remains in B166. Add call_helpers helper cases
+  for each pure operation and injection/isolation tests for internal fields, reusing the chat parser for external
+  metadata. Budget 300 projection/helper lines, 100 typed-model wiring and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/helpers.rs
+  - crates/betterlite-core/src/helpers/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/call-helpers/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L194
+  why: Settings, arithmetic, expected failures and token-limit coercion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L425
+  why: Finish reasons, metadata provenance and model reconstruction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L799
+  why: Headers, snapshots and internal parameter filtering.
+dod:
+- text: Every listed pure helper matches pinned outputs, including overflow, finish reasons and metadata precedence.
+  proof:
+  - oracle
+- text: Snapshots remain independent, trusted flags cannot be set by request data, and secret/vendor headers never
+    appear in public projection.
+  proof:
+  - call-helper-tests
+- text: Any added external metadata fields replay through the chat corpus.
+  proof:
+  - chat-request-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: call-helper-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/call_helper/)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/call-helpers/finish-reasons.yaml
+- tools/oracle/cases/helpers/call-helpers/token-limit-coercion.yaml
+- tools/oracle/cases/helpers/call-helpers/expected-client-error.yaml
+- tools/oracle/cases/helpers/call-helpers/metadata-bucket.yaml
+- tools/oracle/cases/helpers/call-helpers/trusted-flags.yaml
+- tools/oracle/cases/helpers/call-helpers/model-reconstruction.yaml
+- tools/oracle/cases/helpers/call-helpers/response-headers.yaml
+- tools/oracle/cases/helpers/call-helpers/snapshot-isolation.yaml
+- tools/oracle/cases/helpers/call-helpers/filter-internal.yaml
+deviations: []
+out_of_scope:
+- Cost calculations and reservation behavior are B068-B069; this part carries their typed optional metadata only.
+- Python deep-copy of arbitrary object graphs and callable filtering are B166.
+pitfalls:
+- A typed source exception is retained inside Rust even when omitted from a serializable logging projection.
+- Do not let a request set the proxy-stamped OAuth or budget reservation markers.
+- Provider response headers must pass an explicit allowlist.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
