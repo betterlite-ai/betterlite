@@ -1909,13 +1909,16 @@ tasks:
     depends_on:
     - B302
     - B009
+    - B010
     - B011
     - B005
+    - B301
+    - B361
+    - B002
     file: tasks/B303-deployment-clients.yaml
     covers:
     - litellm/router_utils/client_initalization_utils.py
     - litellm/router_utils/clientside_credential_handler.py
-
   - id: B304
     milestone: M2 routing
     title: Router counters, callback state and batched reads
