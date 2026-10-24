@@ -17,7 +17,8 @@ description: >-
   Write the behavior rstest functions b201_batch_call_tests_behavior in adjacent tests.rs files, with a named case
   for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   batch_calls in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own
-  Rust and Python adapter file and corpus seed.
+  Rust and Python adapter file and corpus seed. Budget 270 batch execution, 100 adapters, 310 tests and 70 wiring
+  (750 total).
 scope:
   paths:
   - Cargo.toml
