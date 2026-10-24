@@ -13,7 +13,7 @@ use crate::types::LiteLlmSettings;
 
 #[derive(Debug, Clone)]
 pub struct ProxyPolicy {
-    pub no_proxy: Option<String>,
+    pub no_proxy: String,
     pub primary: BTreeMap<String, ProxyRoute>,
     pub fallback: BTreeMap<String, ProxyRoute>,
     pub warnings: Vec<ProxyWarning>,
@@ -54,7 +54,7 @@ impl ProxyPolicy {
                 .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
         };
         let mut proxies = environment_proxies(environment);
-        let no_proxy = proxies.remove("no");
+        let no_proxy = proxies.remove("no").unwrap_or_default();
         let mut primary = BTreeMap::new();
         for (name, value) in &proxies {
             let prefix = if value.contains("://") { "" } else { "http://" };
@@ -82,9 +82,7 @@ impl ProxyPolicy {
     pub fn route(&self, url: &Url) -> Option<&ProxyRoute> {
         // httpx hands LiteLLM an IPv6 host without its brackets
         let host = url.host_str().unwrap_or_default();
-        if let Some(no_proxy) = &self.no_proxy
-            && bypasses(no_proxy, host.trim_matches(['[', ']']))
-        {
+        if bypasses(&self.no_proxy, host.trim_matches(['[', ']'])) {
             return None;
         }
         self.primary
