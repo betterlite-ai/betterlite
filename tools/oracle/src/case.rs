@@ -109,46 +109,35 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> 
         return Ok(());
     }
     let entries = fs::read_dir(path).map_err(&read_error)?;
-    for entry in entries {
-        let entry = entry.map_err(&read_error)?;
+    for result in entries {
+        let entry = result.map_err(&read_error)?;
         collect_yaml(&entry.path(), files)?;
     }
     Ok(())
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), CaseError> {
+    let invalid = |message: &str| CaseError::Invalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
-        return Err(invalid(
-            path,
-            "name, config, and request.path cannot be empty",
-        ));
+        return Err(invalid("name, config, and request.path cannot be empty"));
     }
     for answer in &case.upstream {
         if answer.body.is_some() == answer.events.is_some() {
             return Err(invalid(
-                path,
                 "each upstream answer must contain exactly one of body or events",
             ));
         }
     }
     for ignored in &case.compare.ignore {
         if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
-            return Err(invalid(
-                path,
-                "compare.ignore pointers must be JSON pointers",
-            ));
+            return Err(invalid("compare.ignore pointers must be JSON pointers"));
         }
         if ignored.why.is_empty() {
-            return Err(invalid(path, "compare.ignore entries need a why"));
+            return Err(invalid("compare.ignore entries need a why"));
         }
     }
     Ok(())
-}
-
-fn invalid(path: &Path, message: &str) -> CaseError {
-    let error = CaseError::Invalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    error
 }

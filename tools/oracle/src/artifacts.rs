@@ -11,16 +11,16 @@ use super::HarnessError;
 use crate::http::Response;
 
 #[derive(Clone, Copy)]
-pub(crate) struct ArtifactInput<'a> {
-    pub(crate) root: &'a Path,
-    pub(crate) case: &'a Case,
-    pub(crate) first: &'a Response,
-    pub(crate) second: &'a Response,
-    pub(crate) first_requests: &'a [ProviderRequest],
-    pub(crate) second_requests: &'a [ProviderRequest],
-    pub(crate) first_log: &'a Path,
-    pub(crate) second_log: &'a Path,
-    pub(crate) result: Option<&'a compare::Difference>,
+pub(crate) struct ArtifactInput<'input> {
+    pub(crate) root: &'input Path,
+    pub(crate) case: &'input Case,
+    pub(crate) first: &'input Response,
+    pub(crate) second: &'input Response,
+    pub(crate) first_requests: &'input [ProviderRequest],
+    pub(crate) second_requests: &'input [ProviderRequest],
+    pub(crate) first_log: &'input Path,
+    pub(crate) second_log: &'input Path,
+    pub(crate) result: Option<&'input compare::Difference>,
 }
 
 pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
@@ -28,7 +28,10 @@ pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
         .root
         .join(super::safe_name(&input.case.name))
         .join(super::unique_id()?.to_string());
-    super::create_dir(&directory)?;
+    fs::create_dir_all(&directory).map_err(|source| HarnessError::Filesystem {
+        path: directory.clone(),
+        source,
+    })?;
     for (name, response, requests, log) in [
         (
             "litellm",
@@ -59,7 +62,32 @@ fn copy_file(source: &Path, destination: &Path) -> Result<(), HarnessError> {
     Ok(())
 }
 
-fn write_json<Data: Serialize + ?Sized>(path: &Path, value: &Data) -> Result<(), HarnessError> {
+fn write_json<Data>(path: &Path, value: &Data) -> Result<(), HarnessError>
+where
+    Data: Serialize + ?Sized,
+{
     let text = serde_json::to_string_pretty(value).map_err(HarnessError::Json)?;
-    super::write_text(path, &text)
+    fs::write(path, text).map_err(|source| HarnessError::Filesystem {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+pub(crate) fn prepare(
+    root: &Path,
+    case: &Case,
+    upstream: &str,
+) -> Result<(PathBuf, PathBuf), HarnessError> {
+    let directory = root.join(format!("group-{}", super::unique_id()?));
+    fs::create_dir_all(&directory).map_err(|source| HarnessError::Filesystem {
+        path: directory.clone(),
+        source,
+    })?;
+    let path = directory.join("config.yaml");
+    let config = case.config.replace("{{upstream}}", upstream);
+    fs::write(&path, config).map_err(|source| HarnessError::Filesystem {
+        path: path.clone(),
+        source,
+    })?;
+    Ok((directory, path))
 }

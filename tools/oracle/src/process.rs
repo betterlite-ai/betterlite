@@ -16,13 +16,13 @@ pub(crate) struct Gateway {
     pub(crate) log_path: PathBuf,
 }
 
-pub(crate) struct GatewaySpec<'a> {
-    pub(crate) command: &'a Path,
-    pub(crate) args: &'a [String],
-    pub(crate) cwd: &'a Path,
-    pub(crate) env: &'a [(String, String)],
+pub(crate) struct GatewaySpec<'spec> {
+    pub(crate) command: &'spec Path,
+    pub(crate) args: &'spec [String],
+    pub(crate) cwd: &'spec Path,
+    pub(crate) env: &'spec [(String, String)],
     pub(crate) port: u16,
-    pub(crate) log_path: &'a Path,
+    pub(crate) log_path: &'spec Path,
 }
 
 #[derive(Debug, Error)]
@@ -68,7 +68,7 @@ impl Gateway {
         let deadline = Instant::now()
             .checked_add(Duration::from_secs(120))
             .ok_or(ProcessError::Timeout)?;
-        while before_deadline(Instant::now(), deadline) {
+        while Instant::now() < deadline {
             if let Some(status) = self.child.try_wait().map_err(ProcessError::Stop)? {
                 return Err(ProcessError::Exited(status));
             }
@@ -90,11 +90,6 @@ impl Gateway {
         self.child.wait().map_err(ProcessError::Stop)?;
         Ok(())
     }
-}
-
-pub(crate) fn before_deadline(now: Instant, deadline: Instant) -> bool {
-    let before = now < deadline;
-    before
 }
 
 impl Drop for Gateway {

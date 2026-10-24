@@ -21,6 +21,10 @@ pub(crate) fn compare(
     right_requests: &[ProviderRequest],
     compare: &Compare,
 ) -> Result<(), Difference> {
+    let difference = |pointer: &str, message: &str| Difference {
+        pointer: pointer.to_owned(),
+        message: message.to_owned(),
+    };
     if left.status != right.status {
         return Err(difference("/status", "response statuses differ"));
     }
@@ -59,6 +63,10 @@ fn compare_provider_requests(
     right: &[ProviderRequest],
     compare: &Compare,
 ) -> Result<(), Difference> {
+    let difference = |pointer: &str, message: &str| Difference {
+        pointer: pointer.to_owned(),
+        message: message.to_owned(),
+    };
     if left.len() != right.len() {
         return Err(difference("/upstream", "provider request counts differ"));
     }
@@ -97,7 +105,9 @@ fn remove_pointer(value: &mut Value, pointer: &str) {
         let decoded = key.replace("~1", "/").replace("~0", "~");
         if let Some(Value::Object(object)) = value.pointer_mut(parent) {
             object.remove(&decoded);
-        } else if let Some(child) = value.pointer_mut(pointer) {
+            return;
+        }
+        if let Some(child) = value.pointer_mut(pointer) {
             *child = Value::Null;
         }
     }
@@ -143,12 +153,4 @@ pub(crate) fn first_difference_optional(
         (None, None) => None,
         _ => Some(pointer.to_owned()),
     }
-}
-
-fn difference(pointer: &str, message: &str) -> Difference {
-    let difference = Difference {
-        pointer: pointer.to_owned(),
-        message: message.to_owned(),
-    };
-    difference
 }

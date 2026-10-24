@@ -1,19 +1,12 @@
-#![cfg_attr(
-    not(test),
-    expect(
-        clippy::restriction,
-        reason = "The oracle CLI reports harness failures on stderr."
-    )
-)]
+use std::io::{self, Write as _};
+use std::process::ExitCode;
 
-#[cfg(not(test))]
-fn main() {
-    let status = match betterlite_oracle::run() {
-        Ok(code) => betterlite_oracle::exit_status(code),
+fn main() -> ExitCode {
+    match betterlite_oracle::run() {
+        Ok(code) => code,
         Err(error) => {
-            eprintln!("oracle error: {error}");
-            2
+            let _written = writeln!(io::stderr().lock(), "oracle error: {error}");
+            ExitCode::from(2)
         }
-    };
-    std::process::exit(status);
+    }
 }

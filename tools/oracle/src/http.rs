@@ -3,7 +3,8 @@ use std::io::{Error, Read as _};
 use std::str::{self, Utf8Error};
 use std::time::Duration;
 
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, ClientBuilder};
+use reqwest::redirect::Policy;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -32,10 +33,14 @@ pub(crate) enum HttpError {
     Body(#[from] serde_json::Error),
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "The CLI owns its HTTP client and configures timeouts and local-only transport here."
+)]
 pub(crate) fn client() -> Result<Client, HttpError> {
-    let client = Client::builder()
+    let client = ClientBuilder::from(reqwest::Client::builder())
         .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(Policy::none())
         .timeout(Duration::from_secs(30))
         .build()?;
     Ok(client)

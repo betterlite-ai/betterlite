@@ -10,5 +10,5 @@ fn invalid_case_path_is_a_harness_failure() {
         .expect("oracle should start");
     assert_eq!(output.status.code(), Some(2_i32));
     let error = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(error.contains("oracle error"));
+    assert!(error.contains("oracle error") && error.contains("does-not-exist.yaml"));
 }

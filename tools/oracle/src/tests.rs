@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Error;
 use std::io::{Read as _, Write as _};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -11,6 +12,7 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Duration;
+use std::{env, process, slice};
 
 use serde_json::Value;
 
@@ -49,11 +51,8 @@ fn valid_case_yaml() -> String {
 }
 
 fn temporary_case_path(suffix: &str) -> PathBuf {
-    let name = format!(
-        "betterlite-oracle-test-{}-{suffix}.yaml",
-        std::process::id()
-    );
-    std::env::temp_dir().join(name)
+    let name = format!("betterlite-oracle-test-{}-{suffix}.yaml", process::id());
+    env::temp_dir().join(name)
 }
 
 #[derive(serde::Deserialize)]
@@ -123,7 +122,7 @@ fn invalid_cases(#[case] name: &str, #[case] message: &str) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("fixtures/{name}.case"));
     let temporary = temporary_case_path(name);
     fs::copy(&path, &temporary).unwrap();
-    let error = load_cases(std::slice::from_ref(&temporary))
+    let error = load_cases(slice::from_ref(&temporary))
         .unwrap_err()
         .to_string();
     assert!(error.contains(message), "{error}");
@@ -139,35 +138,34 @@ fn case_loads_directories_and_ignores_non_yaml_files() {
         valid_case_yaml().replace("ignore: []", "ignore: [{pointer: '', why: whole document}]");
     fs::write(directory.join("case.yaml"), yaml).unwrap();
     fs::write(directory.join("ignored.txt"), valid_case_yaml()).unwrap();
-    assert_eq!(
-        load_cases(std::slice::from_ref(&directory)).unwrap().len(),
-        1
-    );
+    assert_eq!(load_cases(slice::from_ref(&directory)).unwrap().len(), 1);
     assert_eq!(load_cases(&[directory.join("case.yaml")]).unwrap().len(), 1);
     fs::remove_dir_all(&directory).unwrap();
 }
 
 #[test]
 fn exit_status_maps_success_and_difference() {
-    assert_eq!(crate::exit_status(std::process::ExitCode::SUCCESS), 0);
-    assert_eq!(crate::exit_status(std::process::ExitCode::from(1)), 1);
+    assert_eq!(runner::exit_status(false), process::ExitCode::SUCCESS);
+    assert_eq!(runner::exit_status(true), process::ExitCode::from(1));
 }
 
 fn wire_response(bytes: Vec<u8>) -> Result<Response, HttpError> {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let address = listener.local_addr()?;
+    let client = client()?;
+    let server = thread::Builder::new().spawn(move || {
+        let (mut stream, _) = listener.accept()?;
         let mut request = [0; 4096];
-        assert!(stream.read(&mut request).unwrap() > 0);
+        if stream.read(&mut request)? == 0 {
+            return Err(Error::other("missing request"));
+        }
         let _written = stream.write_all(&bytes);
-    });
-    let result = send(
-        &client().unwrap(),
-        &format!("http://{address}"),
-        &test_case().request,
-    );
-    server.join().unwrap();
+        Ok::<(), Error>(())
+    })?;
+    let result = send(&client, &format!("http://{address}"), &test_case().request);
+    server
+        .join()
+        .map_err(|_panic| Error::other("server panicked"))??;
     result
 }
 
@@ -186,8 +184,7 @@ fn answer() -> UpstreamAnswer {
 }
 
 fn test_case() -> Case {
-    let case = serde_yaml::from_str(&valid_case_yaml()).unwrap();
-    case
+    serde_yaml::from_str(&valid_case_yaml()).unwrap()
 }
 
 #[rstest::rstest]
@@ -214,7 +211,7 @@ fn http_parsers(#[case] name: &str) {
 
 #[test]
 fn http_ready_rejects_non_success_status_and_chunks_allow_the_limit() {
-    assert!(ready(&client().unwrap(), "http://127.0.0.1:1").is_err());
+    ready(&client().unwrap(), "http://127.0.0.1:1").unwrap_err();
     let body = "a".repeat(MAX_BODY);
     let wire = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
@@ -250,7 +247,7 @@ fn http_write_request_sends_headers_and_body() {
     outgoing.body = value("{\"x\":1}");
     send(&client().unwrap(), &mock.base_url, &outgoing).unwrap();
     let recorded = mock.finish().unwrap();
-    assert_eq!(recorded[0].headers.get("authorization").unwrap(), "key");
+    assert_eq!(&recorded[0].headers["authorization"], "key");
     assert_eq!(recorded[0].body, outgoing.body);
     assert_eq!(recorded[0].method, "POST");
     assert_eq!(recorded[0].path, "/");
@@ -294,15 +291,19 @@ fn mock_drop_joins_server() {
     let worker = mock.thread.take().unwrap();
     let joined = Arc::new(AtomicBool::new(false));
     let completed = Arc::clone(&joined);
-    mock.thread = Some(thread::spawn(move || {
-        let result = worker.join().unwrap();
-        thread::sleep(Duration::from_millis(50));
-        completed.store(true, Ordering::Release);
-        result
-    }));
+    mock.thread = Some(
+        thread::Builder::new()
+            .spawn(move || {
+                let result = worker.join().unwrap();
+                thread::park_timeout(Duration::from_millis(50));
+                completed.store(true, Ordering::Release);
+                result
+            })
+            .unwrap(),
+    );
     drop(mock);
     assert!(joined.load(Ordering::Acquire));
-    assert!(send(&client().unwrap(), &address, &test_case().request).is_err());
+    send(&client().unwrap(), &address, &test_case().request).unwrap_err();
 }
 
 #[test]
@@ -310,13 +311,7 @@ fn mock_server_handles_nonblocking_waits_and_failure_storage() {
     let mock = MockProvider::start(&[]).unwrap();
     let reply = mock_response(&mock).unwrap();
     assert_eq!(reply.status, 500);
-    assert!(mock.finish().is_err());
-    let now = std::time::Instant::now();
-    assert!(crate::process::before_deadline(
-        now,
-        now + Duration::from_secs(1)
-    ));
-    assert!(!crate::process::before_deadline(now, now));
+    mock.finish().unwrap_err();
 }
 
 fn gateway_fixture(name: &str, script: &str, port: u16) -> Gateway {
@@ -356,7 +351,7 @@ fn process_starts_waits_and_stops_gateways() {
     let dropped = gateway_fixture("dropped", "exec sleep 10", 1);
     let pid = dropped.child.id();
     drop(dropped);
-    assert!(fs::metadata(format!("/proc/{pid}")).is_err());
+    fs::metadata(format!("/proc/{pid}")).unwrap_err();
     fs::remove_file(temporary_case_path("dropped")).unwrap();
 }
 
@@ -372,67 +367,49 @@ fn runner_helpers_create_safe_artifact_paths_and_ports() {
     assert_ne!(second_port, 1);
     assert_ne!(runner::unique_id().unwrap(), 0);
     assert_ne!(runner::unique_id().unwrap(), 1);
-    assert_eq!(runner::combine_id(2, 1), 3);
-    assert_eq!(runner::combine_id(0, 1), 1);
-    assert_eq!(runner::combine_id(2, 3), 1);
-    assert!(runner::accumulate_difference(false, true));
-    assert!(runner::accumulate_difference(true, false));
-    assert!(!runner::accumulate_difference(false, false));
+}
+
+#[test]
+fn runner_selects_cases_and_gateways() {
     let request = request(Value::Null);
     assert_eq!(
-        runner::request_slice(std::slice::from_ref(&request), 0, 1).len(),
+        runner::request_slice(slice::from_ref(&request), 0, 1).len(),
         1
     );
-    assert!(runner::request_slice(std::slice::from_ref(&request), 1, 1).is_empty());
-    assert_eq!(runner::advance_offset(2, 3), 5);
+    assert!(runner::request_slice(slice::from_ref(&request), 1, 1).is_empty());
     let normal = <Options as clap::Parser>::try_parse_from(["oracle", "cases"]).unwrap();
-    let self_check =
-        <Options as clap::Parser>::try_parse_from(["oracle", "--self-check", "cases"]).unwrap();
-    assert!(crate::gateway::uses_litellm(&normal, true));
-    assert!(!crate::gateway::uses_litellm(&normal, false));
-    assert!(crate::gateway::uses_litellm(&self_check, false));
-    assert!(runner::run_cases(&normal, Vec::new()).is_err());
-    let group_root =
-        std::env::temp_dir().join(format!("betterlite-empty-group-{}", std::process::id()));
-    runner::create_dir(&group_root).unwrap();
-    assert!(runner::run_group(&normal, &group_root, Vec::new()).is_err());
+    runner::run_cases(&normal, Vec::new()).unwrap_err();
+    let group_root = env::temp_dir().join(format!("betterlite-empty-group-{}", process::id()));
+    fs::create_dir_all(&group_root).unwrap();
+    runner::run_group(&normal, &group_root, &[]).unwrap_err();
     fs::remove_dir_all(&group_root).unwrap();
-    let directory = std::env::temp_dir().join(format!("betterlite-runner-{}", std::process::id()));
     assert!(runner::artifact_root().unwrap().exists());
-    runner::create_dir(&directory).unwrap();
-    let file = directory.join("file.txt");
-    runner::write_text(&file, "content").unwrap();
-    assert_eq!(fs::read_to_string(&file).unwrap(), "content");
-    fs::remove_dir_all(&directory).unwrap();
 }
 
 #[test]
 fn artifacts_write_client_provider_diff_and_logs() {
-    let root = std::env::temp_dir().join(format!("betterlite-artifacts-{}", std::process::id()));
-    let log_directory = root.join("logs");
-    fs::create_dir_all(&log_directory).unwrap();
-    let first_log = log_directory.join("first.log");
-    let second_log = log_directory.join("second.log");
+    let root = env::temp_dir().join(format!("betterlite-artifacts-{}", process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let first_log = root.join("first.log");
+    let second_log = root.join("second.log");
     fs::write(&first_log, "first").unwrap();
     fs::write(&second_log, "second").unwrap();
-    let mut case = test_case();
-    case.name = "artifact case".to_owned();
+    let case = test_case();
     let captured = response(value("{\"ok\":true}"));
     let provider = request(Value::Null);
-    let difference = compare::Difference {
-        pointer: "/ok".to_owned(),
-        message: "response bodies differ".to_owned(),
-    };
     let input = artifacts::ArtifactInput {
         root: &root,
         case: &case,
         first: &captured,
         second: &captured,
-        first_requests: std::slice::from_ref(&provider),
-        second_requests: std::slice::from_ref(&provider),
+        first_requests: slice::from_ref(&provider),
+        second_requests: slice::from_ref(&provider),
         first_log: &first_log,
         second_log: &second_log,
-        result: Some(&difference),
+        result: Some(&compare::Difference {
+            pointer: "/ok".to_owned(),
+            message: "response bodies differ".to_owned(),
+        }),
     };
     let directory = artifacts::write(input).unwrap();
     assert_ne!(directory, artifacts::write(input).unwrap());
@@ -456,7 +433,7 @@ fn artifacts_write_client_provider_diff_and_logs() {
 #[test]
 fn capture_gateway_collects_http_responses_and_stops_process() {
     let mock = MockProvider::start(&[answer()]).unwrap();
-    let address: std::net::SocketAddr = mock
+    let address: SocketAddr = mock
         .base_url
         .strip_prefix("http://")
         .unwrap()
@@ -468,24 +445,30 @@ fn capture_gateway_collects_http_responses_and_stops_process() {
     assert_eq!(captures.len(), 1);
     assert_eq!(captures[0].status, 200);
     assert_eq!(mock.finish().unwrap().len(), 1);
-    assert!(fs::metadata(format!("/proc/{pid}")).is_err());
+    fs::metadata(format!("/proc/{pid}")).unwrap_err();
     fs::remove_file(temporary_case_path("capture")).unwrap();
 }
 
-#[test]
-fn mock_accepts_body_after_headers() {
-    let answer = answer();
-    let mock = MockProvider::start(&[answer]).unwrap();
+#[rstest::rstest]
+#[case::json(b"{\"x\":1}", true)]
+#[case::invalid_utf8(b"\xff123456", false)]
+fn mock_accepts_body_after_headers(#[case] body: &[u8], #[case] valid: bool) {
+    let mock = MockProvider::start(&[answer()]).unwrap();
     let mut stream = TcpStream::connect(mock.base_url.strip_prefix("http://").unwrap()).unwrap();
     stream
         .write_all(
             b"POST /x HTTP/1.1\r\nHost: mock\r\nContent-Length: 7\r\nConnection: close\r\n\r\n",
         )
         .unwrap();
-    thread::sleep(Duration::from_millis(50));
-    let _sent = stream.write_all(b"{\"x\":1}");
+    thread::park_timeout(Duration::from_millis(50));
+    let _sent = stream.write_all(body);
     let mut received = String::new();
     stream.read_to_string(&mut received).unwrap();
     let requests = mock.finish().unwrap();
-    assert_eq!(requests[0].body, value("{\"x\":1}"));
+    if valid {
+        assert_eq!(requests[0].body, value("{\"x\":1}"));
+    } else {
+        assert!(requests.is_empty());
+        assert!(received.starts_with("HTTP/1.1 400"));
+    }
 }

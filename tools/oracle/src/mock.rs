@@ -1,9 +1,12 @@
+use axum::http::StatusCode;
 use std::collections::{BTreeMap, VecDeque};
-use std::io::Error;
+use std::io::{Error, Write as _};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use std::{mem, str};
+use tokio::{net, runtime, time};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -51,7 +54,7 @@ impl MockProvider {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
         let recording = Arc::new(Mutex::new(Recording {
@@ -63,13 +66,14 @@ impl MockProvider {
             .fallback(handle)
             .with_state(Arc::clone(&recording));
         let (stop, stopped) = oneshot::channel();
+        let shutdown = async {
+            let _stopped = stopped.await;
+        };
         let thread = thread::Builder::new().spawn(move || {
             runtime.block_on(async move {
-                let socket = tokio::net::TcpListener::from_std(listener)?;
+                let socket = net::TcpListener::from_std(listener)?;
                 axum::serve(socket, router)
-                    .with_graceful_shutdown(async {
-                        let _stopped = stopped.await;
-                    })
+                    .with_graceful_shutdown(shutdown)
                     .await
             })
         })?;
@@ -90,7 +94,7 @@ impl MockProvider {
         if let Some(error) = recorded.failure.take() {
             return Err(MockError::Io(error));
         }
-        Ok(std::mem::take(&mut recorded.requests))
+        Ok(mem::take(&mut recorded.requests))
     }
 
     fn shutdown(&mut self) -> Result<(), MockError> {
@@ -98,7 +102,7 @@ impl MockProvider {
             let _sent = stop.send(());
         }
         if let Some(thread) = self.thread.take() {
-            thread.join().map_err(|_| MockError::Join)??;
+            thread.join().map_err(|_source| MockError::Join)??;
         }
         Ok(())
     }
@@ -113,41 +117,42 @@ impl Drop for MockProvider {
 async fn handle(
     State(state): State<Arc<Mutex<Recording>>>,
     request: Request,
-) -> Result<Response<Body>, axum::http::StatusCode> {
+) -> Result<Response<Body>, StatusCode> {
     let (parts, body) = request.into_parts();
     if parts.method == "GET" && parts.uri.path() == "/v1/models" {
         return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
     }
-    let bytes = tokio::time::timeout(Duration::from_secs(30), to_bytes(body, MAX_BODY))
+    let bytes = time::timeout(Duration::from_secs(30), to_bytes(body, MAX_BODY))
         .await
-        .map_err(|_| axum::http::StatusCode::REQUEST_TIMEOUT)?
-        .map_err(|_| axum::http::StatusCode::PAYLOAD_TOO_LARGE)?;
+        .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
+        .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let headers = parts
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            Ok((
+                name.to_string(),
+                str::from_utf8(value.as_bytes())?.to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
+        .map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let captured = ProviderRequest {
+        method: parts.method.to_string(),
+        path: parts.uri.to_string(),
+        headers,
+        body: serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned())),
+    };
     let mut recorded = state
         .lock()
-        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-    let result = reply(
-        &mut recorded,
-        ProviderRequest {
-            method: parts.method.to_string(),
-            path: parts.uri.to_string(),
-            headers: parts
-                .headers
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.to_string(),
-                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
-                    )
-                })
-                .collect(),
-            body: serde_json::from_slice(&bytes)
-                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned())),
-        },
-    );
-    result.map_err(|error| {
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = reply(&mut recorded, captured).map_err(|error| {
         recorded.failure = Some(error);
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR
-    })
+        StatusCode::INTERNAL_SERVER_ERROR
+    });
+    drop(recorded);
+    result
 }
 
 fn reply(recorded: &mut Recording, request: ProviderRequest) -> Result<Response<Body>, Error> {
@@ -159,13 +164,11 @@ fn reply(recorded: &mut Recording, request: ProviderRequest) -> Result<Response<
     let body = if let Some(json) = answer.body {
         serde_json::to_vec(&json).map_err(Error::other)?
     } else {
-        answer
-            .events
-            .unwrap_or_default()
-            .iter()
-            .map(|event| format!("data: {event}\n\n"))
-            .collect::<String>()
-            .into_bytes()
+        let mut bytes = Vec::new();
+        for event in answer.events.unwrap_or_default() {
+            writeln!(bytes, "data: {event}\n")?;
+        }
+        bytes
     };
     let mut response = Response::builder().status(answer.status);
     for (name, value) in answer.headers {

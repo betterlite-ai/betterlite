@@ -1,10 +1,13 @@
 use reqwest::blocking::Client;
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
+use std::io::{self, Write as _};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::process;
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use thiserror::Error;
 
@@ -12,7 +15,7 @@ use crate::case::Case;
 use crate::cli::Options;
 use crate::compare;
 use crate::http::{self, HttpError, Response};
-use crate::mock::{MockError, MockProvider};
+use crate::mock::{MockError, MockProvider, ProviderRequest};
 use crate::process::{Gateway, ProcessError};
 
 use super::gateway::{GatewayInput, start as start_gateway};
@@ -22,6 +25,10 @@ pub(crate) mod artifacts;
 
 #[derive(Debug, Error)]
 pub(crate) enum HarnessError {
+    #[error("gateway did not return a response for case {0}")]
+    MissingCapture(usize),
+    #[error("cannot write progress: {0}")]
+    Output(#[source] io::Error),
     #[error("{0}")]
     Http(#[from] HttpError),
     #[error("{0}")]
@@ -29,19 +36,16 @@ pub(crate) enum HarnessError {
     #[error("{0}")]
     Process(#[from] ProcessError),
     #[error("filesystem error at {path}: {source}")]
-    Filesystem {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    Filesystem { path: PathBuf, source: io::Error },
     #[error("cannot serialize artifact: {0}")]
     Json(#[source] serde_json::Error),
     #[error("system clock error: {0}")]
-    Clock(#[source] std::time::SystemTimeError),
+    Clock(#[source] SystemTimeError),
 }
 
 pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode, HarnessError> {
     if cases.is_empty() {
-        return Err(missing_capture(0));
+        return Err(HarnessError::MissingCapture(0));
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     for case in cases {
@@ -51,19 +55,23 @@ pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode,
     let root = artifact_root()?;
     let mut different = false;
     for (_, group) in groups {
-        different = accumulate_difference(different, run_group(options, &root, group)?);
+        different |= run_group(options, &root, &group)?;
     }
+    Ok(exit_status(different))
+}
+
+pub(crate) fn exit_status(different: bool) -> ExitCode {
     if different {
-        Ok(ExitCode::from(1))
+        ExitCode::from(1)
     } else {
-        Ok(ExitCode::SUCCESS)
+        ExitCode::SUCCESS
     }
 }
 
 pub(crate) fn run_group(
     options: &Options,
     root: &Path,
-    cases: Vec<Case>,
+    cases: &[Case],
 ) -> Result<bool, HarnessError> {
     let upstream_answers = cases
         .iter()
@@ -73,91 +81,118 @@ pub(crate) fn run_group(
     let mut answers = upstream_answers.clone();
     answers.extend(upstream_answers.iter().cloned());
     let mock = MockProvider::start(&answers)?;
-    let group_dir = root.join(format!("group-{}", unique_id()?));
-    create_dir(&group_dir)?;
-    let config_path = group_dir.join("config.yaml");
-    let case = cases.first().ok_or_else(|| missing_capture(0))?;
-    let case_env = &case.env;
-    let config = case.config.replace("{{upstream}}", &mock.base_url);
-    write_text(&config_path, &config)?;
+    let first_case = cases.first().ok_or(HarnessError::MissingCapture(0))?;
+    let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
     let client = http::client()?;
     let input = GatewayInput {
         options,
         group_dir: &group_dir,
         config_path: &config_path,
         upstream: &mock.base_url,
-        case_env,
+        case_env: &first_case.env,
     };
     let first = start_gateway(&input, true)?;
-    let first_log = first.log_path.to_owned();
-    let first_results = capture_gateway(&client, first, &cases)?;
+    let first_log = first.log_path.clone();
+    let first_results = capture_gateway(&client, first, cases)?;
     let second = start_gateway(&input, false)?;
-    let second_log = second.log_path.to_owned();
-    let second_results = capture_gateway(&client, second, &cases)?;
-    let provider_requests = mock.finish()?;
-    let midpoint = upstream_answers.len();
-    let first_requests = provider_requests.get(..midpoint).unwrap_or_default();
-    let second_requests = provider_requests.get(midpoint..).unwrap_or_default();
+    let second_log = second.log_path.clone();
+    let second_results = capture_gateway(&client, second, cases)?;
+    let captures = GroupCapture {
+        first: first_results,
+        second: second_results,
+        first_log,
+        second_log,
+        requests: mock.finish()?,
+        midpoint: upstream_answers.len(),
+    };
+    compare_group(root, cases, &captures)
+}
+
+struct GroupCapture {
+    first: Vec<Response>,
+    second: Vec<Response>,
+    first_log: PathBuf,
+    second_log: PathBuf,
+    requests: Vec<ProviderRequest>,
+    midpoint: usize,
+}
+
+fn compare_group(
+    root: &Path,
+    cases: &[Case],
+    captures: &GroupCapture,
+) -> Result<bool, HarnessError> {
+    let first_requests = captures
+        .requests
+        .get(..captures.midpoint)
+        .unwrap_or_default();
+    let second_requests = captures
+        .requests
+        .get(captures.midpoint..)
+        .unwrap_or_default();
     let mut different = false;
     let mut first_offset = 0;
     for (index, case) in cases.iter().enumerate() {
         let request_count = case.upstream.len();
-        let first_capture = first_results
+        let first_capture = captures
+            .first
             .get(index)
-            .ok_or_else(|| missing_capture(index))?;
-        let second_capture = second_results
+            .ok_or(HarnessError::MissingCapture(index))?;
+        let second_capture = captures
+            .second
             .get(index)
-            .ok_or_else(|| missing_capture(index))?;
+            .ok_or(HarnessError::MissingCapture(index))?;
         let first_slice = request_slice(first_requests, first_offset, request_count);
         let second_slice = request_slice(second_requests, first_offset, request_count);
-        first_offset = advance_offset(first_offset, request_count);
-        let result = compare::compare(
-            first_capture,
-            second_capture,
-            first_slice,
-            second_slice,
-            &case.compare,
-        );
-        let difference = result.as_ref().err();
-        artifacts::write(artifacts::ArtifactInput {
+        first_offset = first_offset.saturating_add(request_count);
+        different |= compare_case(artifacts::ArtifactInput {
             root,
             case,
             first: first_capture,
             second: second_capture,
             first_requests: first_slice,
             second_requests: second_slice,
-            first_log: &first_log,
-            second_log: &second_log,
-            result: difference,
+            first_log: &captures.first_log,
+            second_log: &captures.second_log,
+            result: None,
         })?;
-        match result {
-            Ok(()) => println!("PASS {}", case.name),
-            Err(error) => {
-                different = true;
-                println!("FAIL {}: {}", case.name, error.pointer);
-            }
-        }
     }
     Ok(different)
 }
 
+fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, HarnessError> {
+    let result = compare::compare(
+        input.first,
+        input.second,
+        input.first_requests,
+        input.second_requests,
+        &input.case.compare,
+    );
+    artifacts::write(artifacts::ArtifactInput {
+        result: result.as_ref().err(),
+        ..input
+    })?;
+    let name = &input.case.name;
+    match result {
+        Ok(()) => {
+            writeln!(io::stdout().lock(), "PASS {name}").map_err(HarnessError::Output)?;
+            Ok(false)
+        }
+        Err(error) => {
+            writeln!(io::stdout().lock(), "FAIL {name}: {}", error.pointer)
+                .map_err(HarnessError::Output)?;
+            Ok(true)
+        }
+    }
+}
+
 pub(crate) fn request_slice(
-    requests: &[crate::mock::ProviderRequest],
+    requests: &[ProviderRequest],
     offset: usize,
     count: usize,
-) -> &[crate::mock::ProviderRequest] {
+) -> &[ProviderRequest] {
     let end = offset.saturating_add(count);
     requests.get(offset..end).unwrap_or_default()
-}
-
-pub(crate) fn advance_offset(offset: usize, count: usize) -> usize {
-    let next = offset.saturating_add(count);
-    next
-}
-
-pub(crate) fn accumulate_difference(first: bool, second: bool) -> bool {
-    let different = first || second;
-    different
 }
 
 pub(crate) fn capture_gateway(
@@ -175,29 +210,16 @@ pub(crate) fn capture_gateway(
 }
 
 pub(crate) fn artifact_root() -> Result<PathBuf, HarnessError> {
-    let root = std::env::current_dir().map_err(|source| HarnessError::Filesystem {
+    let root = env::current_dir().map_err(|source| HarnessError::Filesystem {
         path: PathBuf::from("."),
         source,
     })?;
     let path = root.join("target/oracle");
-    create_dir(&path)?;
+    fs::create_dir_all(&path).map_err(|source| HarnessError::Filesystem {
+        path: path.clone(),
+        source,
+    })?;
     Ok(path)
-}
-
-pub(crate) fn create_dir(path: &Path) -> Result<(), HarnessError> {
-    let result = fs::create_dir_all(path).map_err(|source| HarnessError::Filesystem {
-        path: path.to_owned(),
-        source,
-    });
-    result
-}
-
-pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), HarnessError> {
-    let result = fs::write(path, text).map_err(|source| HarnessError::Filesystem {
-        path: path.to_owned(),
-        source,
-    });
-    result
 }
 
 pub(crate) fn free_port() -> Result<u16, HarnessError> {
@@ -215,13 +237,8 @@ pub(crate) fn unique_id() -> Result<u128, HarnessError> {
         .duration_since(UNIX_EPOCH)
         .map_err(HarnessError::Clock)?;
     let nanos = elapsed.as_nanos();
-    let pid = u128::from(std::process::id());
-    Ok(combine_id(nanos, pid))
-}
-
-pub(crate) fn combine_id(nanos: u128, pid: u128) -> u128 {
-    let combined = nanos ^ pid;
-    combined
+    let pid = u128::from(process::id());
+    Ok(nanos ^ pid)
 }
 
 pub(crate) fn safe_name(name: &str) -> String {
@@ -240,12 +257,4 @@ pub(crate) fn safe_name(name: &str) -> String {
     } else {
         sanitized
     }
-}
-
-fn missing_capture(index: usize) -> HarnessError {
-    let error = HarnessError::Filesystem {
-        path: PathBuf::from(format!("case-{index}")),
-        source: std::io::Error::other("gateway did not return a response"),
-    };
-    error
 }
