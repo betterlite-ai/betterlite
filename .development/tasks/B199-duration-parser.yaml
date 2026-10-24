@@ -12,14 +12,14 @@ description: >-
   B171's shared helper_case corpus with every added operation and replay it through the common typed parser. Invalid
   reset timezone falls back to UTC; unparseable reset duration and unknown reset units fall back to next midnight
   with a typed warning. duration_in_seconds raises typed errors where Python raises. Retain reset-path exceptions
-  too: _handle_month_reset rejects Nmo for N != 1, and zero interval arithmetic raises rather than becoming next
-  midnight. For aware datetimes sharing a tzinfo, compare/subtract civil wall times as Python does; Nmo duration
-  subtracts naive local datetimes, so DST shifts do not add/subtract an hour. Convert to an instant only when returning
-  a reset, not during those civil comparisons. Write the behavior rstest functions b199_duration_tests_behavior
-  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
-  separate names. Register helper operations duration in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
-  each operation has its own Rust and Python adapter file and corpus seed. Budget 270 duration/calendar logic, 110
-  adapters, 290 tests and 90 fuzz/replay wiring (760 total).
+  too: _handle_month_reset rejects Nmo for N != 1, while zero day/week/hour/minute/second intervals return current_time
+  unchanged (zero months still raises). For aware datetimes sharing a tzinfo, compare/subtract civil wall times
+  as Python does; Nmo duration subtracts naive local datetimes, so DST shifts do not add/subtract an hour. Convert
+  to an instant only when returning a reset, not during those civil comparisons. Write the behavior rstest functions
+  b199_duration_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
+  DoD; corpus replay tests have separate names. Register helper operations duration in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Budget 270 duration/calendar logic, 110 adapters, 290 tests and 90 fuzz/replay wiring (760 total).
 scope:
   paths:
   - Cargo.toml
@@ -47,6 +47,9 @@ references:
   why: Second/minute/hour/day/month reset calculations.
 - url: https://docs.rs/jiff/latest/jiff/
   why: Checked calendar arithmetic and explicit timezone ambiguity handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L239-L382
+  why: Zero intervals return current_time; monthly resets require exactly one month.
 dod:
 - text: Fixed and calendar durations, all reset units and injected timezone cases match Python on exact instants.
   proof:
@@ -109,7 +112,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/duration/unparseable-reset-midnight.yaml
 - tools/oracle/cases/helpers/duration/unknown-unit-midnight.yaml
 - tools/oracle/cases/helpers/duration/multiple-month-reset-error.yaml
-- tools/oracle/cases/helpers/duration/zero-reset-error.yaml
+- tools/oracle/cases/helpers/duration/zero-reset-immediate.yaml
 deviations: []
 out_of_scope:
 - Budget persistence, admission and scheduled reset jobs belong to M4; this part supplies pure calculations.
