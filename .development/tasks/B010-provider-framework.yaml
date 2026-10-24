@@ -11,6 +11,9 @@ description: >-
   incremental SSE behavior, and expose typed bridge/iterator seams for B015 and future endpoints without implementing
   unneeded endpoint bodies. Add framework oracle cases and regression tests; keep reqwest confined to betterlite-http
   and update deny.toml only for the new crate edges. Budget 280 framework lines, 170 integration lines and 300 tests.
+  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed parser.
+  Recognize aiohttp_openai as an OpenAI-compatible alias using the same compiled adapter and transport; compare
+  its upstream request and client response in the framework HTTP case.
 scope:
   paths:
   - Cargo.toml
@@ -23,6 +26,7 @@ scope:
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/provider-framework/**
   - tools/oracle/cases/provider-framework/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467
@@ -33,7 +37,7 @@ references:
   why: Iterator responsibilities and end-of-stream state.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L1-L180
   why: Shared provider response helpers.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L200
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L83
   why: Typed inputs shared by provider implementations.
 dod:
 - text: Chat, streaming and embedding calls pass through the provider enum and retain all listed oracle behavior.
@@ -51,6 +55,9 @@ dod:
   proof:
   - clippy
   - deny
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -63,6 +70,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
 - tools/oracle/cases/chat/openai-tools.yaml
@@ -72,6 +84,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/provider-framework/base-thinking-defaults.yaml
 - tools/oracle/cases/helpers/provider-framework/base-role-mapping.yaml
 - tools/oracle/cases/helpers/provider-framework/unsupported-operation.yaml
+- tools/oracle/cases/provider-framework/aiohttp-alias.yaml
 deviations: []
 out_of_scope:
 - Provider-specific retry policy is B017; B010 must not add an internal second retry loop.
