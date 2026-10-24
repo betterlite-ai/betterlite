@@ -1,96 +1,136 @@
 id: B339
 title: Adaptive request classification and bandit selection
-description: Add adaptive_router configuration, the pinned request-type classifier, cold-start cells,
-  cost normalization and score-based selection as typed modules. Expose the choice through B016, accept
-  scripted quality samples for the deterministic oracle and separately test the production sampling distribution
-  with a fixed seed. The production sampler must be a reviewed library solution compatible with the no-floats
-  rule; this task is not dispatchable until the architect resolves that numeric dependency and precision
-  contract. Keep nonmonetary posterior arithmetic distinct from Decimal money and reject invalid preferences
-  before starting the router. Use the existing Rust crate boundaries from B004 and B008; integrate through
-  the server when the provider dispatcher or callbacks live in another core crate. This task's source
-  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
-  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
-  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
-  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
-  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
-  full path. Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle
-  cases are budget-excluded by checks.yaml.
+description: 'Implement BanditCell, cold priors, capped posterior updates and Thompson selection over
+  B388 typed preferences and B013 Decimal costs. Reuse rand_distr Beta sampling after a dependency comparison;
+  accept scripted samples for cross-language oracle cases and seed the production sampler separately.
+  Normalize monetary costs in Decimal before checked conversion of the dimensionless score into the statistical
+  module. Nonmonetary statistical arithmetic uses f64 only in bandit_math; put one module-level #[expect(clippy::float_arithmetic,
+  reason = "pinned statistical routing arithmetic")] there, counted in this task budget. Money, prices,
+  spend and budgets stay rust_decimal::Decimal, including database and wire boundaries. Reject nonfinite
+  statistical input. Assert selected model/tier exactly; any opt-in tolerance is for diagnostic scores
+  only, never a different selection. Implement the owned native service in crates/betterlite-router/src/adaptive_selection.rs.
+  Add ProbeOperation::B339 in tools/oracle/src/router_probes/mod.rs and the corresponding B339 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/router_strategy/adaptive_router/adaptive_router.py:
+  _default_prefs (L70-L72), AdaptiveRouter.__init__ (L89-L115), AdaptiveRouter._init_cold_start_cells
+  (L119-L124), AdaptiveRouter.async_pre_routing_hook (L169-L218), AdaptiveRouter.pick_model (L222-L239),
+  AdaptiveRouter.get_state_snapshot (L241-L278), AdaptiveRouter._extract_min_quality_tier (L281-L309),
+  AdaptiveRouter._eligible_models (L311-L318). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Function coverage in litellm/router_strategy/adaptive_router/bandit.py: BanditCell.mean (L36-L38), BanditCell.total_samples
+  (L41-L42), initial_cell (L45-L61), apply_delta (L64-L75), thompson_sample (L78-L81), normalized_cost
+  (L84-L94), score (L97-L109), pick_best (L112-L137). Implement these behaviors through the typed Rust
+  services above; synchronous facades and structural accessors reuse the same primitive instead of separate
+  ports. If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001 only on its
+  explicitly named score/probability pointer. Selection, tie order, counts, statuses, money and provider
+  requests remain exact. Six-decimal wire signals are compared after the source rounding, without widening
+  tolerance.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/adaptive-selection/**
+  - crates/betterlite-router/src/adaptive_selection.rs
+  - crates/betterlite-router/src/adaptive_selection/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/adaptive_selection.rs
+  - crates/betterlite-server/src/routing/adaptive_selection/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/adaptive_selection.rs
   - tools/oracle/src/router_probes/adaptive_selection/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/adaptive_selection.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/adaptive_selection.py
+  - tools/oracle/cases/routing/adaptive-selection/**
+  - crates/betterlite-router/src/bandit_math.rs
+  - crates/betterlite-router/src/bandit_math/**
   - Cargo.toml
   - deny.toml
+  - crates/betterlite-router/Cargo.toml
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/classifier.py#L18-L139
-  why: Request-type classifier precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L29-L137
-  why: Cold priors, cap, sampling and score.
+  why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L89-L124
-  why: Initialization.
+  why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L169-L318
-  why: Selection, minimum quality and header metadata.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/README.md#L1-L88
-  why: State and attribution contract.
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L70-L72
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b339_behaviors and b339_boundaries under adaptive_selection::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b339-behaviors
+  - b339-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the adaptive_selection prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
-  proof:
-  - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(adaptive_selection)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b339-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b339_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b339-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b339_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/adaptive_selection.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/adaptive_selection.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
 oracle_cases:
-- tools/oracle/cases/routing/adaptive-selection/request-type-precedence.yaml
 - tools/oracle/cases/routing/adaptive-selection/cold-prior-strength-bonus.yaml
 - tools/oracle/cases/routing/adaptive-selection/sample-cap.yaml
 - tools/oracle/cases/routing/adaptive-selection/cost-normalization-no-spread.yaml
 - tools/oracle/cases/routing/adaptive-selection/scripted-sample-winner.yaml
-- tools/oracle/cases/routing/adaptive-selection/minimum-quality-header.yaml
 - tools/oracle/cases/routing/adaptive-selection/no-eligible-default.yaml
-- tools/oracle/cases/routing/adaptive-selection/one-adaptive-router-per-instance.yaml
 deviations: []
 out_of_scope:
 - Feedback attribution (B340) and database flushing (B341).
+- B388 owns adaptive routing configuration and request types; consume its tested public interface.
+- litellm/router_strategy/adaptive_router/__init__.py has no functions at the pin; its exports/data are
+  accounted for by the owning native module, with no Python wrapper port.
+- litellm/router_strategy/adaptive_router/config.py has no functions at the pin; its exports/data are
+  accounted for by the owning native module, with no Python wrapper port.
+- 'litellm/router_strategy/adaptive_router/adaptive_router.py: B340 owns: AdaptiveRouter.get_or_create_session_state
+  (L322-L347), AdaptiveRouter._evict_expired_session_states (L349-L355), AdaptiveRouter.record_turn (L357-L487),
+  AdaptiveRouter._persistable_session_snapshot (L490-L499), AdaptiveRouter._compute_bandit_delta (L502-L515).'
+- 'litellm/router_strategy/adaptive_router/adaptive_router.py: B341 owns: AdaptiveRouter.load_state_from_db
+  (L126-L165).'
+- 'litellm/router_strategy/adaptive_router/classifier.py: B388 owns: classify_prompt (L123-L139).'
 pitfalls:
 - Python and Rust RNG seeds do not produce comparable Beta samples.
 - Persisted alpha/beta rows are deltas, not full posterior cells.
-- No worker may add a lint exception or hand-written statistical sampler to escape the pending numeric
-  decision.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800
-  max_new_expects: 0
+  max_new_expects: 1
