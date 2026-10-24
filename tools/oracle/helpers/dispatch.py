@@ -697,6 +697,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "provider_resolution",
         "proxy_custom_dispatch",
         "proxy_endpoint_support",
+        "proxy_policy",
         "proxy_provider_options",
         "ptu_charge_storage",
         "ptu_pricing",

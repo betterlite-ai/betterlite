@@ -1,0 +1,3 @@
+litellm_settings:
+  disable_aiohttp_trust_env: maybe
+  aiohttp_trust_env: [true]

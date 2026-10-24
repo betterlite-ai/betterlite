@@ -1,0 +1,13 @@
+kind: helper
+name: cgi
+call:
+  proxy_policy:
+    url: http://api.example.com/v1/chat/completions
+    environment:
+      HTTP_PROXY: http://proxy.local:3128
+      REQUEST_METHOD: GET
+    aiohttp_trust_env: false
+    disable_aiohttp_trust_env: false
+env: {}
+compare:
+  ignore: []

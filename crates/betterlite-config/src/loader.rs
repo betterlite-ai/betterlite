@@ -13,7 +13,7 @@ use crate::resolve::{
 };
 use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
-    RouterSettings,
+    ProxyTrust, RouterSettings,
 };
 
 pub trait EnvironmentLookup {
@@ -215,6 +215,10 @@ where
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        proxy_trust: ProxyTrust {
+            aiohttp_trust_env: raw.aiohttp_trust_env,
+            disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
+        },
         bedrock_metadata_fields: metadata_fields(raw.bedrock_metadata_fields),
         modify_params,
         default_max_tokens,

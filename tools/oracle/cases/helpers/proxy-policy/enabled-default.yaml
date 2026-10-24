@@ -1,0 +1,12 @@
+kind: helper
+name: enabled-default
+call:
+  proxy_policy:
+    url: https://api.example.com/v1/chat/completions
+    environment:
+      HTTPS_PROXY: http://proxy.local:3128
+    aiohttp_trust_env: false
+    disable_aiohttp_trust_env: false
+env: {}
+compare:
+  ignore: []

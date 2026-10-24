@@ -1,0 +1,13 @@
+kind: helper
+name: no-proxy
+call:
+  proxy_policy:
+    url: https://API.example.com/v1/chat/completions
+    environment:
+      HTTPS_PROXY: http://proxy.local:3128
+      NO_PROXY: "other.org, .Example.COM"
+    aiohttp_trust_env: false
+    disable_aiohttp_trust_env: false
+env: {}
+compare:
+  ignore: []

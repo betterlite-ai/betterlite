@@ -1,0 +1,13 @@
+kind: helper
+name: proxy-policy-seed
+call:
+  proxy_policy:
+    url: https://api.example.com/v1
+    environment:
+      HTTPS_PROXY: http://user:pass@proxy.local:3128
+      NO_PROXY: .internal
+    aiohttp_trust_env: true
+    disable_aiohttp_trust_env: false
+env: {}
+compare:
+  ignore: []

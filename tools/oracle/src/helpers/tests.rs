@@ -80,6 +80,17 @@ fn helper_output_limit_is_enforced(#[case] size: usize, #[case] excess: bool) {
     assert_eq!(observed_excess, excess);
 }
 
+#[test]
+fn proxy_policy_helper_renders_the_pick() {
+    let call: super::HelperCall = serde_saphyr::from_str(
+        "proxy_policy: {url: 'https://api.example.com', environment: {HTTPS_PROXY: 'http://u%40x:p@proxy.local:3128'}, aiohttp_trust_env: false, disable_aiohttp_trust_env: false}",
+    )
+    .unwrap();
+    let output = serde_json::to_string(&super::invoke(&call)).unwrap();
+    let expected = r#"{"ok":true,"value":{"proxy":{"credentials":"u@x:p","host":"proxy.local","port":3128,"scheme":"http"}}}"#;
+    assert_eq!(output, expected);
+}
+
 #[rstest::rstest]
 #[case::too_long_get("get: {data: {}, default: null, key_path: ", "the path has 8193 bytes")]
 #[case::too_long_delete("delete: {data: {}, path: ", "the path has 8193 bytes")]
