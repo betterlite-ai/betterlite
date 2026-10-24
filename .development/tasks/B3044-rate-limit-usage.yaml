@@ -22,6 +22,7 @@ scope:
   paths:
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/loader.rs
     - crates/betterlite-rate-limit/src/lib.rs
     - crates/betterlite-rate-limit/src/usage_resolution.rs
