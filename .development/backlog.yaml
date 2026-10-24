@@ -248,6 +248,7 @@ tasks:
     - B320
     - B321
     - B322
+    - B323
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2132,3 +2133,15 @@ tasks:
     covers:
     - litellm/router_utils/access_windows.py
     - litellm/router_utils/common_utils.py
+
+  - id: B323
+    milestone: M2 routing
+    title: Routing groups, priority tiers and reasoning capabilities
+    status: todo
+    depends_on:
+    - B019
+    - B010
+    - B013
+    file: tasks/B323-routing-groups.yaml
+    covers:
+    - litellm/router_utils/{routing_groups,reasoning_effort_capability}.py
