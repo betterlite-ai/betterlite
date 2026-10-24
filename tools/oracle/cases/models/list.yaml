@@ -1,0 +1,13 @@
+name: models-list
+config: |
+  model_list:
+    - {model_name: oracle-chat, litellm_params: {model: openai/oracle-chat}}
+    - {model_name: oracle-azure, litellm_params: {model: azure/oracle-azure}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
