@@ -89,12 +89,11 @@ async fn http_proxies_proxy_policy_tests_behavior(
         observed.push_str(" warned");
     }
     assert_eq!(observed, expected);
-    for leak in LEAKS {
-        assert!(
-            !written.contains(leak) && !debug.contains(leak),
-            "{leak} leaked"
-        );
-    }
+    let leaked: Vec<&str> = LEAKS
+        .into_iter()
+        .filter(|leak| written.contains(leak) || debug.contains(leak))
+        .collect();
+    assert_eq!(leaked, Vec::<&str>::new());
 }
 
 #[rstest]
