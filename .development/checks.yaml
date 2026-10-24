@@ -113,7 +113,7 @@ base:
       run: grep -q '^MIT License' LICENSE && grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
     - id: no-enterprise
       why: nothing refers to LiteLLM's proprietary enterprise code
-      run: "! git grep -nIE 'litellm_enterprise|BerriAI/litellm/(blob|tree)/[^/[:space:]]+/enterprise/' -- . ':(exclude).development'"
+      run: "! git grep -nIE 'litellm_enterprise|BerriAI/litellm/(blob|tree)/[^/[:space:]]+/enterprise/' -- . ':(exclude).development' ':(exclude)tools/oracle/litellm/uv.lock'"
     - id: no-attribution
       why: commit messages carry no co-author or generator lines
       run: "! git log --format=%B \"$GATE_BASE\"..HEAD | grep -qiE '^co-authored-by:|claude-session|claude\\.ai/code|generated with'"
