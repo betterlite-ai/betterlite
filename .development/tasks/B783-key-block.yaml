@@ -1,10 +1,59 @@
 id: B783
 title: Block keys and check key health
 description: >-
-  Implement block/unblock and key-health endpoints plus test-key-logging helper. Reuse KeyWriteAccess
-  and live auth validation, invalidate caches after writes and preserve database/model/credential health
-  failure classes. Logging tests use B012 callback execution with injected mock transports and must not
-  reveal key material.
+  Implement POST /key/block and /key/unblock with B124 BlockKeyRequest (required key), plus
+  POST /key/health for the authenticated caller's logging callbacks. Health does not test model
+  authorization or provider credentials: it uses a mock completion with no provider API request.
+  All three routes have B865 wrappers, but block/unblock have no local except block.
+
+  Block/unblock first require DB, then B124 is_valid_api_key: sk- followed by one or more ASCII
+  alphanumeric/underscore/hyphen characters, or exactly 64 hexadecimal characters, total length
+  3..100. The docstring's minimum 20 is wrong. Hash sk- input with B2314; retain supplied hash
+  case. Invalid format is 400 bad_request_error, param key, code 400. _check_key_admin_access
+  immediately admits proxy admins. Other callers first load the target (HTTPException 404 if
+  absent), then a truthy target.team_id via DB-only B737 lookup, then B800 TeamAccess with
+  TEAM_OR_ORG_ADMIN. Personal owners and admin viewers are denied HTTPException 403; an org
+  admin qualifies through the key's team organization, not a key organization field.
+  Cases block_key_format_boundaries, block_hash_case_preserved, block_proxy_admin,
+  block_team_admin, block_team_org_admin, block_personal_owner_denied and block_viewer_denied
+  run for both mutations. Messages identify invalid format, missing key or required admin scope.
+
+  Both routes load the target again after authorization. Missing now is ProxyException 404
+  not_found_error,param key,code 404. Thus an admin's missing-key envelope differs from a
+  non-admin's initial HTTPException detail.error. Cases block_missing_admin_vs_member and
+  block_target_removed_between_reads compare both. Denial HTTPExceptions also retain detail.error
+  without type/param/code; missing DB is an ordinary exception handled by B124's outer 500
+  error {message,type=internal_server_error} without param/code. Database-unavailability mapping
+  remains B731/B124. Cases block_no_database and block_permission_error_shape pin this distinction.
+
+  If B2330 audit policy is enabled, schedule its audit BEFORE updating: fresh UUID/time,
+  changed_by from the opt-in header resolver, caller.api_key, table LiteLLM_VerificationToken,
+  object_id=hash, action blocked/unblocked, updated_values='{}', before_value=existing JSON.
+  Update blocked=true/false with B770 with_settings_updated_at, then B734 _delete_cache_key_object,
+  then return the whole repository result, even null. Cases block_audit_projection,
+  block_audit_before_write, block_settings_stamp, block_null_update_result and
+  block_cache_failure_after_write preserve ordering. No transaction joins these effects; a
+  failed update can still have scheduled an audit, and a cache failure never undoes the row.
+  Postgres failure/row tests use POSTGRES_TEST_URL else testcontainers and fail on unavailable DB.
+
+  Health starts {key:healthy,logging_callbacks:null}. Only a truthy metadata containing logging
+  triggers B2304 decrypt_callback_vars followed by test_key_logging; preserve legacy plaintext
+  and decrypt-failure passthrough from that dependency, without changing stored metadata.
+  Each entry requires non-null callback_name (empty string is accepted); preserve order/duplicates.
+  Missing names raise before completion and become 500 internal_server_error,param string None,
+  code 500 through key_health's own L7597-L7603 except block. Cases health_no_logging,
+  health_encrypted_and_legacy_metadata, health_missing_callback_name and health_empty_name cover it.
+
+  Capture root ERROR logs, prepare the request through B1137/B1103, and invoke B004/B012 mock
+  completion with model openai/litellm-key-health-test, one user message saying this is a LiteLLM
+  key-health test with no LLM API call, and mock_response='test response'. On preparation/completion
+  exception return logging_callbacks {callbacks,status:unhealthy,details:logging-test failure};
+  the route still returns 200 with key unhealthy. Otherwise wait two seconds for batched callbacks,
+  remove the log capture handler, and mark unhealthy iff captured ERROR text is nonempty; success
+  details instruct checking the listed destinations. Cases health_mock_request_literals,
+  health_completion_failure_200, health_error_log_200, health_no_error_healthy and
+  health_waits_two_seconds test the actual mock/callback pipeline and timer. The source leaks its
+  capture handler on the early exception branch; the native cleanup deviation below is explicit.
 
 
   Build the production key_block module in betterlite-server; reuse the typed dependencies listed in the
@@ -18,14 +67,9 @@ description: >-
   66 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /key/block -> block_key; POST /key/unblock
-  -> unblock_key; POST /key/health -> key_health. For each route send a typed successful request, an invalid
-  or missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
+  B001 HTTP cases cover the three routes against booted proxies; do not invoke test_key_logging
+  through a helper adapter that substitutes proxy_server globals. Native injected callback/timer
+  failures supplement the HTTP corpus. No route calls handle_exception_on_proxy here.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -45,8 +89,8 @@ description: >-
 
 
   Sizing: 364 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  364 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 577 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  364 production, 335 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 764 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -73,17 +117,17 @@ references:
     why: BlockKeyRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7237-L7285
     why: Own _check_key_admin_access; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7290-L7399
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7288-L7399
     why: Own block_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7404-L7513
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7402-L7513
     why: Own unblock_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7523-L7603
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7516-L7603
     why: Own key_health; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
+    why: Outer unhandled-exception mapping used by block/unblock without a route except block.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: block_key, unblock_key,
-      health_invalid_key, health_model_access, health_provider_failure, callback_test_redaction.'
+  - text: All named block/unblock and health cases above pass; native health_capture_cleanup and
+      health_details_redacted cover the explicit deviations without changing 200 unhealthy behavior.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -99,25 +143,26 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_block::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-block/post--key-block-success.yaml
-  - tools/oracle/cases/management/key-block/post--key-block-invalid-target.yaml
-  - tools/oracle/cases/management/key-block/post--key-block-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-block/post--key-unblock-success.yaml
-  - tools/oracle/cases/management/key-block/post--key-unblock-invalid-target.yaml
-  - tools/oracle/cases/management/key-block/post--key-unblock-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-block/post--key-health-success.yaml
-  - tools/oracle/cases/management/key-block/post--key-health-invalid-target.yaml
-  - tools/oracle/cases/management/key-block/post--key-health-unauthorized-caller.yaml
+  - tools/oracle/cases/management/key-block/key-format-and-role-matrix.yaml
+  - tools/oracle/cases/management/key-block/missing-admin-versus-member.yaml
+  - tools/oracle/cases/management/key-block/health-without-logging.yaml
+  - tools/oracle/cases/management/key-block/health-mock-request.yaml
   - tools/oracle/cases/management/key-block/block-key.yaml
   - tools/oracle/cases/management/key-block/unblock-key.yaml
   - tools/oracle/cases/management/key-block/health-invalid-key.yaml
-  - tools/oracle/cases/management/key-block/health-model-access.yaml
-  - tools/oracle/cases/management/key-block/health-provider-failure.yaml
-  - tools/oracle/cases/management/key-block/callback-test-redaction.yaml
-deviations: []
+  - tools/oracle/cases/management/key-block/health-callback-failure-200.yaml
+  - tools/oracle/cases/management/key-block/health-missing-name-500.yaml
+  - tools/oracle/cases/management/key-block/block-audit-write-order.yaml
+deviations:
+  - what: Always detach temporary log capture on completion failures and redact credential values
+      from health details; preserve healthy/unhealthy status and the source HTTP codes.
+    why: README secret handling and bounded resource lifetime; health_capture_cleanup and
+      health_details_redacted prove the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7630-L7703
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns callback decryption, B2330 audit policy/records/sink, B124 request/key-format contracts,
+    B2314 hashing, B770 settings timestamps, B800 TeamAccess, B737 team lookup and B734 invalidation.
+    B1137/B1103 prepare requests; B004/B012 execute mock completions and callbacks.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -212,8 +257,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Blocking a key must invalidate live authentication cache entries before the next call can reuse them.
+  - The format validator accepts sk-a despite its docstring claiming a minimum length of 20.
+  - An unhealthy callback test is normally HTTP 200; malformed callback metadata is HTTP 500.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

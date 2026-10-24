@@ -1,9 +1,83 @@
 id: B795
 title: Bulk user update endpoint
 description: >-
-  Implement /user/bulk_update using the single-user patch service and bulk creation/deletion helpers where
-  the source dispatches them. Preserve selection validation, row-local errors, password preflight and
-  bounded processing without silently ignoring failed updates.
+  Implement authenticated POST /user/bulk_update with B865 effects, B2334 body/response records and
+  optional litellm-changed-by header default null. It never calls bulk-create or bulk-delete helpers.
+  Missing DB raises HTTPException 500 detail.error='Database not connected' before handler guards.
+  Select requested role from user_updates first, otherwise first non-null role in users; any non-null
+  role requires exact proxy_admin (403 'Only proxy admins can modify user roles.'). This rejects the
+  WHOLE batch, even when another row would be permitted. Cases database_first, role_guard_whole_batch
+  and changed_by_forwarding cover those branches.
+
+  Truthy all_users AND user_updates chooses the fast path, otherwise truthy users selects the list,
+  otherwise 400 detail.error explains the required users/all_users+user_updates alternatives.
+  Preserve B2334's omitted-user_updates validator timing: {} reaches this 400; explicit null can
+  fail with 422 earlier; conflicting selectors with a supplied patch fail schema validation.
+  All-users requires proxy_admin (403 'Only proxy admins can update all users at once.') and rejects
+  ANY non-null password, including empty, with 400 detail.error='Setting one password for all users
+  is not supported. Use per-user updates via the users list instead.' (source quotes 'users').
+  Cases selection_omitted_vs_null, conflicting_selectors_422, all_users_admin_only and
+  all_users_password_null_vs_empty pin these errors and their ordering.
+
+  Fetch all users ordered created_at desc before checking 0 or >500 rows. Empty raises 400
+  detail.error='No users found to update'; oversized raises 400 naming maximum 500 and found count.
+  Individual lists have the same 500 cap without a preflight DB count; preserve input duplicates.
+  Cases all_users_empty, all_users_limit_after_read, individual_limit_500 and duplicate_updates_repeat.
+  Prepare all-users patch through B792, then remove user_id/user_email. update_many uses where={}
+  and serializes ONLY model_max_budget with json.dumps; count returned by the write is ignored.
+  Concurrently inserted users can be updated but omitted from the response's earlier snapshot.
+  Cases fast_update_all_rows, model_budget_json_only and concurrent_insert_response_snapshot.
+
+  This fast path bypasses the single-user helper's role/self checks, finite-spend check,
+  prepare_metadata_fields, encrypt_callback_vars, object-permission service, session revocation and
+  spend-counter invalidation. Preserve the exact direct-update payload and repository acceptance
+  or failure for those fields; do not silently route a successful fast update through B792.
+  In particular raw metadata is forwarded unchanged, whereas per-user B792 encrypts callback
+  variables through B894. Cases fast_metadata_payload_unchanged, fast_permission_payload,
+  fast_spend_counter_unchanged and per_user_callback_encrypted inspect rows and collaborator calls.
+  This documents a source asymmetry, not a claim that the fast path encrypts stored credentials.
+
+  After update_many, only max_budget/model_max_budget trigger user-ID evict_and_broadcast.
+  Own _USER_BUDGET_CACHE_INVALIDATION_BATCH_SIZE=50 at L117: await gather in chunks of 50 in
+  snapshot order, aborting on a cache exception. Metadata/duration/spend alone do not broadcast.
+  Fast results contain snapshot ID/email,success=true,updated_user={user_id,...prepared_patch};
+  they are not reread rows. Build one asynchronous B797 audit for caller.user_id or empty string,
+  action=updated, changed-by header-or-caller, before='Updated {N} users', after=json.dumps(patch).
+  Audit scheduling/serialization errors warn and leave success intact (e.g. a datetime reset_at).
+  Cases invalidate_chunks_fifty, fast_invalidation_field_set, fast_result_is_patch,
+  single_bulk_audit and audit_json_datetime_warning prove ordering and literals.
+
+  A write, broadcast or result-building exception logs and constructs per-user copies of the
+  no-ID/email patch, assigning each snapshot ID. No rollback occurs; cache failure may cause a
+  second write to an already-updated row. Preserve the pinned fallback defect: those copies
+  inherit user_id but have NO user_email field. After the first helper update, success-result
+  construction accesses user_email and fails; failure-result construction accesses it again,
+  so the outer helper catch raises HTTPException 500 detail.error with that AttributeError.
+  Cases fast_write_failure_fallback_500 and cache_failure_rewrite_then_500 prove persisted effects
+  and that later rows are not individually retried. If some fast results were already counted
+  before a result-building failure, successful_updates>0 returns those partial results with
+  failed_updates=0 and original total_requested instead; partial_fast_result_count pins this.
+
+  For ordinary individual requests, preflight ALL non-null passwords through B786
+  validate_passwords_bulk before ANY user write. The preflight is outside the helper's outer
+  try and receives optional hibp_client; individual calls pass password_prevalidated=true,
+  omit hibp_client and run SEQUENTIALLY, not concurrently. Raise each non-null verdict before
+  that row's update. B792 still hashes and revokes sessions. Cases password_preflight_before_writes,
+  password_verdict_skips_row, password_hash_not_revalidated and individual_serial_order.
+
+  Success user_id comes from truthy response.get(user_id), otherwise requested ID; user_email
+  remains the REQUEST email, updated_user is the whole helper response, error=null. A bare-model
+  insert response lacking get can turn a committed insert into a failed result. Row exceptions
+  produce both exception and error logs, then success=false,error=str(exception), requested ID/email,
+  updated_user=null, and continue. HTTPException row text includes its status; do not use B124's
+  exception converter. Cases response_id_and_requested_email, bare_model_insert_row_failure,
+  row_error_text_and_continue and mixed_counts_and_order compare all fields. An exception in
+  result handling itself becomes HTTPException 500 detail.error, as in the fallback defect above.
+
+  There is NO route except block. Handler HTTPExceptions retain the outer {detail:...} envelope,
+  without OpenAI type/param/code; unexpected preflight errors reach B124's outer 500
+  internal_server_error envelope (no param/code). Auth/schema failures remain B052/B2334.
+  Cases route_http_detail_envelope and preflight_unexpected_500 distinguish these mappings.
 
 
   Build the production user_bulk_update module in betterlite-server; reuse the typed dependencies listed
@@ -13,16 +87,12 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
   bulk_update_processed_users (L1756-L1831; 64 source lines), bulk_user_update (L1841-L2064; 188 source
-  lines).
+  lines), plus the batch-size declaration at L117. B792 owns the shared budget-cache field set.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /user/bulk_update -> bulk_user_update.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  B001 HTTP cases cover the real route and B860 supplies equivalent Postgres fixtures. Native
+  fault injection checks post-write failures and helper-only response shapes. Database cases
+  use POSTGRES_TEST_URL or testcontainers, unique schemas and fail on infrastructure errors.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -41,9 +111,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 252 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  252 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 465 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 252 source lines before removing the route's long docstring plus one declaration;
+  allow 240 production, 390 behavior/Postgres tests and 65 wiring, 695 changed lines within
+  a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -68,15 +138,21 @@ references:
     why: UpdateUserRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1756-L1831
     why: Own bulk_update_processed_users; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1841-L2064
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1834-L2064
     why: Own bulk_user_update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L117-L118
+    why: Owned chunk size 50 and B792's exact two-field invalidation predicate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1989-L2018
+    why: The fallback patch model lacks user_email; a type cast does not add the field.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_update_selection,
-      mixed_row_results, password_preflight, permission_denied, partial_db_failure, stable_order.'
+  - text: Every named description case proves its branch, including the fallback defect, direct
+      metadata payload, sequential password writes and partially committed failures.
     proof:
       - behavior-tests
+  - text: postgres_fast_path and postgres_fallback_effects prove actual direct updates, JSON storage,
+      concurrent-row snapshots and cache-failure rewrites against independent Postgres fixtures.
+    proof:
+      - postgres-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
       against the real MIT server.
     proof:
@@ -89,20 +165,28 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_bulk_update::tests::/)
         - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Real fast-path writes or fallback effects are absent or differ from the pin.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_update::tests::postgres_fast_path$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_update::tests::postgres_fallback_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-success.yaml
-  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-invalid-target.yaml
-  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/user-bulk-update/bulk-update-selection.yaml
-  - tools/oracle/cases/management/user-bulk-update/mixed-row-results.yaml
-  - tools/oracle/cases/management/user-bulk-update/password-preflight.yaml
-  - tools/oracle/cases/management/user-bulk-update/permission-denied.yaml
-  - tools/oracle/cases/management/user-bulk-update/partial-db-failure.yaml
-  - tools/oracle/cases/management/user-bulk-update/stable-order.yaml
+  - tools/oracle/cases/management/user-bulk-update/selection-omitted-vs-null.yaml
+  - tools/oracle/cases/management/user-bulk-update/role-guard-whole-batch.yaml
+  - tools/oracle/cases/management/user-bulk-update/all-users-password-null-vs-empty.yaml
+  - tools/oracle/cases/management/user-bulk-update/all-users-limit-after-read.yaml
+  - tools/oracle/cases/management/user-bulk-update/duplicate-updates-repeat.yaml
+  - tools/oracle/cases/management/user-bulk-update/fast-result-is-patch.yaml
+  - tools/oracle/cases/management/user-bulk-update/fast-metadata-payload-unchanged.yaml
+  - tools/oracle/cases/management/user-bulk-update/fast-write-failure-fallback-500.yaml
+  - tools/oracle/cases/management/user-bulk-update/password-preflight-before-writes.yaml
+  - tools/oracle/cases/management/user-bulk-update/row-error-text-and-continue.yaml
+  - tools/oracle/cases/management/user-bulk-update/mixed-counts-and-order.yaml
+  - tools/oracle/cases/management/user-bulk-update/route-http-detail-envelope.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2334 owns public body/response contracts; B786 owns password screening/settings; B792 owns
+    per-user mutation and callback encryption delegation; B797 owns the user-audit sink.
+    B793/B794 are not called by this legacy route.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -110,8 +194,7 @@ out_of_scope:
     _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
     (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
     (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
-    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
-    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
     (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
     (L807-L813), _get_user_info_keys (L816-L824), _get_user_info_teams (L827-L876), _redact_scim_enterprise_metadata
@@ -137,8 +220,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Legacy /user/bulk_update uses its own bulk_update_processed_users path, not management_v1 dispatch.
+  - The fast path bypasses per-user preparation; metadata and object permissions are direct database payloads.
+  - Its fallback copies lack user_email, so the first row can persist before result construction raises 500.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,14 +1,53 @@
 id: B815
 title: Team daily spend and per-user activity
 description: >-
-  Implement /team/daily/activity and /team/spend/by_user using DailyActivityRepository and scoped SQL.
-  Preserve date-range validation, aggregation timezone and team alias resolution; no caller can supply
-  a scope wider than its TeamAccess verdict.
+  Implement the daily and per-user team spend routes with their shared scope resolver. Split truthy
+  team_ids/exclude_team_ids on commas without trimming, deduplicating or discarding empty segments;
+  falsey strings become null. B2314 admin-view callers bypass user membership checks. Other callers
+  use B736 get_user_object with user_id_upsert=false and check_db_only=true; no row raises 404
+  "User= ... not found". Omitted teams use user.teams; each explicit team outside that list raises 404
+  "User does not belong to Team= .... Call `/user/info` to see user's teams". Organization-admin status
+  alone adds no scope here. Cases raw_comma_filters, admin_view_all, missing_user and explicit_membership_404
+  capture these rules with detail.error envelopes.
 
+  Fetch team aliases with an IN filter only for a truthy team list, otherwise an unfiltered query;
+  metadata contains team_alias even when null. For a non-admin with both nonempty requested teams and
+  returned rows, require is_team_admin or explicit /team/daily/activity permission on EVERY returned
+  team for full view. Otherwise fetch all caller keys and retain truthy tokens; even zero keys yields []
+  as a restrictive filter. A truthy requested api_key must belong to that list or becomes []; a falsey
+  key uses the whole list. Without restriction pass the input key unchanged. Missing team rows are not
+  separately rejected by this loop. Cases all_teams_must_allow_full_view, own_keys_and_empty_keys,
+  requested_key_intersection and empty_or_missing_team_rows test the exact behavior, including the
+  absence of an org-admin shortcut.
 
-  Build the production team_activity module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  /team/daily/activity defaults every optional filter/date to null, page=1 and page_size=10 with no
+  handler-level positive/max bounds. No DB produces 500 CommonProxyErrors.db_not_connected_error.
+  After scope resolution call B074 get_daily_activity with table_name="litellm_dailyteamspend",
+  entity_id_field="team_id", alias metadata and the resolved include/exclude/key filters. B074 owns
+  daily date validation, pagination and timezone behavior; this route must not add a 400-day cap.
+  Cases daily_defaults_and_forwarded_scope and daily_dependency_errors prove the call contract through
+  HTTP. Neither route has management_endpoint_wrapper or a local catch/handle_exception_on_proxy call.
+
+  /team/spend/by_user defaults team_ids/start_date/end_date to null. Check DB, then date range, then
+  require truthy team_ids (400 "Please provide team_ids") before resolving scope. aggregated_date_range_error
+  uses B074 canonical YYYY-MM-DD parsing: missing dates -> "Please provide start_date and end_date",
+  malformed -> "start_date and end_date must be valid YYYY-MM-DD dates", reversed -> "end_date must
+  be on or after start_date", difference greater than 400 days -> "Date range must be at most 400 days".
+  All are 400 detail.error. Exactly 400 days is allowed (401 inclusive calendar dates). Empty resolved
+  teams return an empty tuple with original date strings and no SQL. Cases dates_before_team_scope,
+  canonical_dates_and_400_boundary and empty_scoped_spend prove these branches.
+
+  Own the parameterized _team_user_spend_sql, _TeamUserSpendDbRow and scope record declarations. Bind
+  dates as $1/$2, team IDs from $3 and the optional user ID last. A non-null scope.api_key_filter, even [],
+  selects sl.user=caller.user_id or ""; do not filter this query by API-key hashes. Read raw SpendLogs,
+  left join users, include startTime >= start timestamp and < end timestamp + INTERVAL '1 day', group by
+  team/user/email/alias and order spend DESC, team_id, user. Sum spend as float and tokens as bigint;
+  count all requests, status='failure' failures and IS DISTINCT FROM 'failure' successes (including null).
+  Retain null joined email/alias, convert null/empty user ID to "", and return a team alias only if its
+  metadata value is a string. Cases spend_timestamp_edges, deleted_user_left_join, failure_status_counts,
+  user_restriction_not_key_filter and deterministic_spend_order use actual Postgres rows. No new
+  environment/config setting is read; B074's aggregate callers can consume an injected scope/date
+  service implemented here rather than importing these HTTP handlers back into their core query layer.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -18,45 +57,17 @@ description: >-
   (L6753-L6821; 63 source lines), _team_alias_or_none (L6824-L6826; 3 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Register these actual HTTP routes and aliases exactly once: GET /team/daily/activity -> get_team_daily_activity;
-  GET /team/spend/by_user -> get_team_spend_by_user. For each route send a typed successful request, an
-  invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
-  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
-  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
-  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
-  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
-  partial writes visible in fixture inspection.
+  GET /team/spend/by_user -> get_team_spend_by_user. B001 cases compare JSON content-type, exact status
+  and B003 type/param/code envelopes through B052 authentication. Test query effects with B860 fixtures
+  using POSTGRES_TEST_URL when present or testcontainers otherwise; failures never silently skip.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Sizing: 235 nonblank, noncomment function/SQL lines plus the scope and row declarations and 400-day
+  constant at L6518-L6522, L6692 and L6734-L6745; allow 260 production, 400 behavior/Postgres tests,
+  0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz and 0 config lines, 725 within a 750-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 235 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  235 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 448 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
 scope:
   paths:
     - crates/betterlite-server/src/team_activity.rs
@@ -75,21 +86,21 @@ references:
     why: Own _daily_activity_error; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6525-L6623
     why: Own resolve_team_daily_activity_scope; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6631-L6689
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6626-L6689
     why: Own get_team_daily_activity; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6695-L6705
     why: Own aggregated_date_range_error; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6708-L6731
     why: Own _team_user_spend_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6753-L6821
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6748-L6821
     why: Own get_team_spend_by_user; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6824-L6826
     why: Own _team_alias_or_none; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L80-L99
+    why: B074 canonical date parser and exact missing/malformed-date messages.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_daily_scope, org_admin_report,
-      aggregated_date_range, per_user_spend, timezone_window, unauthorized_team.'
+  - text: Every named scope/date/SQL case in the description passes, including mixed team permissions,
+      empty key restrictions, null status success counting and real timestamp boundaries in Postgres.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -105,22 +116,26 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_activity::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-activity/get--team-daily-activity-success.yaml
-  - tools/oracle/cases/management/team-activity/get--team-daily-activity-invalid-target.yaml
-  - tools/oracle/cases/management/team-activity/get--team-daily-activity-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-activity/get--team-spend-by-user-success.yaml
-  - tools/oracle/cases/management/team-activity/get--team-spend-by-user-invalid-target.yaml
-  - tools/oracle/cases/management/team-activity/get--team-spend-by-user-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-activity/team-daily-scope.yaml
-  - tools/oracle/cases/management/team-activity/org-admin-report.yaml
-  - tools/oracle/cases/management/team-activity/aggregated-date-range.yaml
-  - tools/oracle/cases/management/team-activity/per-user-spend.yaml
-  - tools/oracle/cases/management/team-activity/timezone-window.yaml
-  - tools/oracle/cases/management/team-activity/unauthorized-team.yaml
+  - tools/oracle/cases/management/team-activity/raw-comma-filters.yaml
+  - tools/oracle/cases/management/team-activity/admin-view-all.yaml
+  - tools/oracle/cases/management/team-activity/missing-user.yaml
+  - tools/oracle/cases/management/team-activity/explicit-membership-404.yaml
+  - tools/oracle/cases/management/team-activity/all-teams-must-allow-full-view.yaml
+  - tools/oracle/cases/management/team-activity/own-keys-and-empty-keys.yaml
+  - tools/oracle/cases/management/team-activity/requested-key-intersection.yaml
+  - tools/oracle/cases/management/team-activity/empty-or-missing-team-rows.yaml
+  - tools/oracle/cases/management/team-activity/daily-defaults-and-forwarded-scope.yaml
+  - tools/oracle/cases/management/team-activity/daily-dependency-errors.yaml
+  - tools/oracle/cases/management/team-activity/dates-before-team-scope.yaml
+  - tools/oracle/cases/management/team-activity/canonical-dates-and-400-boundary.yaml
+  - tools/oracle/cases/management/team-activity/spend-timestamp-edges.yaml
+  - tools/oracle/cases/management/team-activity/deleted-user-left-join.yaml
+  - tools/oracle/cases/management/team-activity/failure-status-counts.yaml
+  - tools/oracle/cases/management/team-activity/user-restriction-not-key-filter.yaml
+  - tools/oracle/cases/management/team-activity/deterministic-spend-order.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B074 owns daily SQL aggregation and canonical parsing; B800 owns team-admin and explicit permission predicates.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -201,8 +216,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The entity scope in daily-activity SQL comes from TeamAccess, never the raw query parameter.
+  - Full visibility requires permission on every returned team, and org-admin status is not a shortcut in this resolver.
+  - A 400-day date difference covers 401 calendar dates because the SQL end bound is exclusive of the following day.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

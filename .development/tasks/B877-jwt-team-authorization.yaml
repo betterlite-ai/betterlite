@@ -4,8 +4,37 @@ description: >-
   Authorize team selection from verified JWTs after identity/admin policy. A provisional x-litellm-team-id
   outside JWT teams is never upserted; validate DB membership and team route access before accepting it.
   Distinguish claimless DB fallback, alias-only and RBAC team claims, re-run pass-through authorization
-  after DB fallback, and validate_object_id when enforce_rbac has no user or team. Inject ManagedAgentTeam::resolve(UserId,AgentId,Option<TeamId>,ExplicitSelection)->Result<Option<TeamId>,AuthError>;
-  B141 implements it.
+  after DB fallback, and validate_object_id when enforce_rbac has no user or team. Own the
+  ManagedAgentTeam::resolve port with user/agent IDs, selected team, explicit-selection flag and optional
+  allowed-team set; B141 installs it without a dependency from this lower stage to its installer.
+
+  B760 extracts claim teams, specific team and alias; B764 supplies aggregate teams, header resolution,
+  specific-team/model selection, passthrough checks and object-ID validation. DB fallback requires its
+  flag, no JWT team claims, no alias and no RBAC-selected team. A configured team_id_default does not
+  count as a claim. Add the specific team to candidates only outside DB fallback. Header DB fallback
+  separately requires the flag and no RBAC team. For an outside-claim header, call B737 with upsert
+  disabled; translate only HTTPException to B764's header-membership denial, propagating other errors.
+  If no header/team and no DB fallback, try the specific/alias team; if still no ID or object, try
+  model-access selection. For an RBAC team with no loaded row, fetch it before an auth-enforced
+  passthrough check, uppercasing a string method and preserving None otherwise.
+
+  Managed-agent delegation receives JWT claim teams or an alias-derived singleton; fallback_to_db_teams
+  deliberately passes no restriction. Only an actual header counts as explicit selection. A different
+  granting team must pass B891's team-route check (403 auth_error/param "None" on failure), then load
+  that team with check_db_only=true. Check passthrough permission before identity loading. B765 loads
+  user/org/end-user/membership and effective user_id; user upsert and role/team synchronization run only
+  when provisioning exists and this is not a managed agent. An alias-resolved org supplies organization_id.
+
+  No selected team plus DB fallback calls B891's database resolver and repeats passthrough authorization;
+  no selected team without that flag calls its single-team fallback. A still-selected provisional header
+  must occur in the loaded user's DB memberships and pass team-route policy before it can be used.
+  Header/route denials preserve B764's 403 auth_error and header param; the inline route denial at
+  L2880 has param "None". Map the user to the authorized team only with provisioning and no managed
+  agent. Then validate object IDs using bool(general_settings.enforce_rbac), default False, before
+  deriving proxy-admin from the final user row (never for a managed agent). Return the selected/fallback
+  team and object, effective user ID, nonempty DB email before claim email, resolved org, end user,
+  original token, membership, claims, agent ID and managed context. Keep every preceding write if a
+  later authorization step fails; there is no encompassing transaction.
 
 
   Build the production jwt_team_authorization module in betterlite-auth; reuse the typed dependencies
@@ -18,45 +47,33 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.enforce_rbac=False;
-  enforce_rbac=False; litellm_jwtauth.team_id_upsert=False; litellm_jwtauth.team_allowed_routes=['openai_routes',
+  litellm_jwtauth.team_id_upsert=False; litellm_jwtauth.team_allowed_routes=['openai_routes',
   'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens']; litellm_jwtauth.user_id_upsert=False;
   litellm_jwtauth.enforce_team_based_model_access=False; litellm_jwtauth.fallback_to_db_teams=False.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  B875's outer premium_user guard prevents the unmodified MIT HTTP proxy from reaching JWT team
+  selection. Exercise these branches through native HTTP tests of the actual B732 server stage with
+  verified JWT fixtures, comparing the documented status/type/param/code and database effects. Do not
+  call a fragment as a Python handler or label a premium_user rejection a team-membership oracle result.
+  This task adds no route and has no independently callable Python segment. B875 owns the license deviation.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Native JWT team-authorization cases use B860 Postgres selected through POSTGRES_TEST_URL or
+  testcontainers. Inspect provisioning writes even when a later team check fails; these authenticated
+  JWT successes cannot be equality cases against the MIT proxy's earlier license rejection.
 
 
-  Write betterlite-config::jwt_team_authorization::tests::loads_settings, defaults_and_precedence and
-  invalid_value_fallback. Each must call the production B002 config loader, set every listed key/env binding,
+  Write betterlite-config::jwt_team_authorization::tests::team_policy_defaults, team_policy_overrides,
+  team_routes_default_list and enforce_rbac_truthiness. Each must call the production B002 config loader, set every listed key/env binding,
   assert the resulting typed value is consumed by this component, and exercise the specified warning/ignore/error
   branch. A grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml
   with the actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 250 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  250 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 513 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  270 production, 320 behavior/Postgres tests, 65 wiring and 60 config lines, 715 within a 750-line gate.
+  Use POSTGRES_TEST_URL, falling back to testcontainers only when absent. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -88,20 +105,28 @@ references:
     why: Own JWTAuthManager.authorize_jwt.team_stage; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2904-L2909
     why: general_settings.enforce_rbac default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.fallback_to_db_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5366-L5395
+    why: Team upsert, route list and user-upsert defaults; team and user upsert reach this segment through provisioning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5466-L5494
+    why: Model-access and database-team fallback defaults; read at handle_jwt.py:2644-2653 and 2837.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: header_outside_claims_403,
-      provisional_team_no_upsert, db_member_header, fallback_passthrough_recheck, rbac_no_object, managed_grant_team_403.'
+      provisional_team_no_upsert, db_member_header, fallback_passthrough_recheck, rbac_no_object,
+      managed_grant_team_403, default_is_not_claim, alias_blocks_db_fallback, rbac_blocks_header_fallback,
+      provisional_http_error_translation, header_nonhttp_error_propagates, specific_then_model_team,
+      rbac_passthrough_loads_team, managed_claim_scope, managed_alias_scope, managed_fallback_unscoped,
+      changed_grant_db_only, passthrough_before_get_objects, managed_skips_provisioning,
+      sync_before_fallback, alias_org_and_effective_user, single_team_fallback,
+      provisional_route_denial, mapping_after_membership_check, final_user_admin_nonmanaged,
+      database_email_precedence and late_denial_preserves_prior_writes.'
     proof:
       - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
+  - text: Native HTTP cases header_membership_envelope, granting_team_route_envelope and fallback_route_envelope
+      exercise the server and prove a rejected selection never reaches the downstream inference handler.
     proof:
-      - oracle
-      - behavior-tests
+      - stage-wiring-tests
   - text: Every named setting loads through the production config boundary with its pinned default, precedence
       and invalid-value behavior.
     proof:
@@ -133,17 +158,9 @@ checks:
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_team_authorization::tests::/)
         - test(/replays_the_/)'
-oracle_cases:
-  - tools/oracle/cases/auth/jwt-team-authorization/header-outside-claims-403.yaml
-  - tools/oracle/cases/auth/jwt-team-authorization/provisional-team-no-upsert.yaml
-  - tools/oracle/cases/auth/jwt-team-authorization/db-member-header.yaml
-  - tools/oracle/cases/auth/jwt-team-authorization/fallback-passthrough-recheck.yaml
-  - tools/oracle/cases/auth/jwt-team-authorization/rbac-no-object.yaml
-  - tools/oracle/cases/auth/jwt-team-authorization/managed-grant-team-403.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -201,9 +218,9 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A provisional x-litellm-team-id outside JWT teams is never upserted; validate DB membership and team
-    route access before accepting it.
+  - The header fallback predicate is broader than claimless DB fallback; a JWT with team claims can still select another DB membership when no RBAC team was assigned.
+  - The second passthrough check follows DB fallback because the earlier check had no selected team to authorize.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

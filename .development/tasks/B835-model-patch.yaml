@@ -1,10 +1,56 @@
 id: B835
-title: Persist model update and block state
+title: Patch stored models and report serving reload results
 description: >-
-  Implement PATCH /model/{model_id}/update and model block/unblock with typed merge semantics, ModelRepository
-  encryption and B368 catalog publication. Preserve DB commit versus serving reload failure reporting,
-  pricing synchronization and cache invalidation. Keep a successful database mutation observable even
-  when serving reload fails.
+  Register PATCH /model/{model_id}/update through B052 authentication and implement patch_model.
+  B836 owns both update_db_model and _update_team_model_in_db, so this handler calls the completed
+  merge/assignment service without an upward dependency. Separate /model/block and /model/unblock
+  belong to B1214. This route can still patch blocked, subject to its own admin-only check.
+
+  Read the resolved general_settings.store_model_in_db flag, default false; null YAML becomes false.
+  B124's startup resolution enables it through STORE_MODEL_IN_DB or an existing true YAML value
+  (env false cannot turn YAML true off). When still not true, a DB general_settings record can enable
+  it with true or case-insensitive string "true"; read failures are debug-logged and ignored. B124
+  owns that bootstrap and reload logic, B002 owns the typed loader. This task proves the resolved flag
+  is actually used: disabled yields 400 validation_error, param null, message "Model updates only
+  supported for DB-stored models". Test absent/null/false/true YAML and env enablement/false precedence,
+  plus DB enablement and failed DB lookup through the production configuration path.
+
+  Missing prisma_client raises HTTPException 500 with CommonProxyErrors.db_not_connected_error in
+  detail.error, explaining that DATABASE_URL must be a PostgreSQL connection string. Fetch the stored
+  deployment through B1213.get_db_model. A missing row that B302 finds in configured router entries
+  gives 400 validation_error, param null, "Cannot edit config-based model. Store model in DB via
+  /model/new first." Otherwise missing before or after the write gives 404 not_found_error, param null,
+  "Model <id> not found on proxy." These are distinct branches with distinct cases.
+
+  B832.can_user_make_model_call authorizes member_operation=update against the existing deployment and
+  incoming patch. B1213 computes the member auto-router marker. For a MemberAutoRouterWrite, when a
+  marker exists, discard incoming model_name and build marker model_info from the existing ID; other
+  authorized writes retain their patch information. A non-null blocked, including false, from any
+  non-PROXY_ADMIN caller gives 403 auth_error, param blocked, "Only proxy admins can change a model's
+  blocked flag." Next enforce credential attachment with null_detaches=true, validate the selected
+  credential name, enforce AWS session-tag privileges and reject strategy-router write violations,
+  in that order. B832 and B1213 own each policy; test that refusal happens before any model row write.
+
+  Compute the effective complexity params and give B836 a write_row closure. It records the model_name
+  it will store, sets updated_by to caller user_id or proxy admin name, sets updated_at from the UTC
+  clock, and updates by model_id inside B834._auto_router_capability_slot with the effective params
+  and member-write authorization. B836 handles encryption and writes before team grants; this task
+  must preserve its partial effects. Only when stored_model_name is non-null, equals the original
+  requested name and differs from the old name, call B820.sync_access_groups_for_renamed_model, then
+  B837.sync_model_allowlists_for_renamed_model. A team-internal rewritten name or no-op rename must not
+  run that pair. Neither synchronization is part of the completed model transaction.
+
+  After rename effects, take B841.live_model_ids_snapshot and await clear_cache. Enqueue
+  B065.create_object_audit_log with action=updated, table=LiteLLM_ProxyModelTable, object_id=model_id,
+  before/after model_dump_json(exclude_none=True), caller user_id as litellm_changed_by and
+  LITELLM_PROXY_ADMIN_NAME="default_user_id" as fallback. This route reads no changed-by request header.
+  Use tracked asynchronous delivery; B065 owns enablement, its premium guard and durable writes.
+  MIT fixtures observe no durable audit row without that guard, while native integration checks the
+  B065 deviation. Then pass BOTH still_desired and live_after from the reload result to
+  B841.raise_if_reload_degraded_serving with action=update. Its 500 internal_server_error, param null,
+  explains that the update was saved but the affected/collateral models are not served on this pod;
+  the database row and already-enqueued event remain. A clear_cache exception occurs before audit
+  enqueueing. Return the updated row only after this check succeeds.
 
 
   Build the production model_patch module in betterlite-server; reuse the typed dependencies listed in
@@ -13,20 +59,18 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_management_endpoints.py:
-  update_db_model (L975-L1085; 89 source lines), patch_model (L1093-L1320; 194 source lines).
+  patch_model including its write_row closure (L1093-L1320; 194 source lines).
 
 
   Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
   column type; retain source storage types.
 
 
-  Register these actual HTTP routes and aliases exactly once: PATCH /model/{model_id}/update -> patch_model.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  The route's own except block logs the exception, passes HTTPException and ProxyException through
+  unchanged, and wraps anything else as 500 internal_server_error, param null, "Error updating model:
+  <error>". It never calls handle_exception_on_proxy. B001 HttpCase compares the exact public envelope
+  from the booted proxy for each branch, including the HTTPException path's outer B003 handler, code,
+  type, param, status and content-type. Keep request/schema errors with B003/B1213's decoder.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -53,15 +97,10 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 283 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  283 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 493 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  Sizing: 194 nonblank, noncomment pinned source lines; allow 220 production, 300 behavior/Postgres
+  tests, 65 route/wiring and 65 config tests, 650 changed lines within a 700-line gate. No helper
+  adapter or new byte decoder is needed. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -78,23 +117,33 @@ scope:
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/model-patch/**
     - crates/betterlite-server/src/model_patch/fixtures/**
+    - crates/betterlite-config/src/model_patch.rs
+    - crates/betterlite-config/src/model_patch/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/model-patch-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L975-L1486
-    why: Pinned implementation and exact ownership boundary for model_patch.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2329-L2330
-    why: BlockModelRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1088-L1320
+    why: PATCH registration, local error mapping and ordering after the write.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L975-L1085
-    why: Own update_db_model; preserve caller-visible values and failure ordering.
+    why: B836 owns the merge used by its team-model update helper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1093-L1320
     why: Own patch_model; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L553-L705
     why: updateDeployment and Deployment wire types.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6762-L6766
+    why: YAML store_model_in_db default and null normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10702-L10719
+    why: Actual env and DB flag resolution consumed by the route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L3176-L3221
+    why: B841's post-commit serving failure and public diagnostic.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: patch_preserves_secret,
-      clear_credential, unauthorized_patch, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'patch_preflight covers no_database, storage_disabled, config_only_model, unknown_model,
+      missing_after_write, unauthorized_patch, member_marker_restricts_fields, blocked_false_admin_only,
+      credential_null_detaches, unknown_credential, aws_session_tag_denied, strategy_router_denied,
+      http_exception_unchanged, proxy_exception_unchanged and unexpected_error_500.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -102,14 +151,19 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows covers patch_preserves_secret, clear_credential, actor_and_updated_at,
+      capability_slot_arguments, rename_sync_in_order, no_op_rename_skips_sync,
+      rewritten_team_name_skips_sync and audit_event_fields. postgres_failure_effects covers
+      preflight_no_write, grant_failure_keeps_row, rename_sync_failure_keeps_row,
+      clear_cache_failure_before_audit, degraded_reload_after_audit and collateral_serving_loss.'
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
+  - text: 'Production loader tests storage_default_and_null, storage_env_enables,
+      storage_env_false_preserves_yaml and storage_db_enable_or_debug_failure prove the route receives
+      the resolved flag; all use the existing loader and B124 bootstrap, not a duplicate parser.'
+    proof: [config-tests, config-corpus, behavior-tests]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -119,21 +173,30 @@ checks:
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_patch::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_patch::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: A resolved storage flag does not reach the PATCH policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_patch::tests::/)'
+    - id: config-corpus
+      why: The new model storage config seed is absent or the production parser fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/model-patch-*')" && grep -rlq store_model_in_db crates/betterlite-config/fuzz/corpus/config_yaml/model-patch-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/model-patch/patch--model-model-id-update-success.yaml
-  - tools/oracle/cases/management/model-patch/patch--model-model-id-update-invalid-target.yaml
-  - tools/oracle/cases/management/model-patch/patch--model-model-id-update-unauthorized-caller.yaml
   - tools/oracle/cases/management/model-patch/patch-preserves-secret.yaml
   - tools/oracle/cases/management/model-patch/clear-credential.yaml
   - tools/oracle/cases/management/model-patch/unauthorized-patch.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L975-L1486
+  - tools/oracle/cases/management/model-patch/no-database.yaml
+  - tools/oracle/cases/management/model-patch/storage-disabled.yaml
+  - tools/oracle/cases/management/model-patch/config-only-or-unknown.yaml
+  - tools/oracle/cases/management/model-patch/blocked-admin-policy.yaml
+  - tools/oracle/cases/management/model-patch/member-auto-router-marker.yaml
+  - tools/oracle/cases/management/model-patch/credential-and-session-tag-guards.yaml
+  - tools/oracle/cases/management/model-patch/rename-sync-conditions.yaml
+  - tools/oracle/cases/management/model-patch/local-error-mapping.yaml
+  - tools/oracle/cases/management/model-patch/reload-failure-after-commit.yaml
+  - tools/oracle/cases/management/model-patch/audit-mit-fallback.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B836 owns update_db_model (L975-L1085), stored-field encryption and team-assignment sequencing.
+  - B065 owns audit enablement and the MIT premium guard; this route submits its event after clear_cache.
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B832 owns _canonical_session_tags
     (L1985-L1986), ModelManagementAuthChecks.can_user_make_team_model_call (L1995-L2015), ModelManagementAuthChecks.can_user_attach_credential
     (L2018-L2042), ModelManagementAuthChecks.can_user_set_aws_session_tags (L2045-L2064), ModelManagementAuthChecks.allow_team_model_action
@@ -183,11 +246,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py::update_team: no production caller
     at the pin; this shim only supports legacy tests patching the symbol, while management calls team_model_add/team_model_delete.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - litellm/proxy/management_endpoints/model_management_endpoints.py::update_team (L161-L166) is an uncalled
-    legacy test shim; live management uses team_model_add/team_model_delete.
 pitfalls:
-  - Serving reload failure cannot erase a successful model database update.
+  - A team-internal rewritten model_name does not satisfy the route's three-part global rename condition.
+  - The audit event is enqueued before degraded-serving rejection, but after clear_cache completes.
+  - HTTPException bypasses this route's 500 wrapper and must retain the outer server's own envelope.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

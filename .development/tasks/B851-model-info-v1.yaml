@@ -1,9 +1,43 @@
 id: B851
 title: Model info v1 route and public-name projection
 description: >-
-  Expose /model/info using authorized deployment lists, source v1 response shape and team public-name
-  translation. Strip credential-bearing fields using the typed model response projection and B187 redaction.
-  The v1 route remains compatible while sharing all grant decisions with v2.
+  Register GET /model/info and /v1/model/info with B052 auth and identical application/json output.
+  Query defaults are litellm_model_id/teamId=None, include_team_models/healthy_only=False. Normalize
+  non-bool include_team_models to False and non-string teamId to None for native calls. user_model
+  takes precedence over every router/DB/query path: query B2225 metadata, catch any failure as {},
+  construct B301 Deployment(model_name='*', backend=user_model), redact with B124 preserving the
+  credential name, and return data as ONE OBJECT. All other success paths return data as a list.
+
+  Without user_model, require llm_model_list then llm_router, raising HTTP 500 detail.error respectively
+  'LLM Model List not loaded in. Make sure you passed models in your config.yaml or on the LiteLLM
+  Admin UI. - https://docs.litellm.ai/docs/proxy/configs' and the same wording beginning 'LLM Router
+  is not loaded in.'. Missing DB is permitted unless include_team_models or nonblank teamId is set,
+  then raise 500 detail.error CommonProxyErrors.db_not_connected_error. No route catch block calls
+  handle_exception_on_proxy; collaborators' HTTP detail errors propagate and auth retains its envelope.
+
+  A non-null litellm_model_id looks up B844 get_deployment. Missing or B124 listing-callback-hidden
+  deployments raise HTTP 400 detail.error 'Model id = {id} not found on litellm proxy'. Enrich with
+  B849 and translate the public name; with DB, populate B848 annotations, optionally filter accessible
+  rows, then optionally B1216 filter stripped teamId. Return data as a list (possibly empty).
+  This path skips key/name-list expansion, BYOK list scoping, health and discoverability filtering;
+  do not add a new permission check to it. Listing callbacks still run for the targeted deployment.
+
+  For the list path deepcopy router rows AND B844 alias rows, B759 expand wildcard deployments,
+  resolve allowed names using B847 access groups, B844 model names and B759 get_key_models/get_team_models.
+  If both grants are empty, allowed names is None and the original list survives; otherwise call
+  get_complete_model_list(return_wildcard_routes=False) and match internal OR string public names.
+  Filter B1216 foreign BYOK rows before metadata projection. With DB always populate B848 annotations,
+  but only filter them for include_team_models. Enrich/redact, translate public names, apply stripped
+  teamId (403 for nonmembers, empty for an admin's missing team), then B842 health and discoverable_rows.
+  Build first-seen unique string names, invoke B124 listing callbacks, and drop hidden names. Preserve
+  list order/duplicates and log only the already projected visible rows. No agents are appended here.
+
+  Public-name translation returns a shallow copy only when model_info is a dict, team_public_model_name
+  and team_id are truthy, and the current name begins exactly model_name_{team_id}_. Otherwise return
+  unchanged, including malformed model_info; never rewrite the router index. Name membership accepts
+  the internal name first, then a string public name, without wildcard matching in this predicate.
+  _model_info_json_response wraps data with orjson semantics (non-string keys allowed and B124's
+  JSON-compatible datetime encoding); no extra auth/type/param/code fields appear on detail errors.
 
 
   Build the production model_info_v1 module in betterlite-server; reuse the typed dependencies listed
@@ -19,47 +53,30 @@ description: >-
   182 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.infer_model_from_keys=False;
-  infer_model_from_keys=False.
+  The only setting read here is general_settings.infer_model_from_keys, .get default False at L15997;
+  it is passed to B759, not read from an environment variable. The call occurs only for restricted
+  lists, where B759 gives key/team models precedence and does not infer provider names. Test the
+  setting through the real B002 loader even though this call path suppresses inference.
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /model/info -> model_info_v1; GET /v1/model/info
-  -> model_info_v1. For each route send a typed successful request, an invalid or missing target, and
-  a caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy and
-  betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes. Compare
-  status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
-  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
-  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
-  inspection.
+  B001 HTTP cases exercise both aliases, missing bearer, authorized restricted keys, exact detail errors,
+  field redaction and object/list response differences. B860 Postgres uses POSTGRES_TEST_URL or
+  testcontainers; unavailable fixtures fail. Native public_name_no_mutation, public_name_prefix_gate,
+  malformed_public_metadata and internal_name_first tests cover the pure projection used by B850.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Seed equivalent B860 databases for direct-ID, unrestricted-list and restricted team-name fixtures.
+  POSTGRES_TEST_URL takes precedence over testcontainers; connection failure fails these HTTP cases.
 
 
-  Write betterlite-config::model_info_v1::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Write betterlite-config::model_info_v1::tests::loads_infer_model_from_keys and
+  infer_model_from_keys_default_false through the production loader with true/false/null and absent
+  values. There is no local invalid-value catch or warning to test as a fallback. Shared B002 config
+  validation owns rejected scalar types. Add config_yaml seeds for this nested setting.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 263 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  263 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 526 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The seven owned functions contain 207 nonblank noncomment lines excluding docstrings. Allow 230
+  production, 330 tests, 65 route wiring and 45 config lines, 670 within 750.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_v1.rs
@@ -92,15 +109,13 @@ references:
     why: Own _get_proxy_model_info; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16044-L16048
     why: Own _model_info_json_response; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16061-L16275
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16051-L16275
     why: Own model_info_v1; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15997-L16002
     why: general_settings.infer_model_from_keys default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1-L6
-    why: infer_model_from_keys default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
+  - text: public_name_no_mutation, public_name_prefix_gate, malformed_public_metadata and internal_name_first preserve the shared projection contract.
+    proof: [behavior-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: v1_info, team_public_name,
       key_model_allowlist, wildcard_expansion, db_deployment, secret_free_model_info.'
     proof:
@@ -133,12 +148,24 @@ checks:
         && grep -rlq "infer_model_from_keys" crates/betterlite-config/fuzz/corpus/config_yaml/model-info-v1-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/model-info-v1/get--model-info-success.yaml
-  - tools/oracle/cases/management/model-info-v1/get--model-info-invalid-target.yaml
-  - tools/oracle/cases/management/model-info-v1/get--model-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/model-info-v1/get--v1-model-info-success.yaml
-  - tools/oracle/cases/management/model-info-v1/get--v1-model-info-invalid-target.yaml
-  - tools/oracle/cases/management/model-info-v1/get--v1-model-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/model-info-v1/both-aliases-missing-bearer.yaml
+  - tools/oracle/cases/management/model-info-v1/query-defaults.yaml
+  - tools/oracle/cases/management/model-info-v1/user-model-object-before-router-db.yaml
+  - tools/oracle/cases/management/model-info-v1/user-model-metadata-failure.yaml
+  - tools/oracle/cases/management/model-info-v1/model-list-missing-500.yaml
+  - tools/oracle/cases/management/model-info-v1/router-missing-500.yaml
+  - tools/oracle/cases/management/model-info-v1/database-optional-unless-team-filter.yaml
+  - tools/oracle/cases/management/model-info-v1/id-missing-or-callback-hidden-400.yaml
+  - tools/oracle/cases/management/model-info-v1/id-skips-list-health-discoverability.yaml
+  - tools/oracle/cases/management/model-info-v1/id-filtered-to-empty.yaml
+  - tools/oracle/cases/management/model-info-v1/aliases-and-wildcard-order.yaml
+  - tools/oracle/cases/management/model-info-v1/empty-grants-unrestricted.yaml
+  - tools/oracle/cases/management/model-info-v1/infer-setting-restricted-grants-win.yaml
+  - tools/oracle/cases/management/model-info-v1/foreign-byok-hidden.yaml
+  - tools/oracle/cases/management/model-info-v1/annotations-without-filter.yaml
+  - tools/oracle/cases/management/model-info-v1/team-id-trim-denied-missing.yaml
+  - tools/oracle/cases/management/model-info-v1/health-discovery-callback-order.yaml
+  - tools/oracle/cases/management/model-info-v1/credential-name-and-rate-limits-retained.yaml
   - tools/oracle/cases/management/model-info-v1/v1-info.yaml
   - tools/oracle/cases/management/model-info-v1/team-public-name.yaml
   - tools/oracle/cases/management/model-info-v1/key-model-allowlist.yaml
@@ -314,8 +341,6 @@ out_of_scope:
     (L20123-L20141), aggregate_mcp_route (L20148-L20164), toolset_mcp_route (L20173-L20214), _mcp_forward_as_path
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20312-L20379).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
     (L16320-L16351), model_group_info (L16359-L16581).'
   - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
@@ -502,8 +527,10 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - Team public model names are projected after access checks, before credential redaction.
+  - The user_model branch returns data as an object and precedes all router, database and query handling.
+  - A single-id request bypasses the list's health and discoverability filters but still invokes listing callbacks.
+  - infer_model_from_keys is passed only when nonempty key/team grants already suppress inference.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

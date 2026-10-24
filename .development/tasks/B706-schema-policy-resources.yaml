@@ -1,50 +1,79 @@
 id: B706
 title: Postgres migrations for policy resources
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm. This cohort includes the explicitly nontransactional concurrent
-  health-check index migration: retain its single statement, execute it outside a transaction and verify
-  the existing ledger/recovery semantics rather than promising rollback of concurrent DDL.
+  Supply the 32 scoped SQL migrations from baseline_diff through health_check_latest_per_model_index
+  after B705's identity-history checkpoint. Copy bytes unchanged and register full directory names in
+  order, retaining separate entries when their timestamp prefixes are equal. This task owns immutable
+  SQL and schema_policy_resources regression tests. B873 alone deploys files, handles the concurrent
+  index and writes the ledger; B716 owns recovery. No new migration executor belongs here.
+
+  DailyGuardrailMetrics/DailyPolicyMetrics use composite primary keys (guardrail_id/date or policy_id/
+  date), four required BIGINT counters requests_evaluated/passed_count/blocked_count/flagged_count
+  default 0, nullable DOUBLE PRECISION avg_score/avg_latency_ms, required created_at now and updated_at
+  without default. Each has entity/date lookup indexes. SpendLogGuardrailIndex has required
+  (request_id,guardrail_id) primary key/start_time, nullable policy_id, and guardrail_id+start_time and
+  policy_id+start_time indexes. Replace six daily-spend entity-only indexes with (entity,date) indexes
+  for agent/end-user/organization/tag/team/user, retaining their other indexes and data. Ensure nullable
+  VerificationToken.project_id exists without repairing or inventing a missing foreign key.
+
+  Policy versioning drops unique policy_name, adds required is_latest=true/version_number=1/
+  version_status='production', nullable parent_version_id/production_at/published_at, an ordinary
+  (policy_name,version_status) index and unique (policy_name,version_number). Existing rows become
+  production version 1; multiple versions may both be is_latest=true because SQL adds no unique latest
+  constraint. ManagedObject.batch_processed is required false; SpendLogs.request_duration_ms is
+  nullable INTEGER. MCP spec_path is added, then dropped (losing data), then re-added empty/nullable.
+  Keep all three historical steps, even though the final column name matches the first.
+
+  ToolTable requires TEXT tool_id/name, unique name, call_policy='untrusted', INTEGER call_count=0,
+  nullable assignments JSONB {}, origin/key_hash/team_id/key_alias/actors and both timestamps now.
+  Index call_policy/team_id. Later rename call_policy to input_policy preserving values, add required
+  output_policy='untrusted', nullable user_agent/last_used_at, drop the old policy index and add input/
+  output policy indexes. Its rename guard is not schema-qualified. ObjectPermission.blocked_tools and
+  later models/mcp_toolsets are nullable TEXT arrays default []. SpendLogToolIndex uses composite
+  (request_id,tool_name), required start_time and (tool_name,start_time) index, with no inferred foreign
+  key to logs. Agents gain nullable object_permission_id with delete SET NULL/update CASCADE, and
+  live/deleted keys gain nullable agent_id without a new foreign key.
+
+  ClaudeCodePluginTable requires TEXT id/name and enabled=true; name is unique. Nullable version/
+  description/manifest_json/files_json/created_by are TEXT, files_json defaults the string '{}', and
+  nullable created_at/updated_at default now. It is not a JSONB files column. Add SpendLogs
+  (startTime,request_id) index. MCP available_on_public_internet changes its default to true without
+  updating existing false rows. Guardrails gain required status='active', nullable reviewed_at/
+  submitted_at and a status index. Agents gain spend=0, nullable static_headers JSONB {}, extra_headers
+  TEXT[] [], and nullable INTEGER tpm_limit/rpm_limit/session_tpm_limit/session_rpm_limit.
+
+  MCP BYOK fields are nullable byok_api_key_help_url, byok_description TEXT[] [], tool_name_to_description/
+  tool_name_to_display_name JSONB {}, and required is_byok=false. MCPUserCredentials requires TEXT
+  id/user_id/server_id/credential_b64, both timestamps now, and unique (user_id,server_id); SQL neither
+  decodes nor encrypts credential_b64 and creates no user/server foreign keys. JWTKeyMapping requires
+  id/jwt_claim_name/jwt_claim_value/token, is_active=true and timestamp defaults now, with nullable
+  description/actors; index claim name/value/active and uniquely constrain name/value independently
+  of active. Its token foreign key deletes RESTRICT and updates CASCADE. ConfigOverrides requires TEXT
+  config_type primary key, JSONB config_value, created_at now and updated_at without default.
+
+  MCP approval_status is nullable TEXT default 'active'; submitted_by/submitted_at/reviewed_at/
+  review_notes/source_url are nullable, with an approval_status index. The later restore migration
+  repeats IF NOT EXISTS additions and leaves existing values untouched. Team gains organization_id,
+  team_alias and created_at indexes. MCPToolset requires toolset_id/unique toolset_name, JSONB tools
+  default [], timestamp defaults now, nullable description/actors. Prompt environment is required
+  TEXT default 'development', created_by nullable; replace (prompt_id,version) uniqueness with
+  (prompt_id,version,environment) plus a (prompt_id,environment) index. Its unguarded ADD COLUMN and
+  CREATE INDEX statements make replay fail, rather than repair an already applied migration.
+
+  Live keys/teams gain nullable budget_limits JSONB. Budget.allowed_models and Team.default_team_member_models
+  are nullable TEXT arrays default []; MCP instructions is nullable TEXT. The final health index is
+  exactly one CREATE INDEX CONCURRENTLY IF NOT EXISTS statement on (model_id,model_name,checked_at DESC).
+  A focused SQL test runs it outside a transaction and inspects validity and descending order; running
+  it inside an explicit transaction must fail with active_sql_transaction 25001. B873 owns recovery of
+  an interrupted/invalid concurrent index, so no atomic rollback is promised here.
 
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
-
-
-  Build the production schema_policy_resources module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 339 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  339 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 514 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Execute reference/candidate histories in B860's separate temporary databases using POSTGRES_TEST_URL
+  or testcontainers when absent. B700 supplies query sessions; unavailable Postgres fails tests and
+  cleanup runs after errors. Keep direct column/type/default/nullability and full index/FK comparisons,
+  with named historical data checks below. There are 234 nonblank, noncomment SQL lines, but copying
+  exact bytes costs 418 production lines. Budget 330 tests and 30 registrations, 778 within 800. The
+  SQL-data task has no new runtime config parser, byte decoder or HTTP helper.
 scope:
   paths:
     - crates/betterlite-db/src/schema_policy_resources.rs
@@ -151,13 +180,32 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260415120000_health_check_latest_per_model_index/migration.sql#L1-L12
     why: Pinned implementation and exact ownership boundary for schema_policy_resources.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: pinned_sql_checksums validates all 32 files and distinct full identities with equal timestamps; postgres_catalog compares all owned defaults, column/constraint facts and index ordering independently.
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_policy_history covers guardrail_policy_metric_zero_counters_and_nullable_averages,
+      spend_guardrail_index_pairs, six_entity_date_indexes, project_column_only_repair,
+      policy_default_production_version_one, multiple_versions_same_latest_allowed,
+      policy_version_duplicate_rejected, managed_batch_processed_false,
+      nullable_request_duration and spec_path_add_drop_readd_loses_old_values.'
+    proof: [postgres-tests]
+  - text: 'postgres_tool_agent_fields covers untrusted_policy_and_zero_count,
+      rename_input_policy_preserves_value, output_untrusted_and_policy_indexes,
+      tool_rename_guard_other_schema_failure, blocked_tools_and_model_arrays,
+      spend_tool_composite_key, agent_permission_set_null_and_key_agent_nullable,
+      plugin_text_files_and_enabled_true, spend_time_request_index,
+      public_internet_default_true_existing_false_unchanged, guardrail_active_status_index,
+      agent_zero_spend_headers_and_four_integer_limits.'
+    proof: [postgres-tests]
+  - text: 'postgres_mcp_and_prompt_fields covers byok_false_and_empty_metadata,
+      mcp_user_credential_raw_text_unique_pair, jwt_mapping_active_default_and_unique_claim_pair,
+      jwt_token_delete_restrict_update_cascade, config_override_required_json_and_updated_at,
+      approval_fields_restore_preserves_values, team_lookup_indexes, toolset_empty_tools_unique_name,
+      prompt_development_backfill, prompt_environment_distinct_versions,
+      prompt_environment_repeat_42701, nullable_budget_limits,
+      member_allowed_models_empty_defaults and nullable_mcp_instructions.'
+    proof: [postgres-tests]
+  - text: postgres_concurrent_health_index checks a single outside-transaction statement, checked_at_descending_and_valid and explicit_transaction_error_25001 without invoking the B873 runner.
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -166,20 +214,20 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_policy_resources::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_policy_resources::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_policy_resources::tests::postgres_failure_effects$/)'
+      why: Policy/tool/MCP schema history or concurrent-index SQL behavior differs from the pinned migration.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_policy_resources::tests::postgres_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B705 supplies the preceding schema, B707-B709 later cohorts and B701 final schema checks.
+  - B873 owns concurrent-index deployment, invalid-index recovery and migration ledger effects; B716 owns locks/recovery decisions.
+  - B136 and agent credential persistence own secret transforms; this task preserves SQL column contents and does not decode credential_b64 or headers.
+  - B087 owns the managed-batch runtime hook decision; adding batch_processed=false does not install that hook.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - MCP spec_path returns later in the cohort, but its old values were destroyed by the intervening DROP.
+  - SET DEFAULT true changes new MCP rows without rewriting existing available_on_public_internet=false.
+  - Policy is_latest=true is not uniquely constrained, and plugin files_json is TEXT despite its JSON-looking default.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

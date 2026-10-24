@@ -1,0 +1,116 @@
+id: B2328
+title: Environment and endpoint model enumeration
+description: >-
+  Extract utils.py AvailableModelsCache methods L7725-L7782, _infer_valid_provider_from_env_vars
+  L7789-L7810, _get_valid_models_from_provider_api L7813-L7832 and get_valid_models L7835-L7906
+  into betterlite-models::available_models for B759. This replaces the incorrect B013 ownership and
+  avoids depending on B157's entire Python SDK export umbrella. Use B2220 metadata-adapter selection,
+  B193 catalog/provider lists, B2226 local cache and a typed model-listing port supplied by that adapter.
+  Endpoint transports remain with their provider owners; tests inject the selected get_models call.
+
+  Default check_provider_endpoint argument None is combined by OR with litellm_settings.
+  check_provider_endpoint=False: explicit false cannot turn off a true global value. Instantiate absent
+  LiteLLM_Params with model=''; explicit api_key/api_base, including empty strings, mutate the supplied
+  parameter object before lookup. A truthy custom provider produces a singleton provider list.
+  Otherwise iterate provider_list order and include providers whenever either PROVIDER_API_KEY or
+  UNDERSCORELESSPROVIDER_API_KEY is present in the environment, even empty. These are key-presence
+  tests, not get_secret lookups. Preserve ordering and duplicates in final models; azure appends exactly
+  Azure-LLM without calling a model endpoint. With a selected adapter and enabled endpoint checks call
+  the cached API helper; otherwise deep-copy models_by_provider[provider], default []. Invalid enum,
+  factory or loop errors warn Error getting valid models: <error> and return [], discarding accumulated
+  results. Per-provider API errors warn and return [] for that provider so later providers still run.
+
+  API lookup asks the cache first; cached [] is a hit. On miss call adapter.get_models with only
+  api_key/api_base from parameters or None, cache a deep copy, return the fetched list. Cache hits are
+  deep copies. Constructor arguments named ttl_seconds=300 and max_size=1000 are forwarded positionally
+  to InMemoryCache(max_size_in_memory,default_ttl): the actual defaults are capacity300 and TTL1000
+  seconds, not the names' apparent meaning. Reuse B2226 expiry/eviction behavior without repairing this
+  source quirk. The model-cache key hashes the serialized full parameter object, prefixed by provider
+  plus ':' when nonnull; do not expose that serialization or credentials in logs or oracle fixtures.
+
+  Only cache reads with params None check an environment fingerprint, over key/value pairs whose names
+  start OPENAI, ANTHROPIC, AZURE or AWS, case-sensitively. The first check stores the fingerprint and
+  clears the value map; subsequent changes keep clearing values because the source never updates that
+  initial fingerprint. It leaves expiry/heap maps for lazy cleanup. Supplied params bypass this check;
+  ordinary get_valid_models always constructs params, so does not get environment invalidation here.
+  Python hash bytes are process-local; native use an opaque equivalent fingerprint, never persist it.
+
+  Load the global check_provider_endpoint setting through B002 with named tests
+  endpoint_checks_default_false, explicit_false_does_not_disable_global_true and
+  provider_key_presence_including_empty. Inject the resolved environment snapshot, keeping credentials
+  opaque. B856 Management::models available_models compares real MIT helpers and production with the
+  same independent catalog/clock/listing outcomes, including ordered warnings. B171 owns JSON protocol
+  decoding; there is no new external byte parser. Source owns 123 nonblank non-comment lines after
+  docstrings; allocate 165 implementation, 260 tests, 90 adapters, 65 config and 40 wiring, 620 within
+  700. All Rust modules remain under 300 lines.
+scope:
+  paths:
+    - crates/betterlite-models/src/available_models.rs
+    - crates/betterlite-models/src/available_models/**
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-config/src/available_models.rs
+    - crates/betterlite-config/src/available_models/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/available-models-*
+    - tools/oracle/src/helpers/available_models.rs
+    - tools/oracle/helpers/available_models.py
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/available-models/**
+    - tools/oracle/fuzz/corpus/helper_case/available-models-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7725-L7906
+    why: Model enumeration, credential forwarding and cache lifecycle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L54
+    why: The positional super-call swaps apparent size/TTL defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L573-L573
+    why: Global endpoint-check default, consumed at utils.py L7867.
+dod:
+  - text: 'Cases endpoint_argument_or_global, parameter_creation_and_explicit_mutation,
+      provider_key_names_presence_and_order, custom_provider_singleton, azure_literal,
+      static_catalog_copy_and_duplicates, unsupported_provider_outer_warn_drops_all,
+      endpoint_error_warn_keeps_later_providers, empty_cached_list_hit,
+      get_models_only_receives_key_and_base, cache_capacity300_ttl1000,
+      cache_copy_on_read_write, full_params_provider_cache_isolation,
+      fingerprint_prefixes_and_first_clear, fingerprint_never_updated_after_change,
+      supplied_params_bypass_env_check and cache_failure_warn_drop cover enumeration and cache behavior.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: Loader cases and new seeds prove the global endpoint setting; no secret value is included in diagnostics.
+    proof: [config-tests, config-corpus, helper-case-corpus, behavior-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Model enumeration, cache isolation or warning/drop behavior is missing.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^available_models::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: The real endpoint-check setting or env-key presence policy is ignored.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^available_models::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: The endpoint-check setting lacks a newly added loader seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/available-models-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The actual MIT enumeration adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/available_models.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new enumeration operation seed exists.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/available-models-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/available-models/environment-and-static.yaml
+  - tools/oracle/cases/helpers/available-models/api-errors-and-cache.yaml
+  - tools/oracle/cases/helpers/available-models/credential-and-env-isolation.yaml
+deviations: []
+out_of_scope:
+  - B157 retains other utils.py exports; B2220 selects model-info adapters and their provider tasks implement listing transports.
+  - B759 owns wildcard expansion and credential-name hydration; B2226 owns memory-cache eviction, expiry and stored-value decoding.
+pitfalls:
+  - The source constructor's positional arguments make the default capacity 300 and TTL 1000 despite their parameter names.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

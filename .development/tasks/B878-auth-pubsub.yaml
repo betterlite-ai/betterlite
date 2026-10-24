@@ -7,6 +7,33 @@ description: >-
   eviction actions. Preserve local eviction before publication and warning-only transport failure without
   a dependency back to mutation endpoints.
 
+  Use B120 coordination_redis_cache and pubsub-capable client selection, B126 Redis transport,
+  B733 cache access and this
+  task's LocalEviction interface. Channel is litellm_proxy.auth_cache_invalidation without a namespace;
+  otherwise prefix namespace plus colon, including an empty namespace. JSON contains cache_key and
+  only non-null new_value/ttl. Decode bytes with replacement UTF-8, require a JSON object and string
+  cache_key (empty is accepted), ignore extra fields and use the last duplicate field. Numeric values
+  exclude booleans; missing/null/string/bool new_value becomes a delete, and invalid ttl becomes None.
+  Despite its name, _finite_number_or_none accepts nonfinite floats; the recorded numeric deviation
+  below prevents them entering Decimal counters. The subscriber silently ignores malformed payloads.
+
+  No coordination Redis means publication is a no-op. Remove completed pending tasks before checking
+  the 1024 pending limit; at capacity warn and drop this publication, retaining local eviction and
+  leaving other workers stale until TTL. Limit Redis calls to 16 in flight. Yield after scheduling,
+  without waiting for the publish reply. Redis/client failures warn and never fail the mutation.
+  evict_and_broadcast handles keys in supplied order, attempting deletion then publication for each;
+  a failed local deletion warns but still publishes and proceeds to later keys. Track these tasks in
+  the server's owned task set so shutdown cancels/drains them.
+
+  Subscriber start is idempotent while a task exists; stop before start is a no-op, otherwise clear
+  the task slot, cancel and await it. Subscribe before reading with ignore_subscribe_messages=true and
+  a one-second poll timeout; empty polls continue. Failures warn and reconnect after 5,10,20,40,60,60
+  seconds, resetting to 5 immediately after each successful subscribe. Always close the pubsub in
+  finally, with close failures debug-only; cancellation escapes without backoff. Decode message.data
+  only from a dictionary. A numeric new_value sets only additional in-memory caches, forwarding ttl,
+  and leaves the primary user cache alone. Delete invalidations select the primary cache through
+  in_memory_cache_for and delete from all additional caches, without touching Redis or republishing.
+
 
   Build the production auth_pubsub module in betterlite-auth; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
@@ -41,18 +68,14 @@ description: >-
   workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 163 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  163 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 448 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  190 production, 260 behavior tests, 75 adapters, 30 wiring and 55 fuzz lines, 610 within a 650-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: message_byte_limit, message_depth_limit,
+  nonfinite_counter_dropped and shutdown_drains_publishes.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -106,7 +129,13 @@ references:
       ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: local_eviction_before_publish,
-      redis_outage_warning, spend_floor_message, malformed_message, shutdown_unsubscribe.'
+      redis_outage_warning, spend_floor_message, malformed_message, shutdown_closes_pubsub,
+      namespace_none_empty_present, json_omits_nulls, utf8_replacement, empty_cache_key,
+      extra_and_duplicate_fields, numeric_bool_string_null_matrix, no_redis_noop,
+      completed_publish_slots_reused, pending_1024_warns_drops, at_most_16_inflight,
+      publish_does_not_wait, eviction_failure_still_publishes, key_effect_order,
+      start_idempotent_stop_restart, poll_timeout_and_empty, reconnect_backoff_cap_reset,
+      cancellation_no_backoff, close_failure_debug, set_additional_only and delete_all_local_only.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -120,7 +149,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: 'message_byte_limit, message_depth_limit, nonfinite_counter_dropped and shutdown_drains_publishes prove the explicit deviations.'
     proof:
       - behavior-tests
 checks:
@@ -151,19 +180,28 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-pubsub/redis-outage-warning.yaml
   - tools/oracle/cases/helpers/auth-pubsub/spend-floor-message.yaml
   - tools/oracle/cases/helpers/auth-pubsub/malformed-message.yaml
-  - tools/oracle/cases/helpers/auth-pubsub/shutdown-unsubscribe.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/shutdown-closes-pubsub.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/message-shapes.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/publish-capacity.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/subscriber-reconnect.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/set-versus-delete.yaml
 deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
       parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L29-L32
-out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L53-L71
+  - what: Invalidations with nonfinite numeric values are warned and dropped instead of storing NaN or Infinity in a counter.
+    why: Monetary counters use Decimal and cannot represent nonfinite values; a dropped message must not become a delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L47-L50
+  - what: Shutdown cancels and drains pending publications instead of leaving detached tasks.
+    why: The async-hygiene rule requires server-owned work; normal publication remains asynchronous and best-effort.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L117-L123
+out_of_scope: []
 pitfalls:
-  - decode_invalidation(&[u8]) feeds the production message decoder in the fuzz target.
+  - A spend reset SET received by its publishing worker must not delete the freshly reset counter or floor marker.
+  - Subscription success resets backoff before consumption, so repeated consume failures each wait five seconds.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

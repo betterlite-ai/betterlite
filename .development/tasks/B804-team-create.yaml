@@ -1,10 +1,11 @@
 id: B804
 title: Create teams with members and budgets
 description: >-
-  Implement POST /team/new over TeamLimitPolicy, TeamMemberBudgets and TeamRepository, including member
-  creation, model aliases, budget windows and object-permission references. Keep transaction boundaries
-  and rollback behavior from source; access-group synchronization is an injected post-write collaborator
-  until its task installs it.
+  Implement the authenticated POST /team/new route, including B865's management wrapper, over the
+  completed team, permission and budget services. new_team in team_endpoints.py L1337-L1791 is owned
+  here; registration starts at L1330. Return the created TeamTable with its included model aliases and
+  member changes. The source tries model_dump and falls back to dict. B800 owns request/response
+  fields and defaults; keep its null/omitted distinctions rather than rebuilding that contract.
 
 
   Build the production team_create module in betterlite-server; reuse the typed dependencies listed in
@@ -12,24 +13,81 @@ description: >-
   tests.rs files.
 
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
-  new_team (L1337-L1791; 384 source lines).
+  Before writing anything, reject a missing database with HTTP 500 detail {error: No db connected}.
+  Each explicitly supplied max_budget, team_member_budget and soft_budget must be finite and
+  nonnegative; otherwise 400 names the field and received value. B861 validates both budget durations
+  and per-model budgets; B745 enforces the admin-only output-token estimates and batch token limit.
+  soft_budget >= an explicit max_budget gives 400 with both values. This comparison runs before
+  configured max_budget defaults, so do not add a second comparison after defaulting. The source
+  counts teams and checks the license cap; omit that cap under the recorded product decision.
+
+  A missing team_id becomes a UUID. An explicit litellm-dashboard gives 400 with the reserved-ID
+  explanation; an existing ID gives 400 asking for a different team ID. There is no duplicate-alias
+  guard. Through B803, inherit organization_id only when its default is a string, then fill null
+  max_budget, budget_duration, tpm_limit, rpm_limit and team_member_permissions from
+  litellm_settings.default_team_params (default None). Explicit null budget_duration deliberately
+  suppresses its default. If max_budget is still None, use max_budget from the first dict in
+  litellm_settings.default_team_settings (default None); an empty list or non-dict first item does
+  nothing. Request values beat defaults, and default_team_params beats the legacy list.
+
+  B879 loads an organization with its budget table; missing organizations become 400 with
+  organization_id in the detail. B1204 checks organization ceilings, or for a standalone non-admin
+  team the caller's user ceilings. Organization teams skip the user-ceiling branch. B803 adds a
+  creator with a user_id as admin only when absent from members_with_roles; proxy admins can disable
+  this with general_settings.disable_auto_add_proxy_admin_to_teams=true (default absent/false).
+  Ordinary creators are still added. Use B861's passthrough/global-guardrail guards, strip B802's
+  system-managed metadata, call B801's metadata validator with operation=create and no old metadata,
+  then call B2301.validate_router_settings_weights with the new team ID before any insert.
+
+  Preserve the partial-write order. A dictionary model_aliases, including {}, creates a model-alias
+  row first, with created_by and updated_by equal to the caller user_id or proxy admin name. B818's
+  all-proxy-MCP grant check follows, then B816 writes object permissions, then B802 creates a member
+  budget when its predicate requires one. Construct TeamTable and set each non-null ordinary/premium
+  metadata field through B861. B2317's get_budget_reset_time supplies budget_reset_at and each budget
+  window's ISO reset_at. Extract members and persist an empty members_with_roles list initially;
+  serialize router_settings as supplied or {}. Use B2304.encrypt_callback_vars on metadata BEFORE
+  B124.jsonify_team_object and insertion. Both logging[].callback_vars and
+  callback_settings.callback_vars must exercise actual encryption, prefix-idempotence and unchanged
+  nonsensitive values. Its source catches encryption failure and returns the original value; the
+  compatibility case must expose that plaintext fallback rather than claim every write is encrypted.
+
+  Only the team insert and B819.reconcile_team_access_group_membership share a transaction. A failure
+  there rolls back the team and access-group changes but leaves the earlier alias, permission and
+  member-budget rows. After commit, B819.invalidate_access_group_caches runs, then B807 adds members
+  and their user-table memberships. A cache or member failure does not undo the committed team. Only
+  then enqueue B065's audit write: action=created, table=LiteLLM_TeamTable, object_id=team_id,
+  before_value=None, fresh UUID/time and changed_by_api_key from the caller. updated_values is the
+  pre-storage TeamTable snapshot with the final member roster: first .json(exclude_none=True),
+  then json.dumps of that JSON STRING. Preserve this double encoding at the event boundary;
+  it is not the encrypted metadata row. B065 owns audit redaction/storage and changed_by selection: trust a truthy
+  litellm-changed-by only when caller/team metadata allow_litellm_changed_by_header is true, otherwise
+  caller user_id or proxy admin name. Use the tracked background-task facility; audit completion is
+  not a prerequisite for the response.
 
 
   Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
   column type; retain source storage types.
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.default_team_settings=None.
+  Audit enablement consumes B065.is_audit_logging_enabled: explicit litellm_settings.store_audit_logs
+  (default None) wins over LITELLM_STORE_AUDIT_LOGS, then the source premium flag supplies the fallback.
+  Let B065 own the no-paid-tier fallback policy. Resolve these settings once through B002 and pass
+  typed values; B803 owns default_team_params conversion and B2303 owns the cipher settings consumed by B2304.
+  In the MIT oracle, B065.create_audit_log_for_update returns before callbacks/database writes when
+  premium_user is not True even if store_audit_logs is explicitly true. Therefore the HTTP audit
+  case checks route success/headers and source no-storage behavior; it must not demand a source audit
+  row. Compare the constructed snapshot/actor in native route tests with a recording audit port.
+  Native delivery enabled by B065's no-paid-tier policy is tested outside equality cases, under
+  that owner's deviation, and cannot make the team insert and audit write atomic.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /team/new -> new_team. For each route
-  send a typed successful request, an invalid or missing target, and a caller lacking that route permission
-  through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes
-  instead prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  This route really does catch Exception and raise B124.handle_exception_on_proxy: HTTPException keeps
+  its status but becomes internal_server_error with its detail and openai_error_param; ProxyException
+  keeps its type/status/param/code, and other exceptions use their status_code or 500 with
+  internal_server_error. Compare those exact envelopes and application/json through B001 HttpCase,
+  including no_database, reserved_team_id, duplicate_team_id, invalid_budget and missing_organization.
+  B052 owns missing/invalid bearer rejection and caller permissions; fixture those HTTP failures without
+  inventing an invalid-target route or assuming all non-admins are forbidden.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -46,11 +104,11 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::team_create::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests team_defaults_precedence, explicit_null_budget_duration, ignored_legacy_defaults,
+  creator_admin_opt_out and audit_setting_precedence use the production B002 loader and exercise the
+  resulting route. Load every listed default key and the audit env binding; use B065's bool conversion
+  tests for invalid env values, with no invented numeric fallback. Add config_yaml seeds containing
+  default_team_params, default_team_settings, disable_auto_add_proxy_admin_to_teams and store_audit_logs.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -63,15 +121,14 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 384 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  384 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 656 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
+  Sizing: 384 nonblank, noncomment pinned source lines including the long route docstring; allow
+  320 production, 300 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 70 config lines, 755 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  native_team_creation_has_no_license_cap proves another team can be created beyond the source license
+  limit; keep this deliberate difference out of the MIT equality corpus.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -96,18 +153,29 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-create-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1337-L1791
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1330-L1791
     why: Own new_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2164-L2210
     why: NewTeamRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L459-L464
-    why: litellm_settings.default_team_settings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L458-L459
+    why: Both default-team settings start as None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1525-L1561
+    why: Actual default reads, precedence and explicit-null budget duration exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1318-L1326
+    why: B803 reads the proxy-admin creator opt-out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L65
+    why: B065 audit enablement precedence and changed-by attribution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L717-L793
+    why: Callback encryption and the pinned failure passthrough before the team write.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: new_team, creator_membership,
-      invalid_org_model, member_budget, duplicate_alias, object_permission, create_rollback, postgres_pinned_rows,
-      postgres_failure_effects.'
+  - text: 'team_preflight cases cover no_database, each_negative_or_nonfinite_budget, zero_budget,
+      soft_budget_equal_or_above, soft_budget_without_explicit_max, invalid_durations, model_budget_guard,
+      output_estimates_admin_only, batch_limit_admin_only, generated_team_id, reserved_team_id,
+      duplicate_team_id, duplicate_alias_allowed, missing_organization, org_ceiling, standalone_user_ceiling,
+      org_skips_user_ceiling, creator_membership, creator_already_present, creator_without_user_id,
+      metadata_guardrails, metadata_validation_rejection and invalid_router_weights.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -115,7 +183,13 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows covers alias_actor_and_json, object_permission, member_budget,
+      premium_and_ordinary_metadata, budget_reset_and_windows, null_router_settings_empty_object,
+      encrypted_callback_slots, callback_prefix_idempotence, callback_encryption_failure_passthrough,
+      team_access_groups_same_transaction, empty_roster_then_members, audit_snapshot_and_actor,
+      audit_snapshot_double_encoded, audit_disabled_skips_event and mit_audit_enabled_still_no_storage.
+      postgres_failure_effects covers failure_after_alias, after_permission, after_member_budget,
+      access_group_rollback, cache_failure_after_commit, member_failure_after_commit and audit_async_failure.'
     proof:
       - postgres-tests
   - text: Every named setting loads through the production config boundary with its pinned default, precedence
@@ -123,7 +197,7 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: native_team_creation_has_no_license_cap proves the only license behavior changed by this route.
     proof:
       - behavior-tests
 checks:
@@ -148,24 +222,33 @@ checks:
         && grep -rlq "default_team_settings" crates/betterlite-config/fuzz/corpus/config_yaml/team-create-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/team-create/post--team-new-success.yaml
-  - tools/oracle/cases/management/team-create/post--team-new-invalid-target.yaml
-  - tools/oracle/cases/management/team-create/post--team-new-unauthorized-caller.yaml
   - tools/oracle/cases/management/team-create/new-team.yaml
+  - tools/oracle/cases/management/team-create/no-database.yaml
+  - tools/oracle/cases/management/team-create/bearer-and-caller-policy.yaml
+  - tools/oracle/cases/management/team-create/budget-boundaries.yaml
+  - tools/oracle/cases/management/team-create/team-id-reserved-or-existing.yaml
+  - tools/oracle/cases/management/team-create/defaults-and-explicit-null.yaml
   - tools/oracle/cases/management/team-create/creator-membership.yaml
   - tools/oracle/cases/management/team-create/invalid-org-model.yaml
   - tools/oracle/cases/management/team-create/member-budget.yaml
-  - tools/oracle/cases/management/team-create/duplicate-alias.yaml
+  - tools/oracle/cases/management/team-create/duplicate-alias-allowed.yaml
   - tools/oracle/cases/management/team-create/object-permission.yaml
   - tools/oracle/cases/management/team-create/create-rollback.yaml
+  - tools/oracle/cases/management/team-create/metadata-and-router-validation.yaml
+  - tools/oracle/cases/management/team-create/callback-storage.yaml
+  - tools/oracle/cases/management/team-create/access-group-transaction.yaml
+  - tools/oracle/cases/management/team-create/member-failure-after-commit.yaml
+  - tools/oracle/cases/management/team-create/audit-enabled-mit-no-storage.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
+  - what: POST /team/new keeps succeeding beyond the source license's team-count cap instead of returning
+      403 with the license-over-limit message.
     why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1337-L1791
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1497-L1503
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns encrypt_callback_vars and its B2303 cipher dependency; this route calls the completed helper
+    before serializing metadata, including its explicit failure passthrough.
+  - B065 owns audit policy, redaction and durable/background delivery; this task constructs the team event.
+  - B2301 owns validate_router_settings_weights; B023 is a downstream integration and is not called.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -249,8 +332,10 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Creator auto-membership follows disable_auto_add_proxy_admin_to_teams, not a universal rule.
+  - A failed access-group reconciliation leaves the previously created model-alias, permission and budget rows.
+  - soft_budget is compared before default max_budget is inherited, so defaulting cannot add another rejection.
+  - An encrypted team row and the audit snapshot originate from different metadata representations.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

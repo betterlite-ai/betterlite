@@ -1,23 +1,70 @@
 id: B867
 title: Management route permission tables
 description: >-
-  Define typed permission-route constants for mcp_management_routes, agent_management_routes, master_key_only_routes,
-  key_management_routes, team_service_account_key_routes, management_routes, spend_tracking_routes, global_spend_tracking_routes,
-  internal_user_routes, internal_user_view_only_routes, org_admin_only_routes, admin_viewer_routes, org_admin_allowed_routes.
-  Preserve every pinned literal, alias, template and enum expansion; these are policy data, not HTTP route
-  registrations. Serve the named groups to route matching and role policy without importing endpoint modules.
-  B207 still owns call-type mapping; B124 no longer owns these table entries. No URL is fetched and no
-  caller string can create a new enum group.
+  Supply management permission tables in betterlite-auth without registering handlers. Own
+  KeyManagementRoutes as well as the eleven LiteLLMRoutes groups below. B868 owns the eight MCP/agent
+  management literals because its composites also use them; import those slices here. Role evaluation
+  stays in B742/B883, and no endpoint service, database, setting or monetary conversion is called here.
 
+  KeyManagementRoutes declares /key/generate, /key/update, /key/delete, /key/regenerate,
+  /key/service-account/generate, /key/{key_id}/regenerate, /key/block, /key/unblock,
+  /key/bulk_update, /team/key/bulk_update, /key/{key_id}/reset_spend, /key/access_group_assignment,
+  /auto_router/manage, /key/info, /key/health, /key/list, /key/aliases, /team/daily/activity,
+  /team/daily/activity/aggregated, /spend/logs and /spend/logs/v2 in that order. Preserve the
+  corresponding named enum variants. access_group_assignment is an opt-in field permission, not a
+  registered path. key_management_routes orders generate/update/delete/info/regenerate/service-account/
+  path-regenerate/list/block/unblock/bulk-update/team-bulk-update, then team activity and its aggregated
+  peer, /team/daily/activity/aggregated/keys, /search, /model_top_keys (the latter two under the same
+  aggregated prefix), /team/daily/activity/export, both spend-log variants, reset-spend, aliases,
+  access-group-assignment and auto-router-manage. It omits KEY_HEALTH. team_service_account_key_routes
+  is the two-element tuple /key/generate then /key/update; master_key_only_routes is
+  /global/spend/reset, /memory-usage-in-mem-cache, /memory-usage-in-mem-cache-items.
 
-  Build the production management_routes module in betterlite-auth; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  management_routes starts /user/new, /management/v1/users/bulk, /user/update, /user/bulk_update,
+  /user/delete, /management/v1/users/bulk_delete, /user/info, /user/list; then the user daily family
+  /user/daily/activity with suffixes '', /aggregated, /aggregated/keys, /aggregated/search,
+  /aggregated/model_top_keys, /export, /aggregated/cache_leakage_keys in that order. Continue
+  /team/new, /team/update, /team/{team_id}, /team/delete, /team/list, /v2/team/list, /team/info,
+  /team/block, /team/unblock, /team/available, /team/metadata_schema, /team/permissions_list,
+  /team/permissions_update, /team/permissions_bulk_update; the same daily family under /team without
+  cache_leakage_keys; /team/spend/by_user, /gateway/daily/activity, /model/new, /model/update,
+  /model/delete, /model/info, then /jwt/key/mapping with suffixes /new, /update, /delete, /list, /info.
+  Append key_management_routes, B868 mcp_management_routes, then B868 agent_management_routes.
 
+  spend_tracking_routes contains /spend/keys, /spend/users, /spend/tags, /spend/calculate, /spend/logs,
+  /spend/logs/v2, /spend/logs/ui, /spend/logs/ui/{request_id}, /spend/logs/session/ui,
+  /key/spend/report, /user/spend/report, /team/spend/report, /organization/spend/report,
+  /management/v1/spend_logs/end_users, /management/v1/spend_logs/users, /cost/estimate.
+  global_spend_tracking_routes instead contains /global/spend/logs, /global/spend,
+  /global/spend/keys, /teams, /end_users, /models (each under /global/spend),
+  /global/predict/spend/logs, /global/spend/report, /global/spend/provider, /global/spend/tags,
+  /global/spend/all_tag_names, /spend/capture_rate. The global group is not folded into either
+  internal-user group.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/_types.py:
-  LiteLLMRoutes.mcp_management_routes (L583-L587; 5 source lines), LiteLLMRoutes.agent_management_routes
-  (L606-L612; 7 source lines), LiteLLMRoutes.master_key_only_routes (L688-L692; 5 source lines), LiteLLMRoutes.key_management_routes
+  internal_user_routes starts /global/activity, /global/activity/model, /global/activity/cache_hits;
+  the six daily-family literals under /tag, then /tag/list; /v1/models/{model_id}, /models/{model_id},
+  /guardrails/list, /v2/guardrails/list, /project/list, /project/info, /search_tools/list,
+  /search_tools/ui/available_providers. Append spend_tracking, key_management, then B868 compliance.
+  internal_user_view_only_routes appends compliance and the seven tag literals to spend_tracking,
+  and never appends key_management. org_admin_only_routes is exactly /organization/info,
+  /organization/delete, /organization/member_add, /organization/member_update,
+  /organization/member_delete; deleting a member must stay in this organization-gated group.
+
+  admin_viewer_routes begins /user/list, /user/available_users, /user/available_roles; the seven user,
+  six team and six tag daily literals followed by /tag/list; /audit, /audit/{id}; the three global
+  activity literals; /customer/list, /customer/info, /spend/logs/session/ui and both management spend-log
+  facets. Continue /callbacks/list, /callbacks/configs, /get/config/callbacks, /alerting/settings,
+  /config/list, /config/field/info, /budget/list, /management/v1/budgets, /budget/settings,
+  /invitation/info, /guardrails/list, /v2/guardrails/list, /guardrails/submissions,
+  /guardrails/submissions/{guardrail_id}, /guardrails/usage/overview, /policies/attachments/list,
+  /get/mcp_semantic_filter_settings, /schedule/model_cost_map_reload/status, /model/cost_map/source,
+  /auto_router/classifier/default_prompt. Append spend_tracking then B868 info_routes. This table
+  does not replace B742's safe-method rule: a new GET route need not appear here. Finally
+  org_admin_allowed_routes concatenates org_admin_only, management, B868 self_managed and admin_viewer,
+  preserving duplicates and their order. No table here decides whether its handler authorizes a caller.
+
+  Production ownership in litellm/proxy/_types.py: KeyManagementRoutes (L287-L325),
+  LiteLLMRoutes.master_key_only_routes (L688-L692; 5 source lines), LiteLLMRoutes.key_management_routes
   (L694-L719; 26 source lines), LiteLLMRoutes.team_service_account_key_routes (L721-L724; 4 source lines),
   LiteLLMRoutes.management_routes (L726-L782; 53 source lines), LiteLLMRoutes.spend_tracking_routes (L784-L805;
   18 source lines), LiteLLMRoutes.global_spend_tracking_routes (L807-L821; 14 source lines), LiteLLMRoutes.internal_user_routes
@@ -26,31 +73,15 @@ description: >-
   (L1050-L1126; 59 source lines), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129; 1 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  B856 Management::auth exposes the immutable tables, and Python reads the original enum values.
+  Compare whole ordered arrays for each named group and all enum name/value pairs. Native
+  literal_cases has a named rstest row for each path and table; group_expansion checks exact
+  concatenations, internal_roles_exclude_global_spend and key_health_not_key_management protect
+  omissions. B171 owns unknown helper tags and decoder replay; there is no new byte boundary.
+  Keep the declarations and adjacent tests in domain submodules below 300 lines.
 
-
-  Add the management_routes operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-routes-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 237 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  237 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 474 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Count 247 nonblank noncomment declaration lines, excluding the enum docstring. Reserve 255
+  production, 250 table tests, 80 adapter and 30 dispatch lines: 615 within a 650-line gate.
 scope:
   paths:
     - crates/betterlite-auth/src/management_routes.rs
@@ -67,10 +98,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/management-routes-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L583-L587
-    why: Own LiteLLMRoutes.mcp_management_routes; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L606-L612
-    why: Own LiteLLMRoutes.agent_management_routes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L287-L325
+    why: KeyManagementRoutes supplies the literal enum values used by the key and service-account tables.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L688-L692
     why: Own LiteLLMRoutes.master_key_only_routes; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L694-L719
@@ -96,10 +125,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1129-L1129
     why: Own LiteLLMRoutes.org_admin_allowed_routes; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: literal_membership,
-      alias_membership, group_expansion, unknown_group.'
-    proof:
-      - behavior-tests
+  - text: Whole-table cases and named literal_cases cover all eleven groups, enum values, exact concatenation order and the two explicit omission tests.
+    proof: [behavior-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -124,14 +151,20 @@ checks:
         && grep -rlq "management_routes" tools/oracle/fuzz/corpus/helper_case/management-routes-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/management-routes/literal-membership.yaml
-  - tools/oracle/cases/helpers/management-routes/alias-membership.yaml
-  - tools/oracle/cases/helpers/management-routes/group-expansion.yaml
-  - tools/oracle/cases/helpers/management-routes/unknown-group.yaml
+  - tools/oracle/cases/helpers/management-routes/key-enum-complete.yaml
+  - tools/oracle/cases/helpers/management-routes/master-key-only.yaml
+  - tools/oracle/cases/helpers/management-routes/key-management-without-health.yaml
+  - tools/oracle/cases/helpers/management-routes/team-service-account-pair.yaml
+  - tools/oracle/cases/helpers/management-routes/management-concatenation.yaml
+  - tools/oracle/cases/helpers/management-routes/spend-tracking.yaml
+  - tools/oracle/cases/helpers/management-routes/global-spend-tracking.yaml
+  - tools/oracle/cases/helpers/management-routes/internal-user-without-global-spend.yaml
+  - tools/oracle/cases/helpers/management-routes/internal-viewer-without-key-writes.yaml
+  - tools/oracle/cases/helpers/management-routes/organization-admin-only.yaml
+  - tools/oracle/cases/helpers/management-routes/admin-viewer-concatenation.yaml
+  - tools/oracle/cases/helpers/management-routes/organization-admin-allowed-concatenation.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
@@ -140,8 +173,9 @@ out_of_scope:
     (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
   - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
     (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
-    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
-    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_management_routes
+    (L583-L587), LiteLLMRoutes.mcp_routes (L591-L591), LiteLLMRoutes.agent_inference_routes (L594-L601),
+    LiteLLMRoutes.agent_management_routes (L606-L612), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
     (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
     LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
     (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
@@ -180,9 +214,10 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - Preserve every pinned literal, alias, template and enum expansion; these are policy data, not HTTP
-    route registrations.
+  - KEY_HEALTH exists in the enum but is absent from key_management_routes; deriving that list from all variants broadens the grant.
+  - Adding global_spend_tracking_routes to internal_user_routes exposes other tenants' spend.
+  - The viewer table includes semantically read-only POST paths and is not an exhaustive GET allowlist.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

@@ -2,8 +2,60 @@ id: B846
 title: Aggregate model group metadata
 description: >-
   Implement ModelGroupInfo aggregation from deployment metadata, retaining capability, limit, cost and
-  provider fields with source merge rules and Decimal money. Keep cache entries generation-scoped; do
-  not rebuild catalog mutation or provider discovery.
+  provider fields with source merge rules and Decimal money. B847 caches this result; B844 invalidates
+  that cache when deployments change.
+
+
+  Use B844 get_model_list, B845 get_deployment_model_info, B367 pattern_router.route, B174 provider
+  resolution, B175 supported OpenAI parameters, local cost normalization, B323 deployment mapping and
+  reasoning-effort intersection, B2216 Anthropic fast-mode capability and B301 LiteLLM_Params. Own all
+  ModelGroupInfo fields L785-L817: model_group/providers required; token limits, costs (including
+  input_cost_per_pixel), tpm/rpm/itpm/otpm and configurable_clientside_auth_params default None; mode
+  defaults "chat"; seven supports_* booleans default false and explicit None becomes false;
+  supported_reasoning_efforts defaults None and supported_openai_params defaults an empty list.
+  _resolved_annotations is constructor plumbing for that null-to-false behavior, not a runtime registry.
+
+  Move _cost_value_as_float (router.py L391-L397) here: its only callers are in this aggregation.
+  Null returns None; numeric text and booleans convert with Python float semantics, while TypeError
+  or ValueError returns None silently. Preserve finite values through the existing checked Decimal
+  boundary. cost_scalar_conversion tests null, zero, negative, exponent text, bool and invalid text;
+  the native numeric boundary retains its existing nonfinite/out-of-range rejection.
+
+
+  Resolve aliases before aggregation: string targets are followed with the original user-facing name;
+  mapping hidden=true returns None, other mappings require model, and unsupported alias types return
+  None. A missing hidden/model key propagates its source error. For each looked-up row require a
+  model_name equal to the resolved group or a non-null pattern route; unmatched rows are ignored.
+  None/empty lookup yields None. Parse params, overwriting the pending clientside-auth value on every
+  matched row, including None. Each rate limit selects top-level, params, then model_info, treating
+  zero as present. Sum non-null limits separately, preserving None when no values exist.
+
+
+  Deployment-info lookup happens only for a non-null id, and any lookup exception silently falls back
+  to missing metadata. Capture deployment_is_catalog_mapped before constructing fallback metadata.
+  Provider BadRequestError logs an error and continues with empty model/provider strings; other errors
+  escape. Missing metadata calls get_supported_openai_params, turns None into [], and builds metadata
+  from model_info's costs and mode (missing mode becomes "chat", explicit null stays null), with unknown
+  input/output token maxima and supports_system_messages=None. Do not lose configured Decimal costs.
+
+
+  First metadata initializes the group, including mode and pixel cost; later rows add each new provider
+  once in encounter order, widen non-null input/output token maxima and take larger non-null per-token
+  prices. Later true values enable parallel_function_calling, vision, function_calling, web_search,
+  url_context and reasoning; false never removes a true capability. The last non-null
+  supported_openai_params replaces the list, including an empty list; it is not a union. Mode and
+  input_cost_per_pixel remain the first row's values. Metadata tpm/rpm fallback applies only to later
+  rows and only if none of the three configured locations supplied a value; there is no analogous
+  metadata fallback for itpm/otpm. Preserve that first-row asymmetry.
+
+
+  supports_fast_mode starts true for aggregation and becomes the conjunction of B2216 capability for
+  every matched deployment. Resolve reasoning efforts per deployment: one unknown result makes the
+  final result None permanently; otherwise initialize from the first known tuple and intersect later
+  tuples through B323, retaining a known empty tuple. Apply totals at the end and assign clientside-auth
+  params only if the final matched row's value is non-null. No settings, database writes or secret
+  storage occur here. The helper oracle supplies catalog/provider metadata snapshots and compares
+  every field, null/empty distinction and error-log event; it never calls a provider network endpoint.
 
 
   Build the production model_group_info module in betterlite-router; reuse the typed dependencies listed
@@ -17,10 +69,6 @@ description: >-
   (L813-L817; 5 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Add the model_group_info operation under B856 Management::models. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
@@ -28,20 +76,10 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 249 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  249 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 492 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The two router ranges contain 229 lines excluding blanks/comments/docstrings, plus 34 type/constructor
+  and seven cost-helper lines. Allow 270 production, 330 tests, 105 adapters and 35 wiring lines,
+  740 within 775. Metadata
+  decoder/schema validation belongs to the listed dependencies; no new byte boundary is introduced.
 scope:
   paths:
     - crates/betterlite-router/src/model_group_info.rs
@@ -58,6 +96,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-group-info-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L391-L397
+    why: Scalar conversion belongs with its sole aggregation caller, below the router umbrella.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10909-L11198
     why: Pinned implementation and exact ownership boundary for model_group_info.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L780-L817
@@ -72,7 +112,7 @@ references:
     why: Own ModelGroupInfo.__init__; preserve caller-visible values and failure ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: mixed_provider_group,
-      widest_token_limit, capability_merge, group_cost, unknown_group, group_cache_refresh.'
+      widest_token_limit, capability_merge, group_cost, unknown_group, deployment_order_effects.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -100,12 +140,36 @@ checks:
         && grep -rlq "model_group_info" tools/oracle/fuzz/corpus/helper_case/model-group-info-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
+  - tools/oracle/cases/helpers/model-group-info/cost-scalar-conversion.yaml
   - tools/oracle/cases/helpers/model-group-info/mixed-provider-group.yaml
   - tools/oracle/cases/helpers/model-group-info/widest-token-limit.yaml
   - tools/oracle/cases/helpers/model-group-info/capability-merge.yaml
   - tools/oracle/cases/helpers/model-group-info/group-cost.yaml
   - tools/oracle/cases/helpers/model-group-info/unknown-group.yaml
-  - tools/oracle/cases/helpers/model-group-info/group-cache-refresh.yaml
+  - tools/oracle/cases/helpers/model-group-info/deployment-order-effects.yaml
+  - tools/oracle/cases/helpers/model-group-info/type-defaults-and-null-bools.yaml
+  - tools/oracle/cases/helpers/model-group-info/string-alias-name.yaml
+  - tools/oracle/cases/helpers/model-group-info/hidden-alias-none.yaml
+  - tools/oracle/cases/helpers/model-group-info/invalid-alias-kind.yaml
+  - tools/oracle/cases/helpers/model-group-info/malformed-alias-error.yaml
+  - tools/oracle/cases/helpers/model-group-info/wildcard-row-match.yaml
+  - tools/oracle/cases/helpers/model-group-info/unmatched-row-ignored.yaml
+  - tools/oracle/cases/helpers/model-group-info/limit-source-precedence.yaml
+  - tools/oracle/cases/helpers/model-group-info/zero-and-null-totals.yaml
+  - tools/oracle/cases/helpers/model-group-info/first-row-limit-asymmetry.yaml
+  - tools/oracle/cases/helpers/model-group-info/lookup-error-fallback.yaml
+  - tools/oracle/cases/helpers/model-group-info/missing-id-fallback.yaml
+  - tools/oracle/cases/helpers/model-group-info/provider-error-logged.yaml
+  - tools/oracle/cases/helpers/model-group-info/provider-other-error.yaml
+  - tools/oracle/cases/helpers/model-group-info/fallback-chat-and-cost.yaml
+  - tools/oracle/cases/helpers/model-group-info/first-mode-pixel-cost.yaml
+  - tools/oracle/cases/helpers/model-group-info/last-supported-params.yaml
+  - tools/oracle/cases/helpers/model-group-info/last-auth-param-null.yaml
+  - tools/oracle/cases/helpers/model-group-info/last-auth-param-present.yaml
+  - tools/oracle/cases/helpers/model-group-info/fast-mode-all-deployments.yaml
+  - tools/oracle/cases/helpers/model-group-info/reasoning-intersection.yaml
+  - tools/oracle/cases/helpers/model-group-info/reasoning-unknown-sticky.yaml
+  - tools/oracle/cases/helpers/model-group-info/reasoning-known-empty.yaml
 deviations: []
 out_of_scope:
   - 'litellm/router.py: B013 owns _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
@@ -177,7 +241,7 @@ out_of_scope:
     Router._deployment_tags (L9089-L9091), Router._is_complexity_router_deployment (L9138-L9144), Router.config_deployments
     (L9146-L9153), Router._is_adaptive_router_deployment (L9233-L9235), Router._deployment_participates_in_adaptive_routing
     (L9237-L9250), Router.deployment_is_active_for_environment (L9504-L9517), Router._backend_cost_map_keys
-    (L10024-L10029), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11507-L11513),
+    (L10024-L10029), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router._declared_param_allowlist (L11946-L11950), Router._deployment_accepts_param
     (L11953-L11982), Router.resolved_litellm_models (L12080-L12097), Router._is_model_access_group_for_wildcard_route
     (L12166-L12183), Router.get_available_deployment (L14153-L14312), Router.get_available_deployment_for_pass_through
@@ -321,9 +385,7 @@ out_of_scope:
   - 'litellm/types/router.py: B362 owns PreRoutingStrategy.async_pre_routing_hook (L1154-L1161).'
   - 'litellm/types/router.py: B363 owns RoutingPlugin.run (L1191-L1191), ClassifierPlugin.classify (L1206-L1206).'
   - 'litellm/types/router.py: B388 owns AdaptiveRouterWeights._weights_sum_to_one (L1227-L1231).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/router.py: B844 owns Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
+  - 'litellm/router.py: B844 owns Router._deployment_ids (L11506-L11513), Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
     (L10301-L10321), Router._build_model_name_index (L11397-L11415), Router._build_model_id_to_deployment_index_map
     (L11417-L11442), Router.get_model_ids (L11444-L11476), Router.get_candidate_model_ids_for_route (L11478-L11504),
     Router.has_model_id (L11515-L11526), Router.resolve_model_name_from_model_id (L11528-L11583), Router.should_include_deployment
@@ -343,7 +405,7 @@ out_of_scope:
     (L11331-L11365), Router.set_response_headers (L11367-L11395), Router.get_model_access_groups (L12120-L12164),
     Router._filter_deployments_by_model_access_groups (L12941-L12993).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - 'litellm/router.py: B016 owns the remaining functions _cost_value_as_float (L391-L397), _as_retry_skipped_deployment_ids
+  - 'litellm/router.py: B016 owns the remaining functions _as_retry_skipped_deployment_ids
     (L479-L480), _silent_experiment_targets (L483-L494), _silent_experiment_kwargs_snapshot (L497-L501),
     _with_router_resolved_session_model (L504-L517), FallbackAwareAnthropicMessagesStream.__init__ (L633-L637),
     FallbackAwareAnthropicMessagesStream.has_buffered_provider_output (L639-L641), FallbackAwareAnthropicMessagesStream.chunks
@@ -419,7 +481,7 @@ out_of_scope:
     (L10248-L10265), Router.get_deployment_credentials (L10286-L10299), Router._deployment_usable_by_team
     (L10323-L10331), Router._get_model_group_deployment_usable_by_team (L10333-L10348), Router.get_credential_deployment
     (L10550-L10570), Router._get_wildcard_deployment_usable_by_team (L10581-L10597), Router.get_deployment_credentials_with_provider
-    (L10599-L10661), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11506-L11513),
+    (L10599-L10661), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
     (L11757-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
     (L11769-L11818), Router.get_model_list_from_routing_groups (L11889-L11912), Router._materialize_routing_group_rows
@@ -535,8 +597,9 @@ out_of_scope:
   - 'litellm/types/router.py: B363 owns the remaining functions RoutingPlugin.run (L1191-L1191), ClassifierPlugin.classify
     (L1206-L1206).'
 pitfalls:
-  - Capability and token-limit aggregation use their own merge rules, not a single last-write-wins merge.
+  - A later deployment replaces supported_openai_params while its false capability flags cannot unset an earlier true flag.
+  - Metadata-only tpm/rpm from the first deployment is not summed like metadata-only limits from later deployments.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

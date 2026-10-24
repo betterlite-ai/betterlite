@@ -1,9 +1,35 @@
 id: B1209
 title: Team list scope and response query preparation
 description: >-
-  Build team-list visibility, organization/member scopes, batched key counts and access-group response
-  expansion from typed filters. Return a bound query plan and projected rows; /team/list, /v2/team/list
-  and /team/filter/ui consume it without broadening tenant scope.
+  Build the visibility/query projections consumed by B813. B736 get_user_object uses user_id_upsert=False;
+  organization-admin discovery returns None on ValueError, missing user or no org_admin memberships.
+  Own-team lookup uses check_db_only=True and returns () only for UserNotFoundError or a missing user.
+  Keep other errors visible. B2314 supplies user_api_key_has_admin_view; B742 supplies allowed_route_check_inside_route,
+  B801 the typed tables/log sanitizer, B724 TeamRepository and B1231 response types.
+
+  V2 admin/viewer callers retain any requested user_id without org scope. Org admins cannot request
+  an organization outside their administered IDs (403 detail.error). Own queries clear user_id and
+  union administered organizations with DB-direct team memberships; other-user queries retain user_id
+  and do not add the caller's teams. Other callers failing the route check get 401 detail.error;
+  accepted callers default user_id to their own ID. Legacy /team/list differs: ordinary own-query must
+  explicitly match user_id, and own queries filter all teams by roster user_id across organizations.
+  Org-admin non-own queries read only org teams and optionally filter their roster, including model table.
+
+  Query predicates ignore falsy team_id/team_alias/search/organization_id. Alias search is insensitive
+  contains; search ORs that with exact team_id by default, or case-sensitive startsWith for prefix.
+  Explicit organization_id wins; otherwise org/own membership union is nested in AND so search cannot
+  broaden it. A requested user's ValueError or missing row is 404; deleted-table queries use members.has
+  even with no current teams. Live queries with no teams return None (skip SQL), a nonmember exact
+  team_id is 404, and other live queries use team_id.in. All helper failures remain HTTPException with
+  detail.error until the calling route maps them.
+
+  Access groups: empty IDs or absent DB returns {}, otherwise deduplicate IDs into one query and omit
+  missing rows silently. Count keys with one GROUP BY team_id restricted to the page's truthy IDs;
+  empty pages skip SQL and absent _count.team_id means zero. Response conversion tries model_dump then
+  dict on any failure. Deleted rows use their own model; live non-list members_with_roles becomes [],
+  members_count is its length, and absent/empty team ID or missing key count means keys_count=0.
+  Test reads with POSTGRES_TEST_URL or testcontainers; only pure predicates/row projections enter the
+  helper oracle. This component does not validate sorting or expand group resources into team models.
 
 
   Build the production team_list_query module in betterlite-server; reuse the typed dependencies listed
@@ -19,11 +45,10 @@ description: >-
   (L5783-L5854; 63 source lines).
 
 
-  Add the team_list_query operation under B856 Management::teams. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-list-query-*
-  seed to B171 helper_case, which already owns this decoder.
+  The B856 Management::teams helper operation invokes only _convert_teams_to_response_models with
+  typed rows and precomputed key counts. B171 supplies its decoder. The query builder itself can load
+  a user, so its filtering cases, authorization, access-group fetch and GROUP BY counts all run against
+  the native repository services and Postgres; they are not pure helper cases.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -37,8 +62,8 @@ description: >-
 
 
   Sizing: 315 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  315 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 552 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  315 production, 275 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 685 changed lines estimated within a 725-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -73,8 +98,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5783-L5854
     why: Own _authorize_and_filter_teams; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_team_only, org_admin_scope,
-      batched_key_counts, invalid_sort.'
+  - text: >-
+      Cases org_lookup_value_error, direct_teams_bypass_cache, unexpected_lookup_error_propagates,
+      admin_view_unrestricted, org_own_union, org_other_user_intersection, foreign_org_403,
+      regular_other_user_401, regular_default_self, legacy_explicit_self, legacy_roster_filter,
+      exact_and_prefix_search, insensitive_alias, search_and_scope_intersection, explicit_org_wins,
+      missing_user_404, deleted_members_has, empty_membership_skips_query, nonmember_team_404,
+      access_groups_deduplicated_missing_omitted, groups_without_db_empty, batched_key_counts,
+      empty_page_no_count_query, missing_count_zero, model_dump_fallback, nonlist_roster_empty,
+      deleted_row_projection and live_counts exercise each projection and query branch.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -101,14 +133,11 @@ checks:
         && grep -rlq "team_list_query" tools/oracle/fuzz/corpus/helper_case/team-list-query-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/team-list-query/member-team-only.yaml
-  - tools/oracle/cases/helpers/team-list-query/org-admin-scope.yaml
-  - tools/oracle/cases/helpers/team-list-query/batched-key-counts.yaml
-  - tools/oracle/cases/helpers/team-list-query/invalid-sort.yaml
+  - tools/oracle/cases/helpers/team-list-query/response-count-defaults.yaml
+  - tools/oracle/cases/helpers/team-list-query/deleted-and-live-row-projection.yaml
+  - tools/oracle/cases/helpers/team-list-query/dump-fallback-and-malformed-roster.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -174,8 +203,8 @@ out_of_scope:
     (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
     check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
     (L1109-L1178).'
-  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
-    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B2370 owns patch_team (L2568-L2642);
+    B1205 owns _set_budget_reset_at (L2645-L2663) and handle_update_object_permission (L2666-L2687).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
     _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
     (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
@@ -189,9 +218,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Return a bound query plan and projected rows; /team/list, /v2/team/list and /team/filter/ui consume
-    it without broadening tenant scope..
+  - Legacy own queries filter members_with_roles, while V2 membership filters read user.teams; stale data can make their answers differ.
+  - Keep the organization/member OR under AND when search already contributes an OR.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: security

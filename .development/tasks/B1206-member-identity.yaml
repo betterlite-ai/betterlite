@@ -1,9 +1,26 @@
 id: B1206
 title: Team member identity and provisioning checks
 description: >-
-  Resolve team-member user IDs/emails and validate provisioning against typed live users. Preserve user_id/email
-  precedence and do not create a user before caller permission is checked by B807. This leaf returns a
-  member identity plan for the writer-locked roster operation.
+  Resolve member identities and execute the per-member writes requested by B807/B808. Missing both
+  user_id and user_email is HTTPException 400 with detail.error. With both supplied, B124 get_data(user,
+  find_all) queries the email, accepts no match, rejects multiple matches or a mismatched ID with 400,
+  and preserves matching inputs. Email-only first uses B801's case-insensitive find_first; only a match
+  triggers the duplicate-email query and fills user_id. ID-only uses find_unique and fills email if found;
+  an unknown ID passes resolution unchanged. These reads do not create a user.
+
+  Query B723 UserRepository once with sorted unique non-null supplied IDs, or not at all for an empty set.
+  Union found IDs with IDs populated from emails. Only PROXY_ADMIN, including its string representation,
+  may provision an unknown supplied ID; others get 403 detail.error listing the first 10 IDs in request
+  order and the remaining count. Email invitations and existing IDs remain allowed. B807 checks caller
+  permissions before this task's writes, but it is a caller, not a dependency.
+
+  _process_team_members accepts one member or a list and skips an existing roster ID OR exact email match.
+  It passes metadata.team_member_budget_id, max_budget_in_team, budget_duration, caller and the same tx
+  to B1227 add_new_member. Explicit allowed_models=[], unlike None, overrides a truthy
+  default_team_member_models. Append users in request order and only non-null memberships; any add failure
+  becomes HTTPException 500 detail.error without undoing previous members outside a caller transaction.
+  Resolve roster snapshots from updated users, filling only falsy identity fields and taking the first
+  match. Preserve role and other member fields. Skipped members do not change role.
 
 
   Build the production member_identity module in betterlite-server; reuse the typed dependencies listed
@@ -18,11 +35,10 @@ description: >-
   (L3120-L3153; 31 source lines), _validate_and_populate_member_user_info (L3245-L3346; 70 source lines).
 
 
-  Add the member_identity operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a member-identity-*
-  seed to B171 helper_case, which already owns this decoder.
+  Use B856 Management::teams and B171 helper_case only for _resolve_member_identity,
+  _member_already_in_team and _validate_member_user_id_provisioning over supplied rows/IDs. Test the
+  database-backed resolution and _process_team_members with native services and Postgres through
+  POSTGRES_TEST_URL or testcontainers. Preserve the documented error and partial-write ordering.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -36,8 +52,8 @@ description: >-
 
 
   Sizing: 217 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  217 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 451 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  217 production, 260 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 572 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -49,8 +65,8 @@ scope:
     - tools/oracle/src/helpers/member_identity/**
     - tools/oracle/helpers/member_identity.py
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/member-identity/**
     - tools/oracle/fuzz/corpus/helper_case/member-identity-*
   lint_tables: false
@@ -70,8 +86,16 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3245-L3346
     why: Own _validate_and_populate_member_user_info; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: email_to_user_id, unknown_user_provisioning,
-      existing_role_change.'
+  - text: >-
+      Cases missing_identity_400, both_identity_unknown, both_identity_mismatch, duplicate_email_400,
+      email_insensitive_first_match, email_unknown_unchanged, id_fills_email, id_unknown_unchanged,
+      supplied_ids_one_sorted_query, no_ids_no_query, populated_ids_count_as_existing,
+      admin_can_provision, nonadmin_unknown_ids_403, ten_unknown_ids_and_remainder,
+      existing_id_or_email_skipped, explicit_empty_models, default_member_models,
+      same_transaction_and_budget_arguments, member_results_in_order, failed_add_500_partial_writes,
+      roster_fills_each_identity and supplied_identity_retained cover the identity and write branches.
+      Persistence cases use POSTGRES_TEST_URL, falling back to testcontainers; pure roster and
+      provisioning decisions use the MIT helper oracle.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -100,11 +124,11 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/member-identity/email-to-user-id.yaml
   - tools/oracle/cases/helpers/member-identity/unknown-user-provisioning.yaml
-  - tools/oracle/cases/helpers/member-identity/existing-role-change.yaml
+  - tools/oracle/cases/helpers/member-identity/roster-id-or-email-match.yaml
+  - tools/oracle/cases/helpers/member-identity/provisioning-first-ten.yaml
+  - tools/oracle/cases/helpers/member-identity/fill-roster-identities.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -170,8 +194,8 @@ out_of_scope:
     (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
     check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
     (L1109-L1178).'
-  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
-    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B2370 owns patch_team (L2568-L2642);
+    B1205 owns _set_budget_reset_at (L2645-L2663) and handle_update_object_permission (L2666-L2687).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1207 owns _is_member_addressed_by (L3508-L3511),
     _cleanup_members_with_roles (L3514-L3528), team_member_delete (L3537-L3575), _team_member_delete (L3578-L3753).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1208 owns team_member_me (L5019-L5123), block_team
@@ -185,9 +209,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve user_id/email precedence and do not create a user before caller permission is checked by
-    B807.
+  - Email-only resolution starts case-insensitively, but roster duplicate detection compares exact strings.
+  - A new connection in add_new_member would lose the supplied transaction while the caller holds a roster lock.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

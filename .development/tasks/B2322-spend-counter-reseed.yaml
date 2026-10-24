@@ -1,0 +1,126 @@
+id: B2322
+title: Authoritative spend reads and cold-counter reseeding
+description: >-
+  Extract spend_counter_reseed.py L47-L413 into betterlite-auth::spend_reseed below B739/B751/B752's
+  current-spend caller. Own constants, _as_utc, SpendCounterReseed._get_lock, increment_in_memory,
+  from_db, _counter_row, end_user_from_db, _is_key_or_team_window_counter, _read_active_batch,
+  coalesced, window_from_table, window_from_db and window_from_spend_logs. B070 retains coalesced_window
+  L416-L491 and later write integration. Use B715 gates, typed repositories and B2316 batch answers.
+
+  SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE is int(os.getenv(...,10000)) at import: absent10000, malformed
+  or empty fails startup, zero/negative are accepted and evict each newly inserted lock. Keep an LRU
+  lock registry protected by one registry lock; hits move to the end and overflow evicts one oldest
+  entry even if held. increment_in_memory takes the same per-key lock and increments local_only=true,
+  refresh_ttl=true; errors propagate. Native cancellation releases held locks.
+
+  from_db skips missing DB and valid key/team :window:<duration> counters. Use the last :window:
+  suffix and B199 duration parser; invalid/empty durations do not suppress a normal row lookup. Only
+  spend:key:, spend:team:, spend:team_member:, spend:user:, spend:org:, spend:project: map to repositories
+  B722/B724/B726/B723; strip that exact prefix, allowing empty IDs. Team-member suffix splits at the
+  last colon and requires one, yielding user_id/team_id composite. B715 bounded lookup name is
+  spend_counter with the gate inside; query failures exception-log and return None. Missing rows
+  return None; missing/falsey spend becomes0. Float conversion after the catch can still fail.
+  End-user floor reads accept only spend:end_user:, query B726 by user_id under end_user_spend bound,
+  exception-log query failures and return None, otherwise float(spend or0). Tags/groups do not reseed.
+
+  coalesced defaults require_cache_warm=false. Under the per-key lock use a nonnull B2316 batch value
+  first; any existing batch answer establishes a clean Redis miss even when its verified flag is false.
+  Otherwise read Redis: hit returns float, clean miss forbids local fallback, Redis exception silently
+  permits local cache fallback. A local hit returns float. Read DB only after these miss. Missing DB
+  spend returns None; zero must be warmed. Redis SET NX initializes once across pods; a loser reads
+  the winner, using DB spend if the winner already vanished. Set local cache then record the request
+  batch. Without Redis re-read local value and store max(DB,local), preventing an in-flight local delta
+  being lost. Warm failure exception-logs and returns current_value unless require_cache_warm=true,
+  which rethrows; earlier writes remain. Do not multiply seed values with INCRBYFLOAT.
+
+  Window types map Key/Team to key/team entity labels and api_key/team_id log fields; unsupported types
+  and missing DB return None. Maintained row lookup uses entity_type/entity_id/window_duration compound
+  key. Query failure logs and returns None; missing or window_start older than expected returns None.
+  Naive timestamps gain UTC; aware timestamps retain their zone; equality and future row starts are
+  trusted. Return float(spend or0). window_from_db tries this row only for nonnull duration, otherwise
+  or on a miss aggregates B726 SpendLogs by its entity field with startTime>=window_start, sum spend.
+  Query failure logs and returns None; empty aggregate returns0. Read only the first aggregate row,
+  accepting mapping or attribute _sum/spend shapes, and normalize falsey spend to0. Conversion errors
+  outside query catches propagate. There are no database writes; only cache mutations described above.
+
+  B856 auth spend_reseed helper operations use the real source methods with repository/cache/clock
+  fixtures and production Rust. B860 Postgres fixtures use POSTGRES_TEST_URL or testcontainers and
+  independent schemas; test real reset rows and query shapes. B002 loader cases reseed_lock_default10000,
+  invalid_integer_stops_startup and zero_negative_lock_bound_consumer cover the actual env read, with
+  config_yaml seeds. Existing B733 cache decoders suffice; no new byte parser. The 270 nonblank
+  non-comment lines excluding docstrings
+  allow 285 production, 280 tests, 80 adapters, 65 config and 60 wiring, 770 within800.
+scope:
+  paths:
+    - crates/betterlite-auth/src/spend_reseed.rs
+    - crates/betterlite-auth/src/spend_reseed/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-config/src/spend_reseed.rs
+    - crates/betterlite-config/src/spend_reseed/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-reseed-*
+    - tools/oracle/src/helpers/spend_reseed.rs
+    - tools/oracle/helpers/spend_reseed.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/spend-reseed/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-reseed-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L47-L295
+    why: Registry, primary reads, cache precedence and ordered NX warming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L297-L413
+    why: Maintained-window freshness and aggregate fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1809-L1809
+    why: Actual integer environment read and default.
+dod:
+  - text: 'Named cases: lru_hit_overflow_zero_negative_and_held_eviction, local_increment_same_lock,
+      all_primary_prefixes_and_empty_ids, member_last_colon_split, valid_window_only_suppresses_key_team,
+      primary_query_bound_gate_error_log_and_none, conversion_after_query_catch,
+      enduser_prefix_floor_read_and_no_tag_reseed, batch_hit_and_clean_miss_precedence,
+      redis_hit_miss_error_local_fallback, one_db_load_per_lock, zero_warmed,
+      multipod_nx_winner_not_multiplied, vanished_nx_winner_uses_db, local_delta_max_preserved,
+      warm_failure_partial_effects_default_vs_required, window_entity_mapping_and_compound_key,
+      window_old_equal_future_naive_and_aware, absent_duration_skips_maintained_row,
+      aggregate_entity_start_filter_empty_and_first_row, mapping_and_attribute_sum_shapes,
+      query_failure_falls_back_but_conversion_propagates.'
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Environment loader and helper cases have new production-decoder seeds.
+    proof: [config-tests, config-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Spend reads, concurrency or ordered cache effects differ from source.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_reseed::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: The integer setting falls back instead of failing startup or is not consumed.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^spend_reseed::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: New config seed is absent or fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/spend-reseed-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The independent source adapter is missing or invalid.
+      run: test -f tools/oracle/helpers/spend_reseed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new helper operation has no corpus seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/spend-reseed-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-reseed/primary-counter-routing.yaml
+  - tools/oracle/cases/helpers/spend-reseed/singleflight-nx-and-partial-warm.yaml
+  - tools/oracle/cases/helpers/spend-reseed/window-freshness-and-aggregate.yaml
+deviations: []
+out_of_scope:
+  - B070 retains coalesced_window L416-L491 and spend writes; it consumes these lower primitives.
+  - B2316 owns request batching, B126 Redis operations, B715 query deadlines and B199 durations.
+pitfalls:
+  - A clean Redis miss must not fall back to stale process memory, even after a batch miss.
+  - The bounded LRU can evict an acquired lock; do not promise universal singleflight across eviction.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

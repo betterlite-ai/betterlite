@@ -1,9 +1,22 @@
 id: B864
 title: Feature and organization key generation switches
 description: >-
-  Implement feature gates for agents and vector stores and organization-admin key generation. The feature
-  gates exempt proxy admins and viewers; configured team-admin exemptions call ManagementAdmins. disable_key_generate_for_org_admin
-  only blocks ORG_ADMIN and never grants any otherwise missing permission.
+  Implement two guards, not route registration. FeatureName accepts agents or vector_stores. Exact
+  proxy_admin and proxy_admin_viewer roles (enum or equivalent string) return before reading settings.
+  Others read disable_{feature}_for_internal_users with default False and pass when falsy. Despite the
+  name, a truthy disable flag blocks every non-proxy-admin role, including org_admin, external users
+  and absent roles. Only if disabled AND allow_{feature}_for_team_admins is truthy call B863
+  _user_has_admin_privileges with caller, DB and cache, omitting the logger. A True result permits both
+  team AND org administrators; False denies. Missing DB/user and lookup failure become False under
+  B863; a thrown collaborator error is not locally caught. Denial is HTTP 403 detail.error exactly
+  'Access to {agents|vector_stores} is disabled for your role. Contact your proxy admin.' No local
+  ProxyException type/param/code or warning is added.
+
+  check_org_admin_can_generate_keys returns immediately for every role except exact org_admin. For
+  that role, falsy disable_key_generate_for_org_admin passes and truthy fails HTTP 403 detail.error
+  'key generation is disabled for org admins. Contact your proxy admin.'. A caller with an org-admin
+  membership but global role internal_user is not blocked by this helper; general key permissions
+  remain the caller's responsibility. No paid-tier branch or license bypass exists in this file.
 
 
   Build the production management_rbac module in betterlite-server; reuse the typed dependencies listed
@@ -16,37 +29,28 @@ description: >-
   22 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.disable_key_generate_for_org_admin=False.
+  All five general_settings keys default False: disable_agents_for_internal_users,
+  allow_agents_for_team_admins, disable_vector_stores_for_internal_users,
+  allow_vector_stores_for_team_admins and disable_key_generate_for_org_admin. There are no environment
+  bindings. The Python branch uses truthiness, not 'is True': null/empty/zero are false and a nonempty
+  string such as 'false' is true if present in the runtime settings map. Do not invent int parsing,
+  startup fallback or a warn-and-ignore path here.
 
 
-  Add the management_rbac operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-rbac-*
-  seed to B171 helper_case, which already owns this decoder.
+  Add Management::models.management_rbac for policy-only cases with an injected immutable settings
+  snapshot and no database. Python calls the pinned guard, not an endpoint or copied predicate. The
+  B863 exemption branch is tested natively with recorded calls and configured True/False/error
+  outcomes; actual membership reads remain B863's Postgres tests. Compare exact 403 detail objects.
 
 
-  Write betterlite-config::management_rbac::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests loads_agents_switches, loads_vector_store_switches, loads_org_key_switch,
+  all_switches_default_false and runtime_truthiness call B002's loader and consume the resulting
+  values in both guards. Include true, false, null and the accepted scalar truthiness cases. Use the
+  existing config_yaml corpus with all five nested keys; no second settings parser is introduced.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 64 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 352 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The two functions contain 50 nonblank noncomment lines excluding docstrings. Allow 70 guards,
+  210 tests, 70 adapters, 50 config and 30 wiring lines, 430 within 500.
 scope:
   paths:
     - crates/betterlite-server/src/management_rbac.rs
@@ -69,6 +73,8 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L41-L61
+    why: Dynamic feature-specific disable/allow settings, False defaults and B863 exemption call.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L17-L68
     why: Own check_feature_access_for_user; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L71-L96
@@ -76,6 +82,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L90-L95
     why: general_settings.disable_key_generate_for_org_admin default and read site.
 dod:
+  - text: exemption_only_when_both_flags, exemption_for_org_or_team_admin, exemption_lookup_false_denies, exemption_error_propagates and exemption_call_arguments prove the B863 boundary.
+    proof: [behavior-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: org_admin_disabled,
       proxy_admin_unaffected, internal_feature_disabled, team_admin_exemption.'
     proof:
@@ -122,15 +130,21 @@ oracle_cases:
   - tools/oracle/cases/helpers/management-rbac/org-admin-disabled.yaml
   - tools/oracle/cases/helpers/management-rbac/proxy-admin-unaffected.yaml
   - tools/oracle/cases/helpers/management-rbac/internal-feature-disabled.yaml
-  - tools/oracle/cases/helpers/management-rbac/team-admin-exemption.yaml
+  - tools/oracle/cases/helpers/management-rbac/admin-viewer-bypasses-settings.yaml
+  - tools/oracle/cases/helpers/management-rbac/both-feature-names-and-errors.yaml
+  - tools/oracle/cases/helpers/management-rbac/disabled-blocks-all-nonadmin-roles.yaml
+  - tools/oracle/cases/helpers/management-rbac/falsy-disabled-short-circuit.yaml
+  - tools/oracle/cases/helpers/management-rbac/truthy-string-is-not-false.yaml
+  - tools/oracle/cases/helpers/management-rbac/org-role-not-membership.yaml
+  - tools/oracle/cases/helpers/management-rbac/no-type-param-code-in-detail.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The feature gates exempt proxy admins and viewers; configured team-admin exemptions call ManagementAdmins.
+  - allow_agents_for_team_admins also exempts an organization administrator found by B863.
+  - disable_key_generate_for_org_admin checks the global role, not membership rows.
+  - A nonempty string 'false' is truthy in the source's runtime settings map.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 500
   max_new_expects: 0
 review_level: security

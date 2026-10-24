@@ -1,0 +1,80 @@
+id: B2370
+title: Team merge patch HTTP adapter
+description: >-
+  Register PATCH /team/{team_id} once in team_merge_patch. Call the concrete B806 update_team executor,
+  preserving http_request, authenticated caller and litellm-changed-by, and return only result.data as
+  LiteLLM_TeamTable. B1205 owns the budget/object-permission helpers consumed by that executor; no
+  reverse callback port or second registration is needed.
+
+  Own team_endpoints.py L2568-L2642. Check database availability before body/path consistency: no DB is
+  HTTPException 500 with detail.error, mismatched non-null body team_id is 400. Exclude team_id and unset
+  fields from the patch. Only a present metadata field triggers a team lookup; a missing row is 404.
+  Treat non-dictionary stored metadata as {}, apply B124's RFC 7386 projection, then validate the entire
+  UpdateTeamRequest with the path ID. Metadata omission preserves the stored value; null, nested deletion,
+  arrays and scalar replacements retain the dependency's semantics. Non-metadata fields use the existing
+  update semantics. The local except at L2641-L2642 calls handle_exception_on_proxy: HTTPException becomes
+  internal_server_error with its status, ProxyException passes through and other exceptions use their
+  status_code or default 500 with type internal_server_error. param comes from openai_error_param:
+  absent, null and string None become JSON null; other string params survive. The code
+  is the stringified status. Betterlite writes its own message and ignores only /error/message in oracle
+  comparisons. The database and body/path errors precede the executor's authorization checks.
+
+  Drive the booted servers using B860 fixtures from POSTGRES_TEST_URL or testcontainers. Compare the full
+  team response, content-type, error fields, and stored metadata; verify the changed-by audit identity
+  through B806 without inventing a response header. Keep the executor's write ordering and cache effects.
+  Request bytes are decoded by B1231, so this adapter adds no parser. Budget 61 source lines, 95 Rust
+  adapter lines, 225 behavior/HTTP fixture lines and 50 registration lines, within 400 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_merge_patch.rs
+    - crates/betterlite-server/src/team_merge_patch/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/management/team-merge-patch/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2568-L2642
+    why: Own the decorated patch adapter and its exception block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8241
+    why: Error projection called by this route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/json_merge_patch.py#L10-L38
+    why: B124 owns the merge algorithm and its 64-object-depth rejection.
+dod:
+  - text: >-
+      Cases database_before_id_mismatch, body_id_mismatch, metadata_team_missing, metadata_absent,
+      metadata_recursive_null, metadata_replaces_non_object, merge_depth_error, executor_data_unwrapped,
+      changed_by_forwarded, executor_permission_denied, executor_error_passthrough,
+      generic_carried_status_and_null_param exercise the real
+      HTTP route and stored rows. A missing bearer is tested through B052 authentication separately from
+      the route's own errors.
+    proof: [behavior-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Team merge-patch behavior and write inspection must execute.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_merge_patch::/) - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/team-merge-patch/database-before-mismatch.yaml
+  - tools/oracle/cases/management/team-merge-patch/body-id-mismatch.yaml
+  - tools/oracle/cases/management/team-merge-patch/metadata-missing-team.yaml
+  - tools/oracle/cases/management/team-merge-patch/metadata-presence-and-merge.yaml
+  - tools/oracle/cases/management/team-merge-patch/depth-error.yaml
+  - tools/oracle/cases/management/team-merge-patch/changed-by-and-response.yaml
+  - tools/oracle/cases/management/team-merge-patch/executor-permission.yaml
+  - tools/oracle/cases/management/team-merge-patch/missing-bearer.yaml
+deviations: []
+out_of_scope:
+  - B806 owns update_team; B1205 owns _set_budget_reset_at and handle_update_object_permission.
+  - B124 owns apply_json_merge_patch and handle_exception_on_proxy; B1231 owns PatchTeamRequest and UpdateTeamRequest decoding.
+  - The remaining team_endpoints.py functions retain the ownership partition enumerated in B1205 out_of_scope; this adapter moves only patch_team.
+pitfalls:
+  - A patch without metadata does not perform this adapter's missing-team lookup; its error comes from update_team.
+  - The merge depth limit counts dictionary recursion; replacing with an array is not recursive array patching.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

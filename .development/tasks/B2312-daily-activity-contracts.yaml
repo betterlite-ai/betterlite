@@ -1,0 +1,126 @@
+id: B2312
+title: Daily activity scopes, row contracts and SQL identifiers
+description: >-
+  Build betterlite-db::daily_activity_contracts below both SQL builders and their repository. Own
+  types/repositories/daily_activity.py in full, plus SqlQuery, ExportCursor and PRISMA_TO_PG_TABLE
+  in daily_activity_sql.py L18-L40. These are typed records and closed identifier mappings; they
+  perform no database reads, authentication, cursor encoding or JSON byte parsing.
+
+  DailyActivityTable has exactly USER=litellm_dailyuserspend, TEAM=litellm_dailyteamspend,
+  TAG=litellm_dailytagspend, ORGANIZATION=litellm_dailyorganizationspend,
+  CUSTOMER=litellm_dailyenduserspend and AGENT=litellm_dailyagentspend. Their only entity fields
+  are user_id, team_id, tag, organization_id, end_user_id and agent_id respectively. Their SQL
+  relations are LiteLLM_DailyUserSpend, LiteLLM_DailyTeamSpend, LiteLLM_DailyTagSpend,
+  LiteLLM_DailyOrganizationSpend, LiteLLM_DailyEndUserSpend and LiteLLM_DailyAgentSpend.
+  Reject any mismatched entity field before constructing SQL, with the source ValueError meaning
+  "Invalid entity_id_field {field!r} for {table.value}". Never interpolate a caller-selected identifier.
+
+  DailyActivityScope requires table, entity_id_field, entity_ids, exclude_entity_ids, api_keys,
+  start_date, end_date, model and timezone_offset_minutes; only include_current_utc_day defaults
+  to false. entity_ids/api_keys are nullable tuples, exclude_entity_ids is a required tuple,
+  model and offset are nullable. Preserve None versus empty tuples, order and duplicates, empty
+  strings, reversed/arbitrary date strings and signed offsets; this constructor only validates
+  the table/field pairing. SqlQuery holds SQL and an ordered typed parameter tuple. ExportCursor
+  requires date, entity_id and group_key strings, with empty strings distinct from absence.
+
+  KeySpendRow requires api_key, spend, prompt_tokens, completion_tokens, total_tokens, api_requests,
+  successful_requests, failed_requests, cache_read_input_tokens and cache_creation_input_tokens.
+  KeyPage requires rows and total_api_keys. KeyMetadataRow requires api_key, nullable key_alias,
+  team_id, user_id and user_email, key_exists and ordered tags; nullable fields have no implicit
+  default. ExportType spells daily, daily_with_keys, daily_with_models and daily_with_users.
+  ExportRow requires date/entity_id, nullable entity_alias/api_key/key_alias/user_id/user_email/model,
+  spend/flat_cost and prompt_tokens/completion_tokens/api_requests/successful_requests/failed_requests/
+  cache_read_input_tokens/cache_creation_input_tokens. It has no total_tokens or savings columns.
+
+  RollupMetricsRow requires nullable date, api_key, spend, prompt_tokens, completion_tokens,
+  cache_read_input_tokens, cache_creation_input_tokens, compression_saved_tokens,
+  compression_savings_spend, prompt_caching_savings_spend, gateway_injected_caching_savings_spend,
+  autorouter_savings_spend, api_requests, successful_requests, failed_requests,
+  total_response_time_ms and timed_requests; ptu_flat_cost alone defaults to None. GroupingSetsRow
+  adds nullable model/model_group/custom_llm_provider/mcp_namespaced_tool_name/endpoint,
+  required group_level and nullable distinct_api_keys. EntityRollupRow adds nullable entity_id,
+  required api_key_rolled and nullable distinct_api_keys. Keep null metrics distinct from zero.
+  AggregatedRows requires grouping_rows, nullable entity_rows and distinct_api_keys; None entity
+  rows means no query, while an empty tuple means a query with no rows.
+
+  SpendLogsWindow is a pair of datetimes without added ordering validation. DailyActivityProxyReads
+  is an injected async recovery contract taking resolved metadata, the requested frozenset of keys
+  and an optional window, returning a metadata mapping. Its proxy implementation remains B074.
+  DailyActivityRow exposes id/date/api_key, nullable model/model_group/custom_llm_provider/
+  mcp_namespaced_tool_name/endpoint, the rollup counters and financial fields above, all metrics
+  nonnullable and without ptu_flat_cost. DailyRowsPage holds total_count and an ordered row tuple.
+  Native records preserve these contracts without reproducing Python Protocol/property wrappers.
+
+  Monetary fields use checked Decimal. The helper operation daily_activity_contracts calls source
+  constructors and Pydantic TypeAdapter validation for row inputs, never a reimplemented validator;
+  compare field presence, defaults, nullability and construction errors. Use one named rstest case
+  per field for required/default/null behavior, including every inherited rollup field. B171 owns
+  decoding the helper envelope; B729 owns consuming SQL rows. No new external decoder is introduced.
+  The two owned ranges contain 178 nonblank noncomment lines; allow 190 records/mapping code,
+  220 contract tests, 65 adapters and 25 wiring, 500 within 550.
+scope:
+  paths:
+    - crates/betterlite-db/src/daily_activity_contracts.rs
+    - crates/betterlite-db/src/daily_activity_contracts/**
+    - crates/betterlite-db/src/lib.rs
+    - tools/oracle/src/helpers/daily_activity_contracts.rs
+    - tools/oracle/helpers/daily_activity_contracts.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/daily-activity-contracts/**
+    - tools/oracle/fuzz/corpus/helper_case/daily-activity-contracts-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L9-L192
+    why: Complete scopes, table-field allowlist, required nullable row fields and proxy recovery protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L18-L40
+    why: SQL plan, cursor record and the six physical relation names move below both builders.
+dod:
+  - text: 'Cases name table_field_and_relation_user/team/tag/organization/customer/agent,
+      mismatched_entity_field_rejected, injected_identifier_rejected, scope_required_fields,
+      scope_current_day_default_false, scope_none_empty_and_duplicate_filters,
+      scope_dates_and_offsets_not_normalized, sql_parameter_order and cursor_empty_fields_preserved.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Per-field cases named key_spend_field_<field>, key_metadata_field_<field>,
+      export_field_<field>, rollup_field_<field>, grouping_field_<field>, entity_field_<field>
+      and daily_row_field_<field> cover all fields above. Additional cases name
+      export_type_wire_spellings, rollup_ptu_only_optional_default, null_metrics_not_zero,
+      entity_rows_absent_vs_empty, page_order_preserved and recovery_window_passed_unchanged.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Decimal tests name negative_money_preserved, decimal_money_exact,
+      nonfinite_money_rejected and money_outside_decimal_range_rejected; the latter two document
+      the native numeric boundary outside the equality oracle.'
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Scope validation and each row contract need assertions independent of SQL execution.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_contracts::tests::/)'
+    - id: helper-python
+      why: Constructors and TypeAdapter must run in the pinned interpreter through a typed adapter.
+      run: test -f tools/oracle/helpers/daily_activity_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require a newly added operation seed before replaying the existing envelope decoder corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-contracts-*")" && grep -rlq daily_activity_contracts tools/oracle/fuzz/corpus/helper_case/daily-activity-contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-contracts/table-scope-identifiers.yaml
+  - tools/oracle/cases/helpers/daily-activity-contracts/scope-presence-and-defaults.yaml
+  - tools/oracle/cases/helpers/daily-activity-contracts/key-and-export-fields.yaml
+  - tools/oracle/cases/helpers/daily-activity-contracts/rollup-nullability.yaml
+  - tools/oracle/cases/helpers/daily-activity-contracts/page-and-cursor-records.yaml
+deviations:
+  - what: Monetary fields reject nonfinite numbers and values outside Decimal range instead of retaining Python floats.
+    why: The workspace requires checked Decimal from the point money enters; ordinary finite values retain their field semantics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L48-L144
+out_of_scope:
+  - B727 owns timezone, WHERE, aggregate, entity-rollup and key-page functions in daily_activity_sql.py L43-L301 and its two expression constants L14-L15.
+  - B728 owns search, rankings and export functions in daily_activity_sql.py L304-L526.
+  - B729 executes queries and validates returned records; B074 implements authorization, request parsing and recover_key_metadata in common_daily_activity.py.
+pitfalls:
+  - Nullable dataclass fields remain required constructor arguments except ptu_flat_cost; Option alone must not invent omission defaults.
+  - CUSTOMER maps to LiteLLM_DailyEndUserSpend and end_user_id, not a guessed customer_id column.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

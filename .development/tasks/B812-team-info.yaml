@@ -1,14 +1,51 @@
 id: B812
-title: Team info, caller membership and block state
+title: Team info visibility and response hydration
 description: >-
-  Implement team/info, members/me, block/unblock, metadata_schema and available-team routes. Hydrate member
-  details, parent models and access-group resources without widening visibility, and preserve default
-  budget membership metadata. Blocking immediately evicts affected team auth rows.
+  Implement only GET /team/info here; B1208 owns members/me, block/unblock, metadata_schema and available
+  teams. team_id defaults null and key_limit defaults null (HTTP values must be greater than zero).
+  Inside the handler's try, no database raises 500 with the source database-connection URL in detail.error;
+  null team_id raises 422 detail.message="Malformed request. No team id passed in.". Read the team with
+  model-table, object-permission and organization relations. Missing rows and lookup exceptions both
+  become 404 "Team not found, passed team id: ..."; validate the returned model outside that inner catch.
+  Cases missing_database, missing_team_id, positive_key_limit and lookup_failure_404 cover this ordering.
 
+  validate_membership first permits proxy_admin and proxy_admin_viewer, then a key whose team_id matches,
+  then direct roster user IDs or B800 administrative scope. A null user ID on a different team key gets
+  403 "Team key for team=... not authorized to access this team=..."; a key with neither identity gets
+  403 "API key not authorized to access this team=.... No user_id or team_id associated with this key.";
+  other denied users get 403 "User=... not authorized to access this team=...". strongest_role determines
+  parent organization_models disclosure separately: no role yields null, an organization-less team yields
+  null, and an organization with absent models yields []. B801 supplies caller_edit_access using its
+  existing general_settings policy. Cases membership_identity_matrix, parent_model_disclosure and
+  caller_edit_access_projection distinguish visibility from edit authority.
 
-  Build the production team_info module in betterlite-server; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  B124 receives expires=datetime.now() and optional limit, but its team_id branch does not filter expiry,
+  so expired keys are included; null results become
+  []. Preserve the source collection: its token.pop operates on a temporary model_dump/dict inside the
+  loop and does not replace the original keys, so do not claim this handler strips hashes. The HTTP
+  key_collection_projection case compares the actual serialized key rows. The spend-only fallback after
+  the earlier missing-row exception is unreachable and needs no invented success case. Fetch all team
+  memberships with B803. A string team_member_budget_id (including empty) from B809 triggers one budget
+  lookup; a missing row stays null, while an exception logs info and returns the unmodified team.
+  Only a found budget is an active default for B809 budget_source classification (custom/team_default/none).
+  Cases default_budget_found_missing_error and membership_budget_sources cover both response and log.
+
+  Resolve groups through B1209's one-query batch helper. No group IDs leaves inherited fields untouched;
+  otherwise silently omit unknown groups, preserve first-seen group order in access_group_details and
+  deduplicate model/MCP/agent unions as sets (compare those arrays without ordering). Null resource lists
+  contribute nothing. Hydrate roster members in their original order with one user query for sorted unique
+  non-null IDs; skip the query for an email-only roster, retain a truthy roster email, fill falsey email
+  from the user row, and use user_alias or null. Finally attach B071 model_max_budget_usage for entity
+  TEAM and the limiter's dual_cache, then return team_id, team_info, keys and all annotated memberships.
+  Cases group_union_and_detail_order, unknown_group_omitted, member_hydration_one_query and model_usage
+  verify the computed fields without reimplementing the dependency algorithms.
+
+  The outer except logs every failure and traceback. HTTPException becomes ProxyException type=auth_error,
+  param="None" unless supplied, code/status=the original HTTP status, message=detail; an existing
+  ProxyException is rethrown; anything else becomes 400 auth_error with "Authentication Error, " plus
+  str(error) and the same param rule. Cases own_exception_mapping and downstream_proxy_exception retain
+  this route-specific mapping; handle_exception_on_proxy is not called. No secret transform or config
+  loader is added by this task.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -18,44 +55,18 @@ description: >-
   145 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Register these actual HTTP routes and aliases exactly once: GET /team/info -> team_info. For each route
-  send a typed successful request, an invalid or missing target, and a caller lacking that route permission
-  through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes
-  instead prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  use B001 HTTP cases for the scope, projection and error contracts above, including status, type/param/code,
+  null fields and JSON content-type. B052 supplies real bearer authentication and B865 supplies the actual
+  decorator effects. Database hydration tests use POSTGRES_TEST_URL when supplied, otherwise B860
+  testcontainers; connection failure is a test failure.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Sizing: 242 nonblank, noncomment function lines plus four lines of owned organization projection models
+  at L4795-L4800; allow 250 production, 360 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring,
+  0 decoder/fuzz and 0 config lines, 675 changed lines within a 700-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 242 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  242 production, 136 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 443 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
 scope:
   paths:
     - crates/betterlite-server/src/team_info.rs
@@ -68,10 +79,8 @@ scope:
     - tools/oracle/cases/management/team-info/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4715-L5288
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4715-L5009
     why: Pinned implementation and exact ownership boundary for team_info.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2321-L2322
-    why: BlockTeamRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4842-L4854
     why: TeamInfoResponseObjectTeamTable request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4715-L4753
@@ -84,12 +93,11 @@ references:
     why: Own _parent_organization_models; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4809-L4838
     why: Own _resolve_team_access_group_resources; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4843-L5009
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4841-L5009
     why: Own team_info; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_info, parent_models.'
+  - text: Each named membership, key, budget, group, hydration and exception case in the description has
+      a native test; Postgres fixtures verify the one-query member lookup and missing-budget behavior.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -105,15 +113,23 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_info::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-info/get--team-info-success.yaml
-  - tools/oracle/cases/management/team-info/get--team-info-invalid-target.yaml
-  - tools/oracle/cases/management/team-info/get--team-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-info/team-info.yaml
-  - tools/oracle/cases/management/team-info/parent-models.yaml
+  - tools/oracle/cases/management/team-info/missing-database.yaml
+  - tools/oracle/cases/management/team-info/missing-team-id.yaml
+  - tools/oracle/cases/management/team-info/positive-key-limit.yaml
+  - tools/oracle/cases/management/team-info/lookup-failure-404.yaml
+  - tools/oracle/cases/management/team-info/membership-identity-matrix.yaml
+  - tools/oracle/cases/management/team-info/parent-model-disclosure.yaml
+  - tools/oracle/cases/management/team-info/caller-edit-access-projection.yaml
+  - tools/oracle/cases/management/team-info/key-collection-projection.yaml
+  - tools/oracle/cases/management/team-info/default-budget-found-missing-error.yaml
+  - tools/oracle/cases/management/team-info/membership-budget-sources.yaml
+  - tools/oracle/cases/management/team-info/group-union-and-detail-order.yaml
+  - tools/oracle/cases/management/team-info/unknown-group-omitted.yaml
+  - tools/oracle/cases/management/team-info/member-hydration-one-query.yaml
+  - tools/oracle/cases/management/team-info/model-usage.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B1208 owns the separate self-membership and block-state routes; this task registers none of them.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -195,8 +211,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Team-info hydration does not grant an unlisted member extra model visibility.
+  - Popping token from a temporary key dictionary does not redact the original returned collection.
+  - A failed budget-table read is logged and dropped, whereas a failed member hydration reaches the route's 400 auth_error catch.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

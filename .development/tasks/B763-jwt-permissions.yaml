@@ -21,6 +21,26 @@ description: >-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_allowed_routes=['management_routes',
   'spend_tracking_routes', 'global_spend_tracking_routes', 'info_routes']; litellm_jwtauth.enforce_rbac=False.
 
+  B736 supplies get_role_based_models/get_role_based_routes from general_settings.role_permissions
+  (absent means unrestricted); B742 supplies _allowed_routes_check, allowed_routes_check and
+  get_actual_routes; B747 supplies the model-denial exception/message; B890 supplies is_admin
+  using admin_jwt_scope='litellm_proxy_admin'. B869 supplies JWTAuthBuilderResult. Do not make
+  this leaf depend on the JWT authentication umbrella that calls it.
+
+  Name cases role_permissions_absent, role_model_none, role_model_exact, role_model_star_literal,
+  role_routes_none, role_route_group and role_route_denial: model matching is literal membership,
+  whereas routes use B742's groups. scope_empty_mapping and scope_missing_model return without
+  checking; scope_union combines nonempty models of every matching scope; scope_unmatched and
+  scope_star_literal deny with ModelAccessDeniedHTTPException(403), whose detail is an error
+  object here but a string for role_model_denial. rbac_disabled skips both gates; rbac_required
+  rejects an absent role with 403; model_before_route proves the model denial wins.
+  admin_not_scoped returns None; admin_result preserves token, user_id, user_email, org_id,
+  agent_id and claims (None becomes {}), clears team/end-user/membership objects and marks
+  is_proxy_admin. admin_route_limited raises a plain Exception and therefore HTTP 401, unlike
+  the 403 RBAC/scope denials. On the wire all these auth failures have type auth_error,
+  param 'None' and string status as code, through B757; compare these fields and ignore only
+  /error/message because betterlite writes its own text without exposing the bearer.
+
 
   Add the jwt_permissions operation under B856 Management::jwt. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
@@ -43,7 +63,7 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::jwt_permissions::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::jwt_permissions::tests::loads_settings, defaults_and_precedence and invalid_type_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -61,8 +81,8 @@ description: >-
 
 
   Sizing: 132 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  132 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 460 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  132 production, 245 behavior tests, 70 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 562 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -114,13 +134,18 @@ references:
     why: Own JWTAuthManager.check_rbac_role; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
     why: Own JWTAuthManager.check_admin_access; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.enforce_rbac default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1441-L1496
+    why: enforce_rbac and admin_allowed_routes reads, including the plain admin exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2494-L2542
+    why: B736 owns role_permissions lookup and its unrestricted missing-value behavior.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: scope_model_grant, scope_model_denial,
-      rbac_required, role_route_denial, admin_route_limited, missing_model.'
+      rbac_required, role_route_denial, admin_route_limited, missing_model, role_permissions_absent,
+      role_model_none, role_model_exact, role_model_star_literal, role_routes_none, role_route_group,
+      scope_empty_mapping, scope_missing_model, scope_union, scope_unmatched, scope_star_literal,
+      role_model_denial, rbac_disabled, model_before_route, admin_not_scoped, admin_result.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -188,10 +213,13 @@ oracle_cases:
   - tools/oracle/cases/auth/jwt-permissions/role-route-denial.yaml
   - tools/oracle/cases/auth/jwt-permissions/admin-route-limited.yaml
   - tools/oracle/cases/auth/jwt-permissions/missing-model.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/role-permissions-matrix.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/scope-union-and-literals.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/admin-result.yaml
+  - tools/oracle/cases/auth/jwt-permissions/model-before-route.yaml
+  - tools/oracle/cases/auth/jwt-permissions/rbac-disabled.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -247,8 +275,9 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - An administrator-scope JWT still obeys its configured administrator allowed_routes.
+  - A literal '*' in role or scope models is not a wildcard; only route matching expands route groups.
+  - The admin route gate raises Exception, so converting every permission failure to 403 changes its 401.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

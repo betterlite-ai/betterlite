@@ -7,6 +7,53 @@ description: >-
   credentials.
 
 
+  For a nonnull token first apply B751 temporary budget increase, then reject blocked is true with
+  Key is blocked. Update via `/key/unblock` if you're an admin. Next B889 authorizes key and fallback
+  models, then B735 prefetches referenced objects. A nonnull user_id loads B736 with upsert=false;
+  any error logs DEBUG and treats the user as absent. A returned user replaces user_model_max_budget.
+  Only dict metadata.scim_active exactly false denies, with the user ID and SCIM deactivation message.
+  Both ordinary exceptions become B757 auth_error 401. Resolve the model through B881;
+  B750 zero-cost recognition requires a router and nonnull model and logs INFO when budgets are skipped.
+
+
+  Before expiry, non-skipped budgets with nonnull token.team_member_spend and database/user/team IDs
+  read B733's membership cache; misses query B726 TeamMembershipRepository.find_first with budget
+  included. Cache a returned typed row for exactly five seconds. Read errors, conversion and cache-write
+  errors propagate. No row or relation skips. B2310 effective_max_budget uses the UTC clock; only a
+  positive ceiling reads B2321 spend:team_member:<user>:<team>, using token spend as fallback. At
+  equality first call B751 member alert with team alias/metadata, org, user email and costs, then raise
+  BudgetExceededError with entity team_member, user:team ID and TeamMember=<user>:<team> message.
+
+
+  Expiry accepts datetime or ISO text; naive timestamps become UTC. Log DEBUG then reject only expiry
+  strictly before now, allowing equality. The 401 expired_key error includes both timestamps and B881's
+  abbreviated bearer param (sk-... below MINIMUM_CUSTOM_KEY_LENGTH, otherwise sk-... plus last four).
+  Invalid ISO input propagates through B757; zero-cost requests still expire. For non-skipped budgets,
+  run B751 threshold alerts before hard budget (LLM routes only), then soft budget. Resolve current
+  models; a nonempty dict key budget plus database, models and nonnull token invokes B753 fallback
+  checks in order. Re-resolve the models after possible rewrites; then user model checks and nonempty
+  dict end-user model budgets with a nonnull end-user ID. The limiter port defined here exposes
+  is_end_user_within_model_budget; B071 supplies it, and its boolean return is ignored unless it raises.
+
+
+  Fetch a team for nonnull team_id, treating UI_TEAM_ID as TeamNotFoundError. Catch HTTPException only
+  and build a team from the token's max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models, metadata,
+  permission ID and B738 permission resolution. Refresh token.team_object_permission and team_metadata
+  from this row; without a team clear only the permission. B879 fetches a nonnull project ID and refreshes
+  project metadata/alias only for a returned row. A positive global max_budget and database invoke
+  B753 coordinated spend lookup even for a zero-cost model. Known spend schedules proxy_budget with
+  token, spend, max_budget, admin user_id, team_id and PROXY event group.
+
+
+  Missing token.token raises HTTP401 Invalid API key, no token associated. Otherwise use that internal
+  token for the result, serialize nonnull fields excluding token, and manually retain request-only
+  budget_throttle_pct. Only when an end-user row exists overlay end_user_params and its object permission.
+  A null input token ultimately raises Invalid proxy server token passed. The nested Invalid API key
+  null-token guard is unreachable after entering the nonnull branch; do not invent an HTTP case for it.
+  B889 builds the returned auth object; set via_virtual_key=true. This function itself never invokes
+  common_checks despite its comment; B855/B1221 own that later admission step. There are no database writes.
+
+
   Build the production auth_key_validation module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
@@ -16,8 +63,8 @@ description: >-
   validate_resolved_virtual_key (L2211-L2622; 333 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Budget helpers retain authority over their own arithmetic and finite guards; validation forwards
+  the carried limits and snapshots without treating a missing field as zero.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.max_budget=0.0.
@@ -30,40 +77,29 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Resolved-key HTTP cases use B732 state on chat requests, proving expiration still applies to free
+  models and that fallback selection recomputes cost classification before later budget checks.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860/Postgres fixtures run through POSTGRES_TEST_URL or testcontainers with stale token team
+  fields, live user/SCIM state and an early team-member budget. Assert the observed refresh order.
 
 
-  Write betterlite-config::auth_key_validation::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_key_validation::tests::max_budget_defaults_zero,
+  positive_global_budget_triggers_read, nonpositive_global_budget_skips_read and invalid_budget_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Resolved tokens have already passed B2314 validation; no second credential parser or license
+  policy belongs in this stage. Common checks remain a later caller-owned operation.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 333 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  333 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 655 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
+  Sizing: 333 source lines translate to 270 production lines using existing typed row constructors;
+  allow 300 table-driven tests, 75 helper adapters, 90 wiring and 50 config lines, 785 within an 800-line
+  gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -112,8 +148,20 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: blocked_key, expired_key,
-      expiry_equal_now, scim_inactive_owner.'
+  - text: 'Named cases: temp_increase_before_blocked_key, access_before_prefetch_before_user_lookup,
+      user_lookup_failure_debug_and_no_upsert, live_user_model_budget_refresh, scim_exact_false_only,
+      zero_cost_info_skips_budgets_not_expiry, member_cache_miss_query_and_five_second_ttl,
+      member_missing_context_and_nonpositive_budget_skip, member_effective_temp_budget,
+      member_counter_equality_alert_then_error, member_read_decode_and_cache_errors_propagate,
+      expiry_datetime_iso_naive_utc_and_equal_now, expired_key_message_and_masked_param,
+      malformed_expiry_maps_through_auth_errors, threshold_hard_soft_budget_order,
+      hard_budget_llm_only, key_budget_prerequisites, fallback_recomputed_for_user_and_end_user,
+      limiter_false_returns_ignored, ui_team_and_http_lookup_failure_use_token_fields,
+      team_nonhttp_failure_propagates, team_metadata_and_permission_refresh,
+      missing_team_clears_only_permission, project_metadata_alias_refresh,
+      zero_cost_still_loads_global_spend_and_alerts, global_alert_payload,
+      null_token_and_missing_internal_token_errors, result_excludes_null_and_token_carries_throttle,
+      end_user_overlay_requires_row, returned_object_marks_virtual_key_without_common_checks.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -179,8 +227,8 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-key-validation/scim-inactive-owner.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B855/B1221 own common admission after this function. B071 implements the end-user model-budget
+    limiter port; B753 owns the other limiter protocols and the fallback rewrite.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -228,6 +276,6 @@ out_of_scope:
 pitfalls:
   - Expiry equal to now must retain the pinned comparison rather than an intuitive inclusive expiration.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,10 +1,55 @@
 id: B1224
 title: Key policy hooks aliases and rotation fields
 description: >-
-  Validate key aliases, uniqueness, rotation schedule and effective post-merge custom policy inputs. Inject
-  CustomKeyPolicy::validate(EffectiveKey)->Result<(),PolicyError>; B165 installs Python execution. Preserve
-  default disabled alias-format checking and source _key_management_settings fields. Request struct decoding
-  remains B770, so these policy functions take typed keys and need no separate fuzz target.
+  Implement the effective-key policy builders and validators in key_policy_fields. The three hook getters
+  return the configured generate/update/policy callable unchanged. Missing update/policy hooks do nothing;
+  reject synchronous hooks with ValueError user_custom_key_update must be a coroutine or
+  user_custom_key_policy must be a coroutine before constructing a policy request. Await the hook once;
+  missing decision means true, false raises HTTPException 403 with the supplied message or Authentication
+  Failed - Custom Auth Rule. Propagate hook failures. These helpers do not map errors into route envelopes.
+
+
+  For updates decode only string router_settings and budget_limits through decode_json_string_column;
+  malformed JSON fails, other columns and nonstrings pass through. Overlay onto the existing row and set
+  object_permission=None. A present organization_id wins over org_id even when null. Policy requests carry
+  operation update/regenerate, the unmodified existing key, effective merged key and original request.
+  For generation exclude unset/null request fields, fold the metadata enum fields over data.metadata,
+  apply handle_key_type, and call B2304 encrypt_callback_vars before constructing the effective key.
+  Compute expires from the supplied now, budget_reset_at through B2317 get_budget_reset_time, and
+  key_rotation_at only when both auto_rotate and rotation_interval are truthy. Missing/empty budget_limits
+  yields None; otherwise preserve window order and fields and replace reset_at with an ISO timestamp.
+  Regeneration retains only UpdateKeyRequest fields other than key, skips empty duration/budget_duration,
+  keeps explicit nulls, returns None for an empty patch and otherwise uses the supplied key.
+
+
+  handle_key_type removes an absent key_type; LLM_API, MANAGEMENT and READ_ONLY set allowed_routes to
+  [llm_api_routes], [management_routes] and [info_routes] respectively, while other enum values retain routes.
+  Rotation updates auto_rotate, rotation_interval and key_rotation_at together only for enabled rotation
+  with a nonempty interval. It does not clear existing fields when disabled. When store_virtual_keys is
+  exactly true, require either a non-null requested or existing alias; empty aliases count as present here.
+  Failure is ProxyException 400/bad_request_error, param key_alias, with the stable-secret-name explanation.
+
+
+  Alias None is accepted. Always call B129 raise_if_unsafe_secret_name before optional format checking;
+  traversal/control-character failures become 400/bad_request_error, param key_alias, message Invalid
+  key_alias. key_alias_pattern, including an empty string, overrides enable_key_alias_format_validation.
+  Its config parser accepts None or a compilable string, otherwise raises ValueError; invalid regex does
+  not silently disable validation. Built-in validation requires 2-255 characters, alphanumeric endpoints,
+  and interior a-zA-Z0-9_-/.@; report that rule in the error message. A custom rule uses fullmatch and the
+  same 255-character maximum, with the configured pattern in its error. Without either setting, there is
+  no length/format restriction beyond unsafe-name rejection. Uniqueness is a separate global find_first
+  on key_alias, skipped for None alias or missing DB; a truthy existing token adds NOT token unchanged,
+  without hashing. A collision gives 400/bad_request_error, param key_alias and the unique-alias message.
+  Test queries against Postgres via POSTGRES_TEST_URL, falling back to testcontainers; no write occurs here.
+
+
+  model_max_budget None/empty is accepted without a license check. Nonempty maps require premium_user
+  exactly true in LiteLLM, then string model names and BudgetConfig-compatible dict/model values; convert
+  budget_limit numeric strings, and preserve BudgetConfig aliases budget_limit/max_budget and
+  time_period/budget_duration plus rpm_limit/tpm_limit. Wrap every failure in ValueError with Invalid
+  model_max_budget and the https://docs.litellm.ai/docs/proxy/users example. Apply the README no-paid-tier
+  decision only to that license branch, testing nonempty valid/invalid budget maps natively outside the
+  equality corpus; only the None/empty-map early return belongs in MIT equality cases.
 
 
   Build the production key_policy_fields module in betterlite-server; reuse the typed dependencies listed
@@ -30,28 +75,27 @@ description: >-
   litellm_settings.key_alias_pattern=None.
 
 
-  litellm_settings.key_management_settings resolves the source _key_management_settings record: hosted_keys=None,
-  store_virtual_keys=false, prefix_for_stored_virtual_keys="litellm/", access_mode="read_only"; the sink
-  uses the stored-key switch and prefix rather than enabling secret writes implicitly.
+  general_settings.key_management_settings is the config key, not litellm_settings.key_management_settings.
+  When omitted, the process already has KeyManagementSettings() with store_virtual_keys=false. The loader
+  replaces it when the general_settings record is non-null. This component reads only store_virtual_keys;
+  B129 owns the remaining secret-manager fields and their consumers. A runtime None settings object also
+  skips the stored-key alias requirement, but it is not the normal default.
 
 
-  Add the key_policy_fields operation under B856 Management::keys. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-policy-fields-*
-  seed to B171 helper_case, which already owns this decoder.
+  Add pure effective-row, alias-rule, budget-window and rotation operations under B856 Management::keys,
+  using B171 helper_case. Keep database uniqueness and real asynchronous policy execution in native
+  integration tests; no helper adapter substitutes for their dependencies. B770 supplies request types
+  and the verification-token table adapter; B165 supplies configured Python callables.
 
 
-  Write betterlite-config::key_policy_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Load these settings through B002 in config tests alias_defaults, configured_pattern_overrides_toggle,
+  empty_pattern_is_configured, nonstring_pattern_rejected, invalid_regex_rejected and stored_rotation_alias.
+  Seed config_yaml with the nested settings and os.environ/ resolution; there is no dedicated alias env var.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Add the key_policy_json_column fuzz target invoking production decode_json_string_column(column, bytes).
+  Seed both parsed columns, passthrough columns, null/scalar/array/object JSON, truncated and invalid UTF-8
+  inputs; replay them in replays_the_key_policy_json_column_corpus. B770 retains request JSON decoding.
 
 
   The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
@@ -60,8 +104,8 @@ description: >-
 
 
   Sizing: 301 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  301 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 591 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  301 production, 300 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 50 config lines, 791 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -69,6 +113,9 @@ scope:
     - crates/betterlite-server/src/key_policy_fields/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/key_policy_json_column.rs
+    - crates/betterlite-server/fuzz/corpus/key_policy_json_column/**
     - tools/oracle/src/helpers/key_policy_fields.rs
     - tools/oracle/src/helpers/key_policy_fields/**
     - tools/oracle/helpers/key_policy_fields.py
@@ -126,14 +173,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L852-L867
     why: Own handle_key_type; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/secret_managers/main.py#L20-L36
-    why: Stored virtual-key switch and prefix defaults.
+    why: store_virtual_keys defaults false; the owned read is at key_management_endpoints.py L560-L565.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1305-L1309
+    why: The runtime key-management settings default to an eagerly constructed record, not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6671-L6676
+    why: The actual loader reads general_settings.key_management_settings after environment resolution.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L386-L391
-    why: litellm_settings.enable_key_alias_format_validation default and read site.
+    why: Alias toggle default; _key_alias_rule L7727-L7736 is the consumer.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L389-L394
-    why: litellm_settings.key_alias_pattern default and read site.
+    why: Alias-pattern default; _key_alias_rule L7727-L7736 reads it before the toggle.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: alias_pattern, duplicate_alias,
-      rotation_fields, effective_policy_patch, model_budget_map.'
+  - text: 'Cover hook_getters, missing_hooks_noop, synchronous_hook_rejected_before_builder,
+      decision_default_and_custom_denial, hook_failure_propagates, json_columns_only, malformed_column_json,
+      organization_id_null_wins, effective_patch_clears_permission, policy_operation_and_original_request,
+      generated_metadata_override_encrypted, generate_clock_expiry_and_rotation, budget_windows_empty_and_order,
+      regeneration_absent_null_empty_duration, key_type_route_presets, disabled_rotation_keeps_fields,
+      stored_rotation_requires_alias, empty_alias_is_present, unsafe_alias_always_rejected,
+      builtin_alias_boundaries, custom_fullmatch_and_length, validation_disabled_has_no_format_limit,
+      uniqueness_global_excludes_raw_token, uniqueness_missing_db_noop, model_budget_empty,
+      model_budget_numeric_aliases, model_budget_invalid_values and model_budget_without_license_is_allowed.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -147,10 +205,16 @@ dod:
     proof:
       - config-tests
       - config-corpus
+  - text: Stored JSON columns use the production decoder in both fuzzing and corpus replay.
+    proof:
+      - parser-corpus
 checks:
   optional:
     - mutants
   commands:
+    - id: parser-corpus
+      why: The stored-column parser lacks malformed-input coverage or bypasses the production function.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/key_policy_json_column)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_key_policy_json_column_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_policy_fields::tests::/)
@@ -176,14 +240,21 @@ checks:
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-policy-fields/alias-pattern.yaml
-  - tools/oracle/cases/helpers/key-policy-fields/duplicate-alias.yaml
   - tools/oracle/cases/helpers/key-policy-fields/rotation-fields.yaml
   - tools/oracle/cases/helpers/key-policy-fields/effective-policy-patch.yaml
-  - tools/oracle/cases/helpers/key-policy-fields/model-budget-map.yaml
-deviations: []
+  - tools/oracle/cases/helpers/key-policy-fields/empty-model-budget-map.yaml
+  - tools/oracle/cases/helpers/key-policy-fields/json-column-and-organization-precedence.yaml
+  - tools/oracle/cases/helpers/key-policy-fields/unsafe-and-custom-alias-rules.yaml
+  - tools/oracle/cases/helpers/key-policy-fields/key-type-presets.yaml
+  - tools/oracle/cases/helpers/key-policy-fields/regeneration-patch-fields.yaml
+  - tools/oracle/cases/helpers/key-policy-fields/budget-window-reset-times.yaml
+deviations:
+  - what: Nonempty valid model_max_budget works without an enterprise license.
+    why: README no-paid-tier decision; model_budget_without_license_is_allowed proves the MIT validation branch without the license gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7817-L7838
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns encrypt_callback_vars; generated policy metadata uses its real encryption service, not a plaintext substitute.
+  - B129 owns unsafe secret-name validation and key-management configuration types.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -271,10 +342,11 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_member_team_ids: no production
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Inject CustomKeyPolicy::validate(EffectiveKey)->Result<(),PolicyError>; B165 installs Python execution.
+  - A present organization_id null must not fall back to a populated org_id during effective-key construction.
+  - Turning off auto_rotate leaves preexisting rotation fields intact in this helper.
+  - The optional alias regex never disables the earlier unsafe secret-name check.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

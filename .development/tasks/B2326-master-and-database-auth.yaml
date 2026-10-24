@@ -1,0 +1,95 @@
+id: B2326
+title: Master identity and uncached virtual-key resolution
+description: >-
+  Split user_api_key_auth.py builder master_and_database L2078-L2196 into
+  betterlite-auth::master_database_auth, called by B052 after B876 has compared the master credential.
+  Accept typed request, selected credential, optional resolved token, end-user parameters and
+  is_master_key_valid; inject B870 IdentityStore and B734 cache. The enclosing builder except block
+  L2197-L2208 remains B052/B757, retaining resolved identity on failure. No reverse B052 dependency.
+
+  A nonstring configured master raises HTTP500 with the source detail set containing
+  Master key must be a valid string. Current type=<type>. Normal B002 loading rejects that type earlier;
+  exercise this boundary with injected state. A valid master calls B889 with PROXY_ADMIN, stable
+  litellm_proxy_master_key alias, configured admin user_id, end-user parameters, route/start/span and
+  no user object. Schedule B734 caching under B2314 hash_token(master_key), then B753 applies nonnull
+  end-user overrides, then set via_virtual_key=true. Neither raw master nor hash may become downstream
+  identity. The cache task is scheduled before the final mutation, not synchronously awaited.
+
+  A nonmaster request to B866 master_key_only_routes raises the ordinary exception
+  Tried to access route=<route>, which is only for MASTER KEY. Next, missing database raises
+  ProxyException code400 type no_db_connection param None message No connected db., including when a
+  token was already supplied. With a resolved token skip prefix/hash/identity reads and request-field
+  overwrites, then validate through B755. Otherwise non-sk- strings raise HTTP401 with B744 invalid-key
+  provenance, masked first four/last four characters separated by **** for length>8, otherwise ****.
+  Preserve expected to start with 'sk-' and append the exact source _JWT_AUTH_DISABLED_HINT only when
+  B869 enable_jwt_auth is false and B760 is_jwt succeeds. Use the actual message constants L174-L188;
+  product-name substitution is recorded below. Nonstrings WARN with their type before the subsequent
+  source abbreviation/startswith failure; do not silently accept them as valid credentials.
+
+  B881 abbreviates the supplied key, B2314 hashes sk- input, then trace
+  litellm.proxy.auth.get_key_object_from_db around B870 resolve/key_from_principal. On ProxyException
+  numeric401 or string401, retain status/type/param/code but replace message with Authentication Error,
+  Invalid proxy server token passed. Received API Key = <abbreviation>, ... Unable to find token in
+  cache or `LiteLLM_VerificationTokenTable`. Native text omits Key Hash (Token) and its value. Other
+  errors retain their message. Assign end_user_id, end_user_tpm_limit, end_user_rpm_limit,
+  end_user_tpd_limit and allowed_model_region directly from parameters, including null when absent.
+  Then B755 validates with the original request/body/route/start/span/end-user object. No database
+  writes or stored-secret transformations occur in this stage.
+
+  Install the production service in B732 state; booted B001 HTTP cases exercise master, invalid prefix,
+  unknown token and DB outages through existing protected routes, with B757 translating exceptions.
+  Postgres fixtures use POSTGRES_TEST_URL with testcontainers fallback. Isolated unit cases inspect
+  the scheduled cache and nullable-field mutation order. No helper adapter may call the builder with
+  fake global route state. Source ownership has 98 nonblank non-comment lines; budget
+  170 production, 260 tests, 100 HTTP fixture/wiring lines, 530 within 600. Keep files below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-auth/src/master_database_auth.rs
+    - crates/betterlite-auth/src/master_database_auth/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/master_database_auth/**
+    - crates/betterlite-server/src/state.rs
+    - tools/oracle/cases/auth/master-database-auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L174-L188
+    why: Exact invalid-key message and disabled-JWT hint constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2078-L2208
+    why: Stage ordering and the caller-owned enclosing exception boundary.
+dod:
+  - text: 'Named cases master_wrong_type500, master_alias_and_admin_identity,
+      cache_scheduled_before_enduser_overlay, nonmaster_master_only_error,
+      missing_db400_before_supplied_token, supplied_token_skips_lookup_and_overlay,
+      invalid_prefix_mask_length8_boundary, jwt_hint_only_when_disabled_and_structural,
+      invalid_prefix_provenance, nonstring_warning_before_failure,
+      hash_once_identity_trace, numeric_and_string401_rewrite,
+      other_identity_error_preserved, missing_enduser_fields_clear_values,
+      validate_after_identity_mutation, native_invalid_token_omits_hash,
+      native_invalid_prefix_names_betterlite and stage_registered_in_real_server are implemented.'
+    proof: [behavior-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Master identity, key resolution or its actual server integration is missing.
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/^(auth::)?master_database_auth::tests::/) - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/auth/master-database-auth/master-and-overlay.yaml
+  - tools/oracle/cases/auth/master-database-auth/missing-db-and-master-only.yaml
+  - tools/oracle/cases/auth/master-database-auth/invalid-prefix-and-jwt-hint.yaml
+  - tools/oracle/cases/auth/master-database-auth/resolution-and-expired-key.yaml
+deviations:
+  - what: Invalid lookup messages omit the key hash, and invalid-prefix messages name betterlite.
+    why: Avoid exposing credential-derived identifiers and retain native product wording; the two named native tests prove these differences.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2136-L2176
+out_of_scope:
+  - B052 owns preflight, credential gate, builder catch, root auth and WebSocket/internal adapters; B875/B876 own backend and cached-session branches.
+  - B755 owns resolved-key validation, B757 error mapping, B870 identity reads and B889 result construction; other user_api_key_auth.py functions remain with those declared owners.
+pitfalls:
+  - A pre-resolved token bypasses request-field overwrites but does not bypass the missing-database check.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

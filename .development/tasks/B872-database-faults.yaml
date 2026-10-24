@@ -3,9 +3,35 @@ title: Native database fault classification
 description: >-
   Implement DbFault classification from SQLSTATE and preserved transport causes. Distinguish permanent
   schema/data errors, deadlocks, read-only transactions, unavailable services and reconnectable transport
-  failures. Preserve allow_requests_on_db_unavailable=false as a typed policy input; the authenticated
-  fallback identity is owned by B757. Do not emulate Prisma exception names using arbitrary substring
-  matching.
+  failures. B1217 reads the outage policy and B757 builds fallback identities; this module reads no
+  configuration and grants no access. Keep connection, infrastructure, data and transport predicates
+  separate. Connection accepts DB_CONNECTION_ERROR_TYPES, DBLookupDeadlineExceeded, EngineConnectionError
+  and no_db_connection ProxyException. Infrastructure excludes DataError, UniqueViolationError,
+  ForeignKeyViolationError, MissingRequiredValueError, RawQueryError, TableNotFoundError and
+  RecordNotFoundError, but accepts transport, other PrismaError and no_db_connection. Base DataError
+  is an exact-type test, excluding its subclasses; P1001 can still be a base data error.
+
+  Transport accepts the transport types, ClientNotConnectedError, HTTPClientClosedError and
+  no_db_connection. Only PrismaError messages additionally recognize "can't reach database server",
+  "cannot reach database server", "can't connect", "cannot connect", "connection error",
+  "connection closed", "timed out", "timeout", "connection refused", "network is unreachable",
+  "no route to host" and "broken pipe", case-insensitively. Preserve those categories in the Python
+  oracle; native driver errors use typed causes, not arbitrary text matching. Deadlocks require a
+  Prisma error plus P2034 or the phrases "deadlock detected", "40p01", "write conflict or a deadlock".
+  Read-only recognition likewise requires PrismaError and quoted 25006 or "read-only transaction".
+  SQLSTATE extraction accepts only DataError: prefer a string meta.code, otherwise extract the first
+  five uppercase alphanumeric characters in the exact PostgresError connector format. Non-Prisma
+  engine-internal failures require a traceback module starting prisma.engine. A permanent fault is
+  infrastructure that is neither connection nor transport. _exception_types drops non-exception classes.
+
+  call_with_db_reconnect_retry returns the first read immediately on success. Retry only transport
+  failures admitted by retry_safe_error_types (None admits all), and only with an available reconnect
+  collaborator. Resolve each timeout independently from explicit argument, then client attribute, then
+  2 seconds for reconnect or 0.1 seconds for lock acquisition; bools, strings and mocks fall back,
+  while numeric values pass through. Warn before reconnect, forwarding reason and both timeouts.
+  False reconnect rethrows the first error; raised reconnect warns again and retains the first error
+  with the reconnect failure as cause. True reconnect invokes a fresh read exactly once; its result
+  or error escapes without another reconnect. No SQL write or transaction is introduced.
 
 
   Build the production database_faults module in betterlite-db; reuse the typed dependencies listed in
@@ -26,9 +52,6 @@ description: >-
   (L469-L590; 102 source lines), _exception_types (L54-L62; 8 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): allow_requests_on_db_unavailable=False.
-
-
   Add the database_faults operation under B856 Management::database. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
@@ -36,26 +59,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::database_faults::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 315 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  315 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 608 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  Sizing: 183 nonblank, noncomment source lines after removing docstrings; allow
+  250 production, 250 behavior tests, 80 helper adapters and 30 wiring lines, 610 within a 625-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -77,12 +83,6 @@ scope:
     - tools/oracle/cases/helpers/database-faults/**
     - tools/oracle/fuzz/corpus/helper_case/database-faults-*
     - crates/betterlite-db/src/database_faults/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/database_faults.rs
-    - crates/betterlite-config/src/database_faults/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L47-L51
@@ -122,11 +122,15 @@ references:
     why: Own call_with_db_reconnect_retry; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L54-L62
     why: Own _exception_types; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L1-L6
-    why: allow_requests_on_db_unavailable default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L438-L451
+    why: Numeric timeout coercion and the two local fallback constants, not configuration reads.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: permanent_fault_no_retry,
-      data_error_not_outage, deadlock_sqlstate, allow_outage_flag.'
+  - text: 'Classify with rstest cases connection_allowlist, infrastructure_data_exclusions,
+      base_data_exact_type, p1001_base_data, transport_keyword_matrix, unrelated_message_not_transport,
+      deadlock_code_and_phrases, read_only_code_and_phrase, meta_code_precedes_batch,
+      malformed_meta_batch_fallback, batch_uppercase_five_chars, nondata_no_sqlstate,
+      engine_traceback_origin, known_prisma_not_engine_internal, permanent_excludes_transient
+      and exception_classes_only.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -135,14 +139,13 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Exercise read_success, data_no_reconnect, unsafe_transport_no_replay, absent_reconnect,
+      timeout_argument_attribute_defaults, timeout_bool_string_fallback, numeric_timeout_passthrough,
+      reconnect_warning_arguments, reconnect_false_preserves_first, reconnect_raise_chains_first,
+      retry_success and retry_failure_no_loop with ordered effects in the helper oracle.'
+    proof: [behavior-tests, oracle, helper-python]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -158,24 +161,16 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-faults-*")"
         && grep -rlq "database_faults" tools/oracle/fuzz/corpus/helper_case/database-faults-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_faults::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*")"
-        && grep -rlq "allow_requests_on_db_unavailable" crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/database-faults/permanent-fault-no-retry.yaml
   - tools/oracle/cases/helpers/database-faults/data-error-not-outage.yaml
   - tools/oracle/cases/helpers/database-faults/deadlock-sqlstate.yaml
-  - tools/oracle/cases/helpers/database-faults/allow-outage-flag.yaml
+  - tools/oracle/cases/helpers/database-faults/classification-matrix.yaml
+  - tools/oracle/cases/helpers/database-faults/sqlstate-extraction.yaml
+  - tools/oracle/cases/helpers/database-faults/reconnect-timeouts.yaml
+  - tools/oracle/cases/helpers/database-faults/reconnect-effects.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/db/exception_handler.py: B1217 owns _exception_chain (L29-L36), _database_service_unavailable_errors
     (L39-L44), PrismaDBExceptionHandler.should_allow_request_on_db_unavailable (L71-L82), PrismaDBExceptionHandler.is_database_service_unavailable_error
     (L295-L349), PrismaDBExceptionHandler.database_unavailable_message (L368-L381), PrismaDBExceptionHandler.service_unavailable_proxy_exception

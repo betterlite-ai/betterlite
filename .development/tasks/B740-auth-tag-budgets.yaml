@@ -1,9 +1,31 @@
 id: B740
 title: Tag and model access-group budget lookups
 description: >-
-  Implement batched TagLookup and ModelGroupBudgetLookup with bounded registry reads, misses and overflow
-  sentinels. Preserve source cache keys and return typed budget rows to admission checks; this task does
-  not increment spend.
+  Implement batched tag and model-access-group budget reads. Both return an empty map without cache
+  or SQL work when the DB is absent or the input sequence is empty. Probe every supplied name in
+  order through B733, including duplicates; pass only cache misses to one find_many query. Retain
+  cached hits on a failed fetch, omit unresolved names and let fetched rows overwrite same-name
+  cache hits in the final map. Cache-read failures propagate; query, row-conversion and cache-write
+  failures within either fetch log DEBUG and return no fetched rows. Earlier cache writes remain
+  when a later write fails. These are deliberately fail-open budget reads, with no row mutation.
+
+  Use B726 TagRepository and ModelAccessGroupBudgetRepository via B2315's unwrapped table adapters.
+  Query tag_name.in or access_group_name.in, include litellm_budget_table, preserve database result
+  order in cache writes and use B733 get_management_object_ttl. Group projection returns spend or
+  zero and max_budget=None for a missing budget relation; a present zero maximum remains zero.
+
+  Tag misses first call _load_tag_registry, which reads at most TAG_REGISTRY_MAX_SIZE+1=5001 rows
+  and passes names, B733's tag registry cache key/overflow sentinel and its own load lock to B1218
+  _load_bounded_registry. The group registry analog uses MODEL_ACCESS_GROUP_REGISTRY_MAX_SIZE=5000
+  and a separate lock/sentinel. A known empty registry skips all tag SQL; None means unavailable or
+  overflow and fetches every requested miss. Registry failures are outside the fetch try block.
+  Group-budget fetches never call the group registry because their caller has already intersected
+  matched_model_access_groups. Test both loader functions directly; B1218 owns overflow warnings,
+  negative-cache TTL and locking implementation. These limits are constants, not config keys.
+
+  Postgres tests selected by POSTGRES_TEST_URL, or testcontainers, assert exact relation projection,
+  one batched row query and no INSERT/UPDATE. The helper operation records all cache/query effects;
+  auth HTTP cases only verify these lookups' fail-open result through existing budget admission.
 
 
   Build the production auth_tag_budgets module in betterlite-auth; reuse the typed dependencies listed
@@ -18,8 +40,7 @@ description: >-
   _fetch_uncached_tags (L2207-L2243; 35 source lines), get_tag_objects_batch (L2247-L2287; 37 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Pass projected spend/max values through unchanged; this lookup does no threshold arithmetic.
 
 
   Add the auth_tag_budgets operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -29,33 +50,16 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Register the batch-read service in B732. Through POST /v1/chat/completions, assert a failed fetch
+  keeps cached budgets enforceable while unresolved names remain omitted; budget errors use B757.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Row conversion and registry overflow are tested independently from request parsing, which this
+  module does not perform. Use distinct tag and access-group names to expose accidental shared locks.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 174 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  174 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 452 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 174 nonblank, noncomment pinned source lines; allow 175 production, 250 tests, 80 adapters
+  and 60 wiring lines, 565 within 625. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -104,10 +108,19 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: batched_tags, tag_not_registered,
-      group_budget_row, registry_overflow, empty_batch, db_error_preserved.'
+  - text: 'Batch tests and helper rows: absent_db_empty, empty_batch_no_io, ordered_duplicate_probes,
+      cache_hits_survive_failed_fetch, cache_read_error_propagates, one_query_for_misses,
+      requested_names_and_budget_include, fetched_row_wins, missing_rows_omitted,
+      query_failure_debug_drop, decode_failure_debug_drop, cache_failure_keeps_prior_writes,
+      management_ttl_used, null_spend_zero, absent_budget_none and zero_budget_retained.'
     proof:
       - behavior-tests
+  - text: 'Registry cases: tag_registry_take_5001, group_registry_take_5001,
+      distinct_registry_keys_locks, known_registry_filters_tags, empty_registry_skips_query,
+      unavailable_registry_fetches_all, overflow_fetches_all, registry_error_propagates and
+      group_fetch_does_not_load_registry. All are named helper cases; postgres_batch_relations
+      verifies the native repository queries against real tables.'
+    proof: [behavior-tests, helper-python, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -129,7 +142,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_tag_budgets::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/^(auth::)?auth_tag_budgets::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -151,17 +164,17 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-tag-budgets/group-budget-row.yaml
   - tools/oracle/cases/helpers/auth-tag-budgets/registry-overflow.yaml
   - tools/oracle/cases/helpers/auth-tag-budgets/empty-batch.yaml
-  - tools/oracle/cases/helpers/auth-tag-budgets/db-error-preserved.yaml
+  - tools/oracle/cases/helpers/auth-tag-budgets/fetch-errors-dropped.yaml
+  - tools/oracle/cases/helpers/auth-tag-budgets/cache-partial-effects.yaml
+  - tools/oracle/cases/helpers/auth-tag-budgets/registry-loaders.yaml
   - tools/oracle/cases/auth/auth-tag-budgets/batched-tags.yaml
   - tools/oracle/cases/auth/auth-tag-budgets/tag-not-registered.yaml
   - tools/oracle/cases/auth/auth-tag-budgets/group-budget-row.yaml
   - tools/oracle/cases/auth/auth-tag-budgets/registry-overflow.yaml
   - tools/oracle/cases/auth/auth-tag-budgets/empty-batch.yaml
-  - tools/oracle/cases/auth/auth-tag-budgets/db-error-preserved.yaml
+  - tools/oracle/cases/auth/auth-tag-budgets/fetch-error-admits.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -277,8 +290,9 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A missing model-group budget is different from an existing zero cap.
+  - A failed second cache write discards every fetched row from this response while the first write survives for the next request.
+  - The group registry is an exported loader for grant collection, not a prerequisite inside the group budget batch fetch.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: security

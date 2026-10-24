@@ -1,171 +1,132 @@
 id: B714
 title: Reader routing and writer-pinned transactions
 description: >-
-  Expose ReadTarget and WriterSession over independently injected writer and reader pools. Keep read method
-  routing and explicit writer pinning in repository calls; transaction writes and read-after-write invariants
-  must not depend on replica lag. Exercise independent connection and recreation failures against the
-  same typed session contract.
+  Implement betterlite-db::database_replica's RoutingDatabase, ReadTarget and WriterPinnedClient over
+  separately supplied B713 writer/reader generations. This task owns every function in
+  routing_prisma_wrapper.py, including routed model actions, lifecycle coordination, availability
+  flags and reader recreation. Consume B710's resolved DATABASE_URL_READ_REPLICA and B854's per-pool
+  credential refresh service. There is no new URL/config parser and no duplicate setting registration;
+  B710 tests the loader. A missing current reader URL becomes the empty string only at the recreation
+  read site, then causes the explicit error below.
 
+  Both availability flags start false. Route the model read methods find_first, find_first_or_raise,
+  find_many, find_unique, find_unique_or_raise, count, group_by, query_first and query_raw to the reader
+  while reader_unavailable is false. Only top-level query_first/query_raw are reads; execute_raw,
+  batch_, tx and other methods stay on the writer. Do not infer read/write behavior from SQL text.
+  read_target consults only the reader flag, not writer health. A model-action wrapper obtains the
+  writer accessor first and exists only for a non-callable object exposing both find_many and create;
+  a missing reader attribute falls back to that writer accessor. Other lookup errors propagate.
+  Already-created routed accessors recheck reader availability on each method lookup, so a degraded
+  reader changes subsequent dispatch without reconstructing the accessor. A method already bound
+  before the flag flips retains its selected target.
 
-  Build the production database_replica module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  WriterPinnedClient snapshots the writer at construction when handed a routing wrapper whose writer
+  is available; when writer_unavailable is true it retains the routing wrapper so reads can still
+  load models from the reader. It does not dynamically switch an already pinned object after later
+  health changes. writer_wrapper always returns the raw writer, including while degraded, because
+  raw SQL writes cannot fall back to a replica. Transactions and their read-after-write operations
+  use that writer session. mark_writer_recovered clears only the writer flag without a probe or
+  reader reset; an external health check owns proof that recovery occurred.
 
+  connect tries writer first, reader second, forwarding the same optional timeout. A side already
+  reporting is_connected() is True skips its connect. A success clears that side's flag and emits
+  '[writer] DB connected' or '[reader] DB connected', including the already-connected case. If both
+  attempts fail, raise the original writer error; this branch does not set both flags true. If only
+  reader fails, mark it unavailable and warn 'Failed to connect to read replica DB: {error}. Falling
+  back to the writer for reads until the reader is reachable.' If only writer fails, mark it unavailable
+  and warn 'Failed to connect to primary (writer) DB: {error}. Serving reads from the read replica;
+  writes will fail until the writer recovers.' Continue serving the successful side without an
+  immediate retry of the failed side. Cancellation is not caught as an ordinary connection error
+  and can stop the sequence before the reader attempt. is_connected reflects bool(writer.is_connected())
+  only; a healthy reader cannot make it return true and an unhealthy reader cannot make it false.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/routing_prisma_wrapper.py:
-  _RoutedActions.__init__ (L48-L56; 9 source lines), _RoutedActions.__getattr__ (L58-L61; 4 source lines),
-  WriterPinnedClient.__init__ (L80-L81; 2 source lines), writer_wrapper (L84-L86; 3 source lines), RoutingPrismaWrapper.__init__
-  (L119-L125; 5 source lines), RoutingPrismaWrapper.writer (L128-L129; 2 source lines), RoutingPrismaWrapper.reader
-  (L132-L133; 2 source lines), RoutingPrismaWrapper.read_target (L136-L144; 8 source lines), RoutingPrismaWrapper.reader_unavailable
-  (L147-L148; 2 source lines), RoutingPrismaWrapper.writer_unavailable (L151-L152; 2 source lines), RoutingPrismaWrapper.mark_writer_recovered
-  (L154-L161; 8 source lines), RoutingPrismaWrapper._should_use_reader (L163-L164; 2 source lines), RoutingPrismaWrapper._try_connect
-  (L167-L174; 8 source lines), RoutingPrismaWrapper.connect (L176-L206; 27 source lines), RoutingPrismaWrapper.disconnect
-  (L208-L218; 11 source lines), RoutingPrismaWrapper.is_connected (L220-L225; 2 source lines), RoutingPrismaWrapper.start_token_refresh_task
-  (L227-L229; 3 source lines), RoutingPrismaWrapper.stop_token_refresh_task (L231-L233; 3 source lines),
-  RoutingPrismaWrapper.recreate_prisma_client (L235-L275; 39 source lines), RoutingPrismaWrapper._recreate_reader
-  (L277-L293; 16 source lines), RoutingPrismaWrapper.__getattr__ (L295-L308; 11 source lines).
+  disconnect tries writer then reader with the same timeout, even after an ordinary writer exception.
+  Warn 'Error disconnecting Prisma client: {error}' for each failure and raise the first one after
+  both attempts. Cancellation propagates immediately rather than entering that Exception handler.
+  Start and stop credential-refresh tasks writer-first then reader; their first error aborts the
+  sequence, and availability flags do not suppress either call. Each pool has its own B854 refresh
+  service and token lifetime.
 
+  recreate first calls the writer with the supplied URL, optional transport and expected_generation.
+  If the writer reports false because its generation changed, return false without reader work or
+  flag clearing. A writer error propagates with previous flags unchanged. Writer success clears
+  writer_unavailable, then attempts the reader. A token reader obtains a fresh URL through B854;
+  a falsey result raises 'Failed to generate fresh {token_label} for read replica'. A password reader
+  uses the current DATABASE_URL_READ_REPLICA; missing/empty raises
+  'DATABASE_URL_READ_REPLICA not set; cannot recreate read replica client'. Recreate that reader
+  with its own URL and the supplied transport, without the writer's expected_generation. On reader
+  success clear reader_unavailable; on an ordinary exception set it true and warn 'Failed to recreate
+  reader Prisma client: {error}. Reads will fall back to the writer until the reader recovers.' Either
+  outcome returns true because the writer was recreated. Cancellation escapes instead of becoming
+  reader degradation. Do not roll back the already completed writer replacement.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_URL_READ_REPLICA=''.
+  Run native routing/lifecycle tests with independently controlled endpoints and B860 Postgres fixtures
+  selected by POSTGRES_TEST_URL, or testcontainers when absent. Seed distinguishable rows in writer
+  and reader databases to model deterministic replication lag, then verify actual selected rows and
+  writer-only writes. Force connect/recreate failures on each side and assert flags, logs, call order
+  and durable rows. Test a transaction that reads its just-written row despite a stale reader and
+  a model-reconcile read while the writer is degraded. This is database behavior, not a FastAPI helper
+  oracle; no route registration or invented unauthorized/invalid-target case belongs here.
 
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  Write betterlite-config::database_replica::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 169 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  169 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 403 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned methods contain 169 nonblank noncomment lines including docstrings, plus the two read
+  method sets. Allow 225 routing/lifecycle code, 310 behavioral/Postgres tests and 35 wiring lines,
+  570 within 650. Keep routing policy and lifecycle in separate files below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/database_replica.rs
     - crates/betterlite-db/src/database_replica/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/database_replica/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/database_replica.rs
-    - crates/betterlite-config/src/database_replica/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/database-replica-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L1-L308
-    why: Pinned implementation and exact ownership boundary for database_replica.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L48-L56
-    why: Own _RoutedActions.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L58-L61
-    why: Own _RoutedActions.__getattr__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L80-L81
-    why: Own WriterPinnedClient.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L84-L86
-    why: Own writer_wrapper; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L119-L125
-    why: Own RoutingPrismaWrapper.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L128-L129
-    why: Own RoutingPrismaWrapper.writer; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L132-L133
-    why: Own RoutingPrismaWrapper.reader; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L136-L144
-    why: Own RoutingPrismaWrapper.read_target; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L147-L148
-    why: Own RoutingPrismaWrapper.reader_unavailable; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L151-L152
-    why: Own RoutingPrismaWrapper.writer_unavailable; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L154-L161
-    why: Own RoutingPrismaWrapper.mark_writer_recovered; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L163-L164
-    why: Own RoutingPrismaWrapper._should_use_reader; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L167-L174
-    why: Own RoutingPrismaWrapper._try_connect; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L176-L206
-    why: Own RoutingPrismaWrapper.connect; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L208-L218
-    why: Own RoutingPrismaWrapper.disconnect; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L220-L225
-    why: Own RoutingPrismaWrapper.is_connected; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L227-L229
-    why: Own RoutingPrismaWrapper.start_token_refresh_task; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L231-L233
-    why: Own RoutingPrismaWrapper.stop_token_refresh_task; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L235-L275
-    why: Own RoutingPrismaWrapper.recreate_prisma_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L277-L293
-    why: Own RoutingPrismaWrapper._recreate_reader; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L295-L308
-    why: Own RoutingPrismaWrapper.__getattr__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L290-L295
-    why: DATABASE_URL_READ_REPLICA default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L18-L86
+    why: Complete read allowlists, dynamic accessor dispatch and the two different writer pins.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L119-L233
+    why: Initial flags, read target, sequential connect/disconnect, degraded warnings and token lifecycle order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/routing_prisma_wrapper.py#L235-L308
+    why: Writer-first recreation, exact reader URL read/error site and attribute routing.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: both_online, reader_failure_warning_writer_fallback,
-      writer_failure_reads_survive, both_fail_original_error, writer_pinned_transaction, reader_recovery,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Dispatch tests cover initial_availability_flags, every_model_read_method,
+      only_two_top_level_read_methods, raw_writes_and_transactions_pinned,
+      read_target_ignores_writer_flag, retained_accessor_observes_reader_flip,
+      already_bound_method_keeps_target, missing_reader_accessor_uses_writer,
+      non_accessor_stays_writer, writer_lookup_error_propagates, writer_pin_snapshot,
+      degraded_writer_pin_allows_replica_read, raw_writer_pin_never_falls_back and mark_writer_only.'
+    proof: [behavior-tests]
+  - text: 'Lifecycle tests cover writer_then_reader_connect, already_connected_logs_success,
+      connect_timeout_forwarded, reader_failure_warns_and_falls_back,
+      writer_failure_warns_and_serves_reader, both_fail_raise_original_writer_without_flag_rewrite,
+      connect_cancel_stops_sequence, writer_only_is_connected, disconnect_attempts_both,
+      disconnect_logs_each_and_raises_first, disconnect_cancel_propagates,
+      refresh_start_stop_order, refresh_failure_stops_sequence, stale_writer_generation_skips_reader,
+      writer_recreate_error_preserves_flags, token_reader_fresh_url,
+      falsey_token_reader_exact_error, missing_password_reader_exact_error,
+      reader_recreate_error_after_writer_success, reader_recreate_cancel_not_swallowed and reader_recovery_clears_flag.'
+    proof: [behavior-tests]
+  - text: 'Real database checks prove postgres_reader_dispatch, postgres_writer_read_after_write,
+      postgres_degraded_writer_model_read and postgres_reader_failure_preserves_writer_commit.'
+    proof: [behavior-tests, postgres-tests]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_replica::tests::/)
-        - test(/replays_the_/)'
+      why: Read routing, flags and ordered lifecycle errors must match each source branch.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_replica::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_replica::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_replica::tests::postgres_failure_effects$/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_replica::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-replica-*")"
-        && grep -rlq "DATABASE_URL_READ_REPLICA" crates/betterlite-config/fuzz/corpus/config_yaml/database-replica-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Writer pinning and reader fallback must operate on real rows, not only mocked dispatch counters.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_replica::tests::postgres_writer_read_after_write$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_replica::tests::postgres_reader_failure_preserves_writer_commit$/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B710 owns DATABASE_URL_READ_REPLICA loading/assembly and B2307 its byte decoding. This task consumes
+    the latest resolved value and owns the missing-at-recreation error only.
+  - B713 owns individual pool generation replacement and drain; B854 owns token mint/refresh scheduling.
+    B124 owns PrismaClient construction-time replica fallback and external health-watchdog decisions.
 pitfalls:
-  - Keep read method routing and explicit writer pinning in repository calls; transaction writes and read-after-write
-    invariants must not depend on replica lag.
+  - Both connect failures raise before the one-sided degradation branches set their flags.
+  - WriterPinnedClient chooses its db once; only routed model accessors dynamically recheck reader health.
+  - A successful writer replacement returns true even when reader replacement subsequently fails.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

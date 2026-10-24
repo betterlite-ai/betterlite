@@ -1,9 +1,44 @@
 id: B781
 title: Scope key list and alias queries
 description: >-
-  Implement KeyListScope and typed sort/status/search/expiry filters. Use explicit allowed SQL sort columns
-  and bound values; preserve admin/member team visibility and exclusion of UI session tokens. Key aliases
-  use the same authorization scope as list queries.
+  Implement only key-list authorization and team/alias scope helpers. B897 owns sort, status,
+  expiry, search SQL and UI-session filtering. B782 composes them into HTTP routes. List and
+  alias scope are deliberately different: alias visibility trusts the caller user row's teams
+  list, while full team-key visibility additionally uses members_with_roles and permissions.
+
+  validate_key_list_check immediately returns null for B2314 admin-view callers. Otherwise
+  require caller.user_id and its B723 user row including organization_memberships; either missing
+  value raises ProxyException 403 bad_request_error, param user_id, code 403. A truthy requested
+  user_id must match the row; truthy team_id must occur in row.teams; truthy organization_id must
+  occur in organization_memberships (any role). Denials use the same 403 bad_request_error with
+  the relevant user_id/team_id/organization_id param and a message identifying the forbidden scope.
+  Falsey selectors skip these checks; key_alias is unused. Cases scope_admin_bypass,
+  scope_missing_identity, scope_missing_user_row, scope_foreign_user, scope_team_membership,
+  scope_organization_membership, scope_empty_selectors and scope_alias_unchecked prove each branch.
+
+  A truthy key_hash is queried exactly, without normalization. Query errors and missing rows both
+  become 403 bad_request_error, param key_hash, code 403, with a key-not-found message. Existing
+  rows pass B778 _can_user_query_key_info; a false result instead raises HTTPException 403 with
+  a role-specific denial detail. Return the typed complete user row on success. Cases
+  scope_hash_exact, scope_hash_database_error_hidden, scope_hash_missing, scope_hash_forbidden
+  and scope_returns_user distinguish all exception types and ordering. B782 owns HTTP translation.
+
+  Team collection performs one B724 query with team_id in row.teams; null user, empty teams or
+  null query result yields []. Validate every returned row; do not silently drop malformed rows.
+  Preserve query order and duplicates in the helper outputs. Admin IDs use B800 is_team_admin;
+  list-permission IDs explicitly exclude admins then call B800 _team_member_has_permission with
+  the literal /key/list. Member IDs need a non-null members_with_roles.user_id matching the
+  caller, irrespective of role. Cases teams_empty_no_query, teams_single_query,
+  teams_invalid_row_propagates, teams_admin_ids, teams_list_permission_nonadmin and
+  teams_member_null_id_excluded cover these projections.
+
+  Alias scope appends the truthy caller user_id to existing bind parameters, then separately loads
+  that user row and takes teams or []. Build user_id = $n OR team_id IN ($n,...) inside parentheses
+  and append it to existing WHERE fragments. With neither identity nor teams append FALSE.
+  Never interpolate identities; preserve incoming parameter offsets and team order. Cases
+  aliases_existing_bind_offsets, aliases_owner_or_user_row_teams, aliases_missing_row_owner_only,
+  aliases_missing_identity_false and aliases_hostile_identifier_bound verify the exact SQL/value pair.
+  No owned helper writes the database, reads configuration or stores a secret.
 
 
   Build the production key_list_filters module in betterlite-server; reuse the typed dependencies listed
@@ -36,8 +71,8 @@ description: >-
 
 
   Sizing: 166 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  166 production, 136 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 397 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  166 production, 270 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 531 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -55,12 +90,12 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/key-list-filters-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6281-L6483
-    why: Pinned implementation and exact ownership boundary for key_list_filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6281-L6437
+    why: Own authorization and team projections; status derivation begins outside this range.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6687-L6718
     why: Own _apply_non_admin_alias_scope; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6843-L7234
-    why: Pinned implementation and exact ownership boundary for key_list_filters.
+    why: B897 owns SQL query construction; this task only supplies authorization scope.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6281-L6376
     why: Own validate_key_list_check; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6379-L6394
@@ -73,7 +108,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6425-L6437
     why: Own _get_member_team_ids_from_objects; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: admin_team_scope, member_team_scope.'
+  - text: All named scope, team projection and alias-binding cases above compare returned records,
+      exception type/status/param/code and ordered repository calls with the pinned helpers.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -102,10 +138,14 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/key-list-filters/admin-team-scope.yaml
   - tools/oracle/cases/helpers/key-list-filters/member-team-scope.yaml
+  - tools/oracle/cases/helpers/key-list-filters/selector-denials.yaml
+  - tools/oracle/cases/helpers/key-list-filters/key-hash-lookup-failures.yaml
+  - tools/oracle/cases/helpers/key-list-filters/team-list-permission.yaml
+  - tools/oracle/cases/helpers/key-list-filters/alias-bind-offsets-and-false-scope.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2314 owns _user_has_admin_view; B770 owns repository adapters, B723/B724 user/team repositories,
+    B778 key-info access and B800 team role/permission checks. B897 owns query plans, not these helpers.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -203,8 +243,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A member key-list permission is not equivalent to administrator visibility of all team keys.
+  - A non-admin member with /key/list permission does receive full visibility for that team in the list route.
+  - A failed key-hash database query is intentionally indistinguishable from a missing hash in this helper.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 575
   max_new_expects: 0
 review_level: security

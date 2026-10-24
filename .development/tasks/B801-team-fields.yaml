@@ -1,15 +1,49 @@
 id: B801
-title: Typed team requests and metadata validation
+title: Team metadata validation and shared row access
 description: >-
-  Implement typed TeamPatch and member/budget request types with source one-identifier and duration validators.
-  Add injected TeamMetadataValidator and schema registry; preserve configured timeout and unavailable
-  message behavior. Python callable loading is installed by B165 later; requesting an unregistered validator
-  fails startup rather than disabling validation.
+  Build the team_fields module's shared row/cache helpers and metadata validation. B1231 already owns
+  TeamPatch, member/budget requests, TeamMetadataFieldSchema and TeamEditAccess variants; consume them
+  without duplicating their identifier/duration validators. Own TeamMetadataRequester (nullable user_id,
+  user_email, user_role), TeamMetadataValidationPayload (required create/update operation, metadata and
+  requester; existing_metadata/team_id/team_alias=None) and TeamMetadataValidationResult (required
+  valid, error_message=None). Registries start with no validator and empty schema, support replacement
+  and clearing, and are injected state rather than globals. Their getters return the current values.
 
+  general_settings.custom_team_metadata_validate defaults None; B165 loads a configured async Python
+  callable through get_instance_fn and installs it during startup. A missing callable/bridge is a
+  startup error, never successful validation. general_settings.team_metadata_schema defaults None:
+  parse None as (), otherwise validate B1231's fields, preserving order, and reject duplicate keys
+  with sorted unique key names in team_metadata_schema contains duplicate keys. Malformed schemas
+  fail config loading. This schema describes metadata for clients; it is not itself an automatic
+  validation of every team's metadata value.
 
-  Build the production team_fields module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  With no registered validator, return before reading settings or constructing a payload. Otherwise
+  only dict metadata survives (other mappings become {}), only dict existing_metadata survives
+  (other mappings become None), and requester carries the caller role's string value or None.
+  Accept async functions and async __call__ objects; a synchronous callable is HTTP 500 with
+  custom_team_metadata_validate must be an async function, outside the guarded invocation.
+  Await and validate the result inside the timeout: timeout, raised exceptions and malformed result
+  all become HTTP 503 with the configured unavailable message, without leaking callback exceptions.
+  valid=false is HTTP 400 with a truthy callback error_message or Team metadata failed validation.
+  valid=true ignores error_message. These HTTPException details are {error: message}; caller routes
+  retain their own error conversion. The sole premium_user gate is omitted as the deviation below.
+
+  general_settings.team_metadata_validation_timeout defaults to 5 seconds. A positive integer or
+  float is accepted, except bool; None, zero, negative, strings and NaN use 5. Positive infinity
+  means no finite deadline in the source; represent it without a floating money type. The unavailable
+  message defaults to Team metadata validation is currently unavailable, so the team was not saved.
+  Contact your proxy admin. A nonblank string overrides it without stripping surrounding spaces;
+  empty/whitespace-only/non-string values use the default. These are real fallbacks, not int() reads.
+
+  Native row contracts replace the owned Python Protocol/cast wrappers; _as_object/_as_list preserve
+  values and row order. Accessors select B722 tokens, B723 user/organization/membership, B724 teams,
+  B725 models/budgets and B726 team-membership/deleted-team/access-group tables, using the caller's
+  transaction for _team_tx_db. _sanitize_for_log tries str then repr and removes ALL CR/LF characters.
+  _refresh_cached_team validates the returned row as B859 LiteLLM_TeamTableCachedObj and calls
+  B734._cache_team_object with its actual team_id; conversion/cache failures propagate. _general_settings
+  validates a string-keyed map; it does not silently turn malformed settings into {}. _caller_edit_access
+  yields unrestricted for proxy/org admin, none for no role, and for team admin consumes B1200's
+  supported editable-fields policy: empty becomes disabled, otherwise return sorted editable_fields.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/team_metadata_validation.py:
@@ -41,48 +75,28 @@ description: >-
   lines), _general_settings (L484-L487; 3 source lines), _caller_edit_access (L490-L505; 16 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Load these four general_settings keys through B002; B1200 remains the config owner of editable fields.
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.team_metadata_validation_timeout=None;
-  general_settings.team_metadata_validation_error_message=None; team_metadata_validation_timeout=None;
-  team_metadata_validation_error_message=None.
+  B856 Management::teams dispatches team_fields to the production validators and the original Python
+  helpers. Seed B171's helper_case with timeout, message and schema projections; do not make its adapter
+  call the cache-refresh accessor or later team routes.
 
 
-  Add the team_fields operation under B856 Management::teams. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-fields-*
-  seed to B171 helper_case, which already owns this decoder.
+  Config tests metadata_settings_loaded, timeout_positive, timeout_wrong_type, timeout_nonpositive,
+  timeout_nonfinite, unavailable_message_spaces, unavailable_message_default, schema_missing,
+  schema_invalid, schema_duplicates and callable_resolution exercise the production loader and its
+  consumed values. Existing config_yaml parsing owns outside bytes; these functions transform typed values.
 
 
-  Write betterlite-config::team_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Sizing: 210 nonblank, noncomment owned function lines, plus metadata record declarations; allow
+  240 production, 300 behavior/config tests, 90 helper adapters and 80 configuration/wiring lines,
+  710 within a 750-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 210 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  210 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 503 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Native-only deviation test in this production module: metadata_without_license.
+  Prove metadata validation can run without premium_user while retaining required/type/allowed-value
+  errors; the license-bypass result is intentionally absent from MIT equality cases.
 scope:
   paths:
     - crates/betterlite-server/src/team_fields.rs
@@ -221,11 +235,15 @@ references:
     why: general_settings.team_metadata_validation_timeout default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L150-L155
     why: general_settings.team_metadata_validation_error_message default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L1-L6
-    why: team_metadata_validation_error_message default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6793-L6799
+    why: B165 installs the optional callable and this task parses the configured schema at startup.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_one_identifier,
-      budget_duration, metadata_schema, metadata_validation_error, validator_timeout, explicit_field_clear.'
+  - text: 'Named tests: registry_empty_replace_clear, schema_order, metadata_dict_only,
+      requester_null_role, validator_absent, async_function, async_callable_object, sync_callable_500,
+      validator_accepts, rejection_message, rejection_empty_message, validator_timeout,
+      validator_raised_503, malformed_result_503, no_exception_leak, sanitize_crlf,
+      sanitize_repr_fallback, cache_row_validated, cache_refresh_error, transaction_accessor,
+      unrestricted_edit, disabled_team_edit, sorted_edit_fields, no_role_edit and settings_map_error.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -239,7 +257,9 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: 'metadata_without_license invokes a real B165 async callback without a license. Pure helper
+      equality tests pass premium_user=true only to isolate validation results; the no-license result
+      stays outside equality cases. Configured missing bridges fail startup in missing_validator_bridge.'
     proof:
       - behavior-tests
 checks:
@@ -270,20 +290,20 @@ checks:
         && grep -rlq "team_metadata_validation_timeout" crates/betterlite-config/fuzz/corpus/config_yaml/team-fields-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/team-fields/member-one-identifier.yaml
-  - tools/oracle/cases/helpers/team-fields/budget-duration.yaml
   - tools/oracle/cases/helpers/team-fields/metadata-schema.yaml
   - tools/oracle/cases/helpers/team-fields/metadata-validation-error.yaml
   - tools/oracle/cases/helpers/team-fields/validator-timeout.yaml
-  - tools/oracle/cases/helpers/team-fields/explicit-field-clear.yaml
+  - tools/oracle/cases/helpers/team-fields/registry-and-payload.yaml
+  - tools/oracle/cases/helpers/team-fields/callable-shapes.yaml
+  - tools/oracle/cases/helpers/team-fields/validator-errors-and-results.yaml
+  - tools/oracle/cases/helpers/team-fields/timeout-message-values.yaml
+  - tools/oracle/cases/helpers/team-fields/log-sanitization.yaml
+  - tools/oracle/cases/helpers/team-fields/edit-access.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
+  - what: Configured metadata validators run without premium_user instead of returning the license-related HTTP 400.
+    why: README Decisions removes the paid entitlement gate while retaining callback validation and fail-closed errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L104-L139
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B802 owns TeamMemberBudgetHandler.strip_system_managed_metadata_keys
     (L516-L521), TeamMemberBudgetHandler.should_create_budget (L524-L538), TeamMemberBudgetHandler.create_team_member_budget_table
     (L541-L598), TeamMemberBudgetHandler.upsert_team_member_budget_table (L601-L669), TeamMemberBudgetHandler._clean_team_member_fields
@@ -355,8 +375,9 @@ out_of_scope:
   - 'litellm/types/proxy/management_endpoints/team_endpoints.py: B1231 owns team_request_contracts (L1-L255).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A configured metadata validator must fail startup when its bridge is unavailable.
+  - Whitespace around a nonblank unavailable message is retained, unlike whitespace used only to detect emptiness.
+  - Invalid callback results are 503; a valid result saying valid=false is 400.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

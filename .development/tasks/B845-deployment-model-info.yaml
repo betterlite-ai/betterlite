@@ -1,55 +1,76 @@
 id: B845
 title: Deployment model info and configured limits
 description: >-
-  Implement DeploymentModelInfo, discovered provider metadata refresh and configured limit/mode/display-name
-  projection over B013 and CatalogLookup. Keep configured model_info authoritative and provider discovery
-  optional with the source warning fallback; do not fetch Hugging Face tokenizers or templates.
+  Implement deployment_model_info in betterlite-router over B844's catalog indexes. Own the refresh,
+  discovered-info and listing/configured-limit methods at router.py L10350-L10548, the overloaded
+  get_router_model_info and get_model_info/get_model_group/get_deployment_model_info at L10664-L10907,
+  and DiscoveredDeploymentModelInfo/DeploymentModelListingInfo at types/router.py L702-L723. These
+  immutable records hold deployment identity plus limits, and ordered cost-map keys plus optional
+  input/output limits. B2306 owns credential selection, including the team public-name helper.
 
+  Refresh snapshots model_list and distributes its iterator among eight workers. One deployment's
+  validation/provider/network error logs debug Could not refresh deployment model info and does not
+  stop the others. Invalidate model-group metadata after all workers finish, even with an empty
+  snapshot. Overlay B2306's resolved credentials on deployment params before B174 provider resolution.
+  Discover only hosted_vllm, openai, text-completion-openai and openai_like; skip absent api_base, a star
+  in the resolved model, and truthy use_clientside_credentials. Use params.api_key or the dynamic key.
+  Select truthy extra_headers, then headers, then an empty mapping; validate string keys/values and
+  lowercase names before overlaying authorization=Bearer <key>. Explicit Authorization wins. Call
+  B1425 get_openai_compatible_model_info with B173's supplied or pooled OpenAI client and B125's memory
+  cache. B1425 owns the configured /v1/models request, five-second timeout and response decoding.
 
-  Use B174 provider resolution and B205 model metadata contracts directly. ModelInfoDiscovery::fetch(ConfiguredDeployment)->Result<TokenLimits,DiscoveryError>
-  is injected; B038 owns the OpenAI-compatible provider implementation (llms/openai_like/model_info.py:60-98).
-  Router orchestration retains configured-only destinations, refresh concurrency 8, refresh interval 300
-  seconds and generation-identity checks. This code neither downloads request URLs nor Hugging Face templates/tokenizers.
+  Empty discoveries, missing IDs and a deployment replaced during the request do not update the cache.
+  Identity is the actual catalog record, not merely an equal ID or equal contents. For a current result
+  set capacity=max(current deployment count,1), delete its old entry, store the result and invalidate
+  model-group metadata. Initialize discovery storage with that capacity and TTL 600 seconds, twice
+  MODEL_INFO_REFRESH_SECONDS=300. B124 owns startup scheduling. Reads reject wrong record types and
+  stale identities, exposing discovered fields only where configured model_info is absent or None.
+  A malformed but non-null configured limit suppresses discovery before later coercion drops it.
 
+  get_model_listing_info performs exact model-name index lookup without pattern expansion, scanning
+  every deployment in the group. Overlay configured non-null fields on discovery. Choose each row's
+  truthy model_info.base_model, params.base_model, then params.model; retain nonempty strings and
+  deduplicate in configuration order. Take the largest input/output limit after B206.coerce_token_limit:
+  bools, malformed strings, NaN and infinity disappear; numeric strings and finite floats use int
+  semantics; zero and negative integers remain valid. Unknown names return None. In contrast,
+  get_configured_token_limits reads one B844-selected deployment, returning (None,None) if unknown.
+  Mode and display_name also read one row: require a string with nonempty stripped content but return
+  the original untrimmed value.
 
-  Build the production deployment_model_info module in betterlite-router; reuse the typed dependencies
-  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
-  with adjacent tests.rs files.
+  get_router_model_info replaces a supplied deployment only when an explicit id resolves. Missing
+  deployment raises ValueError Deployment not found. Invalid litellm_params raises ValueError
+  Deployment missing valid litellm_params. Got: <type>, deployment_id: <id-or-unknown>. Resolve
+  base_model from model_info then params only when the former is None. Non-Azure providers nevertheless
+  use the resolved model, overriding base_model. For Azure with no base, log debug when the azure/
+  cost entry has positive max_input_tokens, max_tokens or input_cost_per_token; otherwise log error
+  with the source base_model advice and cost-tracking URL, then continue. Stub membership and positive
+  output price alone do not qualify. Non-Azure wildcard models use B367's first expanded match with
+  the same deployment ID, silently skipping malformed candidates. Prefix the provider only if absent
+  and call B2225.get_model_info. None returns immediately and lookup exceptions propagate. Otherwise
+  deep-copy the cached result, overlay discovery, then configured non-null fields. Preserve false,
+  zero and empty values without mutating the shared catalog result.
 
+  get_model_info returns the original indexed deployment or None; get_model_group returns its
+  same-name group through B844 or None. get_deployment_model_info separately tries a custom cost entry
+  by ID, a built-in entry by model name, and the custom entry's non-null base_model, swallowing each
+  lookup failure. Discovery participates only if the custom ID exists in the cost map. Merge base
+  defaults into custom values, then custom over built-in using B157._update_dictionary: skip null
+  overrides, convert numeric strings and shallow-merge nested maps. Return whichever sources exist,
+  or None. B157.cost_map_omits_token_price reads raw custom/built-in/base entries; when at least one
+  exists and none contains either token-price key, set both prices to None. An explicitly present
+  zero or null price key defeats that rule. B193 supplies the raw catalog and B205 ModelInfo fields;
+  do not use the B013 umbrella as the runtime metadata owner.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/router.py:
-  Router.arefresh_model_info (L10350-L10362; 11 source lines), Router._arefresh_deployment_model_info
-  (L10364-L10411; 48 source lines), Router.get_discovered_model_info (L10413-L10422; 10 source lines),
-  Router.get_model_listing_info (L10424-L10480; 52 source lines), Router._widest_configured_limit (L10483-L10490;
-  8 source lines), Router.get_configured_token_limits (L10492-L10517; 23 source lines), Router.get_configured_mode
-  (L10519-L10528; 9 source lines), Router.get_configured_display_name (L10530-L10548; 17 source lines),
-  Router._get_team_public_name_deployment (L10572-L10579; 8 source lines), Router.get_router_model_info
-  (L10664-L10670; 7 source lines), Router.get_router_model_info (L10673-L10674; 2 source lines), Router.get_router_model_info
-  (L10676-L10800; 97 source lines), Router.get_model_info (L10802-L10816; 12 source lines), Router.get_model_group
-  (L10818-L10828; 9 source lines), Router.get_deployment_model_info (L10830-L10907; 62 source lines).
+  Pure projections use deployment_model_info under B856's models dispatch and B171's helper parser.
+  The Python adapter calls pinned methods with fixture catalog/cache state; compare values, complete
+  ValueError messages, debug/error events and input immutability. Refresh is effectful: Rust tests
+  call the real B1425 transport against a local mock, including request headers and failure isolation.
+  No new byte decoder or config loader is introduced. Keep B2219's current local-only Hugging Face
+  behavior, recorded as a deviation below, until Max resolves downloads.
 
-
-  Add the deployment_model_info operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a deployment-model-info-* seed to B171 helper_case, which already owns this decoder.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 375 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  375 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 618 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Method ranges contain 369 nonblank, noncomment lines including overloads/docstrings. The immutable
+  records and cache initialization add 22. Allow 330 production, 330 tests, 90 adapters and 40 wiring
+  lines, 790 within 800. Separate refresh, listing and merge children keep Rust files below 300 lines.
 scope:
   paths:
     - crates/betterlite-router/src/deployment_model_info.rs
@@ -68,8 +89,6 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10350-L10548
     why: Pinned implementation and exact ownership boundary for deployment_model_info.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10572-L10579
-    why: Own Router._get_team_public_name_deployment; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10664-L10907
     why: Pinned implementation and exact ownership boundary for deployment_model_info.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10350-L10362
@@ -100,17 +119,44 @@ references:
     why: Own Router.get_model_group; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10830-L10907
     why: Own Router.get_deployment_model_info; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L702-L723
+    why: Immutable discovery identity and listing-result records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1030-L1033
+    why: Refresh constant read sets discovery TTL to 600 seconds and capacity to at least one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/model_info.py#L16-L98
+    why: B038 provider allowlist, refresh constants and configured-upstream transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L168-L194
+    why: B206 accepts zero and negative limits, rejecting bool and malformed values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3136-L3167
+    why: B157 null-skipping, number conversion and shallow nested-map merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3301-L3314
+    why: Either raw token-price key prevents the absent-price override.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: configured_limits, widest_limit,
-      display_name, discovered_info, refresh_failure_warning, provider_metadata_merge.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
+  - text: 'refresh_model_metadata covers snapshot_eight_workers, invalid_one_does_not_stop_others,
+      debug_not_warning_on_failure, empty_refresh_invalidates, credential_overlay_before_resolution,
+      four_provider_allowlist, absent_base_wildcard_and_clientside_skips, dynamic_key_fallback,
+      extra_headers_then_headers, lowercase_explicit_authorization_wins, invalid_header_values,
+      empty_discovery_no_write, missing_id_no_write, replacement_during_request_no_write,
+      resize_delete_set_invalidate_order and discovery_ttl_six_hundred.'
+    proof: [behavior-tests]
+  - text: 'listing_metadata covers stale_or_wrong_cache_record, equal_id_different_identity,
+      configured_nonnull_suppresses_discovery, explicit_null_allows_discovery, ordered_cost_key_dedup,
+      base_model_fallback, unknown_and_expanded_name_absent, widest_group_limits,
+      one_deployment_configured_limits, malformed_bool_nan_infinity_limits, numeric_string_float_limits,
+      zero_negative_limits, blank_or_nonstring_mode_and_display and original_whitespace_preserved.'
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: 'router_metadata_merge covers resolved_id_replaces_supplied, unknown_id_retains_supplied,
+      missing_deployment_error, malformed_params_error_and_id, base_model_none_precedence,
+      nonazure_resolved_model_overrides_base, azure_positive_input_or_context_fallback_debug,
+      azure_zero_stub_or_output_only_error_continues, wildcard_same_id_and_bad_candidate,
+      provider_prefix_once, model_lookup_none_or_error, configured_false_zero_empty_win,
+      source_metadata_unmodified, raw_lookup_identity, group_by_indexed_id,
+      custom_builtin_base_combinations, each_lookup_failure_swallowed,
+      no_custom_id_no_discovery, numeric_strings_and_shallow_nested_merge,
+      absent_prices_become_null and explicit_zero_or_null_price_key_present.'
+    proof: [behavior-tests, oracle]
+  - text: native_huggingface_metadata_uses_local_assets_only returns absent max_tokens without a local asset and makes no Hugging Face request.
+    proof: [behavior-tests]
 checks:
   optional:
     - mutants
@@ -130,14 +176,27 @@ checks:
         && grep -rlq "deployment_model_info" tools/oracle/fuzz/corpus/helper_case/deployment-model-info-*
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/deployment-model-info/configured-limits.yaml
-  - tools/oracle/cases/helpers/deployment-model-info/widest-limit.yaml
-  - tools/oracle/cases/helpers/deployment-model-info/display-name.yaml
-  - tools/oracle/cases/helpers/deployment-model-info/discovered-info.yaml
-  - tools/oracle/cases/helpers/deployment-model-info/refresh-failure-warning.yaml
-  - tools/oracle/cases/helpers/deployment-model-info/provider-metadata-merge.yaml
-deviations: []
+  - tools/oracle/cases/helpers/deployment-model-info/cache-identity-and-configured-null.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/group-widest-versus-one-deployment.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/limit-coercion.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/cost-key-order-and-base-fallback.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/mode-display-whitespace.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/deployment-and-params-errors.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/azure-fallback-logs.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/nonazure-base-and-wildcard.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/merge-without-catalog-mutation.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/raw-identity-and-group.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/custom-builtin-base-and-failures.yaml
+  - tools/oracle/cases/helpers/deployment-model-info/absent-versus-explicit-token-prices.yaml
+deviations:
+  - what: Hugging Face metadata uses B2219's supplied local config only. Without a usable asset, max_tokens is None instead of downloading config.json; no new HTTP status or error code is emitted.
+    why: Preserve the current no-download behavior until Max decides whether Hugging Face downloads are allowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5847-L5867
 out_of_scope:
+  - B2306 owns deployment credential resolution, including _get_team_public_name_deployment,
+    _deployment_usable_by_team, _get_model_group_deployment_usable_by_team,
+    get_deployment_credentials, get_credential_deployment, _get_wildcard_deployment_usable_by_team,
+    get_deployment_credentials_with_provider and _is_deployment_blocked. Refresh calls it directly.
   - 'litellm/router.py: B013 owns _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
     Router._inherit_builtin_cache_pricing (L8800-L8826), Router._inherit_builtin_service_tier_pricing
     (L8839-L8861), Router._inherit_builtin_base_rates_for_off_peak (L8864-L8907), Router._inherit_builtin_tiered_output_rate
@@ -250,9 +309,7 @@ out_of_scope:
   - 'litellm/router.py: B331 owns Router._is_classifier_internal_call (L2494-L2501).'
   - 'litellm/router.py: B303 owns Router._handle_clientside_credential (L3937-L3970), Router._merge_tools_from_deployment
     (L3973-L3990), Router._update_kwargs_with_deployment (L3992-L4096), Router._get_async_openai_model_client
-    (L4098-L4120), Router._deployment_slot (L8699-L8713), Router.get_deployment_credentials (L10286-L10299),
-    Router.get_credential_deployment (L10550-L10570), Router.get_deployment_credentials_with_provider
-    (L10599-L10661), Router._get_client (L12293-L12331).'
+    (L4098-L4120), Router._deployment_slot (L8699-L8713), Router._get_client (L12293-L12331).'
   - 'litellm/router.py: B305 owns Router._get_stream_timeout (L4122-L4130), Router._get_non_stream_timeout
     (L4132-L4143), Router._get_timeout (L4145-L4154), Router.abatch_completion (L4156-L4247).'
   - 'litellm/router.py: B346 owns Router.schedule_acompletion (L4395-L4453), Router._schedule_factory
@@ -298,7 +355,7 @@ out_of_scope:
   - 'litellm/router.py: B307 owns Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
     (L11758-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
     (L11769-L11818), Router._filter_cooldown_deployments (L14476-L14493), Router._filter_blocked_deployments
-    (L14495-L14509), Router._is_deployment_blocked (L14512-L14521), Router._async_filter_health_check_unhealthy_deployments
+    (L14495-L14509), Router._async_filter_health_check_unhealthy_deployments
     (L14523-L14566), Router._filter_health_check_unhealthy_deployments (L14568-L14596).'
   - 'litellm/router.py: B066 owns Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
   - 'litellm/router.py: B302 owns Router._get_model_from_alias (L12627-L12635), Router._get_deployment_by_litellm_model
@@ -325,8 +382,8 @@ out_of_scope:
   - 'litellm/router.py: B012 owns Router._redact_prompt_text_if_needed (L14121-L14151).'
   - 'litellm/router.py: B308 owns Router.get_allowed_fails_from_policy (L14643-L14695).'
   - 'litellm/router.py: B114 owns Router._initialize_alerting (L14697-L14717).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns the startup refresh scheduler; B038 owns upstream discovery transport and decoding.
+  - B016 and its existing type-owning parts retain types/router.py outside the two records at L702-L723.
   - 'litellm/router.py: B844 owns Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
     (L10301-L10321), Router._build_model_name_index (L11397-L11415), Router._build_model_id_to_deployment_index_map
     (L11417-L11442), Router.get_model_ids (L11444-L11476), Router.get_candidate_model_ids_for_route (L11478-L11504),
@@ -415,10 +472,7 @@ out_of_scope:
     (L10031-L10066), Router._register_deployment_pricing (L10068-L10081), Router._register_deployment_in_model_cost
     (L10083-L10155), Router._replay_model_cost_registrations (L10157-L10181), Router._get_router_deployment_budget_limiter
     (L10222-L10239), Router._deployment_has_budget_limits (L10241-L10246), Router._sync_deployment_budget_config
-    (L10248-L10265), Router.get_deployment_credentials (L10286-L10299), Router._deployment_usable_by_team
-    (L10323-L10331), Router._get_model_group_deployment_usable_by_team (L10333-L10348), Router.get_credential_deployment
-    (L10550-L10570), Router._get_wildcard_deployment_usable_by_team (L10581-L10597), Router.get_deployment_credentials_with_provider
-    (L10599-L10661), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11506-L11513),
+    (L10248-L10265), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11506-L11513),
     Router.map_team_model (L11585-L11616), Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
     (L11757-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
     (L11769-L11818), Router.get_model_list_from_routing_groups (L11889-L11912), Router._materialize_routing_group_rows
@@ -432,8 +486,7 @@ out_of_scope:
     (L13220-L13247), Router._drop_client_carriers_a_tier_pin_supersedes (L13249-L13280), Router.async_get_available_deployment
     (L13282-L13431), Router._redact_prompt_text_if_needed (L14120-L14151), Router.get_available_deployment
     (L14153-L14312), Router.get_available_deployment_for_pass_through (L14314-L14474), Router._filter_cooldown_deployments
-    (L14476-L14493), Router._filter_blocked_deployments (L14495-L14509), Router._is_deployment_blocked
-    (L14511-L14521), Router._async_filter_health_check_unhealthy_deployments (L14523-L14566), Router._filter_health_check_unhealthy_deployments
+    (L14476-L14493), Router._filter_blocked_deployments (L14495-L14509), Router._async_filter_health_check_unhealthy_deployments (L14523-L14566), Router._filter_health_check_unhealthy_deployments
     (L14568-L14596), Router.get_num_retries_from_retry_policy (L14635-L14641), Router.get_allowed_fails_from_policy
     (L14643-L14695), Router._initialize_alerting (L14697-L14717), Router.flush_cache (L14745-L14750),
     Router.reset (L14752-L14759).'
@@ -513,8 +566,10 @@ out_of_scope:
     (L14097-L14118).'
   - 'litellm/router.py: B021 owns the remaining functions Router.async_pre_routing_hook (L13796-L13980).'
 pitfalls:
-  - Configured model_info wins optional discovery metadata and discovery failure only warns.
+  - A malformed non-null configured limit hides a valid discovered limit before numeric coercion drops it.
+  - Using the listing's widest group window for get_configured_token_limits can overrun its one selected deployment.
+  - Azure's missing base_model error log does not terminate lookup, and a zeroed registration stub is not usable metadata.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

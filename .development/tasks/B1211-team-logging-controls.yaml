@@ -1,9 +1,29 @@
 id: B1211
 title: Read team callbacks and disable team logging
 description: >-
-  Implement GET /team/{team_id:path}/callback and POST /team/{team_id}/disable_logging with TeamAccess
-  and the shared callback redactor. Reuse the suffix-dispatch route adapter for path-style team IDs; auth
-  and audit attribute the actual requested team.
+  Implement GET /team/{team_id:path}/callback and POST /team/{team_id}/disable_logging. Both use B124
+  get_data(team, find_unique), fail without DB with HTTPException 500 detail.error, and require B800
+  TEAM_OR_ORG_ADMIN access. GET delegates a missing team to B1210 _unknown_team_error: proxy admin gets
+  404 detail.error, other roles get 403 string detail. Disable returns 404 detail.error for any caller
+  when the team is missing, before authorization; do not apply GET's concealment rule to it.
+
+  Disable copies before_metadata, builds TeamCallbackMetadata from callback_settings (default {}),
+  clears success_callback/failure_callback to [], writes that object back and clears logging to [].
+  Preserve other metadata and other legacy callback fields. Call B2304 encrypt_callback_vars BEFORE
+  JSON serialization and the B724 team update, including object_permission in the returned row. Retain
+  its prefix idempotence and encryption-failure passthrough rather than writing unprocessed variables.
+  A null updated row is 404. Then B801 _refresh_cached_team runs, then B1210 schedules redacted audit
+  with litellm-changed-by (default None). Cache/audit failures after SQL do not roll back the update.
+  Return status=success, a team-specific confirmation message and data with updated team_id and empty
+  success_callbacks/failure_callbacks. GET resolves B1210 callbacks and returns status=success and data
+  containing the requested team_id, success_callbacks, failure_callbacks and masked callback_vars.
+
+  Each route's own except block rethrows HTTPException and ProxyException without the generic error log.
+  Other exceptions log at error plus debug traceback, then become 500 internal_server_error, param from
+  the exception or string None, code 500 (serialized string). Compare FastAPI detail bodies separately
+  from ProxyException envelopes; ignore message wording only. Both carry B865's wrapper. GET path IDs
+  may contain slashes; disable's single-segment ID route does not have that alias. Use the shared B057
+  suffix dispatch contract only at composition, never depend on the B057 umbrella from this part.
 
 
   Build the production team_logging_controls module in betterlite-server; reuse the typed dependencies
@@ -16,13 +36,10 @@ description: >-
 
 
   Register these actual HTTP routes and aliases exactly once: POST /team/{team_id}/disable_logging ->
-  disable_team_logging; GET /team/{team_id:path}/callback -> get_team_callbacks. For each route send a
-  typed successful request, an invalid or missing target, and a caller lacking that route permission through
-  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
-  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  disable_team_logging; GET /team/{team_id:path}/callback -> get_team_callbacks. B001 HTTP cases compare
+  the named response fields, statuses and content-type. B860 inspects encrypted rows and audit effects
+  using POSTGRES_TEST_URL, otherwise testcontainers. The changed-by header changes audit identity,
+  not a response header, and GET reports team settings without a key-level override.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -42,8 +59,8 @@ description: >-
 
 
   Sizing: 166 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  166 production, 139 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 370 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  166 production, 245 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 476 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -62,15 +79,21 @@ scope:
     - tools/oracle/cases/management/team-logging-controls/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L586-L716
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L580-L716
     why: Own disable_team_logging; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L725-L815
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L719-L815
     why: Own get_team_callbacks; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L710-L793
+    why: B2304 encrypts both callback slots before this task stores metadata.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: list_masked_secrets,
-      disable_team_logging, non_admin_denied.'
+  - text: >-
+      Tests get_and_disable_no_db, get_missing_team_admin_404, get_missing_team_other_403,
+      disable_missing_team_404, scoped_admin_allowed, unrelated_caller_denied, get_slash_team_id,
+      list_masked_secrets, logging_shadows_legacy, disable_clears_both_slots,
+      disable_preserves_other_metadata, encrypt_before_store, cipher_failure_matches_dependency,
+      object_permission_retained, null_update_404, refresh_then_audit, changed_by_audit,
+      postwrite_failure_keeps_row, http_error_passthrough, proxy_error_passthrough and generic_error_500
+      assert row contents, returned fields and the distinct exception paths.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -86,19 +109,17 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_logging_controls::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-success.yaml
-  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-invalid-target.yaml
-  - tools/oracle/cases/management/team-logging-controls/post--team-team-id-disable-logging-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-success.yaml
-  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-invalid-target.yaml
-  - tools/oracle/cases/management/team-logging-controls/get--team-team-id-path-callback-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-logging-controls/no-database.yaml
+  - tools/oracle/cases/management/team-logging-controls/missing-team-role-differences.yaml
+  - tools/oracle/cases/management/team-logging-controls/scoped-admin-and-slash-id.yaml
+  - tools/oracle/cases/management/team-logging-controls/disable-encrypted-metadata-and-audit.yaml
+  - tools/oracle/cases/management/team-logging-controls/generic-exception.yaml
   - tools/oracle/cases/management/team-logging-controls/list-masked-secrets.yaml
   - tools/oracle/cases/management/team-logging-controls/disable-team-logging.yaml
   - tools/oracle/cases/management/team-logging-controls/non-admin-denied.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns encrypt_callback_vars and ciphertext failure behavior; B1210 masks read and audit snapshots.
   - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B057 owns add_team_callbacks (L258-L432),
     delete_team_callback (L442-L577).'
   - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1210 owns _callback_config_error
@@ -107,9 +128,9 @@ out_of_scope:
     (L179-L225), _callback_error (L228-L233), _unknown_team_error (L236-L249).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Reuse the suffix-dispatch route adapter for path-style team IDs; auth and audit attribute the actual
-    requested team..
+  - Clearing only callback_settings leaves metadata.logging active; disable must clear both slots before encrypting.
+  - Omitting object_permission from the updated row would replace a valid cached relation with null during refresh.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 500
   max_new_expects: 0
 review_level: security

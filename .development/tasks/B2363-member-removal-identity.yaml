@@ -1,0 +1,106 @@
+id: B2363
+title: Member removal identities and matching predicates
+description: >-
+  Put the pure identity rules shared by bulk deletion and team request contracts in
+  betterlite-db::member_removal_identity, below both B1202 and B1231. Own MemberDeleteRequest
+  declarations and check_user_info in _types.py L4660-L4669, plus bulk_user_deletion.py
+  _in_filter L137-L138, _eq_filter L141-L142, _team_users_filter L145-L146, _any_filter L149-L150,
+  _same_email L177-L178, _addresses_member L181-L184, _with_row_email L187-L190,
+  _addresses_user L193-L196 and _duplicate_member_indexes L301-L310. B1202 keeps transaction
+  orchestration and supplies the rows; B794's deletion workflow and B1231's stricter HTTP
+  subclass consume this lower contract rather than owning its base validator.
+
+  MemberIdentity has user_id and user_email, both optional strings defaulting to None. Reject
+  only when both are None, with Either user id or user email must be provided. Empty strings
+  count as provided, and both identifiers together are valid here. Do not import the HTTP
+  TeamMemberRef exactly-one check into the base type. Request decoding remains with its caller;
+  construction from already typed fields adds no outside-byte boundary.
+
+  Email matching requires a non-null requested email and exact string equality, without case
+  folding or trimming. An email-only request matches a roster member by email. An ID request
+  matches the same roster ID, or an email-only roster member with the same email; it must not
+  match a different non-null roster ID just because the email agrees. Against a user row, an
+  ID request matches only user_id, while an email-only request matches user_email. Reuse B859's
+  Member and B720's user record without querying either repository.
+
+  Missing request email is filled from the supplied ID-to-email map only when user_id is
+  non-null and the email field is None. Preserve an explicit empty email and do not infer an
+  ID from email. Map misses retain None. The caller decides which rows are eligible for this
+  map; B1202 includes only users whose teams array contains the affected team.
+
+  Duplicate indexes are computed against every earlier original request: equal non-null IDs
+  OR equal non-null emails make the later entry duplicate. An earlier duplicate still counts
+  when examining subsequent entries. Return the original indexes, not a compacted list; empty
+  input gives an empty set. This duplicate rule is intentionally distinct from roster matching.
+  IN predicates sort their supplied values but do not remove duplicates. Equality is a direct
+  field/value pair; team_users combines team_id with a sorted user_id IN predicate; any_filter
+  preserves clause order under OR, including an empty clause sequence.
+
+  The selected ranges contain 41 nonblank, noncomment lines. Allow 75 implementation, 225
+  parameterized identity/filter tests, 75 oracle adapters and 25 wiring lines, 400 total. Register
+  member_removal_identity under B856 Management::teams and extend B171's helper_case corpus.
+  Python calls the actual pinned constructors/predicates with typed row fixtures. Compare exact
+  mappings, sets, default values and validation messages; no database or route adapter is needed.
+scope:
+  paths:
+    - crates/betterlite-db/src/member_removal_identity.rs
+    - crates/betterlite-db/src/member_removal_identity/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/member_removal_identity.rs
+    - tools/oracle/helpers/member_removal_identity.py
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/member-removal-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/member-removal-identity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4660-L4669
+    why: The base request accepts empty strings and both identifiers; only the both-absent case fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L137-L150
+    why: Query construction sorts IN inputs and retains OR clause order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L177-L196
+    why: Roster matching, user-row matching and email completion have different precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L301-L310
+    why: Duplicate detection examines all earlier original entries by either non-null identifier.
+dod:
+  - text: 'Cases identity_defaults_and_both_absent_error, empty_identifier_is_present, both_identifiers_allowed,
+      email_exact_case_and_whitespace, null_email_never_matches, id_matches_same_id,
+      id_matches_email_only_roster, id_rejects_other_roster_id, user_row_id_overrides_email,
+      email_map_fills_only_missing, email_map_miss, explicit_empty_email_retained,
+      duplicate_id_or_email, duplicate_empty_identifier, earlier_duplicate_still_counts,
+      duplicate_indexes_not_compacted, empty_input, in_sorted_duplicates_retained,
+      equality_and_team_filters and or_clause_order_empty cover the complete pure contract.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: The member_removal_identity operation is accepted by the existing helper decoder and replays newly added seeds.
+    proof: [helper-case-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Identity validation or matching must not pass merely because a corpus adapter exists.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The adapter must invoke the pinned functions and pass strict Python checks.
+      run: test -f tools/oracle/helpers/member_removal_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: A new operation without a decoder seed is unreachable from the corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/member-removal-identity-*)" && grep -rlq member_removal_identity tools/oracle/fuzz/corpus/helper_case/member-removal-identity-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/member-removal-identity/base-validation.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/roster-versus-user-match.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/email-map-precedence.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/original-duplicate-indexes.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/sorted-filter-values.yaml
+deviations: []
+out_of_scope:
+  - B1202 owns team removal transactions, problem construction and cache publication; B794 owns all remaining bulk_user_deletion.py functions.
+  - Other _types.py declarations retain their existing owners; B1231 retains TeamMemberRef's stricter validator and enclosing HTTP request decoder.
+pitfalls:
+  - Dropping an earlier duplicate before finding later duplicates changes which later identities are rejected.
+  - Sorted IN values are not a set; only callers that supply a set have already removed duplicates.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

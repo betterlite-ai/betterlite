@@ -1,10 +1,9 @@
 id: B774
 title: Key patch construction and validation
 description: >-
-  Implement KeyPatchPlan, including metadata merge, soft-budget nested writes, key selection, end-user
-  default budget changes, team moves and object-permission checks. Distinguish explicit clears from omission
-  and run validation before any writes; use injected resource permission validators for MCP/search/vector
-  grants owned by object-permission tasks.
+  Implement key-update authorization and normalize object permissions in the typed request. These four
+  functions read policy and entity rows but never write database rows. B894 owns patch construction,
+  metadata merge and soft-budget persistence; B1224 owns custom policy evaluation.
 
 
   Build the production key_patch_policy module in betterlite-server; reuse the typed dependencies listed
@@ -16,6 +15,53 @@ description: >-
   _with_validated_object_permission (L2914-L2936; 23 source lines), _validate_mcp_servers_for_key_update
   (L2939-L2976; 37 source lines), _acting_as_team_admin_for_key_update (L3026-L3061; 35 source lines),
   _validate_update_key_data (L3064-L3352; 214 source lines).
+
+  object_permission_absent returns the same request; permission_normalization copies only when B818
+  returns a normalized dictionary. effective_team_lookup reloads the existing team's row through
+  B737 with check_db_only=true when no team object was passed. unchanged_team_grandfathers supplies
+  existing_key_row.object_permission to MCP validation when data.team_id is None/equal, but
+  changed_team_drops_grandfathering supplies None. Search/vector validators receive the original
+  requested dictionary, not MCP's normalized result. Their call order is MCP, search, vector.
+
+  team_admin_bypass_false covers proxy admins, personal keys, service-account keys and self-owned
+  keys: _acting_as_team_admin_for_key_update returns false before lookup. other_member_team_admin
+  reloads the stored key's team, calls B800 is_team_admin and then B1200's member_key_budgets
+  permission/verdict functions; rejection is 403. B1200 owns general_settings.team_admin_editable_fields
+  and its member_key_budgets opt-in/default semantics; enabled_member_budget and disabled_member_budget
+  exercise the consumed setting rather than adding a second loader. A non-team-admin returns false.
+
+  validation_sequence first requires a DB (B894 HTTP 500 detail.error 'Database not connected'),
+  validates finite spend and duration (B861), allowed_routes/passthrough/permissions/global-guardrail
+  delegation (B892/B861), and ownership changes (B892). project_reassignment gives 400 string
+  detail for a different non-null project; project_detach is detected by fields_set, including null.
+  Then resolve the acting-team-admin grant, call B771 common access with caller user_id only when
+  acting as team admin, and B800's /key/update team-member permission. A failed earlier check
+  must prevent every later lookup; assert the named call sequence, not merely the final denial.
+
+  budget_change_gate activates for changed non-null max_budget, any non-null spend (even unchanged),
+  and presence of budget_limits or soft_budget (even null/[]). throttle_new_enable is 403 for
+  non-admins only when requested true and existing metadata value is not exactly true. Then B1219
+  checks end-user budget changes using B739 get_key_end_user_budget_id and B894's request projection,
+  followed by B745 output/batch estimate guards. creator_and_owner_bypass requires non-null caller
+  ID equal to both created_by and user_id; creator_after_reassignment cannot bypass. team_grant_bypass
+  applies only after membership authorization and only for non-budget/non-project changes.
+  Otherwise B783 _check_key_admin_access runs with the stored hash and route literal '/key/update
+  (max_budget/spend)' for budget changes, '/key/update' otherwise.
+
+  effective_team uses data.team_id or existing team, reloads DB-only, returns 400 when a non-admin
+  supplies a nonexistent team, and calls B772 throughput checks for a found team. B800 access-group
+  assignment is checked next. project_limits use explicit data.project_id when present, existing
+  otherwise, and run when a project remains and models/max_budget is non-null. Explicit detach
+  skips project limits. changed_org_membership runs only for non-admins changing to a non-null org.
+  org_throughput_trigger is any non-null organization_id,tpm_limit,rpm_limit,tpm_limit_type,rpm_limit_type;
+  metadata-only model rates do not trigger it. B879 loads the effective org, absence gives 400,
+  then B772 checks limits. team_move_no_router gives 400 detail.error; team_move_no_object gives
+  500 detail.error; otherwise B1219 validates the move. Finally B818 normalizes permissions in-place.
+  Preserve every helper's status/detail; route owners B775/B1220 supply their auth_error envelopes.
+
+  Helpers receive injected read-only collaborators; no FastAPI handler is invoked by the oracle.
+  Named cases assert unchanged rows and request mutation independently. Database integration tests
+  use POSTGRES_TEST_URL with testcontainers fallback for fresh-policy reads, never skipped tests.
 
 
   Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
@@ -40,14 +86,13 @@ description: >-
 
 
   Sizing: 309 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  309 production, 133 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 537 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  309 production, 340 behavior/read-order tests, 65 helper adapters and 30 wiring lines,
+  744 changed lines within a 775-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  This ownership has no premium_user branch; passing the flag to B771 does not create a local
+  licensing deviation. The B771 no-paid-tier behavior is tested by that dependency.
 scope:
   paths:
     - crates/betterlite-server/src/key_patch_policy.rs
@@ -64,11 +109,7 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/key-patch-policy-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2325-L2695
-    why: Pinned implementation and exact ownership boundary for key_patch_policy.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2914-L3352
-    why: Pinned implementation and exact ownership boundary for key_patch_policy.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4003-L4066
     why: Pinned implementation and exact ownership boundary for key_patch_policy.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1340-L1362
     why: KeyRequestBase request/response fields and defaults.
@@ -94,9 +135,12 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: Every named grant, normalization, budget-presence, project/org trigger and team-move branch
+      in the description has an individual case proving read order and zero database writes.
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
 checks:
   optional: []
   commands:
@@ -116,14 +160,17 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-patch-policy/mcp-grant-denied.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2325-L2695
+  - tools/oracle/cases/helpers/key-patch-policy/permission-normalization.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/team-admin-opt-in.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/validation-sequence.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/budget-change-gate.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/creator-after-reassignment.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/project-detach.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/org-throughput-trigger.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/team-move-errors.yaml
+  - tools/oracle/cases/helpers/key-patch-policy/zero-database-writes.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -218,8 +265,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Custom key policy sees the effective merged key, not only the submitted patch.
+  - Unchanged spend is still a budget change because the live spend counter may exceed the stored row.
+  - Only a caller who both created and still owns a personal key can take the creator bypass.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

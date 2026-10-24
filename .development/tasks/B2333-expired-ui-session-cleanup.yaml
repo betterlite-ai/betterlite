@@ -1,0 +1,125 @@
+id: B2333
+title: Expired UI session cleanup worker
+description: >-
+  Extract the entire expired_ui_session_key_cleanup_manager.py L30-L158 from B789. Own its
+  row protocol, manager constructor, cleanup, count normalization and expired-row query in
+  betterlite-server::ui_session_cleanup. B124 startup owns job registration and the enabled/interval
+  controls; this task supplies a callable worker, not a second scheduler.
+
+  Constructor retains DB, auth cache and optional pod-lock manager default null. Acquire a
+  B070 PodLockManager lock only when both manager and its Redis cache are truthy, with cronjob_id
+  exactly litellm_expired_ui_session_key_cleanup_job. False/null acquisition logs debug and returns
+  zero without querying. Without Redis proceed locally. Cases cleanup_without_distributed_lock,
+  cleanup_lock_denied and cleanup_lock_key pin this behavior. Always release an acquired lock in
+  finally, including empty results and failures; release exceptions escape that finally rather
+  than being swallowed by the body catch. cleanup_release_on_all_exits and
+  cleanup_release_failure_propagates cover the distinction.
+
+  Query VerificationTokenRepository where team_id=litellm-dashboard AND expires<fresh aware UTC
+  now, with take=LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE and no explicit ordering.
+  Equal expiry and null expiry are excluded. Empty rows or all-null tokens return zero; empty
+  string tokens are retained. Cases cleanup_expiry_boundary, cleanup_batch_take,
+  cleanup_empty_or_null_tokens and cleanup_empty_token_retained exercise each branch.
+
+  B2314 supplies the exact internal-jobs identity. Call B777 delete_verification_tokens with
+  selected tokens, auth cache, that identity and litellm_changed_by=litellm_internal_jobs.
+  Then await B784 async_key_deleted_hook with KeyRequest(keys=tokens), actual fetched deletion
+  rows and response or {}, before computing the count. Cases cleanup_internal_identity,
+  cleanup_delete_before_hook and cleanup_hook_failure_keeps_deleted_rows inspect the ordered effects.
+  Any exception whose status_code is 404 logs debug and returns zero; every other body exception
+  logs error and returns zero. The hook can therefore fail after deletion while the worker reports
+  zero. cleanup_raced_delete_404 and cleanup_body_failure_error distinguish those diagnostics.
+
+  Count normalization returns len(tokens) for null response. Prefer deleted_keys list length,
+  then integer verbatim (Python bool is an integer), then the same two shapes nested under a
+  deleted_keys dict. Otherwise use max(len(tokens)-len(set(failed_tokens)),0) when failures are
+  truthy, else len(tokens). Do not silently normalize malformed failures: exceptions reach the
+  worker catch. Cases cleanup_count_shapes, cleanup_count_bool_and_negative,
+  cleanup_count_distinct_failures and cleanup_count_bad_failure_shape pin every branch.
+
+  The batch env value defaults to 1000 and uses int() at module import; malformed text stops
+  startup, it does not warn and fall back. Whitespace integer text is accepted; zero and negative
+  integers are not rejected by this parser and are passed to repository take semantics. B002
+  production config tests cleanup_batch_default, cleanup_batch_integer_values and
+  cleanup_batch_invalid_startup load and consume the value. B124 owns
+  LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED default 'false' and interval default 86400
+  at their startup read sites; do not duplicate their parser or registration here.
+
+  The helper oracle calls the undecorated manager with injected clock, lock and deletion/event
+  collaborators; never invoke a route adapter. Real deletion integration uses POSTGRES_TEST_URL
+  else testcontainers, unique schemas and no skipped infrastructure failures. No new external-byte
+  decoder is added; B002 owns the existing configuration boundary and corpus. Production files
+  stay below 300 lines. Allow 125 logic, 230 tests, 65 helper adapters, 50 config and 30 wiring
+  lines, 500 within 550; the source contributes about 109 nonblank noncomment lines before
+  removing docstrings, plus its imported constants.
+scope:
+  paths:
+    - crates/betterlite-server/src/ui_session_cleanup.rs
+    - crates/betterlite-server/src/ui_session_cleanup/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/ui_session_cleanup.rs
+    - crates/betterlite-config/src/ui_session_cleanup/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-*
+    - tools/oracle/src/helpers/ui_session_cleanup.rs
+    - tools/oracle/helpers/ui_session_cleanup.py
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/cases/helpers/ui-session-cleanup/**
+    - tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py#L30-L158
+    why: Own all worker methods, lock and deletion ordering and count normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725-L1732
+    why: Actual int environment read for batch size and neighboring startup-owned controls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1773-L1773
+    why: Exact distributed lock job name.
+dod:
+  - text: Every worker branch and count shape above matches the pinned helper, including release failures.
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: The real config loader preserves integer parsing and startup failures.
+    proof: [config-tests, config-corpus]
+  - text: Deletion and later hook failures preserve actual archived/live Postgres rows.
+    proof: [postgres-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Cleanup branch, diagnostic or count behavior is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_session_cleanup::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: The batch-size setting has not been loaded and consumed by production.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^ui_session_cleanup::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: The real archive/delete failure effects are unproved.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/ui_session_cleanup::tests::postgres_cleanup_effects$/)'
+    - id: helper-python
+      why: The pinned worker adapter is missing or incorrectly typed.
+      run: test -f tools/oracle/helpers/ui_session_cleanup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new worker seed replays the helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-*')" && grep -rlq ui_session_cleanup tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-corpus
+      why: No batch-size seed exercises the existing config decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-*')" && grep -rlq LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ui-session-cleanup/lock-lifetime.yaml
+  - tools/oracle/cases/helpers/ui-session-cleanup/expiry-and-token-selection.yaml
+  - tools/oracle/cases/helpers/ui-session-cleanup/delete-hook-failure-order.yaml
+  - tools/oracle/cases/helpers/ui-session-cleanup/count-shapes.yaml
+deviations: []
+out_of_scope:
+  - B124 owns startup job registration and enabled/interval settings; B070 owns PodLockManager,
+    B722 token queries, B777 deletion/archive, B784 events, B2314 internal-jobs identity and
+    B002 configuration decoding. All functions in the covered cleanup module belong here.
+pitfalls:
+  - Hook failure returns zero even when token deletion already committed.
+  - A release_lock exception escapes the finally block despite the worker's otherwise catch-and-return-zero behavior.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

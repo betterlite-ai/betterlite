@@ -1,0 +1,130 @@
+id: B2323
+title: Bounded database reconnect policy for auth reads
+description: >-
+  Put PrismaClient's reconnect policy below authentication in betterlite-db::auth_reconnect. Own
+  utils.py _StaleReadEngine L4351-L4392, _run_reconnect_cycle L6153-L6309, _cooldown_applies
+  L6311-L6348, _attempt_reconnect_inside_lock L6350-L6433, attempt_db_reconnect L6435-L6541 and
+  _writer_is_read_only L6708-L6713 with its SQL/row shape L4334-L4335. Use B713 pool generations
+  and B714 routing; no B124/B052 dependency. Keep a strong handle plus generation for observations,
+  since writer and reader generation numbers can coincide. A switched handle is no longer live.
+
+  Read PRISMA_RECONNECT_COOLDOWN_SECONDS via int, default 15, minimum 1;
+  PRISMA_RECONNECT_ESCALATION_THRESHOLD via int, default 3, minimum 1;
+  PRISMA_WATCHDOG_RECONNECT_TIMEOUT_SECONDS via float, default 30.0, minimum 1.0;
+  PRISMA_AUTH_RECONNECT_TIMEOUT_SECONDS via float, default 2.0, minimum 0.5; and
+  PRISMA_AUTH_RECONNECT_LOCK_TIMEOUT_SECONDS via float, default 0.1, minimum 0.0.
+  Empty/malformed values fail initialization, never silently default. Preserve max(lower,value)
+  semantics for nonfinite float inputs, including NaN selecting the lower bound. Start last attempt
+  at 0, consecutive failures at 0, and failed-generation map empty with at most writer/reader entries.
+  B002 loader tests reconnect_defaults, reconnect_lower_bounds, reconnect_invalid_startup and
+  reconnect_nonfinite_values load each real env name and reach this policy. B710 supplies DATABASE_URL.
+
+  Check cooldown before and after acquiring the singleflight lock. force bypasses it. A missing stale
+  observation, a previously failed repair of that same handle/generation, or a no-longer-live
+  observation respects cooldown; an unrepaired live observation waives it. Lock timeout None waits,
+  a finite timeout returns false with DEBUG. Acquisition errors also DEBUG/false. Timeout and
+  cancellation clean up an acquisition that wins the race, releasing its lock; cancellation
+  propagates after cleanup. Every acquired path releases the lock. Concurrent callers recheck state.
+
+  At the escalation threshold warn and mark the engine dead before attempting repair. Snapshot writer
+  generation before any await. Both branches use one overall timeout and require nonempty current
+  DATABASE_URL; missing URL logs ERROR and raises RuntimeError('DATABASE_URL not set'). A dead engine
+  logs WARNING, retires its failed handle and recreates with the captured generation. The direct path
+  logs DEBUG and, unless force_recreate, probes SELECT current_setting('transaction_read_only') AS
+  transaction_read_only on the writer. Any row equal to 'on' means read-only: warn and recreate.
+  Probe failure warns and still recreates; a writable writer logs INFO, marks writer recovered and
+  returns without recreation. A forced recreate skips that probe. After direct replacement, query
+  SELECT 1 on the writer. Rearm lifecycle observation before interpreting replacement's boolean.
+
+  A generation-declined forced replacement returns false, resets failure count and warns; it is
+  neither a successful retry signal nor a failed repair. In the dead branch clear the dead marker
+  for that declined outcome, and on successful completion; other failures retain it. Ordinary cycle
+  success returns true, resets failure count and logs INFO. Errors/timeouts increment failures,
+  remember the caller's stale handle/generation when supplied, log ERROR and return false. Always
+  stamp last attempt at completion, so slow retries receive a full cooldown. Never overwrite the
+  failed-generation record using a newly selected read target. B738 uses false to keep its original
+  error; B2320's cached-plan query retries independently of the reconnect boolean.
+
+  Python helper adapters inject fake generation handles, clock, probes and lifecycle collaborators
+  into these actual MIT methods. B856 Management::database auth_reconnect compares transitions,
+  ordered probe/replacement/log effects and return/error, not PIDs. Postgres cases use POSTGRES_TEST_URL
+  with testcontainers fallback for writer read-only and reconnect recovery. Keep production files
+  under 300 lines. The owned methods contain 221 nonblank non-comment executable/declaration lines
+  after excluding docstrings; allow 235 production, 300 tests, 80 adapters, 75 config and 45 wiring,
+  735 within 800. The operating-system watcher stays with B124; native lifecycle mapping is explicit.
+scope:
+  paths:
+    - crates/betterlite-db/src/auth_reconnect.rs
+    - crates/betterlite-db/src/auth_reconnect/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-config/src/auth_reconnect.rs
+    - crates/betterlite-config/src/auth_reconnect/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*
+    - tools/oracle/src/helpers/auth_reconnect.rs
+    - tools/oracle/helpers/auth_reconnect.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/auth-reconnect/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-reconnect-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4334-L4392
+    why: Writer probe and identity-bearing stale-engine observation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4524-L4556
+    why: Actual env reads, conversions and clamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6153-L6541
+    why: Reconnect sequencing, cooldown, escalation and lock cancellation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6708-L6713
+    why: Writer read-only probe does not infer health from reader success.
+dod:
+  - text: 'Cases equal_generation_different_handle, stale_live_waives_once, failed_repair_cooldown,
+      force_bypasses_both_checks, queued_caller_rechecks, completion_time_cooldown,
+      lock_timeout_and_acquire_error, cancellation_acquire_race_releases, escalation_marks_dead,
+      generation_snapshotted_before_await, missing_database_url_error,
+      dead_recreate_failure_keeps_marker, direct_writable_short_circuit,
+      readonly_or_probe_error_recreates, forced_skips_probe, direct_select_one_after_recreate,
+      forced_decline_false_resets_failures, failures_record_original_target and overall_timeout
+      compare the actual MIT policy and production transitions.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: Each real env setting is loaded, malformed input stops startup and new config/helper seeds replay.
+    proof: [config-tests, config-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: The reconnect state machine or Postgres observations differ.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^auth_reconnect::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: A reconnect env default, parser or clamp is missing.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_reconnect::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: New real reconnect env configuration seeds are absent.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The injected MIT reconnect adapter fails strict checking.
+      run: test -f tools/oracle/helpers/auth_reconnect.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new reconnect operation has no shared decoder seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-reconnect-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-reconnect/cooldown-and-generation.yaml
+  - tools/oracle/cases/helpers/auth-reconnect/lock-races.yaml
+  - tools/oracle/cases/helpers/auth-reconnect/probes-and-failures.yaml
+deviations:
+  - what: Reconnect observes native pool generations and emits pool diagnostics instead of Prisma PID and zombie diagnostics.
+    why: B713/B714 replace subprocess engines; native_failed_pool_recovery preserves stop-before-connect and failure visibility without fake processes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6191-L6309
+out_of_scope:
+  - B124 retains other utils.py functions, watchdog scheduling and OS watcher/reaping functions; these are not native dependencies.
+  - B713/B714 own replacement and routing primitives; B710 owns URL resolution; B738 owns auth-query retry decisions.
+pitfalls:
+  - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

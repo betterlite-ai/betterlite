@@ -1,15 +1,102 @@
 id: B735
 title: Batch identity and permission prefetch
 description: >-
-  Implement AuthObjectRefs and bounded batch loads over key/user/team/membership/org/project/permission
-  references. Preserve local then Redis then DB read order and row validation; SQL keeps named array/JSON
-  projections from the source. Adapters for the Python table protocols are native typed repository calls,
-  not generated wrapper classes.
+  Implement auth_prefetch in betterlite-auth for all auth_object_prefetch.py declarations, the
+  two prefetch entry helpers at user_api_key_auth.py L3364-L3392 and get_object_permission at
+  auth_checks.py L3982-L4034. B2315 now owns the structural adapters/deadline boundary and budget
+  lookup logging formerly grouped here. B2316 supplies admission counter binding, below both this
+  code and spend accounting. Reuse B714 raw-query routing, B715 metrics, B726 permission repository,
+  B733 cache/TTL/key contracts and the B720/B721/B859/B2310/B2314 row types.
 
+  AuthObjectRefs is frozen with user_id/team_id/membership_user_id/organization_id/project_id all
+  None by default. from_token copies those IDs, taking organization_id from org_id, and supplies
+  membership_user_id only when BOTH team_id and user_id are nonnull; empty strings count as IDs.
+  Generate entries in this order: bare user_id with management TTL; team_id:{id} with management
+  TTL; {team_id}_{user_id} membership with fixed TTL 5; team_membership:{user_id}:{team_id} with
+  TTL None; org_id:{id} and org_id:{id}:with_budget with DEFAULT_IN_MEMORY_TTL; project_id:{id}
+  with management TTL. Do not deduplicate these entries or escape delimiters. TTL None means omit
+  the memory setter argument, except database write-back explicitly substitutes the cache default.
 
-  Build the production auth_prefetch module in betterlite-auth; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Owner prefetch always consults the ORDINARY memory partition, even if a bare user_id happens to
+  match B733's 64-hex key partition rule. Only None is a miss; false/empty/malformed nonnull values
+  suppress this prefetch. If Redis is configured, MGET sorted missing keys, preserving duplicates.
+  With an active request pipeline await its mget result; an ordinary pipeline error logs DEBUG
+  and returns an empty mapping so DB fill continues. Without a pipeline use B126's direct MGET;
+  a propagated error reaches the outer catch and skips this call's DB fill. Validate only the
+  returned string-keyed map, then place every nonnull returned value into ordinary memory with
+  the entry TTL. Do not validate individual Redis rows here. Recheck just the original missing
+  entries afterward; without a DB stop here, otherwise query still-missing row kinds.
+
+  Execute the pinned single SELECT on B714's writer raw-query path. Bind user_id only for a missing
+  user row; team_id for either team or membership; membership_user_id only for membership;
+  organization_id only for organization; project_id only for project. All other parameters are
+  SQL NULL. The five scalar subqueries return nullable user_row/team_row/membership_row/
+  organization_row/project_row; no row result becomes an empty mapping. This is a read, not a
+  write transaction or a per-object N+1 fallback. Do not add B2315's per-table read deadline to
+  this raw SELECT; existing database operation limits still apply.
+
+  Preserve the full JSON projections. User NULL arrays teams/models/allowed_cache_controls/policies
+  become []; organization_memberships is an unsorted jsonb_agg of that user's membership rows or []
+  when absent. Team NULL arrays admins/members/models/team_member_permissions/access_group_ids/
+  policies/default_team_member_models become []; join its model row by model_id, remove aliases
+  and emit it as model_aliases. Team also gets object_permission. Membership joins its nullable
+  litellm_budget_table. Organization and project normalize models to [] and join both budget and
+  object_permission. Budget allowed_models and permission mcp_servers/mcp_access_groups/mcp_toolsets/
+  blocked_tools/vector_stores/agents/agent_access_groups/models/search_tools/skills each normalize
+  SQL NULL to []. Preserve missing related rows as null, other stored columns unchanged and
+  input array order/duplicates. Source JSON-string normalization remains the row model's job.
+
+  After the query take one clock reading. Validate each requested row kind once, stamping that
+  time onto team/project only and overriding any stored last_refreshed_at. None rows are silently
+  skipped. A ValidationError warns with row kind/model and drops just that row; do not negative-cache
+  it. Other exceptions leave through the outer warning path. Serialize all successful entry/model
+  pairs before writing any memory, then write them in entry order into ordinary memory. Membership
+  and organization twins share the validated row, not another DB read. With Redis absent stop;
+  without a request batch send one pipeline with each entry's original TTL, including None;
+  with a batch queue each SET for the next flush without awaiting its delivery. A later write
+  failure never rolls back earlier memory writes or queued commands. The outer prefetch catch
+  logs WARNING and lets per-object getters enforce policy; cancellation escapes.
+
+  Identity prefetch differs: without Redis it does nothing, otherwise deduplicate keys in first-seen
+  order and consult B733's selected memory partition for each. MGET sorted misses and validate
+  the result mapping. Its try/catch includes Redis read and management TTL selection only; a memory
+  write failure in the subsequent loop PROPAGATES. Redis/mapping failures warn and return. Each
+  nonnull value is stored without row validation in the selected partition. Strings, not just a
+  known sentinel, use min(REGISTRY_ERROR_NEGATIVE_CACHE_TTL=30, management_ttl); all other values
+  use management_ttl. Missing Redis values remain misses, recorded by B126's active batch so the
+  later getter can avoid a duplicate GET. No database read belongs to identity prefetch.
+
+  _identity_cache_keys includes SHA-256 of the entire supplied API key unless key_is_resolved is
+  true, then end_user_id:{id} and end_user_restricted_registry only for a truthy end user, then
+  model_access_group_registry always. It uses B2314 hash_token directly, without Bearer stripping
+  or safe-form classification. _prefetch_referenced_auth_objects first binds B2316 admission
+  counters with falsey end_user_id normalized to None, then warms owner rows from the token;
+  callers invoke it only after model authorization, and this helper must not move that check.
+
+  get_object_permission first requires a DB even for a warm cache hit, otherwise raises the
+  missing-DB error with virtual-key help guidance. check_db_only defaults false. Normal mode reads
+  object_permission_id:{id} as B2310's permission model; nonnull hit returns. Cache-read failures
+  occur OUTSIDE its try and propagate. Database mode uses the writer and skips the cache read;
+  normal mode uses normal repository routing. Inside the try, bounded find_unique uses label
+  object_permission and that ID; absent row returns None normally, or HTTPException 403 with
+  detail "Referenced object permission does not exist" in DB-only mode. Validate the row, write
+  the typed cache entry with management TTL, then return it. Any ordinary DB/validation/cache-write
+  exception returns None normally and propagates in DB-only mode; no negative entry is stored.
+  B715's decorator still records the actual result/failure, and cancellation is not swallowed.
+
+  Load DEFAULT_IN_MEMORY_TTL in betterlite-config from its int-parsed env, default 5, used by both
+  organization entries. Empty/noninteger input stops startup; zero/negative values pass through.
+  Do not invent a YAML key or let management TTL override this org TTL, fixed membership TTL 5 or
+  fixed negative-registry cap 30. B733 owns the management fallback and override settings.
+
+  Pure auth_prefetch oracle cases call source refs/entry/key/row-validation/TTL functions. Native
+  async tests check transport/error order; real Postgres tests compare the native SELECT projections
+  against the pinned SQL using B860 POSTGRES_TEST_URL, else testcontainers. A supplied unusable URL
+  fails; tests never skip. The cache and DB dependencies already decode bytes, so no new decoder
+  or fuzz target is added. Count all owned SQL/declarations, not just function bodies, and keep
+  SQL, row projection, cache fill and permission lookup in separate files below 300 lines.
+  The owned source has 361 nonblank noncomment lines excluding docstrings, including static SQL.
+  Allow 280 implementation, 350 tests, 85 adapters, 30 config and 30 wiring, 775 within 800.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_object_prefetch.py:
@@ -21,79 +108,17 @@ description: >-
   (L234-L242; 9 source lines), _validate_row (L245-L258; 14 source lines), _fetch_rows (L261-L272; 12
   source lines), _write_back (L275-L290; 16 source lines), _fill_from_db (L293-L308; 16 source lines),
   prefetch_auth_objects (L311-L326; 16 source lines), _identity_memory_ttl (L329-L331; 3 source lines),
-  prefetch_identity_keys (L334-L358; 25 source lines). litellm/proxy/auth/auth_checks.py: _PrismaDictableRow.dict
-  (L162-L162; 1 source lines), _PrismaModelDumpRow.model_dump (L173-L173; 1 source lines), _PrismaTeamRow.dict
-  (L177-L177; 1 source lines), _PrismaTeamRow.model_dump (L179-L179; 1 source lines), _PrismaVectorStoreRow.dict
-  (L183-L183; 1 source lines), _PrismaVectorStoreRow.model_dump (L185-L185; 1 source lines), _PrismaVectorStoreRow.__iter__
-  (L187-L187; 1 source lines), _PrismaUserRow.organization_memberships (L194-L194; 1 source lines), _PrismaUserRow.organization_memberships
-  (L197-L197; 1 source lines), _PrismaUserRow.__iter__ (L199-L199; 1 source lines), _PrismaAuthTable.find_unique
-  (L203-L205; 3 source lines), _PrismaAuthTable.find_first (L207-L209; 3 source lines), _PrismaAuthTable.find_many
-  (L211-L217; 7 source lines), _PrismaAuthTable.update (L219-L219; 1 source lines), _PrismaAuthTable.create
-  (L221-L221; 1 source lines), _PrismaTableHolder.table (L226-L226; 1 source lines), _DeadlineBoundedTable.__init__
-  (L247-L249; 3 source lines), _DeadlineBoundedTable.find_unique (L251-L255; 5 source lines), _DeadlineBoundedTable.find_first
-  (L257-L261; 5 source lines), _DeadlineBoundedTable.find_many (L263-L267; 5 source lines), _DeadlineBoundedTable.update
-  (L269-L270; 2 source lines), _DeadlineBoundedTable.create (L272-L273; 2 source lines), _dictable_table
-  (L276-L277; 2 source lines), _jwt_key_mapping_table (L280-L283; 4 source lines), _model_dump_table (L286-L289;
-  4 source lines), _team_table (L292-L293; 2 source lines), _vector_store_table (L296-L297; 2 source lines),
-  _user_table (L300-L301; 2 source lines), _VectorStorePermissionsRow.vector_stores (L306-L306; 1 source
-  lines), _object_permission_table (L309-L312; 4 source lines), _PrismaTagRow.dict (L318-L318; 1 source
-  lines), _tag_table (L321-L322; 2 source lines), _PrismaEndUserRow.dict (L328-L328; 1 source lines),
-  _end_user_table (L331-L332; 2 source lines), _PrismaMaxBudgetRow.max_budget (L337-L337; 1 source lines),
-  _PrismaModelAccessGroupBudgetRow.spend (L344-L344; 1 source lines), _PrismaModelAccessGroupBudgetRow.litellm_budget_table
-  (L347-L347; 1 source lines), _model_access_group_budget_table (L350-L353; 4 source lines), _MemberModelScope.allowed_models
-  (L358-L358; 1 source lines), _TeamMembershipModelScope.litellm_budget_table (L363-L363; 1 source lines),
-  _member_allowed_models (L366-L369; 4 source lines), _RawCacheRead.async_get_cache (L373-L373; 1 source
-  lines), _raw_cache (L376-L377; 2 source lines), _typed_request_body (L380-L381; 2 source lines), _JsonLoadsObj.__call__
-  (L385-L385; 1 source lines), _typed_json_loads (L388-L389; 2 source lines), _membership_from_shared_load
-  (L411-L412; 2 source lines), _log_budget_lookup_failure (L415-L435; 19 source lines), get_object_permission
+  prefetch_identity_keys (L334-L358; 25 source lines). litellm/proxy/auth/auth_checks.py: get_object_permission
   (L3982-L4034; 46 source lines). litellm/proxy/auth/user_api_key_auth.py: _identity_cache_keys (L3364-L3376;
   13 source lines), _prefetch_referenced_auth_objects (L3379-L3392; 14 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_IN_MEMORY_TTL=5.
-
-
-  Add the auth_prefetch operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-prefetch-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  Write betterlite-config::auth_prefetch::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 374 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  374 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 673 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_prefetch.rs
     - crates/betterlite-auth/src/auth_prefetch/**
     - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth_prefetch.rs
     - tools/oracle/src/helpers/auth_prefetch/**
@@ -109,13 +134,12 @@ scope:
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/auth_prefetch.rs
     - crates/betterlite-config/src/auth_prefetch/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-prefetch-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L1-L358
     why: Pinned implementation and exact ownership boundary for auth_prefetch.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L162-L435
-    why: Pinned implementation and exact ownership boundary for auth_prefetch.
+    why: B2315 owns the structural adapters and logging; B734 owns the in-flight registry and B736 the remaining cache state.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L42-L44
     why: Own _lists_as_json; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L80-L84
@@ -155,138 +179,162 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L334-L358
     why: Own prefetch_identity_keys; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L162-L162
-    why: Own _PrismaDictableRow.dict; preserve caller-visible values and failure ordering.
+    why: B2315 owns the dictable row view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L173-L173
-    why: Own _PrismaModelDumpRow.model_dump; preserve caller-visible values and failure ordering.
+    why: B2315 owns the model-dump row view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L177-L177
-    why: Own _PrismaTeamRow.dict; preserve caller-visible values and failure ordering.
+    why: B2315 owns the team mapping view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L179-L179
-    why: Own _PrismaTeamRow.model_dump; preserve caller-visible values and failure ordering.
+    why: B2315 owns the team model-dump view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L183-L183
-    why: Own _PrismaVectorStoreRow.dict; preserve caller-visible values and failure ordering.
+    why: B2315 owns the vector-store mapping view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L185-L185
-    why: Own _PrismaVectorStoreRow.model_dump; preserve caller-visible values and failure ordering.
+    why: B2315 owns the vector-store model-dump view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L187-L187
-    why: Own _PrismaVectorStoreRow.__iter__; preserve caller-visible values and failure ordering.
+    why: B2315 owns the vector-store field iteration contract.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L194-L194
-    why: Own _PrismaUserRow.organization_memberships; preserve caller-visible values and failure ordering.
+    why: B2315 owns the nullable user membership projection.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L197-L197
-    why: Own _PrismaUserRow.organization_memberships; preserve caller-visible values and failure ordering.
+    why: B2315 owns the writable user membership projection.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L199-L199
-    why: Own _PrismaUserRow.__iter__; preserve caller-visible values and failure ordering.
+    why: B2315 owns user field iteration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L203-L205
-    why: Own _PrismaAuthTable.find_unique; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unique-read protocol.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L207-L209
-    why: Own _PrismaAuthTable.find_first; preserve caller-visible values and failure ordering.
+    why: B2315 owns the first-read protocol.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L211-L217
-    why: Own _PrismaAuthTable.find_many; preserve caller-visible values and failure ordering.
+    why: B2315 owns the many-read protocol.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L219-L219
-    why: Own _PrismaAuthTable.update; preserve caller-visible values and failure ordering.
+    why: B2315 owns update forwarding without the read deadline.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L221-L221
-    why: Own _PrismaAuthTable.create; preserve caller-visible values and failure ordering.
+    why: B2315 owns create forwarding without the read deadline.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L226-L226
-    why: Own _PrismaTableHolder.table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the structural table view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L247-L249
-    why: Own _DeadlineBoundedTable.__init__; preserve caller-visible values and failure ordering.
+    why: B2315 owns lookup-label capture.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L251-L255
-    why: Own _DeadlineBoundedTable.find_unique; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded unique-read adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L257-L261
-    why: Own _DeadlineBoundedTable.find_first; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded first-read adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L263-L267
-    why: Own _DeadlineBoundedTable.find_many; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded many-read adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L269-L270
-    why: Own _DeadlineBoundedTable.update; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unbounded update adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L272-L273
-    why: Own _DeadlineBoundedTable.create; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unbounded create adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L276-L277
-    why: Own _dictable_table; preserve caller-visible values and failure ordering.
+    why: B2315 supplies the bounded permission lookup used here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L280-L283
-    why: Own _jwt_key_mapping_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the JWT mapping lookup label.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L286-L289
-    why: Own _model_dump_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded model-dump table adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L292-L293
-    why: Own _team_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded team adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L296-L297
-    why: Own _vector_store_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded vector-store adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L300-L301
-    why: Own _user_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded user adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L306-L306
-    why: Own _VectorStorePermissionsRow.vector_stores; preserve caller-visible values and failure ordering.
+    why: B2315 owns the nullable vector-store permission view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L309-L312
-    why: Own _object_permission_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the bounded permission adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L318-L318
-    why: Own _PrismaTagRow.dict; preserve caller-visible values and failure ordering.
+    why: B2315 owns the tag row mapping view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L321-L322
-    why: Own _tag_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unwrapped tag table view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L328-L328
-    why: Own _PrismaEndUserRow.dict; preserve caller-visible values and failure ordering.
+    why: B2315 owns the end-user mapping view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L331-L332
-    why: Own _end_user_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unwrapped end-user table view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L337-L337
-    why: Own _PrismaMaxBudgetRow.max_budget; preserve caller-visible values and failure ordering.
+    why: B2315 owns the nullable budget limit view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L344-L344
-    why: Own _PrismaModelAccessGroupBudgetRow.spend; preserve caller-visible values and failure ordering.
+    why: B2315 owns the nullable access-group spend view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L347-L347
-    why: Own _PrismaModelAccessGroupBudgetRow.litellm_budget_table; preserve caller-visible values and
-      failure ordering.
+    why: B2315 owns the nullable access-group budget relation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L350-L353
-    why: Own _model_access_group_budget_table; preserve caller-visible values and failure ordering.
+    why: B2315 owns the unwrapped group-budget table view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L358-L358
-    why: Own _MemberModelScope.allowed_models; preserve caller-visible values and failure ordering.
+    why: B2315 owns the member model-scope projection.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L363-L363
-    why: Own _TeamMembershipModelScope.litellm_budget_table; preserve caller-visible values and failure
-      ordering.
+    why: B2315 owns the membership budget view.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L366-L369
-    why: Own _member_allowed_models; preserve caller-visible values and failure ordering.
+    why: B2315 owns nullable/empty member-model normalization.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L373-L373
-    why: Own _RawCacheRead.async_get_cache; preserve caller-visible values and failure ordering.
+    why: B2315 owns the raw cache protocol.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L376-L377
-    why: Own _raw_cache; preserve caller-visible values and failure ordering.
+    why: B2315 owns identity-only cache narrowing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L380-L381
-    why: Own _typed_request_body; preserve caller-visible values and failure ordering.
+    why: B2315 owns identity-only request-body narrowing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L385-L385
-    why: Own _JsonLoadsObj.__call__; preserve caller-visible values and failure ordering.
+    why: B2315 owns the JSON callable protocol, not its decoder.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L388-L389
-    why: Own _typed_json_loads; preserve caller-visible values and failure ordering.
+    why: B2315 owns identity-only callable narrowing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L411-L412
-    why: Own _membership_from_shared_load; preserve caller-visible values and failure ordering.
+    why: B2315 owns typed-only membership acceptance.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L415-L435
-    why: Own _log_budget_lookup_failure; preserve caller-visible values and failure ordering.
+    why: B2315 owns the budget failure diagnostic and schema hint.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982-L4034
     why: Own get_object_permission; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3364-L3376
     why: Own _identity_cache_keys; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3379-L3392
     why: Own _prefetch_referenced_auth_objects; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L498-L503
-    why: DEFAULT_IN_MEMORY_TTL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L498-L498
+    why: The organization TTL env is int-parsed with default 5; entry reads are auth_object_prefetch.py L196-L201.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1944-L1944
+    why: The 30-second registry cap is fixed, not an env setting; identity TTL reads it at L331.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: warm_local_no_db, redis_missing_only,
-      db_single_batch, invalid_row_not_cached, identity_ttl, lookup_deadline, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Pure cases name refs_all_none_defaults, refs_org_id_projection,
+      membership_requires_two_nonnull_ids, empty_ids_still_referenced,
+      seven_entry_order_and_key_formats, each_entry_ttl, duplicate_entry_keys_retained,
+      identity_keys_hash_whole_api_key, resolved_key_skips_hash, falsey_end_user_skips_both_keys,
+      group_registry_always_last, string_value_ttl_min_30, nonstring_value_management_ttl,
+      team_project_timestamp_override, other_rows_not_timestamped,
+      null_row_silent_skip and invalid_row_warning_and_drop.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Cache-flow cases name ordinary_partition_even_hex_user_id, nonnull_memory_skips_prefetch,
+      redis_sorted_missing_keys_with_duplicates, pipeline_failure_debug_then_db,
+      direct_read_propagated_error_warns_without_db, malformed_result_map_outer_warning,
+      redis_rows_cached_without_validation, redis_null_stays_missing,
+      ttl_none_omits_memory_argument, only_original_misses_rechecked, no_db_after_redis_fill,
+      row_kind_validated_once, missing_row_not_negative_cached,
+      serialization_all_before_memory, memory_writes_entry_order,
+      db_membership_memory_uses_default_ttl, redis_retains_original_none_ttl,
+      writeback_pipeline_queues_without_await, later_failure_preserves_earlier_writes,
+      owner_prefetch_cancellation_propagates, identity_no_redis_noop,
+      identity_deduplicates_first_seen, identity_uses_selected_partition,
+      identity_read_failure_warns_and_returns, identity_memory_write_failure_propagates,
+      counter_binding_precedes_owner_prefetch and falsey_end_user_normalized_for_binding.'
+    proof: [behavior-tests]
+  - text: 'Postgres cases name five_row_kinds_single_select, absent_kinds_bind_sql_null,
+      membership_requires_team_parameter, missing_scalar_rows_null,
+      user_null_arrays_and_memberships, team_all_null_arrays,
+      team_model_aliases_renamed, nullable_related_rows_preserved,
+      organization_project_null_models, budget_allowed_models_null_to_empty,
+      permission_each_null_list_to_empty, arrays_keep_order_and_duplicates,
+      raw_prefetch_uses_writer and one_timestamp_after_query. Compare actual native and pinned SQL
+      results in B860 fixtures; do not assert a rollback in this read-only task.'
+    proof: [postgres-tests, behavior-tests]
+  - text: 'Permission cases name no_db_even_with_cache_hit, normal_permission_cache_hit,
+      db_only_skips_cache_and_uses_writer, permission_cache_read_error_propagates,
+      permission_lookup_label_and_filter, missing_permission_normal_none,
+      missing_permission_db_only_403, permission_row_validated_then_cached,
+      normal_db_validation_write_error_none, db_only_error_propagates,
+      permission_deadline_uses_shared_boundary, permission_no_negative_cache,
+      permission_metrics_record_actual_outcome and permission_cancel_propagates.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Config cases name org_ttl_default_five, org_ttl_env_override,
+      org_ttl_bad_or_empty_fails_startup, org_ttl_zero_negative_kept and
+      org_membership_registry_ttls_independent. Native diagnostics test prefetch_validation_redacts_values.'
+    proof: [config-tests, behavior-tests]
 checks:
   optional:
     - mutants
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_prefetch::tests::/)
-        - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_prefetch::/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/auth_prefetch.py && uv run --locked --project tools/oracle/litellm
@@ -299,28 +347,23 @@ checks:
         run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
       why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/auth_prefetch::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/auth_prefetch::tests::postgres_failure_effects$/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_prefetch::postgres::/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_prefetch::tests::/)
         - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-prefetch-*")"
-        && grep -rlq "DEFAULT_IN_MEMORY_TTL" crates/betterlite-config/fuzz/corpus/config_yaml/auth-prefetch-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-prefetch/warm-local-no-db.yaml
-  - tools/oracle/cases/helpers/auth-prefetch/redis-missing-only.yaml
-  - tools/oracle/cases/helpers/auth-prefetch/db-single-batch.yaml
-  - tools/oracle/cases/helpers/auth-prefetch/invalid-row-not-cached.yaml
+  - tools/oracle/cases/helpers/auth-prefetch/references-and-entries.yaml
+  - tools/oracle/cases/helpers/auth-prefetch/identity-cache-keys.yaml
+  - tools/oracle/cases/helpers/auth-prefetch/row-validation-and-stamps.yaml
   - tools/oracle/cases/helpers/auth-prefetch/identity-ttl.yaml
-  - tools/oracle/cases/helpers/auth-prefetch/lookup-deadline.yaml
-deviations: []
+deviations:
+  - what: Prefetch validation warnings identify the row/model without printing rejected field values.
+    why: Source Pydantic exceptions can contain credentials or stored private data; native diagnostics redact values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L245-L258
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2315 owns every structural adapter/protocol at auth_checks.py L161-L392, _membership_from_shared_load and _log_budget_lookup_failure; the detailed references above identify that dependency.
+  - B2316 owns all spend_counter_batch.py behavior; this task only binds admission counters before prefetch.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -329,9 +372,9 @@ out_of_scope:
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
-    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
-    _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
+  - 'litellm/proxy/auth/auth_checks.py: B2318 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
+    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442).
+    B736 owns _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
     (L2494-L2510), get_role_based_models (L2513-L2527), get_role_based_routes (L2530-L2542), _get_fuzzy_user_object
     (L2545-L2584), _backfill_null_user_email (L2587-L2612), get_user_object (L2616-L2760), _user_read_failure
     (L2763-L2768).'
@@ -459,10 +502,11 @@ out_of_scope:
   - 'litellm/proxy/auth/user_api_key_auth.py: B1221 owns _run_centralized_common_checks (L2755-L3110).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B1225 owns _noop_none (L3113-L3116), _apply_key_end_user_default_budget_to_token
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Only cache misses reach the DB batch and malformed rows must not populate the cache.
+  - A malformed nonnull Redis row suppresses owner prefetch; the later typed getter must reject it and load its own row.
+  - Identity memory writes sit outside the best-effort catch and can fail the caller.
+  - Owner prefetch uses ordinary memory even for a bare user ID that resembles a key hash.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

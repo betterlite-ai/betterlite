@@ -1,14 +1,32 @@
 id: B820
 title: Maintain model grants across rename and delete
 description: >-
-  Implement AccessGroupModelSync over stored and configured deployment siblings. Rewrite only grants whose
-  served public model name actually disappears; a remaining configuration-backed sibling keeps its access
-  group name. Use the B368 catalog snapshot and atomic SQL array rewrite.
+  Implement model-name grant maintenance after a deployment rename or deletion. Use B844 Router
+  get_model_ids/get_deployment lookups for config siblings, B726 AccessGroupRepository pinned through
+  B714 writer_wrapper for SQL and B819 invalidate_access_group_caches for effects. A sibling must have
+  a different deployment ID, exist in the catalog and have falsey model_info.db_model. No router yields
+  false. Any such sibling short-circuits still_backed=true without SQL; otherwise SELECT COUNT(*)::int
+  from LiteLLM_ProxyModelTable WHERE model_name=$1 and return whether ANY returned row has count>0.
+  This count does not exclude the supplied model_id, so callers must already have completed their primary
+  write. Cases own_id_not_sibling, absent_or_db_sibling, config_sibling_short_circuit and
+  database_count_includes_current_id establish the exact predicate and query order.
 
+  Rename returns immediately when old_name==new_name, even with no database/router. If the old name
+  remains backed, append new_name only to groups containing old_name and not already containing new_name;
+  retain old_name. Otherwise remove every pre-existing new_name then array_replace old_name with new_name
+  in groups containing old_name. This preserves positions of old occurrences, including duplicate new
+  names when old_name occurred more than once; do not sort or globally deduplicate. Deletion does nothing
+  while the name remains backed, else removes every occurrence of that name. All SQL names are bound,
+  not interpolated; only touched rows are returned. Cases rename_same_no_io, rename_backed_appends,
+  replace_preserves_old_positions, delete_backed_noop and delete_last_name cover the branches.
 
-  Build the production access_group_models module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Own the four SQL constants and _TouchedGroupRow/_DeploymentCountRow projections as well as the
+  listed functions. Parse returned rows, then pass touched IDs in returned order to B819's concurrent
+  all-attempt cache invalidator, even for an empty tuple. There is no surrounding transaction here:
+  an invalid row or cache failure can occur after the rewrite committed; a retry whose append/delete
+  changes no rows cannot reconstruct the previous touched set. Native postgres_pinned_rows and
+  postgres_failure_effects cover parameter binding, nullable arrays, duplicates and this retry boundary.
+  No settings, credentials, paid-tier branch or HTTP handler belong to this component.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/access_group_model_sync.py:
@@ -18,35 +36,18 @@ description: >-
   15 source lines), sync_access_groups_for_deleted_model (L109-L119; 11 source lines).
 
 
-  Add the access_group_models operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a access-group-models-* seed to B171 helper_case, which already owns this decoder.
+  Restrict B856's helper operation to _config_sourced_sibling and _served_by_a_config_deployment against
+  injected catalog snapshots. B171 decodes the seed and Rust calls production predicates. SQL/cache
+  orchestration is exercised by native Postgres tests; it is not a pure helper operation.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Name-array SQL cases use B860 schemas on POSTGRES_TEST_URL, with testcontainers as the unset-variable
+  fallback; they fail on unavailable Postgres and compare duplicate/order behavior in stored arrays.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 52 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 314 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing: 78 nonblank, noncomment owned lines including all SQL and row declarations, excluding imports
+  and module documentation; allow 110 production, 240 behavior/Postgres tests, 60 helper adapters,
+  30 wiring, 0 decoder/fuzz and 0 config lines, 440 changed lines within a 450-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/access_group_models.rs
@@ -83,9 +84,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L109-L119
     why: Own sync_access_groups_for_deleted_model; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: rename_last_deployment,
-      config_sibling_retains_grant, delete_last_deployment, delete_with_sibling, array_rewrite_bound,
-      cache_invalidation, postgres_pinned_rows, postgres_failure_effects.'
+  - text: Named sibling, rename/delete and failure cases in the description pass, with Postgres row
+      assertions for replacement order and effects that survive cache failure.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -119,20 +119,17 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_models::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_models::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/access-group-models/rename-last-deployment.yaml
-  - tools/oracle/cases/helpers/access-group-models/config-sibling-retains-grant.yaml
-  - tools/oracle/cases/helpers/access-group-models/delete-last-deployment.yaml
-  - tools/oracle/cases/helpers/access-group-models/delete-with-sibling.yaml
-  - tools/oracle/cases/helpers/access-group-models/array-rewrite-bound.yaml
-  - tools/oracle/cases/helpers/access-group-models/cache-invalidation.yaml
+  - tools/oracle/cases/helpers/access-group-models/own-id-not-sibling.yaml
+  - tools/oracle/cases/helpers/access-group-models/absent-or-db-sibling.yaml
+  - tools/oracle/cases/helpers/access-group-models/config-sibling-short-circuit.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B844 owns catalog lookup algorithms and B819 owns concurrent cache failure handling.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A remaining configuration-backed sibling preserves the public model grant.
+  - The database count includes the modified deployment if its primary rename/delete has not happened yet.
+  - Replacing duplicate old names can produce duplicate new names despite first removing pre-existing new-name entries.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: security

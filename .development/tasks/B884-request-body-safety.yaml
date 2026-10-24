@@ -6,10 +6,41 @@ description: >-
   or per-model opt-in: api_base, base_url, aws_sts_endpoint, aws_bedrock_runtime_endpoint, s3_endpoint_url,
   sagemaker_base_url, deployment_url and every observability host. Preserve 401 auth_error through the
   real auth exception handler. Non-URL credentials still follow MIT opt-in. Copy a source-pinned fixed
-  table from _BANNED_REQUEST_BODY_PARAMS, CustomPricingLiteLLMParams fields and supported/blocked dynamic
-  callback params. The only supported dict-form per-param matcher is api_base regex, whose URL opt-in
+  table from B2360 RequestBanCatalog, including pricing inheritance and callback exceptions.
+  The only supported dict-form per-param matcher is api_base regex, whose URL opt-in
   remains overridden by the security decision. decode_request_metadata(&[u8]) parses stringified metadata
   JSON and is fuzzed.
+
+  Match model opt-ins through B302 get_model_group_info for the requested model, falling back to its
+  provider prefix only when the full name is unknown and B174's provider list contains that prefix.
+  No router, no model info or no configurable_clientside_auth_params denies the field. A string item
+  allows only that exact parameter; dict items are considered only for api_base and require their
+  api_base key. check_regex_or_str_match uses beginning-of-string regex matching before exact equality;
+  malformed regex, missing dict key or incompatible input raises rather than silently allowing.
+
+  Root model_list is rejected before all opt-ins. Scan the B2360 banned names in their fixed order,
+  checking presence even for null/empty values. Literal True in general_settings.allow_client_side_credentials
+  allows the remaining non-URL banned fields in that container; a per-model grant skips only its own
+  field, so another banned field still fails. Rejecting a field raises ValueError describing the field
+  and explicit admin opt-ins; B757 projects it to 401 auth_error, param "None", code 401. Credentials
+  are never echoed. Do not use the stale docstring's 400 or resurrect check_complete_credentials.
+
+  Traverse root, then litellm_embedding_config and extra_body, then metadata and litellm_metadata,
+  including bracket-form metadata[...] via B1101 extract_nested_form_metadata, then fallback targets,
+  then litellm_params.metadata. Each container can be a dict or a JSON string; malformed JSON and
+  nonobject values become None. This is a single-level scan, not arbitrary recursion into config.
+  B192 supplies safe JSON parsing; only the wrapper's bound/typed projection belongs here.
+
+  Fallback traversal reads fallbacks, context_window_fallbacks and content_policy_fallbacks from root
+  and a mapping router_settings_override. Only list values are traversed. Yield strings; yield a mapping
+  unless it has nonempty values that are all lists. A mapping with string model recurses only through
+  its three fallback fields; other mappings recurse through all values. Check depth before type and
+  fail only when depth > 2*litellm.ROUTER_MAX_FALLBACKS, default 5 from int(ROUTER_MAX_FALLBACKS).
+  Therefore a scalar at excessive depth also fails. Use B009 provider_url_destination_candidates;
+  HTTP/HTTPS candidates, case-insensitively, are refused under the existing destination deviation even
+  when provider_url_destination_allowed_hosts would allow them in LiteLLM. Other model strings pass.
+  Dict targets undergo the banned scan using the original request model's opt-ins, then their model
+  string gets the URL check. Successful traversal returns True and performs no network or DB action.
 
 
   Build the production request_body_safety module in betterlite-auth; reuse the typed dependencies listed
@@ -19,19 +50,17 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_utils.py:
   check_regex_or_str_match (L159-L165; 7 source lines), _is_param_allowed (L168-L189; 20 source lines),
-  _allow_model_level_clientside_configurable_parameters (L192-L220; 24 source lines), _build_banned_observability_params
-  (L281-L303; 21 source lines), _check_banned_params (L380-L420; 33 source lines), _iter_fallback_field_values
+  _allow_model_level_clientside_configurable_parameters (L192-L220; 24 source lines),
+  _check_banned_params (L380-L420; 33 source lines), _iter_fallback_field_values
   (L430-L435; 6 source lines), _iter_fallback_targets (L438-L455; 18 source lines), iter_request_fallback_targets
   (L458-L460; 3 source lines), _reject_url_valued_fallback_target (L463-L474; 12 source lines), is_request_body_safe
   (L477-L539; 60 source lines), _coerce_metadata_to_dict (L542-L559; 16 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.allow_client_side_credentials=None;
-  litellm_settings.provider_url_destination_allowed_hosts=[]; allow_client_side_credentials=None.
+  litellm_settings.provider_url_destination_allowed_hosts=[]; model_info.configurable_clientside_auth_params=None;
+  ROUTER_MAX_FALLBACKS=5, also exposed as litellm.ROUTER_MAX_FALLBACKS. The allowed-host setting loads
+  for compatibility but cannot authorize request destinations in betterlite.
 
 
   Add the request_body_safety operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -41,21 +70,15 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Send forbidden request fields through the existing inference route with B732's safety stage installed;
+  assert rejection before provider dispatch and compare the complete public error. Pure traversal cases
+  separately establish which nested field caused the denial, using B2360's actual catalog.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::request_body_safety::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::request_body_safety::tests::credential_opt_in_default_and_literal_true,
+  model_param_grants_load, allowed_hosts_load_without_bypass, fallback_depth_default_override,
+  fallback_depth_bad_integer_startup and fallback_depth_nonpositive. The env uses int() with no fallback
+  for invalid text; do not silently clamp zero or negative values.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -72,19 +95,14 @@ description: >-
   without recreating the workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 220 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  220 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 593 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 199 original source lines after moving the 21-line catalog builder to B2360; allow
+  240 production, 280 behavior tests, 65 adapters, 65 wiring, 55 decoder/fuzz and 65 config lines,
+  770 within an 800-line gate. The larger static catalog is budgeted only in B2360. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_every_banned_destination_observability_url_field_is_rejected_by_name_w,
-  native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso. Exercise the precise
+  Native-only deviation tests in this production module: destination_opt_in_still_denied,
+  fallback_allowlisted_host_denied, metadata_byte_limit and metadata_depth_limit. Exercise the precise
   changed setting/output branch and assert its configured status/error/side effects; do not add these
   differing results to oracle equality cases.
 
@@ -131,8 +149,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L192-L220
     why: Own _allow_model_level_clientside_configurable_parameters; preserve caller-visible values and
       failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L281-L303
-    why: Own _build_banned_observability_params; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L281-L377
+    why: B2360 owns the ordered ban catalog consumed here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L380-L420
     why: Own _check_banned_params; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L430-L435
@@ -155,13 +173,21 @@ references:
     why: general_settings.allow_client_side_credentials default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L332-L337
     why: litellm_settings.provider_url_destination_allowed_hosts default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1-L6
-    why: allow_client_side_credentials default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L11-L11
+    why: ROUTER_MAX_FALLBACKS import-time integer parse; auth_utils.py:439 consumes it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: url_bans_survive_credential_opt_in,
-      fallback_url_denied, banned_observability_field, metadata_not_object, pricing_field_banned, nested_url_denied.'
+      fallback_url_denied, banned_observability_field, metadata_not_object, pricing_field_banned,
+      nested_url_denied, model_exact_then_provider_prefix, no_model_info_denies,
+      string_param_grant, regex_prefix_before_equality, regex_type_key_failures,
+      root_model_list_always_denied, null_banned_field_present, opt_in_only_literal_true,
+      one_grant_does_not_skip_next, first_banned_field_order, nested_container_order,
+      json_metadata_and_bracket_form, one_level_only, nested_litellm_params_metadata,
+      fallback_three_fields_and_override, fallback_list_mapping_shapes,
+      fallback_target_original_model_policy, fallback_depth_boundary_before_type,
+      fallback_nonurl_model and value_error_401_envelope.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -185,8 +211,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_every_banned_destination_observability_url_field_is_rejected_by_name_w,
-      native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: destination_opt_in_still_denied, fallback_allowlisted_host_denied, metadata_byte_limit and metadata_depth_limit cover all deliberate differences outside equality cases.
     proof:
       - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
@@ -236,6 +261,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/request-body-safety/metadata-not-object.yaml
   - tools/oracle/cases/helpers/request-body-safety/pricing-field-banned.yaml
   - tools/oracle/cases/helpers/request-body-safety/nested-url-denied.yaml
+  - tools/oracle/cases/helpers/request-body-safety/nonurl-grants-and-error-order.yaml
+  - tools/oracle/cases/helpers/request-body-safety/container-and-fallback-shapes.yaml
+  - tools/oracle/cases/helpers/request-body-safety/fallback-depth-boundaries.yaml
   - tools/oracle/cases/auth/request-body-safety/banned-observability-field.yaml
   - tools/oracle/cases/auth/request-body-safety/metadata-not-object.yaml
   - tools/oracle/cases/auth/request-body-safety/pricing-field-banned.yaml
@@ -251,12 +279,11 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L159-L165
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2360 owns the ban-list builder and constants; this task consumes them and never stores callback secrets.
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
-  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
-    (L668-L703), get_request_route_template (L706-L722), normalize_request_route (L726-L837).'
+  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665),
+    get_request_route_template (L706-L722), normalize_request_route (L726-L837); B882 owns get_request_route (L668-L703).'
   - 'litellm/proxy/auth/auth_utils.py: B744 owns is_invalid_virtual_key_error (L41-L58), mark_invalid_virtual_key_error
     (L61-L75), _get_request_ip_address (L78-L87), _check_valid_ip (L90-L108), pre_db_read_auth_checks
     (L562-L618), check_if_request_size_is_safe (L840-L898), check_response_size_is_safe (L901-L939), bytes_to_mb
@@ -305,6 +332,6 @@ pitfalls:
   - CustomPricingLiteLLMParams and callback tables contribute fields that are absent from the handwritten
     tuple.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

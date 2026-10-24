@@ -1,15 +1,17 @@
 id: B1205
-title: Team patch endpoint and update field preparation
+title: Team update budget reset and object permission preparation
 description: >-
-  Implement PATCH /team/{team_id} conversion into a typed TeamUpdate request and shared budget-reset/object-permission
-  preparation. Inject TeamUpdate::apply(TeamPatch,AuthContext)->Result<TeamRow,ManagementError>; B806
-  implements the update executor and B057 wires it, so the patch adapter never depends on its own caller.
-  Preserve absent/null request semantics and use ObjectPermissionPatch for writes.
+  Supply the field preparation called by B806 update_team. A non-null budget_duration calls B2317
+  get_budget_reset_time and sets budget_reset_at. An explicit null in updated_kv clears budget_reset_at;
+  absence leaves it untouched. Nonempty budget_limits initialize each dictionary or typed window with
+  an ISO reset_at and serialize the array to JSON; None and [] do not synthesize windows.
 
-
-  Injected port instead of a reverse dependency on B806: TeamUpdate::apply(TeamPatch,AuthContext)->Result<TeamRow,ManagementError>;
-  B806 implements it and B057 composes the adapter. A configured but unregistered implementation is a
-  named startup error, never a success stub.
+  Delegate object permissions to B816 handle_update_object_permission_common using the stored
+  object_permission_id and live database client. Add object_permission_id to the returned data only
+  when that helper returns one, preserving every other input field. Propagate its failures, including
+  any prior writes; this preparation does not wrap a transaction or map an HTTP error.
+  B2370 owns PATCH /team/{team_id}, which depends on the actual B806 executor. Keeping these two
+  small helpers below B806 removes the former reverse callback dependency.
 
 
   Build the production team_patch module in betterlite-server; reuse the typed dependencies listed in
@@ -18,7 +20,7 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
-  patch_team (L2574-L2642; 61 source lines), _set_budget_reset_at (L2645-L2663; 16 source lines), handle_update_object_permission
+  _set_budget_reset_at (L2645-L2663; 16 source lines), handle_update_object_permission
   (L2666-L2687; 16 source lines).
 
 
@@ -26,19 +28,10 @@ description: >-
   column type; retain source storage types.
 
 
-  Register these actual HTTP routes and aliases exactly once: PATCH /team/{team_id} -> patch_team. For
-  each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Test the mutation of typed update fields beside team_patch. Object-permission persistence tests use
+  POSTGRES_TEST_URL supplied by CI, otherwise testcontainers, and verify new-row, existing-row and
+  failed-write effects through B816. Pure budget-window projections have MIT helper oracle cases under
+  Management::teams; B171 owns the helper-case decoder.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -51,44 +44,43 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 93 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  93 production, 136 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 294 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  Sizing: 32 nonblank, noncomment source lines; allow 65 production, 180 behavior/Postgres tests,
+  70 helper adapters and 35 wiring lines, 350 changed lines within a 400-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  This task registers no route; the team update handler consumes these functions directly.
 scope:
   paths:
     - crates/betterlite-server/src/team_patch.rs
     - crates/betterlite-server/src/team_patch/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/management/team-patch/**
+    - tools/oracle/src/helpers/team_patch.rs
+    - tools/oracle/helpers/team_patch.py
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/cases/helpers/team-patch/**
+    - tools/oracle/fuzz/corpus/helper_case/team-patch-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2574-L2642
-    why: Own patch_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2645-L2663
     why: Own _set_budget_reset_at; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2666-L2687
     why: Own handle_update_object_permission; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: patch_null_clear, budget_reset_time.'
+  - text: >-
+      budget_duration_absent_preserves_reset, budget_duration_null_clears_reset, duration_uses_reset_clock,
+      windows_dictionary_and_model_iso_json, windows_null_and_empty_untouched, permission_created,
+      permission_updated, permission_none_preserves_payload and permission_failure_preserves_prior_effects
+      exercise the actual preparation and B816 persistence.
     proof:
       - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
+  - text: MIT reset-window projections agree with Rust and the new helper seed is replayed.
     proof:
       - oracle
-      - behavior-tests
+      - helper-python
+      - helper-case-corpus
 checks:
   optional: []
   commands:
@@ -96,16 +88,18 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_patch::tests::/)
         - test(/replays_the_/)'
+    - id: helper-python
+      why: The team budget projection adapter must exist and pass strict Python checks.
+      run: test -f tools/oracle/helpers/team_patch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: A newly added budget-window seed must exercise the helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/team-patch-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/team-patch/patch--team-team-id-success.yaml
-  - tools/oracle/cases/management/team-patch/patch--team-team-id-invalid-target.yaml
-  - tools/oracle/cases/management/team-patch/patch--team-team-id-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-patch/patch-null-clear.yaml
-  - tools/oracle/cases/management/team-patch/budget-reset-time.yaml
+  - tools/oracle/cases/helpers/team-patch/reset-field-presence.yaml
+  - tools/oracle/cases/helpers/team-patch/window-reset-json.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2370 owns patch_team (team_endpoints.py L2568-L2642), including route registration and merge-patch adaptation.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -188,8 +182,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Inject TeamUpdate::apply(TeamPatch,AuthContext)->Result<TeamRow,ManagementError>; B806 implements
-    the update executor and B057 wires it, so the patch adapter never depends on its own caller.
+  - An empty budget_limits array does not initialize or serialize windows; do not treat it as a request to manufacture a reset window.
 budget:
   max_changed_lines: 400
   max_new_expects: 0

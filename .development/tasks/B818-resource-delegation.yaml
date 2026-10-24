@@ -1,14 +1,58 @@
 id: B818
 title: Prevent resource grant escalation by keys
 description: >-
-  Implement ResourceDelegation over team permissions and canonical MCP IDs, including all-proxy-MCP administrator
-  grants, grandfathered existing key grants, access groups/toolsets and vector/search tool scopes. Run
-  before key or team permission writes; caller-requested grant sets cannot override parent restrictions.
+  Implement resource-grant validation with B816 permission records, B817 MCP resolution and B747 unified
+  access-group MCP lookup. Helpers raise HTTPException with detail.error, status 403 and no local
+  type/param/code override; each calling route owns its wire mapping. None writes the database. Defaults
+  are prisma_client=null, is_proxy_admin=false and existing_key_object_permission=null. The all-proxy
+  team grant guard returns immediately for proxy admins or requests without "all-proxy-mcpservers";
+  otherwise permit only an already-stored sentinel. A falsey existing ID/missing DB/row cannot grandfather
+  it and gives 403 "Only a proxy admin can grant a team access to all proxy MCP servers
+  ('all-proxy-mcpservers').". Native all_proxy_new_vs_stored and all_proxy_admin_short_circuit cover this.
 
+  Extract requested servers from list mcp_servers (discard only "no-mcp-servers") plus dict tool-map
+  keys. Groups/toolsets require lists; missing, empty, non-dict outer records and wrong-shaped fields
+  yield empty sets. If all three are empty, return the same object without DB/registry work. For a team,
+  union B747 unified group resources, retaining unresolved names, with B817's object-permission grants;
+  a missing team grants nothing. Add B817 allow_all_keys registry IDs. Resolve requested aliases to every
+  matching canonical ID; warn once with sorted stale identifiers and remove them from the mutable input
+  before authorization. Preserve the original resolving aliases via B817 cleanup. A teamless proxy admin
+  may choose any resolved server; an admin with a team still obeys its ceiling. Cases empty_grants_no_io,
+  unified_and_direct_team_grants, stale_warning_mutates_before_denial and personal_vs_team_admin distinguish
+  these branches.
 
-  Build the production resource_delegation module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Grandfather only canonical IDs resolved from the old key's direct mcp_servers and tool-map keys,
+  excluding both sentinel literals. Missing old permission or DB returns an empty set; unresolved names
+  grandfather nothing and old access groups/toolsets contribute nothing. Use B817's stored tool JSON
+  decoder (including malformed/non-map errors) without another parser. Subtract allowed and grandfathered
+  IDs from active requested IDs. Team denial says "Key requests MCP servers not allowed by team
+  '<team_id>': <sorted>. Team allows: <sorted>. Global (allow_all_keys) servers: <sorted>."; personal
+  denial says "Key is not in a team. Only globally available (allow_all_keys) MCP servers can be assigned:
+  <sorted>. Disallowed servers: <sorted>.". Native grandfather_resolved_only and mcp_denial_messages
+  include a shrinking team allowlist and aliases shared by allowed/disallowed servers.
+
+  Check groups after servers and toolsets last. MCP access groups must be a subset of the TEAM'S
+  object_permission.mcp_access_groups, not its unified access_group_ids. Only a teamless admin bypasses
+  that restriction; groups are never grandfathered. Team error is "Key requests MCP access groups not
+  allowed by team '<id>': <sorted>. Team allows: <sorted>."; personal error is "Key is not in a team.
+  MCP access groups cannot be assigned to keys outside of a team. Disallowed groups: <sorted>.".
+  Toolsets: empty requests pass, teamless admins pass, other personal callers get "Key is not in a team.
+  MCP toolsets cannot be assigned to personal keys by non-admin callers. Disallowed toolsets: <sorted>.".
+  A team's absent/null/empty toolset allowlist is UNRESTRICTED; a nonempty list enforces subset even for
+  proxy admins, with "Key requests MCP toolsets not allowed by team '<id>': <sorted>. Team allows:
+  <sorted>.". Cases group_source_not_unified, group_not_grandfathered, server_group_toolset_error_order
+  and toolset_empty_ceiling_vs_subset cover these literal/error distinctions.
+
+  Vector-store extraction takes truthy list entries, stringifies and deduplicates them. Empty requests,
+  any team key and proxy admins pass; there is no team vector-store subset check. Personal non-admin
+  denial is "Key is not in a team. Vector stores cannot be assigned to personal keys by non-admin callers.
+  Disallowed vector stores: <sorted>.". Search-tool extraction stringifies truthy list entries but keeps
+  duplicates; a personal non-admin gets "Key is not in a team. search_tools cannot be assigned to personal
+  keys by non-admin callers. Disallowed search tools: <sorted requested list>.". A missing/empty team search
+  allowlist permits any names; a nonempty ceiling uses set difference and raises "Key requests search
+  tools not allowed by team '<id>': <sorted disallowed>. Team allows: <sorted team list>.". Cases
+  extractor_falsey_shapes, vector_personal_gate_only, search_personal_duplicates and search_nonempty_ceiling
+  are pure parity tests. No toolset existence check, premium branch or configuration is added.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
@@ -21,27 +65,16 @@ description: >-
   (L894-L941; 43 source lines).
 
 
-  Add the resource_delegation operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a resource-delegation-* seed to B171 helper_case, which already owns this decoder.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  The B856 helper operation exposes only the pure extractors, toolset check and vector/search validators
+  (the latter are async without I/O). Compare 403 details and input preservation with B171 seeds. Native
+  MCP tests inject the registry and use real Postgres via POSTGRES_TEST_URL, falling back to B860
+  testcontainers only when absent; connection errors fail. Do not call global-dependent resolvers from
+  the Python helper. This task registers no endpoint; callers own HTTP integration.
 
 
   Sizing: 382 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  382 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 628 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  300 production (source count includes long docstrings), 370 behavior/Postgres tests, 70 helper adapters,
+  30 route/manifests/wiring, 0 decoder/fuzz and 0 config lines, 770 within an 800-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/resource_delegation.rs
@@ -86,9 +119,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L894-L941
     why: Own validate_key_search_tools_against_team; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: all_proxy_admin_only,
-      grandfathered_key_server, team_mcp_subset, unknown_toolset, vector_store_subset, search_tool_subset,
-      missing_team_permissions.'
+  - text: Every named grant/ceiling case in the description passes, including 403 message fields, stale
+      warning/drop mutations, native grandfathered-row reads and the absence of a vector-store team ceiling.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -115,17 +147,13 @@ checks:
         && grep -rlq "resource_delegation" tools/oracle/fuzz/corpus/helper_case/resource-delegation-*
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/resource-delegation/all-proxy-admin-only.yaml
-  - tools/oracle/cases/helpers/resource-delegation/grandfathered-key-server.yaml
-  - tools/oracle/cases/helpers/resource-delegation/team-mcp-subset.yaml
-  - tools/oracle/cases/helpers/resource-delegation/unknown-toolset.yaml
-  - tools/oracle/cases/helpers/resource-delegation/vector-store-subset.yaml
-  - tools/oracle/cases/helpers/resource-delegation/search-tool-subset.yaml
-  - tools/oracle/cases/helpers/resource-delegation/missing-team-permissions.yaml
+  - tools/oracle/cases/helpers/resource-delegation/extractor-falsey-shapes.yaml
+  - tools/oracle/cases/helpers/resource-delegation/toolset-empty-ceiling-vs-subset.yaml
+  - tools/oracle/cases/helpers/resource-delegation/vector-personal-gate-only.yaml
+  - tools/oracle/cases/helpers/resource-delegation/search-personal-duplicates.yaml
+  - tools/oracle/cases/helpers/resource-delegation/search-nonempty-ceiling.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_helpers/object_permission_utils.py: B816 owns attach_object_permission_to_dict
     (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183),
     invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries
@@ -138,8 +166,9 @@ out_of_scope:
     _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Grandfathered existing MCP grants do not authorize arbitrary new server grants.
+  - The stale-server cleanup mutates the incoming permission object before a later server/group/toolset denial.
+  - Empty team MCP toolset and search-tool lists impose no ceiling, while empty MCP server grants permit only global allow_all_keys servers.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

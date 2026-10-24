@@ -7,8 +7,10 @@ description: >-
   lookup. The models crate must not import Router or proxy state. Add the production adapter
   in betterlite-server::savings using B174 and B845 get_deployment_model_info; outside a
   proxy the context has no deployment resolver and uses public prices. This replaces only
-  _proxy_llm_router's global access, not its public-price fallback. B068 installs the adapter
-  for logging and later spend writers. Resolve or lookup failures emit debug and become
+  _proxy_llm_router's global access, not its public-price fallback. This task attaches the
+  adapter to B068's server cost-service resource in state.rs, reusing that resource's bound
+  B1678 effective lookup instead of building a second one; logging and later spend writers
+  read the savings context from there. B068 itself never names a savings type. Resolve or lookup failures emit debug and become
   unavailable estimates; no dashboard metric failure may abort a spend write.
   _cost_of_usage calls Anthropic pricing for canonical provider anthropic, forwarding tier
   but not residency/location; other providers use generic pricing with all three B1693
@@ -46,7 +48,8 @@ description: >-
   Pure savings_pricing cases call source functions with explicit prices, parsed records and
   deterministic contexts; no adapter imports proxy_server or FastAPI. Compare cache losses,
   classifier subtraction, initial equivalence and recorded-value precedence. Native adapter
-  tests verify B845 deployment lookup and absent-proxy fallback. The 375 nonblank source
+  tests verify B845 deployment lookup, absent-proxy fallback and that the assembled cost
+  service carries the attached savings context. The 375 nonblank source
   lines budget 320 pricing/context, 260 tests and 220 adapters within 800.
 scope:
   paths:
@@ -58,6 +61,7 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
+    - crates/betterlite-server/src/state.rs
     - tools/oracle/src/helpers/mod.rs
     - tools/oracle/src/helpers/savings_pricing.rs
     - tools/oracle/helpers/dispatch.py
@@ -81,7 +85,7 @@ dod:
     proof: [savings-pricing-tests, oracle, savings-pricing-python, savings-pricing-corpus]
   - text: Compression, cache and autorouter components use their distinct rates and recorded-value precedence without recomputing a versioned unknown estimate.
     proof: [savings-pricing-tests, oracle, savings-pricing-python]
-  - text: The server adapter supplies canonical and effective deployment prices while models/logging remain independent of proxy globals.
+  - text: The server adapter supplies canonical and effective deployment prices, is attached to B068's cost service with its bound public lookup, and models/logging remain independent of proxy globals.
     proof: [savings-context-tests, savings-pricing-tests]
 checks:
   optional: []
@@ -90,7 +94,7 @@ checks:
       why: Savings arithmetic invents cache warmth, clamps losses or disregards recorded billing evidence.
       run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^savings_pricing::/)'
     - id: savings-context-tests
-      why: Runtime savings uses public list prices instead of effective deployment rates or loses the no-router fallback.
+      why: Runtime savings uses public list prices instead of effective deployment rates, loses the no-router fallback or is missing from the assembled cost service.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^savings::/)'
     - id: savings-pricing-python
       why: Comparison fixtures lack checked source execution with supplied prices and evidence.

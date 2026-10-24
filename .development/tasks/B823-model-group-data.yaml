@@ -1,14 +1,61 @@
 id: B823
 title: Model access-group deployment and budget helpers
 description: >-
-  Implement ModelAccessGroupStore for deployment-tag changes, DB read-through, readable model_info, reload-serving
-  checks and budget row projection. Use B368 catalog mutations and ModelRepository; database success with
-  degraded serving retains the source explicit error, never a false success response.
+  Implement the model-group data services consumed by B824/B825. B725 owns ModelRepository, B726 the
+  group-budget table, B733 cache-key construction, B878 eviction, B832 API records, B841 model-info
+  parsing/reload verdicts and B844 router name lookup. _prisma_client_or_500 raises HTTPException 500
+  detail.error="Database not connected."; _http_error always uses that detail.error shape. Budget
+  lookups include litellm_budget_table, and listing maps every row by access_group_name in one query.
+  Projection preserves group/name/count fields and stored spend, using 0.0 only with no group-budget
+  row; no joined budget gives budget=null even when budget_id is set. Otherwise expose budget_id,
+  max_budget, soft_budget, budget_duration and budget_reset_at without inventing defaults. Own the
+  flattened ModelAccessGroupBudget record (required name, spend=0.0, max_budget=null) and local protocol/
+  filter declarations. Cases budget_join_missing_vs_present and flattened_budget_defaults prove these values.
 
+  Deleting a group-budget row leaves LiteLLM_BudgetTable untouched. After a completed delete, evict
+  ("model_access_group:<name>", "model_access_group_registry") unconditionally, even if delete returned
+  None, then return whether it returned a row. A thrown delete prevents eviction; an eviction failure
+  leaves deletion committed. Native budget_delete_retains_shared_row, absent_row_still_evicts and
+  budget_delete_failure_order cover these stages. Group existence is based on deployment tags from
+  get_all_access_groups_from_db, not on a budget row; missing groups raise 404 "Access group '<name>' not found".
 
-  Build the production model_group_data module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  validate_models_exist checks exact B844 router model names; no router returns (false, original inputs),
+  and missing names preserve request order/duplicates. Read-through attempts every initially missing name
+  sequentially via B124 model_registry_read_through, then rechecks against the current proxy_server router,
+  since it may have been rebound. Empty missing lists do no work; failures propagate. Native
+  readthrough_order_and_rebound_router and readthrough_failure_no_write plus pure exact_model_names
+  cover these paths. Read-through settings remain with B124; this task reads no env/config key.
+
+  Add/remove helpers mutate the supplied model_info dictionary/list. Absent access_groups starts as [];
+  adding an existing entry does nothing, adding appends, removing deletes only the FIRST matching
+  occurrence and keeps an empty access_groups field. Do not silently repair null or malformed lists.
+  _readable_model_info_or_raise accepts mappings or JSON objects via B841, treats raw None as {}, but
+  raises ValueError "model_info for deployment <id> is not a readable JSON object; refusing to rewrite it"
+  for any present unreadable value. Tag/strip copy that mapping shallowly, skip unchanged writes, otherwise
+  JSON-serialize the entire updated model_info, write only that column and return (id,updated mapping).
+  Tag writes debug-log success; all unrelated model_info, including stored ciphertext, remains unchanged;
+  litellm_params/credentials are never rewritten. Cases add_idempotent_remove_first, malformed_groups,
+  readable_json_or_absent, unreadable_refuses_write and preserve_other_model_info cover the transforms.
+
+  Name-based updates fetch all DB deployments whose model_name is in the request and check EVERY
+  requested name has a DB row before tagging any. The first missing name gives 400 "Can't find model
+  '<name>' in Database. Access group management is only supported for database models.". Then write
+  sequentially in query order, returning modified pairs only. ID-based updates instead look up and tag
+  each ID in request order; missing rows give 400 "Deployment with model_id '<id>' not found in Database."
+  after any earlier writes. Neither path is transactional. Cases names_validate_all_before_writes,
+  ids_partial_write_on_missing, duplicate_id_rechecks and later_tag_failure preserve these differences.
+
+  get_all_access_groups_from_db reads every model row and uses model_info-or-{} directly as a dictionary,
+  without the readable JSON normalization above. Iterate each access_groups occurrence, including
+  duplicates; return sorted unique model_names but deployment_count counts occurrences. Malformed
+  truthy model_info/group lists raise rather than being logged and dropped. Cases group_count_duplicates
+  and discovery_bad_row_failure prove this. Reload degradation delegates to B841 with written_must_serve=false:
+  only previously live written models that disappear, plus still-desired collateral drops, are failures.
+  Deduplicate missing-then-collateral IDs and raise 500 detail.error saying the group was saved in the DB,
+  listing those IDs, that other pods reload on their own interval, and to inspect 'Error upserting deployment'.
+  Already-dead written models pass. Cases reload_metadata_only, reload_collateral_and_order and
+  reload_saved_but_not_live assert the complete L361-L365 message; live_after=None retains B841's fresh
+  snapshot behavior, tested natively as reload_snapshot_fallback.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_access_group_management_endpoints.py:
@@ -38,39 +85,19 @@ description: >-
   15 source lines), get_all_access_groups_from_db (L530-L566; 28 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  B856's helper operation invokes only pure budget projections, add/remove, readable-model-info and
+  reload verdicts with explicit live_after/still_desired snapshots, plus exact-name checks on a supplied
+  catalog. SQL, cache and global read-through paths use native Postgres tests. B171 owns helper-case
+  decoding; B841 already owns the stored model_info byte boundary, so do not add a second JSON parser.
 
 
-  Add the model_group_data operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-group-data-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  Tagging and joined-budget tests run against B860's POSTGRES_TEST_URL database or testcontainers when
+  the variable is absent; fail setup errors and retain earlier deployment writes when a later ID is missing.
 
 
   Sizing: 348 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  348 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 597 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  300 production (the source total includes protocol and function documentation), 370 behavior/Postgres
+  tests, 70 helper adapters, 30 wiring, 0 decoder/fuzz and 0 config lines, 770 within an 800-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/model_group_data.rs
@@ -186,9 +213,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L530-L566
     why: Own get_all_access_groups_from_db; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: model_exists_db_readthrough,
-      missing_model, tag_deployment, strip_group_tag, reload_degraded, budget_row_missing, postgres_pinned_rows,
-      postgres_failure_effects.'
+  - text: Every named budget, read-through, metadata, discovery and serving-verdict case in the description
+      passes; postgres_pinned_rows and postgres_failure_effects distinguish name prevalidation from partial ID writes.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -222,25 +248,29 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_data::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_data::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/model-group-data/model-exists-db-readthrough.yaml
-  - tools/oracle/cases/helpers/model-group-data/missing-model.yaml
-  - tools/oracle/cases/helpers/model-group-data/tag-deployment.yaml
-  - tools/oracle/cases/helpers/model-group-data/strip-group-tag.yaml
-  - tools/oracle/cases/helpers/model-group-data/reload-degraded.yaml
-  - tools/oracle/cases/helpers/model-group-data/budget-row-missing.yaml
+  - tools/oracle/cases/helpers/model-group-data/budget-join-missing-vs-present.yaml
+  - tools/oracle/cases/helpers/model-group-data/flattened-budget-defaults.yaml
+  - tools/oracle/cases/helpers/model-group-data/exact-model-names.yaml
+  - tools/oracle/cases/helpers/model-group-data/add-idempotent-remove-first.yaml
+  - tools/oracle/cases/helpers/model-group-data/malformed-groups.yaml
+  - tools/oracle/cases/helpers/model-group-data/readable-json-or-absent.yaml
+  - tools/oracle/cases/helpers/model-group-data/unreadable-refuses-write.yaml
+  - tools/oracle/cases/helpers/model-group-data/reload-metadata-only.yaml
+  - tools/oracle/cases/helpers/model-group-data/reload-collateral-and-order.yaml
+  - tools/oracle/cases/helpers/model-group-data/reload-saved-but-not-live.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B832 owns model-group API record defaults/validation; B841 owns model_info JSON parsing and reload state calculation.
   - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B824 owns create_model_group
-    (L574-L712), list_access_groups (L720-L762), get_access_group_info (L770-L821), update_access_group
-    (L829-L975), delete_access_group (L983-L1085).'
+    (L574-L712), update_access_group (L829-L975), delete_access_group (L983-L1085); B2341 owns
+    list_access_groups (L720-L762) and get_access_group_info (L770-L821).'
   - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B825 owns get_access_group_budget
     (L1093-L1120), set_access_group_budget (L1128-L1198), delete_access_group_budget (L1206-L1244).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A DB write followed by a serving reload failure remains a degraded serving result.
+  - ID-based tagging validates each row immediately before its write, so a later missing ID leaves earlier tags committed.
+  - Removing one duplicate group tag leaves the remaining occurrence, and discovery counts both occurrences separately.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

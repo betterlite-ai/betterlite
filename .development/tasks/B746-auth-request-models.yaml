@@ -1,17 +1,43 @@
 id: B746
 title: Resolve requested models before authorization
 description: >-
-  Implement RequestedModels over B302 catalog lookups and typed request envelope fields, URL path model
-  IDs and managed-resource references. Preserve candidate order and alias provenance; a resolver may observe
-  stored resource routing metadata without granting access. SSO setup detection is a pure settings query
-  for later login/custom-auth consumers.
+  Resolve requested models without granting access or creating managed resources. Candidate collection
+  accepts scalar/list/tuple/set values, skips None, splits strings on commas, trims whitespace,
+  stringifies other values and drops empty strings; deduplicate by first occurrence. Exact mapping
+  keys win over the first case-insensitive match. Markers are case-insensitive substring tests.
+  Own the marker/ID-field constants at auth_utils.py L1681-L1728 alongside their consumers.
+
+  Start with body.model, then body.target_model_names for files/batches/vector_stores or a falsey body
+  model, dict session.model for /realtime/client_secrets and /realtime/calls, and dict completion.model
+  for /evals. Routing sources apply to /files, /batches, /vector_stores, /skills, /evals, /fine_tuning
+  and /videos. Files/batches/skills/evals append query.model then x-litellm-model; files/batches/
+  fine_tuning append query.target_model_names. Inspect body IDs in order: file_id, input_file_id,
+  output_file_id, error_file_id, batch_id, fine_tuning_job_id, training_file, validation_file,
+  vector_store_id, video_id, character_id. Other routes ignore these ID hints.
+
+  Nonempty string IDs try B1019 legacy file/batch hints, B1016 unified IDs, then B2324 video/character
+  decoding for the corresponding field names. Each family independently catches errors, logs DEBUG
+  and retains already-appended candidates before the next family. Resolve model_id through B302,
+  keeping the original when unknown or after a DEBUG-logged failure; append target_model_names next.
+  Nonstring/empty IDs yield no hints. /cost/predict-cache instead requires string current_deployment_id
+  and candidate_deployment_id, both catalog entries and each entry's team_id None or equal to the
+  caller team; return their model names in order, deduplicated, ignoring ordinary body/header sources.
+  Format zero candidates as None, one as a string, many as a list.
+
+  A dispatched endpoint marked __litellm_pass_through_endpoint__ exactly True skips extraction;
+  built-in handlers at a colliding custom path still enforce models. Provider pass-through detection
+  separately checks presence of path_params.endpoint. With no candidate, try /openai/deployments/<model>,
+  then non-Vertex /v1beta/models/ or /beta/models/ and ^/models/ up to ':', preserving embedded slashes,
+  or Vertex /models/<id> for a case-insensitive /vertex prefix. Bedrock, /azure/ or /azure_ai/, and
+  /nvidia_nim/ helpers then override even an explicit body model on a nonnull match. B2324 Bedrock
+  count_tokens/invalid paths give no override; B2324 matches Azure catalog segments after prefix removal
+  and selects the longest exclusive-NIM model-group prefix. Missing router keeps the earlier candidate.
 
 
-  Use B1016 managed-resource and B1019 file/batch routing ID decoders from plan-B080 directly. Video and
-  character IDs use ResourceModelHints::decode_video_or_character(&str)->Result<Option<ModelId>,DecodeError>;
-  B093 owns the future codec implementation. A missing implementation or malformed ID contributes no hint,
-  exactly like the source caught decoder failure; it does not authorize access or decode a duplicate format
-  here.
+  B2324 moves the small video/character and Bedrock decoders below authentication instead of depending
+  on upper B093/B102 handlers. An uninstalled decoder is not equivalent to malformed input: these MIT
+  modules exist at the pin. Recognizing a managed file/batch ID does not enable the enterprise-only
+  managed hook; the open product choice remains with the file/batch route owners.
 
 
   Build the production auth_request_models module in betterlite-auth; reuse the typed dependencies listed
@@ -38,33 +64,17 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  HTTP dispatch tests use built-in paths and a colliding custom passthrough path to prove the actual
+  selected handler controls model extraction. Pure hint cases compare candidate order and DEBUG
+  fallback only; they cannot assert that an extracted model has been authorized.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Model extraction uses typed request/catalog snapshots and B2324/B1016/B1019 decoders, without
+  Postgres or a new decoder. The MIT managed-ID parsers remain usable with the enterprise hook absent.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 284 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  284 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 562 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 284 function lines plus 46 constant-table lines; allow 285 production, 300 tests,
+  85 adapters and 65 wiring, 735 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -135,10 +145,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: body_model_precedence,
-      azure_path_model, bedrock_path_model, managed_file_model, cache_prediction_candidates, duplicate_candidates.'
+  - text: 'Candidate cases: scalar_sequence_comma_values, trim_empty_none_values,
+      nonstring_values_stringified, first_occurrence_dedup, exact_key_before_casefold,
+      marker_substring_casefold, body_model_first, target_model_route_matrix,
+      realtime_session_model, eval_completion_model, query_before_header,
+      query_target_route_matrix, each_managed_id_field_order and unrelated_route_ignores_ids.'
     proof:
       - behavior-tests
+  - text: 'Hint cases: legacy_then_unified_then_video, family_error_retains_partial,
+      malformed_id_next_decoder, unknown_model_id_kept, resolver_error_debug_kept,
+      video_character_field_specific, prediction_missing_router_ids,
+      prediction_missing_deployment, prediction_other_team_denied,
+      prediction_global_or_same_team, prediction_ignores_body and zero_one_many_format.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Dispatch cases: marker_exact_true_skips, custom_collision_still_checks,
+      provider_endpoint_presence, azure_openai_path_fallback, google_slash_model,
+      vertex_path_exclusion, bedrock_path_overrides_body, count_tokens_keeps_body,
+      azure_catalog_path_overrides, nvidia_longest_exclusive_group and router_absent_keeps_body.
+      HTTP cases use actual dispatched handlers; helper cases never enable a managed hook.'
+    proof: [behavior-tests, stage-wiring-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -160,7 +185,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_request_models::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/^(auth::)?auth_request_models::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -183,16 +208,19 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-request-models/managed-file-model.yaml
   - tools/oracle/cases/helpers/auth-request-models/cache-prediction-candidates.yaml
   - tools/oracle/cases/helpers/auth-request-models/duplicate-candidates.yaml
+  - tools/oracle/cases/helpers/auth-request-models/source-route-matrix.yaml
+  - tools/oracle/cases/helpers/auth-request-models/hint-decoder-failures.yaml
+  - tools/oracle/cases/helpers/auth-request-models/prediction-team-scope.yaml
   - tools/oracle/cases/auth/auth-request-models/body-model-precedence.yaml
   - tools/oracle/cases/auth/auth-request-models/azure-path-model.yaml
   - tools/oracle/cases/auth/auth-request-models/bedrock-path-model.yaml
   - tools/oracle/cases/auth/auth-request-models/managed-file-model.yaml
   - tools/oracle/cases/auth/auth-request-models/cache-prediction-candidates.yaml
   - tools/oracle/cases/auth/auth-request-models/duplicate-candidates.yaml
+  - tools/oracle/cases/auth/auth-request-models/custom-handler-collision.yaml
+  - tools/oracle/cases/auth/auth-request-models/path-model-overrides.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
   - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
@@ -283,8 +311,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Resolving a model from a managed resource ID does not authorize that model.
+  - Provider path models override a body model, unlike the earlier /openai/deployments fallback.
+  - A failing legacy decoder can leave a model hint while the independent unified decoder still runs.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

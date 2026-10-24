@@ -1,0 +1,104 @@
+id: B2342
+title: Transactional v2 organization patch
+description: >-
+  Split update_organization_v2 (organization_endpoints.py L844-L997, decorator L838-L843) from B827.
+  Register PATCH /v2/organization/{organization_id} once, consuming B826's organization router and
+  access helpers. B124 owns OrganizationUpdateRequestV2 and LiteLLM_OrganizationTableWithMembers;
+  its optional fields default null, track presence and forbid unknown keys with 422. The path ID is
+  authoritative; budget_id, organization_id and updated_by are not body fields. This handler has no
+  local exception wrapper, audit decorator or post-commit cache refresh.
+
+  After B052 auth, missing DB is 500 with B826's exact CommonProxyErrors.db_not_connected_error.
+  A null caller.user_id gives 400 detail.error="Cannot associate a user_id to this action. Check
+  `/key/info` to validate if 'user_id' is set."; an empty string passes that check. Validate max_budget
+  then soft_budget as finite/nonnegative, otherwise 422 "<field> must be a non-negative finite number.
+  Received: <value>". Check tpm_limit, rpm_limit and max_parallel_requests in that order for negatives,
+  returning 422 "<field> must be non-negative. Received: <value>". Zero and null pass. Call
+  B861.validate_budget_duration(status_code=422), then, only for truthy model_max_budget, call
+  B1224.validate_model_max_budget and map its ValueError to 422 detail.error=str(error); other errors
+  propagate. Cases v2_schema_unknown_fields, v2_database_and_actor_order, v2_budget_numeric_matrix,
+  v2_integer_limit_matrix, v2_duration_error and v2_model_budget_value_error test these branches.
+
+  A present null organization_alias gives 422 "organization_alias cannot be cleared; it is required";
+  empty string is not rejected by this check. Present null models gives 422 "models cannot be set to
+  null; send [] to clear it". A nonnull object_permission whose exclude-none dump is empty gives 422
+  "object_permission cannot be an empty object; send null to clear it, or a non-empty object to set grants".
+  A list-valued grant explicitly set to [] is a nonempty permission object and passes. Only then call
+  B826._verify_org_access and read B723.OrganizationRepository. Missing row gives 404
+  detail.error="Organization not found for organization_id=<id>". Cases v2_clear_token_matrix,
+  v2_permission_empty_vs_empty_grant, v2_validation_before_scope and v2_missing_after_scope fix the
+  order and distinguish this route from the legacy ValueError.
+
+  Partition only present fields: B826._BUDGET_SETTABLE_FIELDS goes to the budget write; organization_alias
+  and models to columns. Present metadata becomes data.metadata or {}, replacing the entire previous
+  metadata, while omission leaves it unchanged. This is not the legacy shallow merge. For nonnull
+  object_permission, call B816.prepare_object_permission_upsert BEFORE opening the transaction, passing
+  exclude-none grants and the existing permission ID; it supplies the merge record and stable ID.
+  Explicit null instead sets organization.object_permission_id=null without deleting the old row.
+  Omission leaves the link alone. Build organization write data through B124.jsonify_object and always
+  set updated_by to caller.user_id, even for {}. Cases v2_omitted_fields_retained, v2_metadata_replaces,
+  v2_permission_prepare_before_tx, v2_permission_null_unlinks and v2_empty_patch_updates_actor cover
+  these projections, including preserved members/teams and orphaned permission rows.
+
+  Use one ordinary DB transaction, with no added advisory lock or retry: first permission upsert, with
+  identical create/update records; then, if budget updates exist, B826.build_budget_write_data followed
+  by jsonify and budget update using the existing organization's budget_id; finally organization update
+  with include.members, include.teams and include.litellm_budget_table all true. Budget duration presence
+  recomputes or clears budget_reset_at through B826/B2317; null budget limits are written as null. A
+  missing linked budget is not repaired by creating one, and budget_id cannot be replaced through this
+  route. Return the organization row only after commit. Cases v2_tx_write_order, v2_budget_null_and_reset,
+  v2_missing_budget_aborts and v2_each_write_failure_rolls_back inspect real rows at each failure point.
+  v2_no_postcommit_invalidation asserts no invented entitlement/cache operation after commit.
+
+  B826 removes the router's MIT license rejection under README Decisions. Its deviation means
+  authenticated v2 cases run through native HTTP/Postgres, not equality tests against an unreachable MIT
+  handler. Only authentication-before-license uses B001's unmodified MIT HTTP oracle. B860 selects
+  POSTGRES_TEST_URL, otherwise starts testcontainers; broken configured connections are test failures.
+  This task consumes the existing typed body decoder and introduces no settings or credential storage.
+  The function plus decorator owns 147 nonblank/noncomment lines. Reserve 170 implementation, 310 tests
+  and 65 registration lines, 545 within 550; keep each implementation file under 300 lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/organization_patch_v2.rs
+    - crates/betterlite-server/src/organization_patch_v2/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/management/organization-patch-v2/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L838-L997
+    why: V2 decorator, presence validation and three writes inside one transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3634-L3655
+    why: All-null optional defaults and forbidden extra body fields.
+dod:
+  - text: Every named v2 validation and projection case runs through the native HTTP route with exact
+      statuses, error details and serialized null fields; middleware authentication matches MIT.
+    proof: [behavior-tests, oracle]
+  - text: The named transaction and fault cases prove permission preparation is outside the transaction,
+      all three writes roll back together, and successful commit has no added cache invalidation.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Transactional organization patch tests are missing or violate field presence and atomicity.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^organization_patch_v2::tests::/) - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/organization-patch-v2/authentication-before-license.yaml
+deviations: []
+out_of_scope:
+  - B826 owns organization_endpoints.py L96-L357, new_organization L366-L557 and permission creation
+    L666-L690, including the router license deviation inherited by this handler.
+  - B827 retains legacy update L699-L835 and deletion L1006-L1079; B058 owns activity L565-L663;
+    B1212 owns read routes L1088-L1271; B828 owns membership operations L1281-L1706.
+pitfalls:
+  - Null object_permission unlinks the old row, whereas an empty object is rejected before authorization.
+  - An empty PATCH still writes updated_by and can fail when the organization row disappears.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

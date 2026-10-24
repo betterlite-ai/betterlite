@@ -1,14 +1,46 @@
 id: B803
 title: Organization and user ceilings for team writes
 description: >-
-  Implement TeamLimitPolicy for defaults, available memberships, organization/user rate/model budgets
-  and team-admin update authority. Preserve disable_auto_add_proxy_admin_to_teams and source default-team
-  parameters; no license/user/team quota is enforced.
+  Implement team_limits for default projection, membership reads and restricted team-budget writes.
+  _get_default_team_param reads litellm.default_team_params (None by default) from a dict or typed
+  object's attribute, returns None for absent/null fields, and converts enum elements in lists to
+  their string values without altering order or non-enum elements. Scalar values pass through.
+  _is_available_team consults only litellm.default_internal_user_params.available_teams; an absent
+  config/key yields false. The caller argument is unused; availability does not depend on caller role.
+  get_all_team_memberships filters team_id in the supplied list and, only for nonnull user_id, user_id
+  in [user_id], includes litellm_budget_table and validates every returned membership. Empty string
+  user_id is a real filter. B801 supplies accessors; B724/B726 supply stored membership contracts.
 
+  _check_team_budget_update_authority returns no guard for proxy admins. For other callers, an
+  explicitly present max_budget creates _MaxBudgetGuard(expected=current), including current=None.
+  An uncapped team permits a new cap; an existing finite cap cannot be explicitly nulled or raised,
+  each HTTP 403 with the corresponding Only a proxy admin can remove/raise a team's max_budget detail.
+  Equal/lower values pass. Omission makes no guard, although a nonnull requested value is still
+  compared to the current cap. Organization-admin callers are selected/bypassed by the route's
+  B1204 organization policy; this helper itself exempts only proxy admins.
 
-  Build the production team_limits module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  _write_team_update uses ordinary update without a guard. With a guard, update_many matches BOTH
+  team_id and the exact prior max_budget (including SQL null); zero changed rows gives HTTP 409,
+  The team's max_budget changed during this update. Reload the team and try again. A successful
+  guarded write then find_unique reads the row. Both result reads include litellm_model_table and
+  object_permission. There is no transaction joining the guarded write and reread; the returned row
+  can be None and a failed reread cannot undo the write. Test a concurrent cap reduction against
+  actual Postgres using POSTGRES_TEST_URL, falling back to testcontainers only when it is absent.
+
+  _existing_model_cap returns None on BudgetConfig validation errors. For non-proxy-admins changing
+  model_max_budget with nonempty previous limits, first reject deletion of each valid capped exact
+  entry (including a null/empty whole map), then resolve each proposed model through B071.resolve_model_budget
+  so wildcard-governed limits apply. Missing/malformed/uncapped governing limits impose no ceiling.
+  Reject a proposed null cap, increased amount OR changed budget_duration with HTTP 403; allow equal
+  or reduced amounts with the same duration. Include model and governing entry in the diagnostic.
+  B071 owns wildcard specificity, not a second matcher here. Unchanged model maps and proxy-admin
+  edits skip these checks; B158 owns BudgetConfig at types/utils.py L3992-L4007, including its
+  time_period/budget_limit aliases. B2317's reset-clock settings are not called here.
+
+  _should_auto_add_team_creator returns false for user_id=None, true for any other non-proxy-admin,
+  and for proxy admin returns false only when general_settings.disable_auto_add_proxy_admin_to_teams
+  is literally True. Its default is absent/None; false, numeric 1 and a string true do not disable.
+  Empty user_id differs from None. No premium_user branch exists in these owned functions.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -19,48 +51,25 @@ description: >-
   (L1318-L1326; 9 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.default_team_params=None;
-  litellm_settings.default_internal_user_params=None; general_settings.disable_auto_add_proxy_admin_to_teams=None;
-  disable_auto_add_proxy_admin_to_teams=None.
+  litellm_settings.default_internal_user_params=None; general_settings.disable_auto_add_proxy_admin_to_teams=None.
 
 
-  Add the team_limits operation under B856 Management::teams. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-limits-*
-  seed to B171 helper_case, which already owns this decoder.
+  Wire team_limits into B856 Management::teams, using B171 helper_case seeds for default projection,
+  explicit max-budget guards and wildcard cap ceilings. Compare those pure calls with the original
+  helpers; the guarded UPDATE/reread race is exercised only by native Postgres tests.
 
 
-  Write betterlite-config::team_limits::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config loader cases default_params_absent, default_params_map, default_permission_enums,
+  available_teams_loaded, creator_switch_identity and env_resolved_defaults invoke B002 and then
+  these functions. No int() setting or invented invalid-value fallback is involved. The oracle
+  adapter covers only pure projections/guards; native tests own membership SQL and writes.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Sizing: 154 nonblank, noncomment function lines plus guard/include declarations; allow 180 production,
+  310 behavior/Postgres tests, 80 helper adapters, 30 wiring and 55 config lines, 655 within 700.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 154 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  154 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 438 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
 scope:
   paths:
     - crates/betterlite-server/src/team_limits.rs
@@ -109,13 +118,19 @@ references:
     why: litellm_settings.default_team_params default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
     why: litellm_settings.default_internal_user_params default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1326-L1331
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1318-L1326
     why: general_settings.disable_auto_add_proxy_admin_to_teams default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1-L6
-    why: disable_auto_add_proxy_admin_to_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L135-L177
+    why: B071 supplies model budget resolution for the authority comparison.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: team_admin_budget_escalation,
-      default_team_params, creator_auto_add_disabled.'
+      default_team_params, creator_auto_add_disabled, default_object_projection,
+      availability_ignores_caller, memberships_user_filter, memberships_include_budget,
+      proxy_budget_bypass, omitted_budget_no_guard, uncapped_budget_guard, cap_null_denied,
+      cap_lower_allowed, cap_equal_allowed, stale_cap_409, null_cap_compare, guarded_read_failure,
+      update_includes_permissions, malformed_model_cap, omitted_models_allowed,
+      removed_model_cap_denied, wildcard_cap_denied, model_window_change_denied,
+      model_lower_same_window, uncapped_model_allowed, creator_missing_id and creator_empty_id.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -129,9 +144,9 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
+  - text: postgres_guarded_update proves the concurrent reduction is not overwritten and postgres_memberships
+      checks filters and expanded budgets; postgres_reread_failure preserves the committed guarded update.
+    proof: [postgres-tests]
 checks:
   optional:
     - mutants
@@ -159,18 +174,19 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/team-limits-*")"
         && grep -rlq "default_team_params" crates/betterlite-config/fuzz/corpus/config_yaml/team-limits-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: postgres-tests
+      why: Require the real guarded-write, membership and partial-effect tests, not only pure guards.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_limits::tests::postgres_/)'
 oracle_cases:
   - tools/oracle/cases/helpers/team-limits/team-admin-budget-escalation.yaml
   - tools/oracle/cases/helpers/team-limits/default-team-params.yaml
   - tools/oracle/cases/helpers/team-limits/creator-auto-add-disabled.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L783-L1326
+  - tools/oracle/cases/helpers/team-limits/default-value-projection.yaml
+  - tools/oracle/cases/helpers/team-limits/budget-presence-and-guards.yaml
+  - tools/oracle/cases/helpers/team-limits/model-ceiling-matrix.yaml
+  - tools/oracle/cases/helpers/team-limits/available-teams-and-creator.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -251,8 +267,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Existing model caps and requested new caps must be compared before a team-budget write.
+  - A cap guard with expected=None is a conditional SQL-null write, not the absence of a guard.
+  - A reduced per-model cap still fails when its budget_duration changes.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

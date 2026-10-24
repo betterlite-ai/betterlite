@@ -139,7 +139,7 @@ tasks:
     milestone: M1 openai data plane
     title: Call dispatch across providers and call types, shared settings and helpers
     status: todo
-    depends_on: [B010, B011, B012, B198, B200, B201, B006, B206, B207]
+    depends_on: [B010, B011, B198, B200, B201, B006, B206, B207]
     file: tasks/B014-call-dispatch.yaml
     covers:
       - "litellm/{__init__,main,utils}.py"
@@ -218,7 +218,7 @@ tasks:
     milestone: M2 routing
     title: Scoped router weights validation and application
     status: todo
-    depends_on: [B008, B302, B051, B052, B055, B057, B060, B066, B301, B361, B002]
+    depends_on: [B008, B302, B051, B052, B055, B057, B060, B066, B301, B361, B002, B2301]
     file: tasks/B023-router-weights.yaml
     covers:
       - "litellm/proxy/management_endpoints/router_weights.py"
@@ -226,7 +226,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI provider, every remaining endpoint
     status: todo
-    depends_on: [B010, B004, B006, B080, B900, B901, B668, B669, B670, B671, B507, B508, B510, B500, B198, B196, B249, B187, B184, B129, B002, B171, B2237, B2238]
+    depends_on: [B010, B004, B006, B668, B669, B670, B671, B507, B508, B510, B500, B198, B196, B249, B187, B184, B129, B002, B171, B2237, B2238]
     file: tasks/B024-openai-provider.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -545,7 +545,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Database startup, migration jobs and readiness
     status: todo
-    depends_on: [B002, B003, B710, B711, B712, B713, B714, B715, B716, B717, B718, B719, B731, B854, B856, B857, B860, B1232]
+    depends_on: [B002, B003, B710, B711, B712, B713, B714, B716, B717, B718, B719, B731, B854, B856, B857, B860, B1232]
     file: tasks/B051-database-startup.yaml
     covers:
       - "litellm/proxy/db/prisma_client.py"
@@ -557,10 +557,11 @@ tasks:
     milestone: M4 keys, spend and management
     title: Wire virtual key authentication into the server
     status: todo
-    depends_on: [B001, B002, B003, B004, B007, B012, B171, B732, B733, B734, B735, B736, B737, B738, B739, B740, B741, B742, B743, B744, B745, B746, B747, B748, B749, B750, B751, B752, B753, B754, B755, B756, B757, B758, B759, B760, B855, B856, B860, B870, B871, B875, B876, B881, B889]
+    depends_on: [B001, B002, B003, B110, B732, B741, B744, B755, B756, B757, B855, B860, B870, B875, B876, B1004, B1100, B2313, B2316, B2326]
     file: tasks/B052-virtual-key-auth.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
+      - "litellm/proxy/agent_endpoints/auth/agent_caller.py"
   - id: B053
     milestone: M4 keys, spend and management
     title: Install JWT and OAuth authentication backends
@@ -573,7 +574,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Python custom authentication and validation integration
     status: todo
-    depends_on: [B001, B002, B003, B052, B165, B171, B732, B739, B744, B750, B753, B754, B755, B856, B860, B869, B879, B881, B889]
+    depends_on: [B001, B002, B003, B052, B165, B171, B732, B739, B750, B753, B755, B757, B856, B860, B869, B879, B881, B889]
     file: tasks/B054-custom-auth.yaml
     covers:
       - "litellm/proxy/custom_auth_auto.py"
@@ -584,7 +585,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Register key generation and management routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B737, B770, B771, B772, B773, B774, B775, B776, B777, B778, B779, B780, B781, B782, B783, B784, B785, B856, B860, B861, B864, B865, B892, B894, B1224, B1228]
+    depends_on: [B001, B003, B052, B124, B732, B737, B770, B771, B772, B773, B860, B861, B864, B865, B892, B894, B1224]
     file: tasks/B055-key-management.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -592,7 +593,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Register user creation and UI identity services
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B773, B786, B787, B788, B789, B790, B791, B792, B793, B794, B795, B796, B797, B798, B799, B816, B856, B860, B861, B865, B892, B893, B899, B1222, B1226]
+    depends_on: [B001, B003, B052, B124, B732, B736, B790, B797, B816, B860, B861, B865, B892, B893, B1226]
     file: tasks/B056-user-management.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -600,7 +601,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team callback persistence and logging controls
     status: todo
-    depends_on: [B001, B003, B052, B061, B171, B189, B246, B724, B732, B734, B800, B801, B802, B803, B804, B805, B806, B807, B808, B809, B810, B811, B812, B813, B814, B815, B856, B860, B865, B1210, B1211, B1231]
+    depends_on: [B001, B003, B052, B124, B171, B246, B724, B732, B800, B801, B860, B865, B1210, B1231, B2304]
     file: tasks/B057-team-callbacks.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_callback_endpoints.py"
@@ -608,7 +609,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization activity and management integration
     status: todo
-    depends_on: [B001, B003, B052, B171, B700, B729, B732, B742, B816, B817, B818, B819, B820, B821, B822, B823, B824, B825, B826, B827, B828, B856, B860]
+    depends_on: [B001, B003, B052, B074, B700, B723, B726, B732, B826, B860]
     file: tasks/B058-organization-activity.yaml
     covers:
       - "litellm/proxy/management_endpoints/organization_endpoints.py"
@@ -616,7 +617,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Customer info, list and daily activity
     status: todo
-    depends_on: [B001, B003, B052, B171, B700, B729, B732, B742, B829, B830, B831, B856, B860]
+    depends_on: [B001, B003, B052, B074, B124, B700, B726, B732, B830, B860]
     file: tasks/B059-customer-read.yaml
     covers:
       - "litellm/proxy/management_endpoints/customer_endpoints.py"
@@ -624,7 +625,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model group info, deprecations and management integration
     status: todo
-    depends_on: [B001, B002, B003, B007, B052, B171, B732, B759, B832, B833, B834, B835, B836, B837, B838, B839, B840, B841, B842, B843, B844, B845, B846, B847, B848, B849, B850, B851, B856, B860]
+    depends_on: [B001, B002, B003, B007, B052, B124, B141, B302, B732, B759, B842, B843, B846, B860]
     file: tasks/B060-model-management.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -632,7 +633,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Migrate legacy ciphertext and attest residual encryption across stores
     status: todo
-    depends_on: [B722, B724, B725, B726, B860, B1600, B1601, B1602, B1700]
+    depends_on: [B722, B724, B860, B1600, B1602, B1700]
     file: tasks/B061-encryption-migration.yaml
     covers:
       - "litellm/proxy/management_endpoints/credential_migration.py"
@@ -693,7 +694,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Compose response charges and expose the shared cost service
     status: todo
-    depends_on: [B171, B193, B198, B204, B205, B1649, B1673, B1677, B1678, B1681, B1682, B1683, B1685, B1686, B1687, B1688, B1689, B1694]
+    depends_on: [B171, B193, B198, B204, B205, B1649, B1673, B1677, B1678, B1681, B1682, B1683, B1685, B1686, B1687, B1688, B1689]
     file: tasks/B068-response-cost-service.yaml
     covers:
       - "litellm/cost_calculator.py"
@@ -702,7 +703,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Spend tracking and spend logs
     status: todo
-    depends_on: [B002, B003, B052, B070, B098, B111, B116, B118, B124, B171, B173, B189, B198, B204, B206, B715, B860, B1035, B1704, B1707, B1708, B1709, B1712, B1714, B1715, B1716, B1719, B1720, B1721, B1722, B1723, B1724, B1725, B1726, B1727, B1729, B1730, B1731, B1732, B1742]
+    depends_on: [B002, B003, B070, B098, B111, B116, B118, B124, B171, B173, B189, B198, B204, B206, B715, B860, B1035, B1704, B1707, B1708, B1709, B1712, B1714, B1716, B1719, B1720, B1721, B1727, B1729, B1732, B1742]
     file: tasks/B069-spend-callbacks.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -721,7 +722,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Budgets, budget resets and reservations
     status: todo
-    depends_on: [B069]
+    depends_on: [B2311, B2313, B2316, B2317]
     file: null
     covers:
       - "litellm/budget_manager.py"
@@ -759,7 +760,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Usage, daily activity and analytics API
     status: todo
-    depends_on: [B070]
+    depends_on: [B070, B2312]
     file: null
     covers:
       - "litellm/proxy/management_endpoints/usage_endpoints/**"
@@ -830,7 +831,7 @@ tasks:
     milestone: M5 api families
     title: Responses routes
     status: todo
-    depends_on: [B003, B004, B014, B104, B124, B158, B921, B929, B932, B1078, B2415, B936, B937, B938, B939, B940, B941, B955, B1100, B935, B1139, B732, B855, B756, B2401]
+    depends_on: [B003, B004, B014, B104, B124, B158, B507, B508, B921, B929, B932, B1078, B2415, B936, B937, B938, B939, B940, B941, B955, B1100, B935, B1139, B732, B855, B756, B2401]
     file: tasks/B080-responses-routes.yaml
     covers:
       - "litellm/proxy/response_api_endpoints/endpoints.py"
@@ -1071,7 +1072,7 @@ tasks:
     milestone: M5 api families
     title: Pass-through endpoint framework and its config API
     status: todo
-    depends_on: [B052, B009]
+    depends_on: [B052, B009, B2302]
     file: null
     covers:
       - "litellm/proxy/pass_through_endpoints/*.*"
@@ -1300,7 +1301,7 @@ tasks:
     milestone: M8 platform
     title: Proxy CLI flags, startup, workers and bug reports
     status: todo
-    depends_on: [B003]
+    depends_on: [B003, B2307]
     file: null
     covers:
       - "litellm/proxy/{proxy_cli,bug_report_config}.py"
@@ -1329,7 +1330,7 @@ tasks:
     milestone: M8 platform
     title: Remaining proxy server routes, shared proxy types and request preparation
     status: todo
-    depends_on: [B052, B016]
+    depends_on: [B052, B016, B730, B731, B733, B734, B736, B2302, B2314, B2316, B2317]
     file: null
     covers:
       - "litellm/proxy/{__init__,proxy_server,_types,utils,plugin_routes,lambda,post_call_rules,litellm_pre_call_utils}.py"
@@ -1338,7 +1339,7 @@ tasks:
       - "litellm/proxy/hooks/__init__.py"
       - "litellm/proxy/types_utils/**"
       - "litellm/types/proxy/{README.md,litellm_pre_call_utils.py}"
-      - "litellm/proxy/common_utils/{get_routes,http_parsing_utils,path_utils,openai_endpoint_utils,json_merge_patch,timezone_utils,resource_ownership,rbac_utils,registry_read_through,semantic_text_index,static_asset_utils,admin_ui_utils}.py"
+      - "litellm/proxy/common_utils/{get_routes,http_parsing_utils,path_utils,openai_endpoint_utils,json_merge_patch,resource_ownership,rbac_utils,registry_read_through,semantic_text_index,static_asset_utils,admin_ui_utils}.py"
       - "litellm/blog_posts.json"
       - "litellm/litellm_core_utils/get_blog_posts.py"
   - id: B125
@@ -1397,7 +1398,7 @@ tasks:
     milestone: M8 platform
     title: Model health checks and health routes
     status: todo
-    depends_on: [B016]
+    depends_on: [B016, B731]
     file: null
     covers:
       - "litellm/proxy/health_check.py"
@@ -1455,7 +1456,7 @@ tasks:
     milestone: M9 agents and mcp
     title: MCP gateway server, transports and server registry
     status: todo
-    depends_on: [B052]
+    depends_on: [B052, B2305]
     file: null
     covers:
       - "litellm/proxy/_experimental/mcp_server/{AGENTS.md,server.py,sse_transport.py,stdio_gate.py,mcp_server_manager.py,server_resolution.py,capabilities.py,contracts.py,operations.py,mcp_context.py,mcp_debug.py,exceptions.py,utils.py,result_conversion.py,elicitation_handler.py,sampling_handler.py,legacy_callbacks.py,tool_outcome.py,cost_calculator.py,discoverable_endpoints.py,client_allowlist.py}"
@@ -1505,7 +1506,7 @@ tasks:
     milestone: M9 agents and mcp
     title: Agents API, agent registry and agent identity
     status: todo
-    depends_on: [B052]
+    depends_on: [B052, B2313]
     file: null
     covers:
       - "litellm/proxy/agent_endpoints/**"
@@ -1967,7 +1968,7 @@ tasks:
     milestone: M1 openai data plane
     title: Callback registry and configuration validation
     status: todo
-    depends_on: [B188, B246]
+    depends_on: [B188, B246, B2304]
     file: tasks/B189-callback-registry.yaml
     covers:
       - "litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py"
@@ -2486,7 +2487,7 @@ tasks:
     milestone: M1 openai data plane
     title: Success callback dispatch and deduplication
     status: todo
-    depends_on: [B247, B248, B191, B254, B252]
+    depends_on: [B247, B248, B191, B254]
     file: tasks/B250-logging-success.yaml
     covers:
       - "litellm/litellm_core_utils/litellm_logging.py"
@@ -2921,7 +2922,7 @@ tasks:
     milestone: M2 routing
     title: Auto-router identity, member permissions and inference checks
     status: todo
-    depends_on: [B377, B378, B052, B060, B301, B361]
+    depends_on: [B377, B378, B052, B060, B301, B361, B2318]
     file: tasks/B343-auto-router-access.yaml
     covers:
       - "litellm/proxy/auth/auto_router_checks.py"
@@ -3372,7 +3373,7 @@ tasks:
     milestone: M2 routing
     title: Pass-through deployment selection
     status: todo
-    depends_on: [B302, B364, B395, B014, B011, B301]
+    depends_on: [B302, B364, B395, B011, B301]
     file: tasks/B396-passthrough-selection.yaml
     covers:
       - "litellm/router.py"
@@ -3550,7 +3551,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI binary speech generation
     status: todo
-    depends_on: [B173, B171, B004, B206, B190, B249]
+    depends_on: [B173, B171, B004, B206, B249]
     file: tasks/B514-openai-speech.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -3668,7 +3669,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI realtime connection and session requests
     status: todo
-    depends_on: [B500, B173, B171, B187, B1004, B1005, B1006, B1008, B1009, B249]
+    depends_on: [B500, B173, B171, B187, B1004, B1005, B249]
     file: tasks/B528-openai-realtime.yaml
     covers:
       - "litellm/llms/openai/realtime/handler.py"
@@ -5857,7 +5858,7 @@ tasks:
     milestone: M5 api families
     title: Summary model access
     status: todo
-    depends_on: [B002, B171, B732, B736, B747, B879, B886, B968]
+    depends_on: [B002, B171, B732, B736, B747, B879, B886, B968, B2318]
     file: tasks/B969-summary-model-access.yaml
     covers:
       - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
@@ -6657,7 +6658,7 @@ tasks:
     milestone: M5 api families
     title: Vector file resolution
     status: todo
-    depends_on: [B171, B174, B1020, B1061, B1062, B1016, B1019, B1021, B2400, B732]
+    depends_on: [B171, B1017, B1020, B1061, B1062, B1087, B1016, B1021, B002]
     file: tasks/B1075-vector-file-resolution.yaml
     covers:
       - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
@@ -6758,7 +6759,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Native Postgres access and transaction test support
     status: todo
-    depends_on: [B000, B171, B856, B860]
+    depends_on: [B000, B171, B860]
     file: tasks/B700-postgres-store.yaml
     covers:
       - "litellm/proxy/db/base_client.py"
@@ -6768,9 +6769,9 @@ tasks:
       - "litellm/models/base.py"
   - id: B715
     milestone: M4 keys, spend and management
-    title: Database outage classification and bounded lookup
+    title: Bounded database lookups and safe database metrics
     status: todo
-    depends_on: [B002, B012, B171, B700, B856, B860, B872]
+    depends_on: [B002, B012, B110, B171, B700, B856, B860, B872]
     file: tasks/B715-database-failures.yaml
     covers:
       - "litellm/proxy/db/exception_handler.py"
@@ -6778,9 +6779,9 @@ tasks:
       - "litellm/proxy/db/log_db_metrics.py"
   - id: B720
     milestone: M4 keys, spend and management
-    title: Typed identity and budget database rows
+    title: Verification-token, user and end-user row contracts
     status: todo
-    depends_on: [B171, B700, B710, B856, B860]
+    depends_on: [B171, B700, B856, B860, B2307, B2310]
     file: tasks/B720-identity-rows.yaml
     covers:
       - "litellm/models/budget.py"
@@ -6791,7 +6792,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Typed organization and resource database rows
     status: todo
-    depends_on: [B171, B700, B710, B856, B860]
+    depends_on: [B171, B700, B720, B856, B860, B2307, B2310]
     file: tasks/B721-resource-rows.yaml
     covers:
       - "litellm/models/__init__.py"
@@ -6805,17 +6806,17 @@ tasks:
       - "litellm/models/project.py"
   - id: B722
     milestone: M4 keys, spend and management
-    title: Verification token repository and archived keys
+    title: Verification-token table access and stored-row decoding
     status: todo
-    depends_on: [B171, B700, B714, B720, B856, B860]
+    depends_on: [B171, B700, B714, B720, B856, B860, B2307]
     file: tasks/B722-key-repository.yaml
     covers:
       - "litellm/repositories/verification_token_repository.py"
   - id: B723
     milestone: M4 keys, spend and management
-    title: User and organization repositories
+    title: User lookups, SCIM placeholders and organization/project readers
     status: todo
-    depends_on: [B171, B700, B714, B720, B721, B856, B859, B860]
+    depends_on: [B171, B700, B714, B720, B721, B856, B860, B2307]
     file: tasks/B723-user-repository.yaml
     covers:
       - "litellm/repositories/user_repository.py"
@@ -6823,9 +6824,9 @@ tasks:
       - "litellm/repositories/project_repository.py"
   - id: B724
     milestone: M4 keys, spend and management
-    title: Team repository and atomic roster writes
+    title: Team row decoding and advisory-locked roster reads
     status: todo
-    depends_on: [B171, B700, B714, B720, B856, B859, B860]
+    depends_on: [B171, B700, B714, B856, B859, B860, B2307]
     file: tasks/B724-team-repository.yaml
     covers:
       - "litellm/repositories/team_repository.py"
@@ -6833,7 +6834,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model, permissions, budget and config repositories
     status: todo
-    depends_on: [B171, B700, B714, B720, B721, B856, B860]
+    depends_on: [B120, B171, B700, B714, B721, B726, B856, B860, B2303, B2307, B2310]
     file: tasks/B725-resource-repository.yaml
     covers:
       - "litellm/repositories/model_repository.py"
@@ -6843,9 +6844,9 @@ tasks:
       - "litellm/repositories/credentials_repository.py"
   - id: B726
     milestone: M4 keys, spend and management
-    title: Managed resources and transaction repositories
+    title: Typed table adapters and managed-resource repositories
     status: todo
-    depends_on: [B171, B700, B714, B720, B721, B856, B858, B860]
+    depends_on: [B120, B171, B700, B714, B856, B858, B860, B1035, B2307, B2311]
     file: tasks/B726-auxiliary-repository.yaml
     covers:
       - "litellm/repositories/table_repositories.py"
@@ -6857,14 +6858,15 @@ tasks:
       - "litellm/repositories/__init__.py"
   - id: B732
     milestone: M4 keys, spend and management
-    title: Typed authentication principals and grant resolution
+    title: Typed authentication principals and role normalization
     status: todo
-    depends_on: [B171, B700, B720, B856, B859]
+    depends_on: [B003, B171, B720, B856, B2313, B2314]
     file: tasks/B732-auth-identity.yaml
     covers:
       - "litellm/proxy/auth/auth_method.py"
       - "litellm/proxy/auth/roles.py"
       - "litellm/proxy/auth/resolvers/models.py"
+      - "litellm/proxy/auth/network.py"
       - "litellm/proxy/auth/resolvers/exceptions.py"
       - "litellm/proxy/auth/resolvers/grants.py"
       - "litellm/proxy/auth/resolvers/store.py"
@@ -6876,7 +6878,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Typed key and management-object caches
     status: todo
-    depends_on: [B002, B125, B126, B171, B732, B856]
+    depends_on: [B002, B125, B126, B171, B856, B2314]
     file: tasks/B733-auth-cache.yaml
     covers:
       - "litellm/proxy/common_utils/user_api_key_cache.py"
@@ -6885,7 +6887,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Batch identity and permission prefetch
     status: todo
-    depends_on: [B002, B171, B700, B715, B732, B733, B856, B860]
+    depends_on: [B002, B125, B126, B171, B700, B714, B715, B720, B721, B726, B733, B856, B859, B860, B2310, B2314, B2315, B2316]
     file: tasks/B735-auth-prefetch.yaml
     covers:
       - "litellm/proxy/auth/auth_object_prefetch.py"
@@ -6893,17 +6895,18 @@ tasks:
       - "litellm/proxy/auth/user_api_key_auth.py"
   - id: B736
     milestone: M4 keys, spend and management
-    title: User and team membership lookup during auth
+    title: User lookup, fuzzy identity matching and role permissions
     status: todo
-    depends_on: [B001, B002, B003, B171, B715, B723, B724, B732, B733, B735, B856, B860, B1217, B1226]
+    depends_on: [B002, B125, B171, B720, B723, B732, B733, B735, B856, B860, B1217, B2310, B2314, B2315, B2317, B2318]
     file: tasks/B736-auth-user-lookup.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
+      - "litellm/proxy/_types.py"
   - id: B737
     milestone: M4 keys, spend and management
-    title: Team, organization and access-group auth lookup
+    title: Team and access-group auth lookup
     status: todo
-    depends_on: [B002, B171, B715, B723, B724, B732, B733, B734, B735, B736, B856, B859, B879, B1231]
+    depends_on: [B171, B724, B726, B732, B733, B734, B735, B736, B856, B2315]
     file: tasks/B737-auth-team-lookup.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6911,7 +6914,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key lookup and UI session grant refresh
     status: todo
-    depends_on: [B001, B003, B171, B715, B722, B732, B733, B734, B735, B736, B737, B856, B860, B871, B872, B1223]
+    depends_on: [B001, B003, B171, B715, B726, B732, B733, B734, B735, B736, B737, B757, B856, B860, B871, B872, B2314, B2315, B2320, B2323]
     file: tasks/B738-auth-key-lookup.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6920,7 +6923,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: End-user identity and default budgets
     status: todo
-    depends_on: [B001, B002, B003, B171, B715, B720, B725, B732, B733, B856, B860, B882, B1218]
+    depends_on: [B001, B002, B003, B171, B720, B725, B726, B732, B733, B757, B856, B860, B882, B1218, B2315, B2321]
     file: tasks/B739-auth-end-users.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6929,7 +6932,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Tag and model access-group budget lookups
     status: todo
-    depends_on: [B001, B003, B171, B700, B715, B725, B732, B733, B856, B860, B1218]
+    depends_on: [B001, B003, B171, B726, B732, B733, B856, B860, B1218, B2315]
     file: tasks/B740-auth-tag-budgets.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6937,7 +6940,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Caller-controlled request field safety
     status: todo
-    depends_on: [B001, B002, B003, B009, B171, B176, B732, B856, B860, B884]
+    depends_on: [B001, B002, B003, B009, B171, B732, B856, B884]
     file: tasks/B744-auth-request-policy.yaml
     covers:
       - "litellm/proxy/auth/auth_utils.py"
@@ -6945,7 +6948,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve requested models before authorization
     status: todo
-    depends_on: [B001, B002, B003, B171, B302, B732, B856, B860, B1016, B1019]
+    depends_on: [B001, B003, B171, B302, B732, B856, B1016, B1019, B2324]
     file: tasks/B746-auth-request-models.yaml
     covers:
       - "litellm/proxy/auth/auth_utils.py"
@@ -6954,16 +6957,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model allowlist patterns and alias resolution
     status: todo
-    depends_on: [B001, B002, B003, B171, B302, B732, B737, B856, B860]
+    depends_on: [B001, B002, B003, B171, B302, B730, B732, B737, B856, B860]
     file: tasks/B747-auth-model-patterns.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
       - "litellm/proxy/auth/model_access_denied.py"
   - id: B748
     milestone: M4 keys, spend and management
-    title: Combine key, team, user and organization model grants
+    title: Agent model ceilings and fallback authorization
     status: todo
-    depends_on: [B001, B002, B003, B171, B302, B732, B736, B737, B740, B747, B856, B860, B885, B886, B887]
+    depends_on: [B001, B002, B003, B171, B302, B732, B747, B856, B860, B886, B887]
     file: tasks/B748-auth-model-grants.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6972,7 +6975,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Search and vector-store permission checks
     status: todo
-    depends_on: [B001, B002, B003, B171, B700, B725, B732, B733, B735, B747, B856, B860]
+    depends_on: [B001, B003, B004, B171, B725, B726, B732, B733, B856, B860, B2315]
     file: tasks/B749-auth-resource-grants.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6980,7 +6983,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Priced and zero-cost model admission
     status: todo
-    depends_on: [B001, B002, B003, B013, B171, B302, B732, B747, B752, B856, B860, B882, B886]
+    depends_on: [B001, B002, B003, B013, B171, B302, B732, B747, B752, B757, B856, B868, B882, B886]
     file: tasks/B750-auth-pricing.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6988,7 +6991,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key budget thresholds and alert inputs
     status: todo
-    depends_on: [B001, B002, B003, B171, B199, B720, B732, B733, B856, B860]
+    depends_on: [B001, B002, B003, B116, B171, B720, B732, B733, B757, B856, B860, B2321, B2325]
     file: tasks/B751-auth-key-budgets.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -6997,7 +7000,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team, member, project and organization budget admission
     status: todo
-    depends_on: [B001, B003, B171, B720, B732, B733, B740, B747, B751, B856, B860, B879, B887]
+    depends_on: [B001, B003, B116, B171, B721, B732, B733, B740, B757, B856, B860, B879, B1102, B2313, B2321, B2325]
     file: tasks/B752-auth-tenant-budgets.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -7005,7 +7008,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Per-model auth budget checks and fallback selection
     status: todo
-    depends_on: [B001, B002, B003, B171, B715, B732, B736, B746, B747, B748, B751, B856, B860, B886]
+    depends_on: [B001, B002, B003, B116, B125, B171, B715, B723, B732, B733, B736, B747, B856, B860, B886, B1100]
     file: tasks/B753-auth-model-budgets.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -7013,7 +7016,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Shared authenticated request policy ordering
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B735, B736, B737, B739, B742, B744, B747, B748, B749, B750, B751, B752, B856, B860, B882, B885, B886, B887, B888]
+    depends_on: [B001, B002, B003, B116, B171, B732, B736, B737, B739, B741, B742, B746, B747, B748, B749, B750, B751, B752, B757, B856, B860, B882, B885, B886, B887, B888, B1100, B1105, B1106, B1229, B2315, B2321]
     file: tasks/B754-auth-common-checks.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -7022,7 +7025,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Validate resolved virtual keys and session expiry
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B733, B735, B736, B737, B738, B739, B748, B750, B751, B752, B753, B856, B860, B879, B881, B882, B889]
+    depends_on: [B001, B002, B003, B116, B171, B726, B732, B733, B735, B736, B738, B750, B751, B753, B757, B856, B860, B879, B881, B882, B889, B2310, B2321]
     file: tasks/B755-auth-key-validation.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -7030,7 +7033,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authentication header selection and mode dispatch
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B733, B741, B760, B856, B860, B869, B881, B882, B883]
+    depends_on: [B001, B002, B003, B171, B732, B733, B760, B856, B860, B869, B881, B882, B890, B1100, B2302]
     file: tasks/B756-auth-headers.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -7038,22 +7041,22 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authenticated request admission and budget handoff
     status: todo
-    depends_on: [B001, B003, B171, B732, B735, B739, B743, B750, B753, B754, B755, B756, B757, B856, B860, B870, B880, B881, B883, B1221, B1225]
+    depends_on: [B001, B003, B732, B739, B743, B757, B860, B870, B880, B881, B883, B1100, B1221]
     file: tasks/B855-auth-admission.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
   - id: B856
     milestone: M4 keys, spend and management
-    title: Management oracle namespaces and Postgres test fixture
+    title: Management helper namespaces and comparison contracts
     status: todo
-    depends_on: [B171, B860]
+    depends_on: [B171]
     file: tasks/B856-management-oracle.yaml
     covers: []
   - id: B858
     milestone: M4 keys, spend and management
     title: Typed managed-resource and analytics rows
     status: todo
-    depends_on: [B171, B700, B710, B856, B860]
+    depends_on: [B014, B171, B700, B856, B860, B1015, B1035, B1138, B2303, B2305, B2307, B2310]
     file: tasks/B858-managed-resource-rows.yaml
     covers:
       - "litellm/models/autorouter_session.py"
@@ -7066,7 +7069,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team and membership storage contracts
     status: todo
-    depends_on: [B171, B700, B710, B856, B860]
+    depends_on: [B171, B700, B856, B860, B2307, B2310]
     file: tasks/B859-team-rows.yaml
     covers:
       - "litellm/models/team.py"
@@ -7418,7 +7421,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Pinned LiteLLM Postgres schema contract
     status: todo
-    depends_on: [B700, B709, B856, B860]
+    depends_on: [B700, B709, B860, B2309]
     file: tasks/B701-schema-contract.yaml
     covers:
       - "schema.prisma"
@@ -7428,7 +7431,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for baseline
     status: todo
-    depends_on: [B171, B700, B856, B860]
+    depends_on: [B700, B860]
     file: tasks/B702-schema-baseline.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql"
@@ -7436,7 +7439,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for daily usage
     status: todo
-    depends_on: [B171, B700, B702, B856, B860]
+    depends_on: [B700, B702, B860]
     file: tasks/B703-schema-daily-usage.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250326171002_add_daily_user_table/migration.sql"
@@ -7471,7 +7474,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for managed resources
     status: todo
-    depends_on: [B171, B700, B703, B856, B860]
+    depends_on: [B700, B703, B860]
     file: tasks/B704-schema-managed-resources.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql"
@@ -7507,7 +7510,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for identity history
     status: todo
-    depends_on: [B171, B700, B704, B856, B860]
+    depends_on: [B700, B704, B860]
     file: tasks/B705-schema-identity-history.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
@@ -7539,7 +7542,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for policy resources
     status: todo
-    depends_on: [B171, B700, B705, B856, B860]
+    depends_on: [B700, B705, B860]
     file: tasks/B706-schema-policy-resources.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260219181415_baseline_diff/migration.sql"
@@ -7578,7 +7581,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for routing state
     status: todo
-    depends_on: [B171, B700, B706, B856, B860]
+    depends_on: [B700, B706, B860]
     file: tasks/B707-schema-routing-state.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260418000000_add_adaptive_router_tables/migration.sql"
@@ -7621,7 +7624,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for budget windows
     status: todo
-    depends_on: [B171, B700, B707, B856, B860]
+    depends_on: [B700, B707, B860]
     file: tasks/B708-schema-budget-windows.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260811172448_add_shadow_eval/migration.sql"
@@ -7665,7 +7668,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Postgres migrations for agent identity
     status: todo
-    depends_on: [B171, B700, B708, B856, B860]
+    depends_on: [B700, B708, B860]
     file: tasks/B709-schema-agent-identity.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260921190000_agent_identity/migration.sql"
@@ -7679,7 +7682,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Writer and reader database URL settings
     status: todo
-    depends_on: [B002, B171, B700, B856]
+    depends_on: [B002, B129, B171, B700, B856, B2307]
     file: tasks/B710-database-urls.yaml
     covers:
       - "litellm/proxy/db/db_url_settings.py"
@@ -7690,7 +7693,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Database TLS and external pooler configuration
     status: todo
-    depends_on: [B002, B171, B700, B710, B856, B860]
+    depends_on: [B002, B171, B700, B710, B856, B860, B2307]
     file: tasks/B711-database-tls.yaml
     covers:
       - "litellm/proxy/db/db_url_settings.py"
@@ -7700,17 +7703,18 @@ tasks:
     milestone: M4 keys, spend and management
     title: RDS IAM and Azure database token authentication
     status: todo
-    depends_on: [B002, B171, B700, B710, B856]
+    depends_on: [B002, B129, B171, B700, B710, B856, B2307, B2308]
     file: tasks/B712-database-tokens.yaml
     covers:
       - "litellm/proxy/db/token_auth.py"
       - "litellm/proxy/auth/rds_iam_token.py"
       - "litellm/proxy/db/db_url_settings.py"
+      - "litellm/proxy/db/pgbouncer.py"
   - id: B713
     milestone: M4 keys, spend and management
     title: Drain and replace native Postgres pool generations
     status: todo
-    depends_on: [B171, B700, B856, B860]
+    depends_on: [B700, B712, B860]
     file: tasks/B713-database-refresh.yaml
     covers:
       - "litellm/proxy/db/prisma_client.py"
@@ -7719,7 +7723,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Reader routing and writer-pinned transactions
     status: todo
-    depends_on: [B002, B171, B700, B713, B854, B856, B860]
+    depends_on: [B700, B710, B713, B854, B860]
     file: tasks/B714-database-replica.yaml
     covers:
       - "litellm/proxy/db/routing_prisma_wrapper.py"
@@ -7727,17 +7731,18 @@ tasks:
     milestone: M4 keys, spend and management
     title: Migration locking and ledger recovery
     status: todo
-    depends_on: [B002, B171, B700, B701, B702, B706, B711, B856, B860, B873]
+    depends_on: [B002, B700, B701, B711, B860, B873]
     file: tasks/B716-migration-ledger.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migration_lock.py"
       - "litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py"
       - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
+      - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
   - id: B717
     milestone: M4 keys, spend and management
     title: Native migration recovery and drift guards
     status: todo
-    depends_on: [B002, B171, B700, B702, B710, B711, B716, B718, B856, B857, B860, B873]
+    depends_on: [B002, B700, B711, B716, B718, B857, B860, B873, B2307]
     file: tasks/B717-migration-recovery.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
@@ -7746,16 +7751,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Partition-safe request log indexes
     status: todo
-    depends_on: [B171, B700, B716, B856, B860]
+    depends_on: [B700, B716, B860, B2309]
     file: tasks/B718-request-log-indexes.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py"
       - "litellm-proxy-extras/litellm_proxy_extras/replica_identity.py"
   - id: B719
     milestone: M4 keys, spend and management
-    title: Compatibility views and one-time database repairs
+    title: Runtime and offline compatibility views
     status: todo
-    depends_on: [B171, B700, B701, B856, B860]
+    depends_on: [B700, B710, B860]
     file: tasks/B719-database-views.yaml
     covers:
       - "litellm/proxy/db/create_views.py"
@@ -7766,7 +7771,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Daily spend query and rollup builders
     status: todo
-    depends_on: [B171, B700, B856]
+    depends_on: [B171, B856, B2312]
     file: tasks/B727-daily-activity-sql.yaml
     covers:
       - "litellm/repositories/daily_activity_sql.py"
@@ -7775,7 +7780,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Daily spend search and export queries
     status: todo
-    depends_on: [B171, B700, B727, B856]
+    depends_on: [B171, B727, B856, B2312]
     file: tasks/B728-daily-activity-export.yaml
     covers:
       - "litellm/repositories/daily_activity_sql.py"
@@ -7783,24 +7788,25 @@ tasks:
     milestone: M4 keys, spend and management
     title: Execute daily activity reports and recover key metadata
     status: todo
-    depends_on: [B171, B700, B710, B714, B722, B727, B728, B856, B860]
+    depends_on: [B171, B700, B714, B727, B728, B856, B860, B2312]
     file: tasks/B729-daily-activity-repository.yaml
     covers:
       - "litellm/repositories/daily_activity_repository.py"
       - "litellm/types/repositories/__init__.py"
   - id: B730
     milestone: M4 keys, spend and management
-    title: Transactional master-key ciphertext migration
+    title: Compare-and-swap migration of stored master-key ciphertexts
     status: todo
-    depends_on: [B002, B171, B700, B714, B856, B860]
+    depends_on: [B002, B171, B700, B714, B856, B860, B2303]
     file: tasks/B730-database-reencryption.yaml
     covers:
       - "litellm/proxy/db/master_key_migration.py"
+      - "litellm/proxy/auth/master_key_boot_check.py"
   - id: B731
     milestone: M4 keys, spend and management
-    title: Database worker heartbeats and lifecycle
+    title: Database worker census and database-tool diagnostics
     status: todo
-    depends_on: [B002, B171, B700, B856, B860]
+    depends_on: [B002, B003, B171, B700, B714, B856, B860]
     file: tasks/B731-worker-heartbeat.yaml
     covers:
       - "litellm/proxy/db/proxy_worker_heartbeat.py"
@@ -7809,18 +7815,19 @@ tasks:
       - "litellm/proxy/db/dynamo_db.py"
   - id: B734
     milestone: M4 keys, spend and management
-    title: Cross-worker auth cache invalidation
+    title: Auth-object refresh and spend-reset invalidation
     status: todo
-    depends_on: [B002, B126, B171, B732, B733, B856, B878]
+    depends_on: [B002, B125, B126, B171, B721, B733, B856, B859, B878, B2314]
     file: tasks/B734-auth-invalidation.yaml
     covers:
       - "litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py"
       - "litellm/proxy/auth/auth_checks.py"
+      - "litellm/proxy/proxy_server.py"
   - id: B741
     milestone: M4 keys, spend and management
     title: Canonical route and allowlist matching
     status: todo
-    depends_on: [B001, B002, B003, B171, B207, B732, B856, B860, B866, B867, B868, B882]
+    depends_on: [B001, B002, B003, B171, B732, B856]
     file: tasks/B741-auth-route-patterns.yaml
     covers:
       - "litellm/proxy/auth/auth_utils.py"
@@ -7830,7 +7837,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Role and pass-through route permissions
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B736, B737, B741, B856, B860, B882, B883, B1229]
+    depends_on: [B001, B002, B003, B171, B244, B732, B757, B856, B860, B866, B867, B868, B869, B882, B883, B1229]
     file: tasks/B742-auth-route-policy.yaml
     covers:
       - "litellm/proxy/auth/route_checks.py"
@@ -7850,7 +7857,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Per-model and caller rate-limit inputs
     status: todo
-    depends_on: [B001, B003, B171, B302, B732, B856, B860]
+    depends_on: [B002, B171, B302, B732, B856]
     file: tasks/B745-auth-limit-inputs.yaml
     covers:
       - "litellm/proxy/auth/auth_utils.py"
@@ -7858,7 +7865,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authentication error envelopes and sanitized diagnostics
     status: todo
-    depends_on: [B001, B002, B003, B012, B171, B187, B715, B732, B741, B744, B856, B860, B872, B1217]
+    depends_on: [B001, B002, B003, B012, B110, B171, B187, B206, B732, B741, B744, B856, B860, B872, B1100, B1102, B1217, B2327]
     file: tasks/B757-auth-errors.yaml
     covers:
       - "litellm/proxy/auth/auth_exception_handler.py"
@@ -7875,15 +7882,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Expand authorized model lists and fallbacks
     status: todo
-    depends_on: [B001, B003, B013, B171, B302, B732, B747, B748, B856, B860]
+    depends_on: [B001, B003, B171, B302, B309, B725, B732, B856, B860, B2328]
     file: tasks/B759-auth-model-lists.yaml
     covers:
       - "litellm/proxy/auth/model_checks.py"
+      - "litellm/litellm_core_utils/credential_accessor.py"
   - id: B760
     milestone: M4 keys, spend and management
     title: JWT identity, role and scope claim projection
     status: todo
-    depends_on: [B002, B171, B213, B732, B733, B856, B869]
+    depends_on: [B002, B171, B213, B732, B733, B856, B2314]
     file: tasks/B760-jwt-claims.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -7891,7 +7899,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWKS and OIDC discovery caching
     status: todo
-    depends_on: [B001, B002, B003, B171, B173, B732, B733, B856, B860, B869]
+    depends_on: [B001, B002, B003, B171, B173, B732, B733, B757, B856, B860, B869]
     file: tasks/B761-jwt-keys.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -7899,7 +7907,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Verify JWT signatures and trusted issuers
     status: todo
-    depends_on: [B001, B002, B003, B171, B173, B732, B733, B760, B761, B856, B860, B869]
+    depends_on: [B001, B002, B003, B171, B173, B213, B732, B733, B757, B760, B761, B856, B860]
     file: tasks/B762-jwt-verification.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -7907,7 +7915,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT role, scope and administrator permissions
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B742, B747, B760, B856, B860, B869]
+    depends_on: [B001, B002, B003, B171, B732, B736, B742, B747, B757, B856, B860, B869, B890]
     file: tasks/B763-jwt-permissions.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -7915,15 +7923,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Select an authorized JWT team and request header
     status: todo
-    depends_on: [B001, B002, B003, B171, B732, B737, B742, B743, B748, B760, B856, B860, B869, B871, B883, B886]
+    depends_on: [B001, B002, B003, B171, B732, B737, B742, B757, B760, B761, B856, B860, B869, B871, B883, B886]
     file: tasks/B764-jwt-team-selection.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
+      - "litellm/proxy/agent_endpoints/identity.py"
   - id: B765
     milestone: M4 keys, spend and management
     title: JWT user and team provisioning and fallback identity
     status: todo
-    depends_on: [B001, B002, B003, B171, B723, B724, B732, B733, B734, B736, B737, B760, B764, B808, B856, B860, B869, B871, B891]
+    depends_on: [B001, B002, B003, B064, B171, B723, B732, B733, B736, B737, B739, B760, B761, B800, B808, B856, B860, B871, B879, B890]
     file: tasks/B765-jwt-provisioning.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -7931,7 +7940,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve verified JWT claims to virtual keys
     status: todo
-    depends_on: [B001, B002, B003, B171, B722, B732, B734, B738, B753, B762, B763, B765, B856, B860, B869, B870, B893]
+    depends_on: [B001, B002, B003, B171, B213, B722, B732, B733, B734, B738, B753, B757, B856, B860, B869, B870, B893, B2314]
     file: tasks/B766-jwt-key-resolution.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -7939,7 +7948,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT key mapping management routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B722, B732, B734, B738, B742, B770, B856, B860, B878]
+    depends_on: [B001, B003, B052, B726, B732, B738, B770, B860, B878, B2314]
     file: tasks/B767-jwt-mapping-api.yaml
     covers:
       - "litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py"
@@ -7948,7 +7957,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: OAuth2 introspection and trusted proxy identity
     status: todo
-    depends_on: [B001, B002, B003, B171, B173, B732, B733, B743, B856, B860, B869]
+    depends_on: [B001, B002, B003, B171, B173, B208, B732, B733, B743, B757, B856, B860, B2314]
     file: tasks/B768-oauth-tokens.yaml
     covers:
       - "litellm/proxy/auth/oauth2_check.py"
@@ -7957,7 +7966,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT login result HTML
     status: todo
-    depends_on: [B003, B171, B856]
+    depends_on: [B003]
     file: tasks/B769-jwt-display.yaml
     covers:
       - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"
@@ -7965,18 +7974,20 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key request fields and policy projections
     status: todo
-    depends_on: [B003, B171, B199, B720, B732, B856, B1224]
+    depends_on: [B003, B016, B171, B714, B720, B723, B726, B730, B732, B856, B859, B2314]
     file: tasks/B770-key-fields.yaml
     covers:
       - "litellm/types/proxy/management_endpoints/key_management_endpoints.py"
       - "litellm/proxy/management_helpers/key_settings_audit.py"
+      - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
+      - "litellm/proxy/utils.py"
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
       - "litellm/proxy/_types.py"
   - id: B771
     milestone: M4 keys, spend and management
     title: Key ownership and delegated permission checks
     status: todo
-    depends_on: [B002, B003, B171, B732, B736, B737, B742, B770, B800, B856, B892]
+    depends_on: [B002, B003, B120, B171, B246, B724, B732, B770, B800, B856, B2314]
     file: tasks/B771-key-access.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -7984,7 +7995,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Parent limits for generated and updated keys
     status: todo
-    depends_on: [B002, B003, B171, B732, B736, B737, B771, B856, B879]
+    depends_on: [B002, B003, B171, B199, B722, B723, B732, B770, B856, B860, B879]
     file: tasks/B772-key-limit-policy.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -7992,7 +8003,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Create keys and initial budget records
     status: todo
-    depends_on: [B002, B003, B171, B199, B722, B725, B732, B745, B770, B771, B772, B784, B816, B818, B819, B856, B860, B861, B879, B892, B893, B894, B1219, B1224]
+    depends_on: [B002, B003, B171, B725, B732, B745, B770, B771, B772, B784, B816, B818, B856, B860, B861, B879, B881, B892, B893, B894, B1219, B1224]
     file: tasks/B773-key-create.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8000,15 +8011,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key patch construction and validation
     status: todo
-    depends_on: [B003, B171, B722, B725, B732, B737, B739, B745, B770, B771, B772, B783, B800, B818, B856, B861, B879, B892, B894, B1200, B1219]
+    depends_on: [B003, B171, B732, B737, B739, B745, B770, B771, B772, B783, B800, B818, B856, B860, B861, B879, B892, B894, B1200, B1219]
     file: tasks/B774-key-patch-policy.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - id: B775
     milestone: M4 keys, spend and management
-    title: Apply single-key updates atomically
+    title: Apply single-key updates in source write order
     status: todo
-    depends_on: [B001, B003, B052, B171, B722, B725, B732, B734, B772, B774, B784, B816, B819, B856, B860, B865, B894, B1219, B1220, B1224]
+    depends_on: [B001, B003, B052, B124, B125, B126, B165, B732, B734, B770, B772, B774, B784, B816, B819, B860, B865, B894, B1219, B1224]
     file: tasks/B775-key-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8016,7 +8027,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk key and team-key update routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B770, B774, B775, B800, B856, B860, B861, B865, B1220, B1224]
+    depends_on: [B001, B003, B052, B124, B722, B732, B770, B800, B860, B861, B865, B1220, B1224]
     file: tasks/B776-key-bulk-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8024,7 +8035,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Delete keys and retain archived audit rows
     status: todo
-    depends_on: [B001, B003, B052, B171, B722, B732, B734, B737, B738, B770, B771, B784, B800, B819, B856, B860, B865, B878]
+    depends_on: [B001, B003, B052, B124, B720, B722, B726, B732, B737, B738, B770, B771, B784, B800, B819, B860, B865, B878, B2314]
     file: tasks/B777-key-delete.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8032,15 +8043,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key info, usage and deleted-key lookup
     status: todo
-    depends_on: [B001, B003, B052, B171, B199, B722, B732, B771, B780, B800, B816, B856, B860, B865, B897]
+    depends_on: [B001, B003, B052, B071, B124, B720, B722, B732, B770, B800, B816, B860, B865, B897]
     file: tasks/B778-key-info.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - id: B779
     milestone: M4 keys, spend and management
-    title: Regenerate keys with bounded overlap
+    title: Schedule automatic key rotation and expired overlap cleanup
     status: todo
-    depends_on: [B002, B003, B171, B199, B722, B732, B734, B773, B774, B784, B819, B856, B860, B895, B1224]
+    depends_on: [B002, B003, B070, B129, B722, B726, B732, B770, B784, B860, B895, B1224, B2314]
     file: tasks/B779-key-rotation.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8050,7 +8061,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Reset key spend and budget windows
     status: todo
-    depends_on: [B001, B003, B052, B171, B199, B722, B732, B734, B737, B771, B800, B856, B860, B865, B878, B895]
+    depends_on: [B001, B003, B052, B124, B199, B722, B732, B734, B737, B770, B800, B860, B865, B878, B895, B2314]
     file: tasks/B780-key-spend-reset.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8058,7 +8069,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Scope key list and alias queries
     status: todo
-    depends_on: [B003, B171, B722, B732, B736, B737, B771, B778, B800, B856, B897]
+    depends_on: [B003, B171, B720, B722, B723, B724, B732, B770, B778, B800, B856, B2314]
     file: tasks/B781-key-list-filters.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8066,7 +8077,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Paginated key lists and aliases
     status: todo
-    depends_on: [B001, B003, B052, B171, B722, B732, B781, B856, B860, B865, B897]
+    depends_on: [B001, B003, B052, B124, B732, B781, B860, B865, B897]
     file: tasks/B782-key-list.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8074,7 +8085,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Block keys and check key health
     status: todo
-    depends_on: [B001, B003, B012, B052, B171, B722, B732, B734, B737, B755, B770, B771, B800, B856, B860, B865]
+    depends_on: [B001, B003, B004, B012, B052, B124, B722, B731, B732, B734, B737, B770, B800, B860, B865, B1103, B1137, B2304, B2314, B2330]
     file: tasks/B783-key-block.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8082,7 +8093,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key lifecycle audit and secret-manager events
     status: todo
-    depends_on: [B003, B012, B171, B732, B856, B898]
+    depends_on: [B003, B171, B720, B732, B770, B856, B898, B2330]
     file: tasks/B784-key-events.yaml
     covers:
       - "litellm/proxy/hooks/key_management_event_hooks.py"
@@ -8090,7 +8101,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Master key and encrypted credential rotation routes
     status: todo
-    depends_on: [B001, B002, B003, B052, B061, B171, B730, B732, B742, B770, B856, B860]
+    depends_on: [B001, B002, B003, B052, B061, B124, B732, B860, B2331, B2332]
     file: tasks/B785-master-key-rotation.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8107,7 +8118,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Distributed login throttling and source grouping
     status: todo
-    depends_on: [B002, B003, B126, B171, B732, B743, B856]
+    depends_on: [B002, B003, B125, B126, B171, B732, B743, B856]
     file: tasks/B787-login-throttle.yaml
     covers:
       - "litellm/proxy/auth/login_throttle.py"
@@ -8115,28 +8126,27 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authenticate UI credentials and mint session keys
     status: todo
-    depends_on: [B002, B003, B171, B199, B723, B732, B746, B773, B786, B787, B792, B856, B881, B893, B1223]
+    depends_on: [B002, B003, B124, B171, B199, B720, B723, B732, B786, B787, B792, B856, B860, B881, B893, B1223]
     file: tasks/B788-password-login.yaml
     covers:
       - "litellm/proxy/auth/login_utils.py"
+      - "litellm/proxy/management_endpoints/ui_sso.py"
   - id: B789
     milestone: M4 keys, spend and management
     title: Password change and UI session revocation
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B722, B723, B732, B734, B770, B777, B784, B786, B856, B860]
+    depends_on: [B001, B003, B052, B124, B722, B723, B731, B732, B734, B770, B777, B786, B860, B2330, B2333]
     file: tasks/B789-ui-sessions.yaml
     covers:
       - "litellm/proxy/management_endpoints/password_endpoints.py"
       - "litellm/proxy/management_endpoints/session_endpoints.py"
-      - "litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py"
   - id: B790
     milestone: M4 keys, spend and management
     title: User mutation fields and role scope
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B723, B724, B732, B736, B786, B808, B828, B856, B860, B1226]
+    depends_on: [B001, B002, B003, B052, B171, B720, B722, B723, B724, B726, B732, B736, B770, B786, B808, B828, B856, B860, B2314, B2334]
     file: tasks/B790-user-fields.yaml
     covers:
-      - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
       - "litellm/proxy/management/users/__init__.py"
       - "litellm/proxy/management/users/service.py"
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8144,7 +8154,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: User info and administrator projections
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B722, B723, B724, B732, B742, B790, B800, B813, B856, B860, B865]
+    depends_on: [B001, B002, B003, B052, B071, B124, B720, B722, B723, B724, B732, B790, B800, B813, B860, B865, B2314, B2334]
     file: tasks/B791-user-info.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8152,7 +8162,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Update users and invalidate live entitlements
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B723, B732, B733, B734, B742, B789, B790, B797, B816, B856, B860, B861, B865, B878, B892, B894]
+    depends_on: [B001, B002, B003, B052, B124, B720, B723, B732, B733, B789, B790, B797, B816, B860, B861, B865, B878, B892, B894, B2214, B2317]
     file: tasks/B792-user-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8160,7 +8170,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk user creation and team roster reconciliation
     status: todo
-    depends_on: [B003, B171, B723, B724, B732, B734, B773, B786, B790, B797, B800, B816, B828, B856, B860, B861, B892, B1201, B1226]
+    depends_on: [B003, B171, B720, B723, B724, B732, B790, B797, B800, B816, B828, B856, B860, B861, B892, B893, B1201, B1226, B2334]
     file: tasks/B793-user-bulk-create.yaml
     covers:
       - "litellm/proxy/management_helpers/bulk_user_creation.py"
@@ -8168,7 +8178,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk user deletion and membership cleanup
     status: todo
-    depends_on: [B003, B171, B723, B724, B732, B734, B738, B777, B784, B797, B856, B860, B878, B1202]
+    depends_on: [B003, B124, B171, B720, B722, B723, B724, B726, B732, B734, B738, B777, B784, B797, B856, B860, B878, B1202, B2334]
     file: tasks/B794-user-bulk-delete.yaml
     covers:
       - "litellm/proxy/management_helpers/bulk_user_deletion.py"
@@ -8176,7 +8186,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk user update endpoint
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B786, B790, B792, B793, B794, B797, B856, B860, B865, B878]
+    depends_on: [B001, B003, B052, B124, B723, B732, B786, B790, B792, B797, B860, B865, B878, B2334]
     file: tasks/B795-user-bulk-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8184,7 +8194,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: User lists, search and organization scoping
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B722, B723, B724, B732, B736, B742, B790, B791, B856, B860, B1203]
+    depends_on: [B001, B003, B052, B124, B720, B722, B723, B731, B732, B736, B770, B790, B791, B860, B1203, B2314, B2334]
     file: tasks/B796-user-list.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8192,7 +8202,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: User deletion and invitation creation
     status: todo
-    depends_on: [B001, B002, B003, B012, B052, B171, B723, B726, B732, B734, B738, B784, B856, B860, B861, B863, B865, B878, B1207]
+    depends_on: [B001, B002, B003, B052, B065, B116, B723, B724, B726, B732, B734, B738, B784, B790, B860, B865, B878, B1207]
     file: tasks/B797-user-delete.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8202,7 +8212,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: User daily activity reports
     status: todo
-    depends_on: [B001, B003, B052, B171, B723, B729, B732, B742, B856, B860, B861, B865]
+    depends_on: [B001, B003, B052, B074, B723, B732, B790, B860, B861, B865, B2314]
     file: tasks/B798-user-activity.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -8210,7 +8220,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Local UI login form and credential hint
     status: todo
-    depends_on: [B002, B003, B171, B788, B856]
+    depends_on: [B002, B003, B124, B171, B856]
     file: tasks/B799-login-form.yaml
     covers:
       - "litellm/proxy/common_utils/html_forms/ui_login.py"
@@ -8219,7 +8229,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team roles and member management permissions
     status: todo
-    depends_on: [B002, B003, B171, B732, B736, B737, B742, B856, B863, B882, B1200]
+    depends_on: [B003, B171, B732, B736, B737, B856, B859, B867, B882, B2314]
     file: tasks/B800-team-access.yaml
     covers:
       - "litellm/proxy/management/__init__.py"
@@ -8232,9 +8242,9 @@ tasks:
       - "litellm/proxy/management_endpoints/common_utils.py"
   - id: B801
     milestone: M4 keys, spend and management
-    title: Typed team requests and metadata validation
+    title: Team metadata validation and shared row access
     status: todo
-    depends_on: [B002, B003, B171, B199, B732, B734, B800, B856, B859, B1200, B1231]
+    depends_on: [B002, B003, B165, B171, B722, B723, B724, B725, B726, B732, B734, B856, B859, B1200, B1231]
     file: tasks/B801-team-fields.yaml
     covers:
       - "litellm/types/proxy/management_endpoints/team_endpoints.py"
@@ -8244,7 +8254,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Default team member budgets and bulk budget updates
     status: todo
-    depends_on: [B003, B171, B199, B724, B725, B732, B734, B800, B801, B829, B856, B859, B860, B862, B1202, B1231]
+    depends_on: [B003, B065, B171, B714, B724, B725, B732, B734, B800, B801, B829, B856, B859, B860, B862, B1202]
     file: tasks/B802-team-member-budgets.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8253,7 +8263,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization and user ceilings for team writes
     status: todo
-    depends_on: [B002, B003, B171, B723, B724, B732, B800, B801, B856, B1204, B1231]
+    depends_on: [B002, B003, B071, B158, B171, B724, B726, B732, B801, B856, B860]
     file: tasks/B803-team-limits.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8261,7 +8271,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Create teams with members and budgets
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B724, B725, B732, B745, B800, B801, B802, B803, B807, B816, B818, B819, B856, B860, B861, B865, B879, B1204, B1231]
+    depends_on: [B001, B002, B003, B052, B065, B124, B724, B725, B732, B745, B800, B801, B802, B803, B807, B816, B818, B819, B860, B861, B865, B879, B1204, B2301, B2304, B2317]
     file: tasks/B804-team-create.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8269,15 +8279,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team organization moves and membership cache effects
     status: todo
-    depends_on: [B003, B171, B723, B724, B725, B732, B734, B800, B803, B828, B856, B860, B886, B1231]
+    depends_on: [B003, B065, B171, B723, B725, B732, B734, B801, B828, B856, B860, B886, B1231]
     file: tasks/B805-team-org-move.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
   - id: B806
     milestone: M4 keys, spend and management
-    title: Team update and patch endpoints
+    title: Team update validation and ordered persistence
     status: todo
-    depends_on: [B001, B003, B052, B171, B199, B724, B725, B732, B734, B745, B800, B801, B802, B803, B805, B816, B818, B819, B856, B860, B861, B865, B879, B1200, B1204, B1205, B1231]
+    depends_on: [B001, B003, B052, B065, B124, B724, B732, B745, B800, B801, B802, B803, B805, B818, B819, B860, B861, B865, B879, B1200, B1204, B1205, B1231, B2301, B2304]
     file: tasks/B806-team-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8285,15 +8295,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve and authorize team membership changes
     status: todo
-    depends_on: [B003, B171, B723, B724, B732, B734, B800, B801, B803, B856, B1206, B1231]
+    depends_on: [B003, B065, B111, B171, B724, B732, B800, B801, B803, B819, B856, B859, B860, B1206, B1231]
     file: tasks/B807-team-member-identity.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
   - id: B808
     milestone: M4 keys, spend and management
-    title: Add, remove and update team members
+    title: Add team members and update member roles and budgets
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B732, B734, B737, B784, B800, B802, B805, B807, B812, B856, B860, B861, B862, B865, B878, B1206, B1207, B1227, B1231]
+    depends_on: [B001, B003, B052, B732, B734, B737, B800, B801, B805, B807, B812, B860, B861, B862, B865, B878, B1206, B1231]
     file: tasks/B808-team-member-writes.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8301,7 +8311,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Reset member spend and restore inherited budgets
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B725, B732, B734, B737, B800, B802, B856, B860, B865, B1231]
+    depends_on: [B001, B003, B052, B124, B732, B734, B737, B800, B801, B859, B860, B865, B1231]
     file: tasks/B809-team-member-resets.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8309,7 +8319,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk team member additions and permissions
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B732, B737, B800, B803, B808, B856, B860, B865, B1231]
+    depends_on: [B001, B003, B052, B724, B732, B737, B800, B801, B803, B808, B860, B865, B1231, B2314]
     file: tasks/B810-team-member-bulk.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8317,15 +8327,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Delete and archive teams with reference cleanup
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B732, B734, B738, B777, B784, B800, B807, B819, B836, B856, B860, B865, B878, B1231]
+    depends_on: [B001, B003, B052, B065, B124, B723, B724, B732, B734, B738, B777, B784, B800, B801, B807, B819, B836, B860, B865, B878, B1231]
     file: tasks/B811-team-delete.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
   - id: B812
     milestone: M4 keys, spend and management
-    title: Team info, caller membership and block state
+    title: Team info visibility and response hydration
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B732, B734, B748, B800, B801, B802, B803, B809, B856, B860, B865, B1208, B1209, B1231]
+    depends_on: [B001, B003, B052, B071, B124, B724, B732, B800, B801, B803, B809, B860, B865, B1209, B1231]
     file: tasks/B812-team-info.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8333,7 +8343,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Scoped team list and UI search routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B722, B723, B724, B732, B748, B800, B801, B803, B856, B860, B865, B1209, B1231]
+    depends_on: [B001, B003, B052, B724, B732, B801, B803, B860, B865, B1209, B1231]
     file: tasks/B813-team-lists.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8341,7 +8351,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team model allowlist mutation
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B732, B734, B747, B800, B801, B856, B860, B865, B1231]
+    depends_on: [B001, B003, B052, B724, B732, B800, B801, B860, B865, B1231]
     file: tasks/B814-team-models.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8349,7 +8359,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team daily spend and per-user activity
     status: todo
-    depends_on: [B001, B003, B052, B171, B724, B729, B732, B736, B800, B801, B856, B860, B1231]
+    depends_on: [B001, B003, B052, B074, B724, B732, B736, B800, B801, B860, B1231, B2314]
     file: tasks/B815-team-activity.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -8357,7 +8367,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Object permission writes and cache coherence
     status: todo
-    depends_on: [B003, B171, B725, B732, B733, B734, B770, B817, B856, B860, B878]
+    depends_on: [B003, B171, B192, B725, B732, B733, B770, B817, B856, B860, B878]
     file: tasks/B816-object-permissions.yaml
     covers:
       - "litellm/types/object_permission.py"
@@ -8366,7 +8376,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Canonical MCP server identifiers in grants
     status: todo
-    depends_on: [B003, B171, B700, B721, B732, B856]
+    depends_on: [B136, B137, B171, B721, B725, B726, B770, B856, B860]
     file: tasks/B817-mcp-permission-ids.yaml
     covers:
       - "litellm/proxy/management_helpers/object_permission_utils.py"
@@ -8374,7 +8384,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Prevent resource grant escalation by keys
     status: todo
-    depends_on: [B003, B171, B732, B737, B747, B800, B816, B817, B856]
+    depends_on: [B003, B171, B747, B816, B817, B856, B860]
     file: tasks/B818-resource-delegation.yaml
     covers:
       - "litellm/proxy/management_helpers/object_permission_utils.py"
@@ -8382,7 +8392,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Reconcile access-group key and team membership
     status: todo
-    depends_on: [B003, B171, B700, B714, B722, B724, B732, B734, B856, B860]
+    depends_on: [B714, B720, B726, B734, B770, B860]
     file: tasks/B819-access-group-sync.yaml
     covers:
       - "litellm/proxy/management_helpers/access_group_key_sync.py"
@@ -8391,7 +8401,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Maintain model grants across rename and delete
     status: todo
-    depends_on: [B003, B171, B368, B700, B714, B732, B734, B819, B856, B860]
+    depends_on: [B171, B714, B726, B819, B844, B856, B860]
     file: tasks/B820-access-group-models.yaml
     covers:
       - "litellm/proxy/management_helpers/access_group_model_sync.py"
@@ -8399,7 +8409,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Access-group response projections and lookups
     status: todo
-    depends_on: [B001, B003, B052, B171, B700, B722, B724, B732, B734, B742, B856, B860]
+    depends_on: [B001, B003, B052, B065, B124, B136, B141, B724, B726, B732, B734, B860, B2314]
     file: tasks/B821-access-group-read.yaml
     covers:
       - "litellm/types/access_group.py"
@@ -8408,7 +8418,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Create, update and delete access groups
     status: todo
-    depends_on: [B001, B003, B052, B171, B700, B732, B734, B737, B819, B821, B856, B860, B872]
+    depends_on: [B001, B003, B052, B124, B732, B819, B821, B860, B872, B2340]
     file: tasks/B822-access-group-write.yaml
     covers:
       - "litellm/proxy/management_endpoints/access_group_endpoints.py"
@@ -8416,7 +8426,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model access-group deployment and budget helpers
     status: todo
-    depends_on: [B003, B171, B368, B700, B725, B732, B733, B734, B841, B856, B860, B878]
+    depends_on: [B003, B124, B171, B725, B726, B733, B832, B841, B844, B856, B860, B878]
     file: tasks/B823-model-group-data.yaml
     covers:
       - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
@@ -8425,7 +8435,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model access-group create, update and delete routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B742, B823, B841, B856, B860]
+    depends_on: [B001, B003, B052, B732, B823, B832, B841, B860, B2341]
     file: tasks/B824-model-group-write.yaml
     covers:
       - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
@@ -8433,7 +8443,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model access-group budget management routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B199, B725, B732, B734, B823, B856, B860, B861, B862]
+    depends_on: [B001, B003, B052, B065, B732, B823, B832, B860, B861]
     file: tasks/B825-model-group-budget.yaml
     covers:
       - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
@@ -8441,23 +8451,23 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization creation and nested budget writes
     status: todo
-    depends_on: [B001, B003, B052, B171, B723, B725, B732, B736, B742, B816, B856, B860, B861, B886]
+    depends_on: [B001, B003, B052, B124, B723, B725, B732, B736, B816, B860, B861, B886, B2314, B2317]
     file: tasks/B826-organization-create.yaml
     covers:
       - "litellm/proxy/management_endpoints/organization_endpoints.py"
   - id: B827
     milestone: M4 keys, spend and management
-    title: Organization update and deletion routes
+    title: Legacy organization update and sequential deletion
     status: todo
-    depends_on: [B001, B003, B052, B171, B723, B725, B732, B734, B738, B777, B816, B826, B829, B856, B860, B861, B878, B1224]
+    depends_on: [B001, B003, B052, B124, B157, B722, B723, B724, B726, B732, B738, B816, B826, B829, B860, B878, B2342]
     file: tasks/B827-organization-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/organization_endpoints.py"
   - id: B828
     milestone: M4 keys, spend and management
-    title: Organization membership mutation and info routes
+    title: Organization member addition, patch and deletion
     status: todo
-    depends_on: [B001, B003, B052, B171, B723, B724, B732, B734, B800, B826, B829, B856, B860, B865, B1212, B1227]
+    depends_on: [B001, B003, B052, B124, B723, B726, B732, B826, B829, B860, B865, B1227]
     file: tasks/B828-organization-members.yaml
     covers:
       - "litellm/proxy/management_endpoints/organization_endpoints.py"
@@ -8465,7 +8475,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Budget create, patch and inspection routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B199, B725, B732, B742, B856, B860, B861, B1224]
+    depends_on: [B001, B003, B052, B124, B725, B732, B860, B861, B1224, B2314, B2317]
     file: tasks/B829-budget-api.yaml
     covers:
       - "litellm/proxy/management_endpoints/budget_management_endpoints.py"
@@ -8473,7 +8483,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Customer creation and block state
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B700, B725, B732, B733, B734, B816, B829, B856, B860, B861, B878]
+    depends_on: [B001, B003, B052, B124, B199, B720, B725, B726, B732, B733, B734, B816, B844, B860, B861, B2310]
     file: tasks/B830-customer-create.yaml
     covers:
       - "litellm/proxy/management_endpoints/customer_endpoints.py"
@@ -8482,7 +8492,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Customer update and deletion routes
     status: todo
-    depends_on: [B001, B003, B052, B171, B700, B725, B732, B734, B816, B830, B856, B860]
+    depends_on: [B001, B003, B052, B124, B720, B725, B726, B732, B830, B860, B2310]
     file: tasks/B831-customer-update.yaml
     covers:
       - "litellm/proxy/management_endpoints/customer_endpoints.py"
@@ -8513,9 +8523,9 @@ tasks:
       - "litellm/proxy/management_endpoints/model_management_endpoints.py"
   - id: B835
     milestone: M4 keys, spend and management
-    title: Persist model update and block state
+    title: Patch stored models and report serving reload results
     status: todo
-    depends_on: [B001, B003, B052, B061, B171, B368, B725, B732, B734, B820, B832, B833, B834, B837, B841, B856, B860, B1213, B1214]
+    depends_on: [B001, B002, B003, B052, B065, B124, B302, B732, B820, B832, B834, B836, B837, B841, B860, B1213]
     file: tasks/B835-model-patch.yaml
     covers:
       - "litellm/proxy/management_endpoints/model_management_endpoints.py"
@@ -8523,7 +8533,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team-specific model names and deployment ownership
     status: todo
-    depends_on: [B003, B171, B368, B724, B725, B732, B734, B814, B832, B833, B835, B841, B856, B860, B1213, B1230]
+    depends_on: [B003, B014, B120, B124, B171, B302, B725, B732, B733, B814, B832, B833, B841, B856, B860, B1213, B1230, B2303]
     file: tasks/B836-model-team-assignment.yaml
     covers:
       - "litellm/proxy/management_endpoints/model_management_endpoints.py"
@@ -8531,7 +8541,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Rename model allowlists without widening grants
     status: todo
-    depends_on: [B003, B171, B700, B732, B734, B820, B856, B860, B878]
+    depends_on: [B003, B171, B733, B734, B820, B856, B860]
     file: tasks/B837-model-allowlist-rename.yaml
     covers:
       - "litellm/proxy/management_helpers/model_allowlist_rename_sync.py"
@@ -8571,7 +8581,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Discoverable and healthy model visibility
     status: todo
-    depends_on: [B002, B003, B171, B302, B304, B732, B856]
+    depends_on: [B002, B003, B171, B174, B209, B302, B307, B732, B844, B856]
     file: tasks/B842-model-visibility.yaml
     covers:
       - "litellm/proxy/common_utils/discoverable_model_filter.py"
@@ -8580,7 +8590,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model deprecation dates and alert formatting
     status: todo
-    depends_on: [B003, B013, B171, B732, B770, B856]
+    depends_on: [B003, B013, B171, B770, B844, B856]
     file: tasks/B843-model-deprecation.yaml
     covers:
       - "litellm/proxy/common_utils/model_deprecation.py"
@@ -8589,7 +8599,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model catalog lookup and listing indexes
     status: todo
-    depends_on: [B171, B302, B368, B856]
+    depends_on: [B171, B301, B302, B323, B367, B368, B401, B856]
     file: tasks/B844-model-catalog-lookup.yaml
     covers:
       - "litellm/router.py"
@@ -8597,15 +8607,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Deployment model info and configured limits
     status: todo
-    depends_on: [B013, B171, B173, B174, B205, B844, B856]
+    depends_on: [B1425, B125, B157, B171, B173, B174, B193, B205, B206, B367, B844, B856, B2225, B2306]
     file: tasks/B845-deployment-model-info.yaml
     covers:
       - "litellm/router.py"
+      - "litellm/types/router.py"
   - id: B846
     milestone: M4 keys, spend and management
     title: Aggregate model group metadata
     status: todo
-    depends_on: [B013, B171, B844, B845, B856]
+    depends_on: [B171, B174, B175, B301, B323, B367, B844, B845, B856, B2216]
     file: tasks/B846-model-group-info.yaml
     covers:
       - "litellm/router.py"
@@ -8614,7 +8625,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model group usage and remaining-limit metadata
     status: todo
-    depends_on: [B171, B319, B365, B844, B846, B856]
+    depends_on: [B016, B019, B171, B301, B304, B360, B844, B846, B856, B2225, B2226, B2350]
     file: tasks/B847-model-group-usage.yaml
     covers:
       - "litellm/router.py"
@@ -8622,7 +8633,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authorize deployment visibility for model info
     status: todo
-    depends_on: [B003, B171, B725, B732, B759, B800, B841, B844, B856, B1216]
+    depends_on: [B003, B171, B720, B721, B723, B724, B725, B726, B732, B759, B841, B844, B847, B856, B860]
     file: tasks/B848-model-info-scope.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -8630,7 +8641,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Search and page visible deployment information
     status: todo
-    depends_on: [B003, B013, B171, B725, B732, B845, B848, B856, B1216]
+    depends_on: [B003, B124, B157, B171, B303, B725, B770, B845, B856, B860, B1216, B2225]
     file: tasks/B849-model-info-search.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -8638,7 +8649,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model info v2 route
     status: todo
-    depends_on: [B001, B003, B052, B171, B732, B842, B845, B848, B849, B851, B856, B860, B1216]
+    depends_on: [B001, B003, B052, B124, B141, B732, B848, B849, B851, B860, B1216]
     file: tasks/B850-model-info-v2.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -8646,7 +8657,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model info v1 route and public-name projection
     status: todo
-    depends_on: [B001, B002, B003, B052, B171, B187, B732, B759, B842, B845, B848, B849, B856, B860, B1216]
+    depends_on: [B001, B002, B003, B052, B124, B301, B732, B759, B842, B844, B847, B848, B849, B860, B1216, B2225]
     file: tasks/B851-model-info-v1.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -8654,7 +8665,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Offline spend backfill operations
     status: todo
-    depends_on: [B171, B700, B701, B714, B856, B860, B1232]
+    depends_on: [B700, B701, B860, B1232]
     file: tasks/B852-spend-backfills.yaml
     covers:
       - "db_scripts/backfill_daily_tool_spend.sql"
@@ -8664,7 +8675,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Offline spend-log partition conversion
     status: todo
-    depends_on: [B171, B700, B701, B714, B718, B856, B860, B1232]
+    depends_on: [B700, B701, B860, B1232]
     file: tasks/B853-spend-partitions.yaml
     covers:
       - "db_scripts/partition_spend_logs.sql"
@@ -8673,7 +8684,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Refresh short-lived database credentials
     status: todo
-    depends_on: [B002, B171, B700, B710, B712, B713, B856, B860]
+    depends_on: [B002, B171, B710, B712, B713, B856, B860, B2307]
     file: tasks/B854-database-refresh-loop.yaml
     covers:
       - "litellm/proxy/db/prisma_client.py"
@@ -8690,7 +8701,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Dispatch JWT and OAuth authentication stages
     status: todo
-    depends_on: [B001, B002, B003, B732, B736, B738, B741, B742, B750, B753, B754, B755, B756, B855, B856, B860, B870, B871, B879, B881, B882]
+    depends_on: [B001, B002, B003, B732, B733, B736, B750, B753, B756, B760, B762, B768, B860, B879, B881, B882, B1100]
     file: tasks/B875-auth-backend-dispatch.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -8698,7 +8709,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Cached UI session and administrator authentication
     status: todo
-    depends_on: [B001, B002, B003, B732, B734, B735, B737, B738, B739, B753, B856, B860, B870, B880, B881, B1223]
+    depends_on: [B001, B002, B003, B732, B734, B735, B737, B738, B739, B753, B860, B870, B880, B881, B1100, B1223, B2314]
     file: tasks/B876-auth-cached-sessions.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -8706,7 +8717,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authorize JWT team selection and database fallback
     status: todo
-    depends_on: [B001, B002, B003, B732, B736, B737, B742, B763, B764, B765, B856, B860, B869, B883, B891]
+    depends_on: [B002, B003, B732, B737, B760, B764, B765, B860, B869, B882, B891]
     file: tasks/B877-jwt-team-authorization.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -8714,7 +8725,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Shared management input and delegation guards
     status: todo
-    depends_on: [B003, B199, B732, B800, B856]
+    depends_on: [B003, B171, B732, B856, B859, B2317]
     file: tasks/B861-management-guards.yaml
     covers:
       - "litellm/proxy/management_endpoints/common_utils.py"
@@ -8722,7 +8733,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Feature and organization key generation switches
     status: todo
-    depends_on: [B002, B732, B856, B863]
+    depends_on: [B002, B003, B171, B732, B856, B863]
     file: tasks/B864-management-rbac.yaml
     covers:
       - "litellm/proxy/common_utils/rbac_utils.py"
@@ -8730,7 +8741,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Management completion effects and cache eviction
     status: todo
-    depends_on: [B003, B732, B734, B856, B1228]
+    depends_on: [B732, B733, B770, B859, B1228]
     file: tasks/B865-management-effects.yaml
     covers:
       - "litellm/proxy/management_helpers/utils.py"
@@ -8738,7 +8749,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Management effect payload sanitization
     status: todo
-    depends_on: [B003, B187, B732, B741, B856]
+    depends_on: [B110, B116, B171, B732, B741, B856, B1100]
     file: tasks/B1228-management-payload.yaml
     covers:
       - "litellm/proxy/management_helpers/utils.py"
@@ -8746,7 +8757,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk user management HTTP routes
     status: todo
-    depends_on: [B001, B003, B052, B732, B793, B794, B856, B860, B865]
+    depends_on: [B001, B003, B007, B052, B732, B793, B794, B860, B865, B1665]
     file: tasks/B1222-bulk-user-routes.yaml
     covers:
       - "litellm/proxy/management_endpoints/management_v1/users.py"
@@ -8754,7 +8765,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team callback validation redaction and audit projection
     status: todo
-    depends_on: [B061, B189, B246, B724, B732, B734, B800, B856]
+    depends_on: [B065, B171, B246, B732, B856, B860, B1109, B2304]
     file: tasks/B1210-team-callback-policy.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_callback_endpoints.py"
@@ -8762,7 +8773,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Read team callbacks and disable team logging
     status: todo
-    depends_on: [B001, B003, B052, B724, B732, B734, B800, B801, B856, B860, B865, B1210, B1231]
+    depends_on: [B001, B003, B052, B124, B724, B732, B800, B801, B860, B865, B1210, B2304]
     file: tasks/B1211-team-logging-controls.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_callback_endpoints.py"
@@ -8770,7 +8781,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Native database fault classification
     status: todo
-    depends_on: [B002, B700, B856]
+    depends_on: [B700, B856]
     file: tasks/B872-database-faults.yaml
     covers:
       - "litellm/proxy/db/exception_handler.py"
@@ -8778,7 +8789,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Native migration deploy and Prisma ledger writes
     status: todo
-    depends_on: [B700, B702, B706, B709, B856, B860]
+    depends_on: [B700, B860]
     file: tasks/B873-migration-deploy.yaml
     covers:
       - "litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py"
@@ -8786,7 +8797,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Offline verification-token import and team repair
     status: todo
-    depends_on: [B700, B701, B710, B856, B860, B1232]
+    depends_on: [B700, B701, B856, B860, B1232, B2307]
     file: tasks/B874-database-repair.yaml
     covers:
       - "db_scripts/migrate_keys.py"
@@ -8795,7 +8806,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve keys to principals through injected stores
     status: todo
-    depends_on: [B001, B003, B700, B720, B722, B732, B733, B856, B860]
+    depends_on: [B001, B003, B171, B732, B733, B734, B735, B738, B757, B856, B860, B2314]
     file: tasks/B870-identity-store.yaml
     covers:
       - "litellm/proxy/auth/resolvers/store.py"
@@ -8803,7 +8814,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve user and membership authentication grants
     status: todo
-    depends_on: [B001, B003, B700, B720, B732, B856, B859, B860]
+    depends_on: [B171, B720, B732, B736, B737, B757, B856, B859, B860, B2310, B2318]
     file: tasks/B871-identity-grants.yaml
     covers:
       - "litellm/proxy/auth/resolvers/grants.py"
@@ -8812,7 +8823,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Publish and consume auth cache invalidations
     status: todo
-    depends_on: [B126, B732, B733, B856]
+    depends_on: [B120, B126, B733, B856]
     file: tasks/B878-auth-pubsub.yaml
     covers:
       - "litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py"
@@ -8820,7 +8831,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization and project authentication lookup
     status: todo
-    depends_on: [B001, B002, B003, B715, B723, B732, B733, B734, B856, B860, B1217]
+    depends_on: [B001, B002, B003, B723, B732, B733, B734, B735, B856, B860, B1217, B2315]
     file: tasks/B879-auth-org-lookup.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8828,15 +8839,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Experimental UI and CLI session token codec
     status: todo
-    depends_on: [B002, B732, B733, B856]
+    depends_on: [B002, B171, B720, B733, B856, B2303, B2314]
     file: tasks/B1223-session-token-codec.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
+      - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
   - id: B880
     milestone: M4 keys, spend and management
     title: End-user identity extraction and registry validation
     status: todo
-    depends_on: [B001, B002, B003, B700, B715, B732, B733, B735, B736, B739, B856, B860]
+    depends_on: [B001, B002, B003, B192, B732, B733, B736, B739, B856, B860, B2315]
     file: tasks/B880-end-user-identity.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8845,7 +8857,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bounded restricted end-user registry cache
     status: todo
-    depends_on: [B002, B700, B715, B732, B733, B735, B856]
+    depends_on: [B002, B171, B726, B733, B856, B860, B2315]
     file: tasks/B1218-end-user-registry.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8853,7 +8865,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Inference route permission tables
     status: todo
-    depends_on: [B207, B732, B856]
+    depends_on: [B171, B856, B868]
     file: tasks/B866-inference-routes.yaml
     covers:
       - "litellm/proxy/_types.py"
@@ -8861,7 +8873,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Management route permission tables
     status: todo
-    depends_on: [B207, B732, B856]
+    depends_on: [B171, B856, B868]
     file: tasks/B867-management-routes.yaml
     covers:
       - "litellm/proxy/_types.py"
@@ -8869,7 +8881,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Public and auxiliary route permission tables
     status: todo
-    depends_on: [B002, B207, B732, B856]
+    depends_on: [B171, B856]
     file: tasks/B868-auxiliary-routes.yaml
     covers:
       - "litellm/proxy/_types.py"
@@ -8877,16 +8889,17 @@ tasks:
     milestone: M4 keys, spend and management
     title: Route template wildcard and allowlist matching
     status: todo
-    depends_on: [B001, B003, B207, B732, B856, B860, B866, B867, B868]
+    depends_on: [B001, B003, B732, B856, B866, B867, B868]
     file: tasks/B882-route-match.yaml
     covers:
+      - "litellm/proxy/auth/auth_utils.py"
       - "litellm/proxy/auth/auth_checks.py"
       - "litellm/proxy/auth/route_checks.py"
   - id: B883
     milestone: M4 keys, spend and management
     title: Virtual-key route grants and pass-through policy
     status: todo
-    depends_on: [B001, B002, B003, B732, B737, B741, B856, B860, B882]
+    depends_on: [B001, B002, B003, B171, B732, B757, B856, B860, B866, B867, B868, B882, B2302]
     file: tasks/B883-virtual-key-routes.yaml
     covers:
       - "litellm/proxy/auth/route_checks.py"
@@ -8894,7 +8907,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization route role and request context policy
     status: todo
-    depends_on: [B001, B003, B723, B732, B736, B737, B856, B860]
+    depends_on: [B001, B003, B171, B732, B757, B856, B860, B867]
     file: tasks/B1229-organization-route-policy.yaml
     covers:
       - "litellm/proxy/auth/auth_checks_organization.py"
@@ -8902,7 +8915,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Request credential destination and metadata safety
     status: todo
-    depends_on: [B001, B002, B003, B009, B176, B732, B733, B856, B860]
+    depends_on: [B001, B002, B003, B009, B174, B192, B302, B732, B733, B856, B1101, B2360]
     file: tasks/B884-request-body-safety.yaml
     covers:
       - "litellm/proxy/auth/auth_utils.py"
@@ -8910,16 +8923,17 @@ tasks:
     milestone: M4 keys, spend and management
     title: SSO readiness and model request context utilities
     status: todo
-    depends_on: [B001, B002, B003, B302, B732, B746, B856, B860, B882]
+    depends_on: [B001, B002, B003, B007, B192, B302, B732, B733, B737, B746, B856, B882, B1100]
     file: tasks/B881-auth-context-sources.yaml
     covers:
+      - "litellm/proxy/proxy_server.py"
       - "litellm/proxy/auth/auth_utils.py"
       - "litellm/proxy/auth/user_api_key_auth.py"
   - id: B885
     milestone: M4 keys, spend and management
     title: Intersect entity model allowlists
     status: todo
-    depends_on: [B001, B003, B302, B732, B735, B736, B737, B740, B747, B856, B860, B879]
+    depends_on: [B001, B003, B302, B732, B736, B737, B740, B747, B856, B860, B879, B2315, B2318]
     file: tasks/B885-model-grant-intersection.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8927,7 +8941,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Model grants for keys and parent entities
     status: todo
-    depends_on: [B001, B003, B302, B732, B736, B737, B740, B747, B856, B860, B879, B885, B887]
+    depends_on: [B001, B003, B732, B737, B747, B856, B860, B879, B887]
     file: tasks/B886-entity-model-access.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8935,7 +8949,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team and membership budget admission
     status: todo
-    depends_on: [B001, B003, B720, B732, B736, B739, B747, B751, B856, B860]
+    depends_on: [B001, B003, B720, B732, B739, B747, B751, B856, B860, B2310, B2318, B2361]
     file: tasks/B887-team-budget-admission.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
@@ -8943,16 +8957,20 @@ tasks:
     milestone: M4 keys, spend and management
     title: Guardrail tool and token-inherited auth policy
     status: todo
-    depends_on: [B001, B003, B732, B736, B737, B753, B856, B860, B879, B1217]
+    depends_on: [B001, B003, B192, B207, B732, B737, B753, B856, B860, B879, B1217]
     file: tasks/B888-auth-policy-support.yaml
     covers:
       - "litellm/proxy/auth/auth_checks.py"
       - "litellm/proxy/auth/user_api_key_auth.py"
+      - "litellm/proxy/guardrails/{guardrail_helpers,tool_name_extraction}.py"
+      - "litellm/llms/openai/{chat,responses}/guardrail_translation/handler.py"
+      - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
+      - "litellm/llms/base_llm/guardrail_translation/utils.py"
   - id: B889
     milestone: M4 keys, spend and management
     title: Virtual-key end-user and fallback context
     status: todo
-    depends_on: [B001, B002, B003, B732, B736, B738, B739, B748, B749, B751, B752, B753, B856, B860, B881, B884, B886]
+    depends_on: [B001, B002, B003, B012, B732, B739, B749, B753, B856, B860, B881, B884, B886, B2314]
     file: tasks/B889-key-context.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -8960,7 +8978,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT configuration defaults and dependent field validation
     status: todo
-    depends_on: [B002, B171, B856]
+    depends_on: [B002, B171, B736, B856, B2314]
     file: tasks/B869-jwt-settings.yaml
     covers:
       - "litellm/proxy/_types.py"
@@ -8968,7 +8986,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT role and scope claim projections
     status: todo
-    depends_on: [B001, B002, B003, B213, B732, B760, B856, B860, B869]
+    depends_on: [B002, B171, B213, B732, B760, B856, B869]
     file: tasks/B890-jwt-role-claims.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -8976,7 +8994,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: JWT database team fallback and membership validation
     status: todo
-    depends_on: [B001, B002, B003, B723, B724, B732, B736, B737, B760, B764, B856, B860, B869, B871, B882, B883, B886]
+    depends_on: [B001, B002, B003, B732, B737, B742, B760, B764, B856, B860, B869, B871, B882, B883, B886, B2318]
     file: tasks/B891-jwt-db-teams.yaml
     covers:
       - "litellm/proxy/auth/handle_jwt.py"
@@ -8984,7 +9002,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key policy hooks aliases and rotation fields
     status: todo
-    depends_on: [B002, B199, B722, B732, B856]
+    depends_on: [B002, B129, B165, B171, B199, B722, B732, B770, B856, B2304, B2317]
     file: tasks/B1224-key-policy-fields.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -8992,7 +9010,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key route and budget delegation ceilings
     status: todo
-    depends_on: [B732, B742, B770, B800, B856]
+    depends_on: [B171, B732, B770, B856]
     file: tasks/B892-key-delegation.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -9000,7 +9018,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Persist generated keys and initial budgets
     status: todo
-    depends_on: [B002, B199, B722, B725, B732, B770, B818, B819, B856, B860, B881, B1224]
+    depends_on: [B002, B192, B199, B732, B770, B819, B856, B860, B881, B1224, B2301, B2304, B2317, B2362]
     file: tasks/B893-key-persistence.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -9008,23 +9026,24 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key patch fields and soft-budget persistence
     status: todo
-    depends_on: [B199, B722, B725, B732, B739, B770, B771, B816, B856, B860, B861, B1224]
+    depends_on: [B192, B199, B722, B725, B732, B739, B770, B771, B816, B856, B860, B861, B1200, B1224, B2301, B2304, B2317, B2362]
     file: tasks/B894-key-patch-fields.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+      - "litellm/proxy/_types.py"
   - id: B1219
     milestone: M4 keys, spend and management
     title: Key team and end-user budget reassignment checks
     status: todo
-    depends_on: [B722, B725, B732, B737, B771, B800, B856, B886, B894]
+    depends_on: [B124, B722, B725, B732, B770, B800, B860, B886, B894]
     file: tasks/B1219-key-reassignment.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - id: B1220
     milestone: M4 keys, spend and management
-    title: Single key update transaction and effects
+    title: Per-key bulk update validation and ordered effects
     status: todo
-    depends_on: [B722, B725, B732, B734, B737, B745, B772, B774, B784, B800, B816, B819, B856, B860, B861, B892, B894, B1219, B1224]
+    depends_on: [B124, B165, B732, B734, B737, B745, B770, B772, B774, B784, B800, B816, B819, B860, B861, B892, B894, B1219, B1224]
     file: tasks/B1220-key-update-write.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -9032,7 +9051,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Regenerate keys and preserve deprecated overlap
     status: todo
-    depends_on: [B001, B002, B003, B052, B199, B722, B732, B734, B737, B771, B773, B774, B777, B785, B800, B818, B819, B856, B860, B861, B865, B892, B896, B1224]
+    depends_on: [B001, B003, B052, B069, B124, B722, B732, B737, B770, B771, B777, B785, B800, B818, B860, B861, B865, B892, B896, B1224, B2362]
     file: tasks/B895-key-regenerate.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -9040,15 +9059,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Key SQL filters and paging query plans
     status: todo
-    depends_on: [B700, B722, B732, B816, B856]
+    depends_on: [B171, B700, B720, B722, B723, B726, B770, B816, B856, B860, B2314]
     file: tasks/B897-key-query-plan.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+      - "litellm/proxy/_types.py"
   - id: B898
     milestone: M4 keys, spend and management
     title: Key secret-manager and legacy notification sinks
     status: todo
-    depends_on: [B002, B012, B732, B737, B856]
+    depends_on: [B002, B012, B116, B129, B732, B737, B856]
     file: tasks/B898-key-event-sinks.yaml
     covers:
       - "litellm/proxy/hooks/key_management_event_hooks.py"
@@ -9056,7 +9076,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Password login HTTP routes and cookies
     status: todo
-    depends_on: [B001, B002, B003, B052, B732, B770, B787, B788, B789, B856, B860]
+    depends_on: [B001, B002, B003, B124, B126, B732, B733, B770, B787, B788, B860, B2300]
     file: tasks/B899-login-routes.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -9064,7 +9084,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Default user teams and enrollment contract
     status: todo
-    depends_on: [B002, B732, B856]
+    depends_on: [B002, B171, B732, B736, B790, B856, B860]
     file: tasks/B1226-default-user-teams.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
@@ -9072,7 +9092,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk user insert and locked team roster writes
     status: todo
-    depends_on: [B714, B723, B724, B732, B734, B856, B860, B862, B872, B893]
+    depends_on: [B111, B171, B714, B723, B724, B732, B734, B790, B819, B856, B859, B860, B862, B872, B893, B2317]
     file: tasks/B1201-bulk-user-write.yaml
     covers:
       - "litellm/proxy/management_helpers/bulk_user_creation.py"
@@ -9080,7 +9100,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Bulk team-member removal transaction
     status: todo
-    depends_on: [B723, B724, B732, B734, B738, B777, B784, B800, B856, B860, B878]
+    depends_on: [B007, B111, B171, B714, B722, B723, B724, B732, B734, B738, B777, B784, B800, B819, B856, B859, B860, B878, B2363]
     file: tasks/B1202-bulk-team-removal.yaml
     covers:
       - "litellm/proxy/management_helpers/bulk_user_deletion.py"
@@ -9088,31 +9108,34 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization-scoped UI user search
     status: todo
-    depends_on: [B001, B002, B003, B052, B722, B723, B724, B732, B736, B737, B742, B790, B800, B856, B860, B1217]
+    depends_on: [B001, B003, B052, B066, B723, B732, B736, B737, B790, B800, B856, B860, B1217, B2314]
     file: tasks/B1203-user-search-scope.yaml
     covers:
       - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+      - "litellm/proxy/_types.py"
   - id: B863
     milestone: M4 keys, spend and management
     title: Management administrator and invitation scope
     status: todo
-    depends_on: [B723, B724, B732, B856]
+    depends_on: [B171, B720, B724, B732, B736, B856, B859, B860, B2226]
     file: tasks/B863-management-admins.yaml
     covers:
       - "litellm/proxy/management_endpoints/common_utils.py"
+      - "litellm/proxy/management/teams/access.py"
   - id: B1200
     milestone: M4 keys, spend and management
     title: Team-administrator editable field policy
     status: todo
-    depends_on: [B002, B732, B770, B856]
+    depends_on: [B002, B171, B192, B720, B770, B856, B859, B1231]
     file: tasks/B1200-team-admin-fields.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_admin_field_permissions.py"
+      - "litellm/proxy/_types.py"
   - id: B1231
     milestone: M4 keys, spend and management
     title: Team management request and response contracts
     status: todo
-    depends_on: [B002, B199, B732, B770, B856, B859]
+    depends_on: [B002, B008, B124, B171, B732, B770, B856, B859, B1665, B2310, B2317]
     file: tasks/B1231-team-request-contracts.yaml
     covers:
       - "litellm/proxy/_types.py"
@@ -9121,7 +9144,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Membership budget merge-patch persistence
     status: todo
-    depends_on: [B199, B700, B714, B720, B732, B829, B856, B859, B860]
+    depends_on: [B124, B171, B720, B725, B732, B829, B856, B859, B860, B2317]
     file: tasks/B862-member-budget-patch.yaml
     covers:
       - "litellm/proxy/management_endpoints/common_utils.py"
@@ -9130,15 +9153,15 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization and user team limit ceilings
     status: todo
-    depends_on: [B723, B724, B732, B736, B800, B801, B856]
+    depends_on: [B171, B732, B736, B801, B856, B860, B1231]
     file: tasks/B1204-team-parent-limits.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
   - id: B1205
     milestone: M4 keys, spend and management
-    title: Team patch endpoint and update field preparation
+    title: Team update budget reset and object permission preparation
     status: todo
-    depends_on: [B001, B003, B052, B199, B725, B732, B734, B800, B801, B816, B856, B860, B1231]
+    depends_on: [B171, B801, B816, B856, B860, B1231, B2317]
     file: tasks/B1205-team-patch.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -9146,7 +9169,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team member identity and provisioning checks
     status: todo
-    depends_on: [B723, B724, B732, B734, B856, B1227]
+    depends_on: [B124, B171, B723, B732, B801, B856, B860, B1227, B1231]
     file: tasks/B1206-member-identity.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -9154,7 +9177,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Delete one team member and associated keys
     status: todo
-    depends_on: [B001, B003, B052, B724, B732, B734, B738, B777, B784, B800, B802, B807, B856, B860, B865, B878, B1231]
+    depends_on: [B001, B003, B052, B724, B732, B734, B738, B777, B784, B800, B801, B807, B860, B865, B878]
     file: tasks/B1207-team-member-delete.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -9162,7 +9185,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Shared user and membership row writes
     status: todo
-    depends_on: [B002, B700, B714, B720, B732, B856, B859, B860, B862]
+    depends_on: [B002, B124, B171, B720, B723, B724, B725, B856, B859, B860, B862, B2314]
     file: tasks/B1227-member-row-write.yaml
     covers:
       - "litellm/proxy/management_helpers/utils.py"
@@ -9170,7 +9193,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team block state and auxiliary read routes
     status: todo
-    depends_on: [B001, B002, B003, B052, B724, B732, B734, B736, B737, B748, B800, B801, B802, B856, B860, B865, B1231]
+    depends_on: [B001, B002, B003, B052, B732, B736, B737, B800, B801, B860, B865, B1231, B2318]
     file: tasks/B1208-team-state.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -9178,7 +9201,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team list scope and response query preparation
     status: todo
-    depends_on: [B722, B723, B724, B732, B736, B742, B748, B800, B801, B856]
+    depends_on: [B171, B724, B732, B736, B742, B801, B856, B860, B1231, B2314]
     file: tasks/B1209-team-list-query.yaml
     covers:
       - "litellm/proxy/management_endpoints/team_endpoints.py"
@@ -9186,7 +9209,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Organization list and information routes
     status: todo
-    depends_on: [B001, B003, B052, B723, B724, B732, B742, B800, B826, B856, B860]
+    depends_on: [B001, B003, B052, B723, B732, B826, B860, B2314]
     file: tasks/B1212-organization-read.yaml
     covers:
       - "litellm/proxy/management_endpoints/organization_endpoints.py"
@@ -9226,7 +9249,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Team query authorization and BYOK model visibility
     status: todo
-    depends_on: [B725, B732, B737, B759, B800, B844, B856]
+    depends_on: [B124, B171, B723, B724, B725, B732, B844, B845, B847, B856, B860]
     file: tasks/B1216-model-team-scope.yaml
     covers:
       - "litellm/proxy/proxy_server.py"
@@ -9234,15 +9257,16 @@ tasks:
     milestone: M4 keys, spend and management
     title: Centralized authenticated common-check composition
     status: todo
-    depends_on: [B001, B002, B003, B732, B735, B736, B737, B739, B741, B750, B753, B754, B755, B756, B856, B860, B879, B880, B881, B888, B1225]
+    depends_on: [B001, B002, B003, B720, B732, B739, B741, B753, B754, B756, B757, B859, B860, B868, B880, B881, B888, B1100, B1106, B1225, B2313, B2314, B2316]
     file: tasks/B1221-central-auth-checks.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
+      - "litellm/proxy/spend_tracking/carried_budget_state.py"
   - id: B1225
     milestone: M4 keys, spend and management
     title: Budget admission handoff after authentication
     status: todo
-    depends_on: [B001, B002, B003, B732, B739, B750, B753, B856, B860, B881]
+    depends_on: [B001, B002, B003, B071, B171, B732, B739, B750, B757, B856, B860, B881, B1100]
     file: tasks/B1225-budget-admission-handoff.yaml
     covers:
       - "litellm/proxy/auth/user_api_key_auth.py"
@@ -9257,7 +9281,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Apply key regeneration writes and grace records
     status: todo
-    depends_on: [B002, B199, B722, B732, B734, B738, B739, B745, B770, B771, B772, B774, B777, B784, B816, B819, B856, B860, B878, B881, B892, B893, B894, B1219, B1224]
+    depends_on: [B002, B199, B722, B726, B732, B734, B738, B739, B745, B770, B771, B772, B777, B784, B816, B819, B856, B860, B878, B881, B892, B894, B1219, B1224, B2362]
     file: tasks/B896-key-rotation-write.yaml
     covers:
       - "litellm/proxy/management_endpoints/key_management_endpoints.py"
@@ -9265,7 +9289,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Database service-unavailable error projection
     status: todo
-    depends_on: [B002, B700, B856, B872]
+    depends_on: [B002, B129, B171, B732, B856, B872]
     file: tasks/B1217-database-availability.yaml
     covers:
       - "litellm/proxy/db/exception_handler.py"
@@ -9273,7 +9297,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Native database administration command shell
     status: todo
-    depends_on: [B000, B002, B710]
+    depends_on: [B000, B002, B710, B2307]
     file: tasks/B1232-database-admin-cli.yaml
     covers:
       - "migrations/run.py"
@@ -10486,7 +10510,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Manage reusable credentials in Postgres and memory
     status: todo
-    depends_on: [B002, B003, B052, B721, B725, B732, B844, B860, B1600]
+    depends_on: [B002, B003, B721, B725, B732, B844, B860, B1600]
     file: tasks/B1601-credential-routes.yaml
     covers:
       - "litellm/proxy/credential_endpoints/**"
@@ -10520,7 +10544,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Tool records, owner enrichment and policy override views
     status: todo
-    depends_on: [B171, B722, B723, B725, B726, B860]
+    depends_on: [B171, B722, B723, B725, B860]
     file: tasks/B1605-tool-records.yaml
     covers:
       - "litellm/types/tool_management.py"
@@ -11274,7 +11298,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Price optimization savings against recorded usage and deployment rates
     status: todo
-    depends_on: [B171, B174, B198, B204, B845, B1668, B1670, B1672, B1673, B1675, B1678, B1693]
+    depends_on: [B068, B171, B174, B198, B204, B845, B1668, B1670, B1672, B1673, B1675, B1678, B1693]
     file: tasks/B1694-optimization-savings-pricing.yaml
     covers:
       - "litellm/proxy/spend_tracking/savings.py"
@@ -11390,7 +11414,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Deliver spend events to the local collector with explicit outage behavior
     status: todo
-    depends_on: [B002, B012, B171, B198]
+    depends_on: [B002, B171, B198]
     file: tasks/B1708-collector-producer.yaml
     covers:
       - "litellm/proxy/spend_tracking/{spend_event_producer,spend_log_error_logger}.py"
@@ -11408,7 +11432,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Recover historical key attribution from tokens and user records
     status: todo
-    depends_on: [B171, B700, B703, B722, B723, B726, B860]
+    depends_on: [B171, B700, B703, B722, B723, B860]
     file: tasks/B1710-key-attribution-recovery.yaml
     covers:
       - "litellm/proxy/spend_tracking/key_metadata_recovery.py"
@@ -11529,7 +11553,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Serve tag summaries and scoped key and user spend tables
     status: todo
-    depends_on: [B003, B052, B204, B722, B723, B726, B732, B860, B1704]
+    depends_on: [B003, B204, B722, B723, B726, B732, B860, B1704]
     file: tasks/B1723-spend-tags-identity.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11537,7 +11561,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Project monthly spend views and team totals for the dashboard
     status: todo
-    depends_on: [B002, B003, B052, B111, B204, B722, B724, B726, B732, B860]
+    depends_on: [B002, B003, B111, B204, B722, B724, B726, B732, B860]
     file: tasks/B1724-spend-totals.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11545,7 +11569,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Calculate request estimates and expose provider budget state
     status: todo
-    depends_on: [B002, B003, B052, B068, B125, B189, B198, B204, B724, B726, B732, B844, B860, B865]
+    depends_on: [B002, B003, B068, B125, B189, B198, B204, B724, B726, B732, B844, B860, B865]
     file: tasks/B1725-spend-estimates.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11557,7 +11581,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Authorize key, user, team and organization spend breakdowns
     status: todo
-    depends_on: [B003, B052, B204, B700, B724, B726, B732, B826, B860, B1106, B1644, B1704, B1715]
+    depends_on: [B003, B204, B700, B724, B726, B732, B826, B860, B1106, B1644, B1704, B1715]
     file: tasks/B1726-scoped-spend-reports.yaml
     covers:
       - "litellm/proxy/spend_tracking/{spend_management_endpoints,spend_tracking_utils}.py"
@@ -11581,7 +11605,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Resolve authorized request bodies from logs and cold storage
     status: todo
-    depends_on: [B002, B003, B052, B115, B171, B189, B204, B726, B732, B860, B1704, B1714]
+    depends_on: [B002, B003, B115, B171, B189, B204, B726, B732, B860, B1704, B1714]
     file: tasks/B1729-spend-log-payload.yaml
     covers:
       - "litellm/proxy/spend_tracking/{spend_management_endpoints,cold_storage_handler}.py"
@@ -11589,7 +11613,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Preserve legacy log exports and enrich UI rows by session and key
     status: todo
-    depends_on: [B003, B052, B204, B726, B732, B860, B1704, B1715, B1728, B1729]
+    depends_on: [B003, B204, B726, B732, B860, B1704, B1715, B1728, B1729]
     file: tasks/B1730-spend-log-results.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11597,7 +11621,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Page session representatives and authorize session expansion
     status: todo
-    depends_on: [B003, B052, B171, B204, B726, B732, B860, B1704, B1728, B1729, B1730]
+    depends_on: [B003, B171, B204, B726, B732, B860, B1704, B1728, B1729, B1730]
     file: tasks/B1731-spend-log-sessions.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11605,7 +11629,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Execute authorized UI and public spend-log searches
     status: todo
-    depends_on: [B003, B052, B204, B726, B732, B860, B865, B1704, B1728, B1729, B1730, B1731]
+    depends_on: [B003, B204, B726, B732, B860, B865, B1704, B1728, B1729, B1730, B1731]
     file: tasks/B1732-spend-log-list.yaml
     covers:
       - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
@@ -11613,7 +11637,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Compact entity and daily spend updates without mutating queued callers
     status: todo
-    depends_on: [B012, B171, B204, B1690, B1697]
+    depends_on: [B171, B204, B1690, B1697]
     file: tasks/B1733-spend-update-queues.yaml
     covers:
       - "litellm/proxy/db/db_transaction_queue/{spend_update_queue,daily_spend_update_queue}.py"
@@ -11650,7 +11674,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Decode Redis spend batches and park capped request logs
     status: todo
-    depends_on: [B002, B012, B126, B171, B192, B204, B710, B1690, B1706, B1733, B1734]
+    depends_on: [B002, B126, B171, B192, B204, B710, B1690, B1706, B1733, B1734]
     file: tasks/B1737-redis-spend-drain.yaml
     covers:
       - "litellm/proxy/db/db_transaction_queue/redis_update_buffer.py"
@@ -11699,7 +11723,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Derive daily spend records and baseline targets from request evidence
     status: todo
-    depends_on: [B004, B171, B204, B1693, B1694, B1697, B1698, B1733]
+    depends_on: [B004, B171, B204, B1693, B1694, B1697, B1733]
     file: tasks/B1743-daily-spend-records.yaml
     covers:
       - "litellm/proxy/db/db_spend_update_writer.py"
@@ -11718,7 +11742,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Commit entity balances in order and preserve roster removal races
     status: todo
-    depends_on: [B126, B171, B198, B204, B700, B724, B733, B860, B1733, B1746]
+    depends_on: [B126, B171, B198, B204, B700, B724, B733, B860, B1746]
     file: tasks/B1745-entity-spend-commit.yaml
     covers:
       - "litellm/proxy/db/db_spend_update_writer.py"
@@ -11759,6 +11783,689 @@ tasks:
     covers:
       - "litellm/proxy/db/db_spend_update_writer.py"
       - "litellm/proxy/utils.py"
+  - id: B2300
+    milestone: M4 keys, spend and management
+    title: Shared session cookie and login return destinations
+    status: todo
+    depends_on: [B002, B003, B009, B126, B171, B733, B743, B770, B856]
+    file: tasks/B2300-login-return.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/ui_sso.py"
+  - id: B2301
+    milestone: M4 keys, spend and management
+    title: Validate router weight deployment references before management writes
+    status: todo
+    depends_on: [B003, B008, B171, B302, B725, B856, B860]
+    file: tasks/B2301-router-weight-references.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/router_weights.py"
+  - id: B2302
+    milestone: M4 keys, spend and management
+    title: Shared pass-through registry lookup and root-path normalization
+    status: todo
+    depends_on: [B002, B003, B171, B856, B868]
+    file: tasks/B2302-pass-through-registry-lookup.yaml
+    covers:
+      - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+      - "litellm/proxy/utils.py"
+  - id: B2303
+    milestone: M4 keys, spend and management
+    title: Shared stored-secret and bearer-token codecs
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2303-secret-codecs.yaml
+    covers:
+      - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
+      - "litellm/proxy/common_utils/callback_utils.py"
+  - id: B2304
+    milestone: M4 keys, spend and management
+    title: Transform and strip stored callback credential fields
+    status: todo
+    depends_on: [B171, B244, B2303]
+    file: tasks/B2304-callback-secret-fields.yaml
+    covers:
+      - "litellm/proxy/common_utils/callback_utils.py"
+  - id: B2305
+    milestone: M4 keys, spend and management
+    title: MCP stored credential types and pinned tool decoding
+    status: todo
+    depends_on: [B171, B856, B2307]
+    file: tasks/B2305-mcp-stored-contracts.yaml
+    covers:
+      - "litellm/types/mcp.py"
+      - "litellm/types/mcp_server/mcp_server_manager.py"
+  - id: B2306
+    milestone: M4 keys, spend and management
+    title: Resolve deployment credentials for passthrough and metadata discovery
+    status: todo
+    depends_on: [B061, B171, B367, B844]
+    file: tasks/B2306-deployment-credential-resolution.yaml
+    covers:
+      - "litellm/router.py"
+  - id: B2307
+    milestone: M4 keys, spend and management
+    title: Database URL query policy and boolean parsing
+    status: todo
+    depends_on: [B171, B700, B856]
+    file: tasks/B2307-database-url-primitives.yaml
+    covers:
+      - "litellm/proxy/db/db_url_settings.py"
+      - "litellm/proxy/db/token_auth.py"
+      - "litellm/proxy/proxy_cli.py"
+      - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
+  - id: B2308
+    milestone: M4 keys, spend and management
+    title: RDS database credential selection and token signing
+    status: todo
+    depends_on: [B002, B129]
+    file: tasks/B2308-rds-database-credentials.yaml
+    covers:
+      - "litellm/proxy/auth/rds_iam_token.py"
+  - id: B2309
+    milestone: M4 keys, spend and management
+    title: Request-log index definitions and catalog inspection
+    status: todo
+    depends_on: [B171, B700, B856, B860]
+    file: tasks/B2309-request-log-index-catalog.yaml
+    covers:
+      - "litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py"
+  - id: B2310
+    milestone: M4 keys, spend and management
+    title: Shared budget, object-permission and organization-membership rows
+    status: todo
+    depends_on: [B171, B700, B856, B860, B2307]
+    file: tasks/B2310-budget-permission-rows.yaml
+    covers:
+      - "litellm/models/budget.py"
+      - "litellm/models/object_permission.py"
+      - "litellm/models/organization_membership.py"
+  - id: B2311
+    milestone: M4 keys, spend and management
+    title: Queued spend resets and budget-cascade transactions
+    status: todo
+    depends_on: [B171, B700, B856, B860]
+    file: tasks/B2311-spend-reset-unit-of-work.yaml
+    covers:
+      - "litellm/repositories/unit_of_work.py"
+  - id: B2312
+    milestone: M4 keys, spend and management
+    title: Daily activity scopes, row contracts and SQL identifiers
+    status: todo
+    depends_on: [B171, B856]
+    file: tasks/B2312-daily-activity-contracts.yaml
+    covers:
+      - "litellm/types/repositories/daily_activity.py"
+      - "litellm/repositories/daily_activity_sql.py"
+  - id: B2313
+    milestone: M4 keys, spend and management
+    title: Request-carried agent policies and budget snapshots
+    status: todo
+    depends_on: [B000, B171, B856]
+    file: tasks/B2313-carried-policy-records.yaml
+    covers:
+      - "litellm/types/agents.py"
+      - "litellm/types/proxy/agent_identity.py"
+      - "litellm/types/proxy/carried_budget_state.py"
+  - id: B2314
+    milestone: M4 keys, spend and management
+    title: Resolved key fields, role values and credential provenance
+    status: todo
+    depends_on: [B171, B720, B856, B859, B2310, B2313]
+    file: tasks/B2314-resolved-key-contracts.yaml
+    covers:
+      - "litellm/proxy/_types.py"
+      - "litellm/proxy/auth/handle_jwt.py"
+  - id: B2315
+    milestone: M4 keys, spend and management
+    title: Auth repository read deadlines and structural projections
+    status: todo
+    depends_on: [B171, B700, B715, B856, B859, B2313]
+    file: tasks/B2315-auth-read-boundaries.yaml
+    covers:
+      - "litellm/proxy/auth/auth_checks.py"
+  - id: B2316
+    milestone: M4 keys, spend and management
+    title: Request-local spend-counter reads and shared batch scopes
+    status: todo
+    depends_on: [B126, B171, B733, B856, B2314]
+    file: tasks/B2316-spend-counter-batches.yaml
+    covers:
+      - "litellm/proxy/spend_tracking/spend_counter_batch.py"
+  - id: B2317
+    milestone: M4 keys, spend and management
+    title: Budget reset clock settings and persistable durations
+    status: todo
+    depends_on: [B002, B171, B199, B856]
+    file: tasks/B2317-budget-reset-settings.yaml
+    covers:
+      - "litellm/proxy/common_utils/timezone_utils.py"
+  - id: B2318
+    milestone: M4 keys, spend and management
+    title: Shared team-membership loads and negative cache entries
+    status: todo
+    depends_on: [B125, B171, B715, B726, B733, B734, B856, B859, B860, B2315]
+    file: tasks/B2318-auth-membership-load.yaml
+    covers:
+      - "litellm/proxy/auth/auth_checks.py"
+  - id: B2325
+    milestone: M4 keys, spend and management
+    title: Budget throttling, window starts and carried snapshots
+    status: todo
+    depends_on: [B002, B171, B199, B732, B856, B2313]
+    file: tasks/B2325-budget-admission-primitives.yaml
+    covers:
+      - "litellm/proxy/auth/budget_throttle.py"
+      - "litellm/proxy/spend_tracking/budget_reservation.py"
+      - "litellm/proxy/spend_tracking/carried_budget_state.py"
+  - id: B2322
+    milestone: M4 keys, spend and management
+    title: Authoritative spend reads and cold-counter reseeding
+    status: todo
+    depends_on: [B002, B125, B126, B171, B199, B715, B722, B723, B724, B726, B732, B733, B856, B860, B2316]
+    file: tasks/B2322-spend-counter-reseed.yaml
+    covers:
+      - "litellm/proxy/db/spend_counter_reseed.py"
+  - id: B2321
+    milestone: M4 keys, spend and management
+    title: Current-spend verification and authoritative floors
+    status: todo
+    depends_on: [B001, B002, B003, B125, B126, B171, B732, B733, B757, B856, B860, B2316, B2322]
+    file: tasks/B2321-current-spend-floor.yaml
+    covers:
+      - "litellm/proxy/proxy_server.py"
+  - id: B2324
+    milestone: M4 keys, spend and management
+    title: Resource and provider path hints below authentication
+    status: todo
+    depends_on: [B171, B302, B856]
+    file: tasks/B2324-auth-resource-hints.yaml
+    covers:
+      - "litellm/types/videos/utils.py"
+      - "litellm/llms/azure/passthrough/transformation.py"
+      - "litellm/llms/nvidia_nim/passthrough/transformation.py"
+      - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+  - id: B2323
+    milestone: M4 keys, spend and management
+    title: Bounded database reconnect policy for auth reads
+    status: todo
+    depends_on: [B002, B171, B710, B713, B714, B856, B860]
+    file: tasks/B2323-auth-database-reconnect.yaml
+    covers:
+      - "litellm/proxy/utils.py"
+  - id: B2320
+    milestone: M4 keys, spend and management
+    title: Combined key reads and deprecated-token grace lookup
+    status: todo
+    depends_on: [B012, B171, B713, B714, B715, B721, B722, B856, B860, B2314, B2323]
+    file: tasks/B2320-combined-key-read.yaml
+    covers:
+      - "litellm/proxy/utils.py"
+  - id: B2326
+    milestone: M4 keys, spend and management
+    title: Master identity and uncached virtual-key resolution
+    status: todo
+    depends_on: [B001, B003, B732, B734, B744, B753, B755, B757, B760, B860, B866, B869, B870, B881, B889, B2314]
+    file: tasks/B2326-master-and-database-auth.yaml
+    covers:
+      - "litellm/proxy/auth/user_api_key_auth.py"
+  - id: B2327
+    milestone: M4 keys, spend and management
+    title: Provider attribution for local auth and budget rejections
+    status: todo
+    depends_on: [B171, B174, B302, B856]
+    file: tasks/B2327-rejection-provider-hints.yaml
+    covers:
+      - "litellm/proxy/hooks/rate_limiter_utils.py"
+  - id: B2328
+    milestone: M4 keys, spend and management
+    title: Environment and endpoint model enumeration
+    status: todo
+    depends_on: [B002, B171, B193, B856, B2220, B2226]
+    file: tasks/B2328-provider-model-enumeration.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2330
+    milestone: M4 keys, spend and management
+    title: Shared audit policy, records and event sink
+    status: todo
+    depends_on: [B002, B003, B115, B171, B188, B244, B726, B856, B860, B2314]
+    file: tasks/B2330-audit-event-sink.yaml
+    covers:
+      - "litellm/proxy/management_helpers/audit_logs.py"
+      - "litellm/proxy/_types.py"
+  - id: B2331
+    milestone: M4 keys, spend and management
+    title: Ordered master-key re-encryption service
+    status: todo
+    depends_on: [B001, B003, B120, B124, B137, B171, B725, B730, B732, B770, B836, B856, B860, B2303, B2305, B2332]
+    file: tasks/B2331-master-rotation-service.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+      - "litellm/proxy/credential_endpoints/endpoints.py"
+  - id: B2332
+    milestone: M4 keys, spend and management
+    title: MCP stored-secret rotation primitives
+    status: todo
+    depends_on: [B003, B171, B714, B726, B856, B860, B2303, B2305]
+    file: tasks/B2332-mcp-credential-rotation.yaml
+    covers:
+      - "litellm/proxy/_experimental/mcp_server/db.py"
+  - id: B2333
+    milestone: M4 keys, spend and management
+    title: Expired UI session cleanup worker
+    status: todo
+    depends_on: [B002, B003, B070, B124, B171, B722, B732, B777, B784, B856, B860, B2314]
+    file: tasks/B2333-expired-ui-session-cleanup.yaml
+    covers:
+      - "litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py"
+  - id: B2334
+    milestone: M4 keys, spend and management
+    title: User bulk wire records and query identity decoding
+    status: todo
+    depends_on: [B003, B124, B171, B720, B770, B856]
+    file: tasks/B2334-user-wire-contracts.yaml
+    covers:
+      - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
+      - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+      - "litellm/types/proxy/management_endpoints/management_v1.py"
+  - id: B2340
+    milestone: M4 keys, spend and management
+    title: Access-group assignment writes and cached object patches
+    status: todo
+    depends_on: [B141, B733, B734, B737, B821, B860, B2314]
+    file: tasks/B2340-access-group-membership-effects.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/access_group_endpoints.py"
+  - id: B2341
+    milestone: M4 keys, spend and management
+    title: Read model access groups with joined budgets
+    status: todo
+    depends_on: [B001, B003, B052, B732, B823, B832, B860]
+    file: tasks/B2341-model-group-read.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
+  - id: B2342
+    milestone: M4 keys, spend and management
+    title: Transactional v2 organization patch
+    status: todo
+    depends_on: [B001, B003, B052, B124, B723, B732, B816, B826, B860, B861, B1224]
+    file: tasks/B2342-organization-patch-v2.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/organization_endpoints.py"
+  - id: B2350
+    milestone: M4 keys, spend and management
+    title: Routing decision response headers
+    status: todo
+    depends_on: [B171, B856]
+    file: tasks/B2350-routing-decision-headers.yaml
+    covers:
+      - "litellm/router_utils/add_retry_fallback_headers.py"
+  - id: B2360
+    milestone: M4 keys, spend and management
+    title: Request credential and callback field ban catalog
+    status: todo
+    depends_on: [B171, B856]
+    file: tasks/B2360-request-ban-catalog.yaml
+    covers:
+      - "litellm/proxy/auth/auth_utils.py"
+  - id: B2361
+    milestone: M4 keys, spend and management
+    title: Budget window coercion and start instants
+    status: todo
+    depends_on: [B171, B192, B199, B733, B856]
+    file: tasks/B2361-budget-window-start.yaml
+    covers:
+      - "litellm/proxy/spend_tracking/budget_reservation.py"
+  - id: B2362
+    milestone: M4 keys, spend and management
+    title: Key and user write primitives below management services
+    status: todo
+    depends_on: [B171, B192, B700, B722, B723, B770, B856, B860]
+    file: tasks/B2362-key-user-write-primitives.yaml
+    covers:
+      - "litellm/proxy/utils.py"
+  - id: B2363
+    milestone: M4 keys, spend and management
+    title: Member removal identities and matching predicates
+    status: todo
+    depends_on: [B171, B720, B856, B859]
+    file: tasks/B2363-member-removal-identity.yaml
+    covers:
+      - "litellm/proxy/_types.py"
+      - "litellm/proxy/management_helpers/bulk_user_deletion.py"
+  - id: B2370
+    milestone: M4 keys, spend and management
+    title: Team merge patch HTTP adapter
+    status: todo
+    depends_on: [B001, B003, B052, B124, B732, B801, B806, B860, B1231]
+    file: tasks/B2370-team-merge-patch-route.yaml
+    covers:
+      - "litellm/proxy/management_endpoints/team_endpoints.py"
+  - id: B2410
+    milestone: M5 API families
+    title: Codex history normalization and additional tools
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2410-codex-history-tools.yaml
+    covers:
+      - "litellm/llms/base_llm/responses/codex_compat.py"
+      - "litellm/responses/additional_tools.py"
+  - id: B2411
+    milestone: M5 API families
+    title: Responses input content and instruction conversion
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2411-responses-input-content.yaml
+    covers:
+      - "litellm/responses/litellm_completion_transformation/transformation.py"
+  - id: B2412
+    milestone: M5 API families
+    title: Recover Responses output from recorded SSE
+    status: todo
+    depends_on: [B005, B012, B1087, B171]
+    file: tasks/B2412-responses-sse-recovery.yaml
+    covers:
+      - "litellm/responses/sse_output_recovery.py"
+      - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
+  - id: B2413
+    milestone: M5 API families
+    title: Responses stream primitives and duration settings
+    status: todo
+    depends_on: [B004, B010, B184, B185, B186, B012, B198, B206, B247, B1114, B1138, B1087, B002, B171]
+    file: tasks/B2413-responses-stream-primitives.yaml
+    covers:
+      - "litellm/responses/streaming_iterator.py"
+      - "litellm/constants.py"
+  - id: B2416
+    milestone: M5 API families
+    title: Responses retrieve and input-items HTTP transport
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B2402, B2401]
+    file: tasks/B2416-responses-read-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2417
+    milestone: M5 API families
+    title: Responses delete and cancel HTTP transport
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B2402, B2401]
+    file: tasks/B2417-responses-write-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2418
+    milestone: M5 API families
+    title: Responses compact HTTP and signed-body selection
+    status: todo
+    depends_on: [B173, B1114, B509, B249, B595, B2402, B2401]
+    file: tasks/B2418-responses-compact-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2419
+    milestone: M5 API families
+    title: Responses deployment-hook and agentic policy
+    status: todo
+    depends_on: [B002, B010, B171, B189, B248, B247, B902, B157]
+    file: tasks/B2419-responses-hook-policy.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+      - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
+  - id: B2415
+    milestone: M5 API families
+    title: Responses agentic continuation execution
+    status: todo
+    depends_on: [B2419, B189, B247, B157, B978, B173, B507, B508, B2401]
+    file: tasks/B2415-responses-agentic-execution.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2414
+    milestone: M5 API families
+    title: Native Responses create HTTP transport
+    status: todo
+    depends_on: [B2419, B2415, B1114, B507, B508, B173, B595, B2418, B249, B2402, B927, B189, B2401]
+    file: tasks/B2414-responses-create-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2430
+    milestone: M5 API families
+    title: Native Messages reasoning and request transformation
+    status: todo
+    depends_on: [B171, B961, B569, B571, B2201, B567, B688]
+    file: tasks/B2430-messages-native-transform.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/transformation.py"
+  - id: B2431
+    milestone: M5 API families
+    title: Messages tool and structured-output conversion
+    status: todo
+    depends_on: [B171, B1117]
+    file: tasks/B2431-messages-chat-tools-schema.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
+  - id: B2432
+    milestone: M5 API families
+    title: Compaction summary execution
+    status: todo
+    depends_on: [B014, B162, B004, B171, B968, B969, B970, B971, B2401]
+    file: tasks/B2432-summary-execution.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
+  - id: B2433
+    milestone: M5 API families
+    title: Messages reasoning route policy
+    status: todo
+    depends_on: [B171, B174, B205, B962, B158]
+    file: tasks/B2433-messages-reasoning-route.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/handler.py"
+  - id: B2434
+    milestone: M5 API families
+    title: Synchronous Messages stream transitions
+    status: todo
+    depends_on: [B976, B966, B005, B2401]
+    file: tasks/B2434-messages-sync-stream.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
+  - id: B2435
+    milestone: M5 API families
+    title: Legacy fake Messages stream rendering
+    status: todo
+    depends_on: [B171, B958]
+    file: tasks/B2435-messages-fake-stream.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
+  - id: B2436
+    milestone: M5 API families
+    title: Messages stream logging and teardown
+    status: todo
+    depends_on: [B102, B191, B247, B978, B009, B2401]
+    file: tasks/B2436-messages-stream-logging.yaml
+    covers:
+      - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
+  - id: B2450
+    milestone: M5 API families
+    title: Image generation HTTP execution
+    status: todo
+    depends_on: [B997, B173, B2402, B206, B012, B2401]
+    file: tasks/B2450-image-generation-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2451
+    milestone: M5 API families
+    title: Image edit HTTP execution
+    status: todo
+    depends_on: [B997, B173, B2402, B206, B012, B2401]
+    file: tasks/B2451-image-edit-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2452
+    milestone: M5 API families
+    title: Generic speech HTTP execution
+    status: todo
+    depends_on: [B1135, B173, B2402, B004, B206, B012, B2401]
+    file: tasks/B2452-speech-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2453
+    milestone: M5 API families
+    title: Native transcription HTTP and subtitle replies
+    status: todo
+    depends_on: [B1122, B173, B2402, B206, B1002, B012, B2401]
+    file: tasks/B2453-transcription-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2454
+    milestone: M5 API families
+    title: Rerank HTTP execution
+    status: todo
+    depends_on: [B1013, B173, B2402, B012, B2401]
+    file: tasks/B2454-rerank-http.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2455
+    milestone: M5 API families
+    title: Realtime guardrail selection and setup policy
+    status: todo
+    depends_on: [B104, B171, B1004]
+    file: tasks/B2455-realtime-guardrail-policy.yaml
+    covers:
+      - "litellm/litellm_core_utils/realtime_streaming.py"
+  - id: B2456
+    milestone: M5 API families
+    title: Realtime HTTP session and SDP transport
+    status: todo
+    depends_on: [B012, B173, B1004, B1087, B2401, B2402]
+    file: tasks/B2456-realtime-http-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2457
+    milestone: M5 API families
+    title: Generic realtime backend connection
+    status: todo
+    depends_on: [B002, B012, B173, B901, B1004, B1006, B1009, B2455]
+    file: tasks/B2457-realtime-backend-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2460
+    milestone: M5 API families
+    title: Shared upload filename extraction
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2460-upload-filename.yaml
+    covers:
+      - "litellm/proxy/common_utils/path_utils.py"
+  - id: B2461
+    milestone: M5 API families
+    title: Provider file upload HTTP execution
+    status: todo
+    depends_on: [B1015, B1087, B173, B012, B2401, B2402]
+    file: tasks/B2461-file-http-upload.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2462
+    milestone: M5 API families
+    title: Generic file metadata HTTP and pagination
+    status: todo
+    depends_on: [B1015, B173, B012, B2401, B2402]
+    file: tasks/B2462-file-http-metadata.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2463
+    milestone: M5 API families
+    title: Generic file byte and stream HTTP execution
+    status: todo
+    depends_on: [B1015, B173, B012, B2401, B2402]
+    file: tasks/B2463-file-http-content.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2464
+    milestone: M5 API families
+    title: File provider config and timeout selection
+    status: todo
+    depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B1407, B1411, B050]
+    file: tasks/B2464-file-provider-selection.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2480
+    milestone: M5 API families
+    title: Attached-file HTTP create and list execution
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2480-vector-file-http-create-list.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2481
+    milestone: M5 API families
+    title: Attached-file HTTP retrieval and content
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2481-vector-file-http-read.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2482
+    milestone: M5 API families
+    title: Attached-file HTTP update and deletion
+    status: todo
+    depends_on: [B173, B1071, B527, B012, B2402, B2401]
+    file: tasks/B2482-vector-file-http-write.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2483
+    milestone: M5 API families
+    title: Shape retrieval queries, context messages and failure policy
+    status: todo
+    depends_on: [B002, B171, B1131]
+    file: tasks/B2483-vector-context-shaping.yaml
+    covers:
+      - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
+  - id: B2484
+    milestone: M5 API families
+    title: Execute HTTP and direct vector searches
+    status: todo
+    depends_on: [B173, B1058, B1059, B527, B595, B012, B2402, B2401]
+    file: tasks/B2484-vector-search-execution.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2485
+    milestone: M5 API families
+    title: Vector-store HTTP create, retrieve and list
+    status: todo
+    depends_on: [B173, B1058, B1131, B527, B012, B171, B2402, B2401]
+    file: tasks/B2485-vector-store-http-create-read.yaml
+    covers:
+      - "litellm/llms/custom_httpx/llm_http_handler.py"
+  - id: B2486
+    milestone: M5 API families
+    title: Vector management ownership, access and credential projection
+    status: todo
+    depends_on: [B726, B858, B1062, B1060, B1131, B244, B171, B1087]
+    file: tasks/B2486-vector-management-boundaries.yaml
+    covers:
+      - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
+  - id: B2487
+    milestone: M5 API families
+    title: Fine-tuning and assistant SDK settings and timeout policy
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2487-resource-sdk-settings.yaml
+    covers:
+      - "litellm/fine_tuning/main.py"
+      - "litellm/utils.py"
+  - id: B2488
+    milestone: M5 API families
+    title: Assistant run and run-stream SDK execution
+    status: todo
+    depends_on: [B010, B011, B174, B176, B521, B543, B2487, B2401]
+    file: tasks/B2488-assistant-run-sdk.yaml
+    covers:
+      - "litellm/assistants/main.py"
+  - id: B2489
+    milestone: M5 API families
+    title: Assistant router dispatch, settings and JSON boundary
+    status: todo
+    depends_on: [B002, B1055, B1130, B1056, B1057, B2488, B2487, B1087, B2401]
+    file: tasks/B2489-assistant-dispatch-boundary.yaml
+    covers:
+      - "litellm/router.py"
   - id: B1400
     milestone: M3 providers
     title: xAI OAuth token records and refresh
@@ -12578,328 +13285,3 @@ tasks:
     file: tasks/B1555-duckduckgo-search.yaml
     covers:
       - "litellm/llms/duckduckgo/**"
-  - id: B2410
-    milestone: M5 API families
-    title: Codex history normalization and additional tools
-    status: todo
-    depends_on: [B004, B171]
-    file: tasks/B2410-codex-history-tools.yaml
-    covers:
-      - "litellm/llms/base_llm/responses/codex_compat.py"
-      - "litellm/responses/additional_tools.py"
-  - id: B2411
-    milestone: M5 API families
-    title: Responses input content and instruction conversion
-    status: todo
-    depends_on: [B004, B171]
-    file: tasks/B2411-responses-input-content.yaml
-    covers:
-      - "litellm/responses/litellm_completion_transformation/transformation.py"
-  - id: B2412
-    milestone: M5 API families
-    title: Recover Responses output from recorded SSE
-    status: todo
-    depends_on: [B005, B012, B1087, B171]
-    file: tasks/B2412-responses-sse-recovery.yaml
-    covers:
-      - "litellm/responses/sse_output_recovery.py"
-      - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
-  - id: B2413
-    milestone: M5 API families
-    title: Responses stream primitives and duration settings
-    status: todo
-    depends_on: [B004, B010, B184, B185, B186, B012, B198, B206, B247, B1114, B1138, B1087, B002, B171]
-    file: tasks/B2413-responses-stream-primitives.yaml
-    covers:
-      - "litellm/responses/streaming_iterator.py"
-      - "litellm/constants.py"
-  - id: B2416
-    milestone: M5 API families
-    title: Responses retrieve and input-items HTTP transport
-    status: todo
-    depends_on: [B173, B1114, B509, B249, B2402, B2401]
-    file: tasks/B2416-responses-read-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2417
-    milestone: M5 API families
-    title: Responses delete and cancel HTTP transport
-    status: todo
-    depends_on: [B173, B1114, B509, B249, B2402, B2401]
-    file: tasks/B2417-responses-write-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2418
-    milestone: M5 API families
-    title: Responses compact HTTP and signed-body selection
-    status: todo
-    depends_on: [B173, B1114, B509, B249, B595, B2402, B2401]
-    file: tasks/B2418-responses-compact-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2419
-    milestone: M5 API families
-    title: Responses deployment-hook and agentic policy
-    status: todo
-    depends_on: [B002, B010, B171, B189, B248, B247, B902, B157]
-    file: tasks/B2419-responses-hook-policy.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-      - "litellm/litellm_core_utils/{agentic_followup_kwargs,agentic_loop_settings}.py"
-  - id: B2415
-    milestone: M5 API families
-    title: Responses agentic continuation execution
-    status: todo
-    depends_on: [B2419, B189, B247, B157, B978, B173, B507, B508, B2401]
-    file: tasks/B2415-responses-agentic-execution.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2414
-    milestone: M5 API families
-    title: Native Responses create HTTP transport
-    status: todo
-    depends_on: [B2419, B2415, B1114, B507, B508, B173, B595, B2418, B249, B2402, B927, B189, B2401]
-    file: tasks/B2414-responses-create-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2430
-    milestone: M5 API families
-    title: Native Messages reasoning and request transformation
-    status: todo
-    depends_on: [B171, B961, B569, B571, B2201, B567, B688]
-    file: tasks/B2430-messages-native-transform.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/messages/transformation.py"
-  - id: B2431
-    milestone: M5 API families
-    title: Messages tool and structured-output conversion
-    status: todo
-    depends_on: [B171, B1117]
-    file: tasks/B2431-messages-chat-tools-schema.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
-  - id: B2432
-    milestone: M5 API families
-    title: Compaction summary execution
-    status: todo
-    depends_on: [B014, B162, B004, B171, B968, B969, B970, B971, B2401]
-    file: tasks/B2432-summary-execution.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
-  - id: B2433
-    milestone: M5 API families
-    title: Messages reasoning route policy
-    status: todo
-    depends_on: [B171, B174, B205, B962, B158]
-    file: tasks/B2433-messages-reasoning-route.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/adapters/handler.py"
-  - id: B2434
-    milestone: M5 API families
-    title: Synchronous Messages stream transitions
-    status: todo
-    depends_on: [B976, B966, B005, B2401]
-    file: tasks/B2434-messages-sync-stream.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
-  - id: B2435
-    milestone: M5 API families
-    title: Legacy fake Messages stream rendering
-    status: todo
-    depends_on: [B171, B958]
-    file: tasks/B2435-messages-fake-stream.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
-  - id: B2436
-    milestone: M5 API families
-    title: Messages stream logging and teardown
-    status: todo
-    depends_on: [B102, B191, B247, B978, B009, B2401]
-    file: tasks/B2436-messages-stream-logging.yaml
-    covers:
-      - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
-  - id: B2450
-    milestone: M5 API families
-    title: Image generation HTTP execution
-    status: todo
-    depends_on: [B997, B173, B2402, B206, B012, B2401]
-    file: tasks/B2450-image-generation-http.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2451
-    milestone: M5 API families
-    title: Image edit HTTP execution
-    status: todo
-    depends_on: [B997, B173, B2402, B206, B012, B2401]
-    file: tasks/B2451-image-edit-http.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2452
-    milestone: M5 API families
-    title: Generic speech HTTP execution
-    status: todo
-    depends_on: [B1135, B173, B2402, B004, B206, B012, B2401]
-    file: tasks/B2452-speech-http.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2453
-    milestone: M5 API families
-    title: Native transcription HTTP and subtitle replies
-    status: todo
-    depends_on: [B1122, B173, B2402, B206, B1002, B012, B2401]
-    file: tasks/B2453-transcription-http.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2454
-    milestone: M5 API families
-    title: Rerank HTTP execution
-    status: todo
-    depends_on: [B1013, B173, B2402, B012, B2401]
-    file: tasks/B2454-rerank-http.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2455
-    milestone: M5 API families
-    title: Realtime guardrail selection and setup policy
-    status: todo
-    depends_on: [B104, B171, B1004]
-    file: tasks/B2455-realtime-guardrail-policy.yaml
-    covers:
-      - "litellm/litellm_core_utils/realtime_streaming.py"
-  - id: B2456
-    milestone: M5 API families
-    title: Realtime HTTP session and SDP transport
-    status: todo
-    depends_on: [B012, B173, B1004, B1087, B2401, B2402]
-    file: tasks/B2456-realtime-http-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2457
-    milestone: M5 API families
-    title: Generic realtime backend connection
-    status: todo
-    depends_on: [B002, B012, B173, B901, B1004, B1006, B1009, B2455]
-    file: tasks/B2457-realtime-backend-transport.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2460
-    milestone: M5 API families
-    title: Shared upload filename extraction
-    status: todo
-    depends_on: [B171]
-    file: tasks/B2460-upload-filename.yaml
-    covers:
-      - "litellm/proxy/common_utils/path_utils.py"
-  - id: B2461
-    milestone: M5 API families
-    title: Provider file upload HTTP execution
-    status: todo
-    depends_on: [B1015, B1087, B173, B012, B2401, B2402]
-    file: tasks/B2461-file-http-upload.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2462
-    milestone: M5 API families
-    title: Generic file metadata HTTP and pagination
-    status: todo
-    depends_on: [B1015, B173, B012, B2401, B2402]
-    file: tasks/B2462-file-http-metadata.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2463
-    milestone: M5 API families
-    title: Generic file byte and stream HTTP execution
-    status: todo
-    depends_on: [B1015, B173, B012, B2401, B2402]
-    file: tasks/B2463-file-http-content.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2464
-    milestone: M5 API families
-    title: File provider config and timeout selection
-    status: todo
-    depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B1407, B1411, B050]
-    file: tasks/B2464-file-provider-selection.yaml
-    covers:
-      - "litellm/utils.py"
-  - id: B2480
-    milestone: M5 API families
-    title: Attached-file HTTP create and list execution
-    status: todo
-    depends_on: [B173, B1071, B527, B012, B2402, B2401]
-    file: tasks/B2480-vector-file-http-create-list.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2481
-    milestone: M5 API families
-    title: Attached-file HTTP retrieval and content
-    status: todo
-    depends_on: [B173, B1071, B527, B012, B2402, B2401]
-    file: tasks/B2481-vector-file-http-read.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2482
-    milestone: M5 API families
-    title: Attached-file HTTP update and deletion
-    status: todo
-    depends_on: [B173, B1071, B527, B012, B2402, B2401]
-    file: tasks/B2482-vector-file-http-write.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2483
-    milestone: M5 API families
-    title: Shape retrieval queries, context messages and failure policy
-    status: todo
-    depends_on: [B002, B171, B1131]
-    file: tasks/B2483-vector-context-shaping.yaml
-    covers:
-      - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
-  - id: B2484
-    milestone: M5 API families
-    title: Execute HTTP and direct vector searches
-    status: todo
-    depends_on: [B173, B1058, B1059, B527, B595, B012, B2402, B2401]
-    file: tasks/B2484-vector-search-execution.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2485
-    milestone: M5 API families
-    title: Vector-store HTTP create, retrieve and list
-    status: todo
-    depends_on: [B173, B1058, B1131, B527, B012, B171, B2402, B2401]
-    file: tasks/B2485-vector-store-http-create-read.yaml
-    covers:
-      - "litellm/llms/custom_httpx/llm_http_handler.py"
-  - id: B2486
-    milestone: M5 API families
-    title: Vector management ownership, access and credential projection
-    status: todo
-    depends_on: [B726, B858, B1062, B1060, B1131, B244, B171, B1087]
-    file: tasks/B2486-vector-management-boundaries.yaml
-    covers:
-      - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
-  - id: B2487
-    milestone: M5 API families
-    title: Fine-tuning and assistant SDK settings and timeout policy
-    status: todo
-    depends_on: [B002, B171]
-    file: tasks/B2487-resource-sdk-settings.yaml
-    covers:
-      - "litellm/fine_tuning/main.py"
-      - "litellm/utils.py"
-  - id: B2488
-    milestone: M5 API families
-    title: Assistant run and run-stream SDK execution
-    status: todo
-    depends_on: [B010, B011, B174, B176, B521, B543, B2487, B2401]
-    file: tasks/B2488-assistant-run-sdk.yaml
-    covers:
-      - "litellm/assistants/main.py"
-  - id: B2489
-    milestone: M5 API families
-    title: Assistant router dispatch, settings and JSON boundary
-    status: todo
-    depends_on: [B002, B1055, B1130, B1056, B1057, B2488, B2487, B1087, B2401]
-    file: tasks/B2489-assistant-dispatch-boundary.yaml
-    covers:
-      - "litellm/router.py"

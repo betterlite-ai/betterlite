@@ -1,12 +1,61 @@
 id: B790
 title: User mutation fields and role scope
 description: >-
-  Implement typed user create/update/bulk fields, password stripping/hashing, duplicate identity checks,
-  default team enrollment and role projection. Use organization role lookup as a reusable authorization
-  primitive; enforce no paid-tier user cap. Creating membership uses repository transactions and the source
-  default-team validation. litellm_settings.default_internal_user_params defaults absent; its teams field
-  accepts strings or NewUserRequestTeam records. Mixed invalid team entries retain the source error log
-  and no default-team result, rather than making every user create fail.
+  Implement user mutation preparation, duplicate checks, membership dispatch and available-role
+  projection. B2334 owns the split bulk records and user-info query decoder; B1226 owns default-team
+  enrollment and mixed-entry validation. No owned branch checks premium_user, and the membership
+  helpers here do not introduce a transaction around their calls.
+
+  _hash_password_in_dict mutates only a present non-null password: B786 strength and breach checks
+  unless password_prevalidated=true, then hash, set password_reset_required=true and
+  last_breach_check_at=null. Empty password is validated; explicit null is untouched.
+  _strip_password_from_response only handles dicts: remove top-level password and one nested data
+  dict's password or data object's __dict__.password; bare models and deeper nesting are untouched.
+  Cases password_absent_null_empty, password_prevalidated_hashes, password_validation_no_mutation
+  and strip_password_supported_shapes cover each branch.
+
+  New-user preparation generates a UUID only for an EXISTING user_id=null, pops auto_create_key
+  default true and sets table_name=user only for exactly false. For non-proxy-admin requested
+  roles, truthy default_internal_user_params fills missing/null fields or an empty models list,
+  skipping available_teams and preserving other falsey values. Requested role exactly internal_user
+  additionally fills null max_budget/budget_duration from their non-null global defaults. Pop teams
+  last. Cases new_id_absent_vs_null, auto_key_exact_false, defaults_skip_admin,
+  defaults_null_and_empty_models, defaults_preserve_falsey, internal_role_budget_defaults and
+  teams_removed_last load and consume all three settings, whose defaults are null.
+
+  Duplicate checks skip falsey input before requiring DB. Otherwise strip input then find_first
+  with equals; email adds mode=insensitive and label=email, ID stays case-sensitive with label=id.
+  Whitespace-only input still queries empty string. A match raises HTTPException 409 detail.error
+  naming the existing field value (attribute fallback to stripped input). Missing DB raises an
+  ordinary database-not-connected exception; callers map it. Cases duplicate_empty_skips_db,
+  duplicate_whitespace_queries_empty, duplicate_email_casefold, duplicate_id_case_sensitive,
+  duplicate_existing_value_message and duplicate_db_absent pin reads and errors.
+
+  Organization additions concurrently call B828 member-add for each supplied ID, including
+  duplicates, with one member user_id/role=internal_user, original caller and synthetic path
+  /user/new. gather(return_exceptions=true) discards ALL per-org failures without logging.
+  Cases org_member_shape and org_failures_discarded preserve that behavior. Team additions call
+  B808 with role default user, email/budget null. HTTPException 400 containing 'already exists'
+  or "doesn't exist" logs debug; other HTTPExceptions log error but are STILL swallowed.
+  Other exceptions with either substring, or ProxyException type containing
+  team_member_already_in_team, log debug and are swallowed; other exceptions log error and rethrow.
+  Cases team_member_arguments, team_http_known_debug, team_http_other_swallowed,
+  team_proxy_duplicate_debug and team_unexpected_rethrows distinguish all paths. Native code
+  invokes dependency services, never their FastAPI wrappers; helpers inject those service boundaries.
+
+  _fetch_user_team_ids returns row.teams as tuple or () for no row. get_team_from_list returns
+  the first exact team_id match or null. holds_org_admin requires non-null user and any matching
+  membership with role exactly org_admin; PrismaOrgRoles first calls B736 get_user_object with
+  user_id_upsert=false. Cases fetch_teams_missing, first_team_match, org_admin_exact_membership
+  and org_lookup_no_upsert assert arguments/null handling. Flatten trivial table accessors into
+  B722/B723/B724/B726 repository operations instead of writing one-line Rust wrappers.
+
+  GET /user/available_roles is hidden from OpenAPI, authenticated, and has no handler permission
+  gate, selector, mutation, wrapper or except block. Every authorized caller receives exactly
+  proxy_admin,proxy_admin_viewer,internal_user,internal_user_viewer in enum order with B2314's
+  description/ui_label literals; omit org_admin,team,customer. available_role_subset_and_literals
+  and available_roles_same_for_callers compare all descriptions/labels through HTTP. No route
+  target or handler-level unauthorized error exists; outer auth errors remain B052's.
 
 
   Build the production user_fields module in betterlite-server; reuse the typed dependencies listed in
@@ -14,9 +63,7 @@ description: >-
   tests.rs files.
 
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/types/proxy/management_endpoints/internal_user_endpoints.py:
-  BulkUpdateUserRequest.validate_request (L52-L72; 13 source lines), BulkNewUserItem.reject_invite_email
-  (L126-L129; 4 source lines). litellm/proxy/management/users/service.py: holds_org_admin (L13-L17; 5
+  Production ownership, including native records: litellm/proxy/management/users/service.py: holds_org_admin (L13-L17; 5
   source lines), PrismaOrgRoles.is_org_admin (L26-L36; 10 source lines). litellm/proxy/management_endpoints/internal_user_endpoints.py:
   _user_table (L121-L125; 5 source lines), _team_table (L128-L132; 5 source lines), _verification_token_table
   (L135-L141; 7 source lines), _organization_membership_table (L148-L154; 7 source lines), _invitation_link_table
@@ -26,22 +73,17 @@ description: >-
   (L252-L291; 35 source lines), _check_duplicate_user_email (L294-L304; 11 source lines), _check_duplicate_user_id
   (L307-L316; 10 source lines), _add_user_to_organizations (L319-L351; 32 source lines), _add_user_to_team
   (L354-L410; 56 source lines), _fetch_user_team_ids (L470-L472; 3 source lines), ui_get_available_role
-  (L681-L707; 25 source lines), get_team_from_list (L710-L720; 10 source lines), _is_valid_user_id (L723-L732;
-  9 source lines), get_user_id_from_request (L735-L753; 15 source lines), _normalize_user_info_user_id
-  (L756-L760; 5 source lines).
+  (L681-L707; 25 source lines), get_team_from_list (L710-L720; 10 source lines).
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.default_internal_user_params=None;
   litellm_settings.max_internal_user_budget=None; litellm_settings.internal_user_budget_duration=None.
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /user/available_roles -> ui_get_available_role.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  The single route uses B001 HTTP. B171 user_fields helper cases cover pure preparation and
+  injected membership/repository effects; no helper invokes the available-roles route or the
+  dependency FastAPI wrappers. Duplicate-query integration uses POSTGRES_TEST_URL or
+  testcontainers, unique schemas and failing infrastructure checks.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -50,11 +92,9 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::user_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests defaults_null_and_empty_models, defaults_preserve_falsey and
+  internal_role_budget_defaults load all three settings through B002 and inspect prepared user
+  fields. This code has no generic invalid-value fallback or additional env parser.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -67,15 +107,12 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 341 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  341 production, 151 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 607 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  Sizing: 295 nonblank, noncomment function lines before docstring removal after the B2334 split;
+  allow 285 production, 300 behavior/Postgres tests, 65 helper adapters, 65 HTTP wiring and
+  50 config lines, 765 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -91,6 +128,12 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/user-fields/**
+    - tools/oracle/src/helpers/user_fields.rs
+    - tools/oracle/helpers/user_fields.py
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/cases/helpers/user-fields/**
+    - tools/oracle/fuzz/corpus/helper_case/user-fields-*
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
@@ -100,7 +143,7 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L1-L160
-    why: Pinned implementation and exact ownership boundary for user_fields.
+    why: B2334 owns these bulk records except B770 InsensitiveContains; no duplicate decoder here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/users/service.py#L1-L36
     why: Pinned implementation and exact ownership boundary for user_fields.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L121-L472
@@ -114,9 +157,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4879-L4881
     why: TeamListResponseObject request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L52-L72
-    why: Own BulkUpdateUserRequest.validate_request; preserve caller-visible values and failure ordering.
+    why: B2334 owns BulkUpdateUserRequest.validate_request and its omitted-field timing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L126-L129
-    why: Own BulkNewUserItem.reject_invite_email; preserve caller-visible values and failure ordering.
+    why: B2334 owns BulkNewUserItem.reject_invite_email.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/users/service.py#L13-L17
     why: Own holds_org_admin; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/users/service.py#L26-L36
@@ -153,29 +196,31 @@ references:
     why: Own _add_user_to_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L470-L472
     why: Own _fetch_user_team_ids; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L681-L707
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L675-L707
     why: Own ui_get_available_role; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L710-L720
     why: Own get_team_from_list; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L723-L732
-    why: Own _is_valid_user_id; preserve caller-visible values and failure ordering.
+    why: B2334 owns _is_valid_user_id.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L735-L753
-    why: Own get_user_id_from_request; preserve caller-visible values and failure ordering.
+    why: B2334 owns get_user_id_from_request.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L756-L760
-    why: Own _normalize_user_info_user_id; preserve caller-visible values and failure ordering.
+    why: B2334 owns _normalize_user_info_user_id.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
-    why: litellm_settings.default_internal_user_params default and read site.
+    why: Declaration of default_internal_user_params; consumption is L225-L239 in the owned helper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L462-L467
-    why: litellm_settings.max_internal_user_budget default and read site.
+    why: Declaration of max_internal_user_budget; consumption is L242-L243 in the owned helper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L466-L471
-    why: litellm_settings.internal_user_budget_duration default and read site.
+    why: Declaration of internal_user_budget_duration; consumption is L245-L246 in the owned helper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: Caller routes may use this mapper; available_roles has no local exception translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: duplicate_email, duplicate_user_id,
-      default_team, default_team_not_found, password_stripped, role_availability, bulk_request_selection.'
+  - text: All named preparation, duplicate, membership-error and role projection cases above pass.
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
       against the real MIT server.
     proof:
@@ -186,13 +231,16 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
 checks:
   optional:
     - mutants
   commands:
+    - id: helper-python
+      why: The pure preparation/effect adapter is absent or incorrectly typed.
+      run: test -f tools/oracle/helpers/user_fields.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No newly added user-fields seed exercises the helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/user-fields-*')" && grep -rlq user_fields tools/oracle/fuzz/corpus/helper_case/user-fields-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_fields::tests::/)
@@ -207,24 +255,17 @@ checks:
         && grep -rlq "default_internal_user_params" crates/betterlite-config/fuzz/corpus/config_yaml/user-fields-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/user-fields/get--user-available-roles-success.yaml
-  - tools/oracle/cases/management/user-fields/get--user-available-roles-invalid-target.yaml
-  - tools/oracle/cases/management/user-fields/get--user-available-roles-unauthorized-caller.yaml
-  - tools/oracle/cases/management/user-fields/duplicate-email.yaml
-  - tools/oracle/cases/management/user-fields/duplicate-user-id.yaml
-  - tools/oracle/cases/management/user-fields/default-team.yaml
-  - tools/oracle/cases/management/user-fields/default-team-not-found.yaml
-  - tools/oracle/cases/management/user-fields/password-stripped.yaml
+  - tools/oracle/cases/helpers/user-fields/duplicate-query-semantics.yaml
+  - tools/oracle/cases/helpers/user-fields/password-hash-and-strip.yaml
+  - tools/oracle/cases/helpers/user-fields/new-user-defaults.yaml
+  - tools/oracle/cases/helpers/user-fields/membership-error-classes.yaml
+  - tools/oracle/cases/helpers/user-fields/org-admin-and-team-projections.yaml
   - tools/oracle/cases/management/user-fields/role-availability.yaml
-  - tools/oracle/cases/management/user-fields/bulk-request-selection.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L1-L160
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2334 owns bulk wire records and the query identity decoder. B770 owns InsensitiveContains;
+    B786 password cryptography/policy, B808 team additions, B828 org additions, B2314 role labels,
+    and B1226 default-team enrollment. No paid-tier branch is owned here.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
     (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
@@ -253,9 +294,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Mixed invalid default team entries log and yield no default-team result instead of failing all user
-    creates.
+  - A team-member HTTPException is always swallowed here, while an unrelated ordinary exception is rethrown.
+  - Removing a password from a bare model is outside _strip_password_from_response's actual dict-only behavior.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

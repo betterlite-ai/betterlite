@@ -1,73 +1,85 @@
 id: B859
 title: Team and membership storage contracts
 description: >-
-  Add TeamRow, MemberIdentity and MembershipRow with every stored array/JSON/model-metadata field and
-  typed string-or-object decoding. Preserve user_id versus user_email identity validation and optional
-  member rate-limit accessors. These types are shared by repositories and auth; no team-management endpoint
-  is added.
+  Implement betterlite-db::team_rows for MemberBase, Member, BudgetLimitEntry, LiteLLM_ModelTable,
+  TeamBase, LiteLLM_TeamTable, its cached/deleted variants and LiteLLM_TeamMembership. Own the
+  member identity validator, team set_model_info validator and both safe_get_team_member rate-limit
+  accessors. Reuse B2310's permission and budget/full-budget rows. These types serve repository,
+  cache and authentication callers; they neither reconcile membership nor encrypt callback metadata.
 
+  MemberBase has nullable user_id and user_email, both default None. Its before-validator requires
+  a dict or raises ValueError 'input needs to be a dictionary'; when both fields are missing/None
+  it raises 'Either user id or user email must be provided'. The check is not truthiness: either
+  empty string is accepted, and both fields may be supplied together. Member adds required role,
+  exactly 'admin' or 'user' case-sensitively, with no default. Preserve input order/duplicates in
+  member lists; this type performs no user lookup, deduplication or email normalization.
 
-  The byte boundary is decode_team_rows(&[u8]) for stored JSON/string columns read from Postgres and Redis;
-  its fuzz target calls this production decoder. Count field declarations as well as validators when implementing
-  the complete row contracts.
+  BudgetLimitEntry requires budget_duration string and max_budget amount, with reset_at default
+  None. No duration parser, positivity check or window-order check lives here; arbitrary duration
+  text and negative finite amounts pass. LiteLLM_ModelTable requires created_by and updated_by;
+  id defaults None, model_aliases accepts string/dict/None with default None, and team defaults
+  None to a nested TeamTable. Alias strings, including malformed JSON, stay strings in this type.
+  Represent the recursive model-table/team relation with native indirection and bounded decoding,
+  preserving both nested shapes; model_rebuild is Python forward-reference setup, not a feature.
 
+  TeamBase defaults team_alias, team_id, organization_id, team_member_permissions, metadata,
+  tpm_limit, rpm_limit, tpd_limit, max_budget, soft_budget, budget_duration, budget_limits,
+  router_settings, access_group_ids and default_team_member_models to None. admins, members and
+  models are string lists default []; members_with_roles is a Member list default []; blocked is
+  nonnullable false. budget_limits is a list of BudgetLimitEntry. Explicit null is invalid for
+  the nonnullable lists/blocked, and there is no JSON-string conversion in TeamBase itself.
 
-  Build the production team_rows module in betterlite-db; reuse the typed dependencies listed in the backlog.
-  Keep Rust implementation files below 300 lines by using named domain submodules with adjacent tests.rs
-  files.
+  TeamTable makes team_id required. It adds spend, max_parallel_requests, budget_reset_at,
+  model_id, policies, litellm_model_table, object_permission, object_permission_id, updated_at and
+  created_at default None; budget_duration stays None. model_spend and model_max_budget default
+  {} but accept null. allow_team_guardrail_config defaults false and accepts null. Nested model
+  aliases use the same LiteLLM_ModelTable; object_permission uses B2310. CachedObj adds
+  last_refreshed_at nullable numeric timestamp default None, without supplying a clock value.
+  DeletedTeam adds id, deleted_at, deleted_by, deleted_by_api_key and litellm_changed_by, all None;
+  it inherits every team field, rather than applying an archive-writer's restricted column list.
 
+  TeamTable.set_model_info first dumps BaseModel input, otherwise works on the supplied mapping.
+  Only an empty dict members_with_roles becomes []; null, nonempty dict and raw JSON text do not
+  receive that repair. In order, inspect metadata, aliases, config, permissions, model_max_budget,
+  model_aliases, router_settings and budget_limits. For each non-None string run json.loads once;
+  JSONDecodeError becomes ValueError 'Field <field> should be a valid dictionary'. Stop on the first
+  failure in that order. Successfully decoded scalars/null/arrays then face the field's normal type
+  check; budget_limits can accept an array despite the error text saying dictionary. aliases,
+  config, permissions and model_aliases are undeclared extra fields on TeamTable: valid parsed
+  values are ultimately ignored, but malformed text in these extras still raises. Unknown extras
+  outside this list are simply ignored. model_spend is absent from this validator's decode list,
+  unlike model_max_budget. Preserve mapping changes made before a later error when invoking the
+  pure validator directly; do not claim it is a nonmutating conversion.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/models/team.py:
-  row_contracts (L1-L152; 119 source lines). litellm/models/team_membership.py: row_contracts (L1-L28;
-  22 source lines).
+  TeamMembership requires user_id and team_id. budget_id defaults None; spend and total_spend
+  are nullable amounts defaulting to 0.0, with explicit null retained. litellm_budget_table defaults
+  None and accepts Full or base BudgetTable. Keep Pydantic's valid-variant selection: valid created_at
+  and full fields retain the Full row; if Full validation fails, base may still accept the writable
+  fields and ignore created_at/budget_reset_at extras. Thus reset_at information is not automatically
+  retained merely because a full-only field appeared. Both rate-limit accessors return None without
+  a budget, otherwise its corresponding rpm_limit/tpm_limit exactly, including zero/negative values.
 
+  All field defaults must be fresh per instance, and unknown fields follow Pydantic's ignore policy.
+  Money becomes checked rust_decimal::Decimal without changing Postgres DOUBLE PRECISION columns;
+  nonfinite/out-of-range amounts produce a typed decode error. No owned model reads environment
+  variables, calls a route, writes a database row or logs a warning. B724's repository performs
+  a different six-field string prepass before these models and owns locked-roster falsey handling.
 
-  Add the team_rows operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-rows-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This task owns the outside-byte boundary team_rows::decode_team_rows(&[u8]) -> Result<TypedValue,DecodeError>
-  for stored team/membership JSON columns. Production calls this decoder before its typed policy functions;
-  the cargo-fuzz target team_rows calls that same function. Seed valid, truncated, malformed, duplicate-field
-  and limit-boundary inputs and add team_rows::tests::replays_the_team_rows_corpus. Reuse B002 limits
-  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
-  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B710
-  owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating the
-  workspace.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 141 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  141 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 435 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Add team_rows pure construction/dump/validator/accessor operations under B856, calling the pinned
+  classes directly with B171 HelperCase seeds. Use B860 Postgres fixtures via POSTGRES_TEST_URL or
+  testcontainers for database defaults versus model defaults, JSON-string storage and nested budget
+  rows. decode_team_rows consumes external row JSON and nested strings; its B2307-workspace fuzz
+  target uses the production function with 1048576-byte/depth-64 bounds on every parsed input,
+  including recursive team/model data. Replay all variants, invalid UTF-8/JSON, duplicate fields,
+  malformed listed extras and exact/over limits. Count 141 nonblank noncomment pinned lines;
+  allow 185 native fields/validators, 330 tests, 65 oracle adapters, 55 decoder/fuzz and 30 wiring,
+  665 within 750. Split member, team, aliases and membership modules below 300 lines each.
 scope:
   paths:
     - crates/betterlite-db/src/team_rows.rs
     - crates/betterlite-db/src/team_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/team_rows/fixtures/**
     - tools/oracle/src/helpers/team_rows.rs
     - tools/oracle/src/helpers/team_rows/**
     - tools/oracle/helpers/team_rows.py
@@ -81,80 +93,73 @@ scope:
     - crates/betterlite-db/fuzz/corpus/team_rows/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L1-L152
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L1-L28
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L19-L60
+    why: Identity errors, required role, budget-window values and recursive alias-table fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L63-L105
+    why: Every base/team default, required team id and nullable spend/guardrail flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L107-L152
+    why: Ordered string conversion including ignored extras, cached/deleted fields and forward reference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L12-L28
+    why: Full/base budget union, nullable counters and exact rate-limit accessors.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_id_or_email,
-      team_model_alias_json, member_limits_absent, member_limits_zero, team_metadata, invalid_member_identity,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: The production decode_team_rows decoder is used by the service and its fuzz target and rejects
-      malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: 'Pure oracle cases name member_requires_dict_exact_error,
+      member_missing_and_null_identity_error, member_empty_identity_and_both_allowed,
+      member_role_required_exact_literals, budget_window_required_fields_and_no_duration_policy,
+      alias_table_required_authors_and_string_preservation, recursive_alias_team_projection,
+      team_base_all_defaults, team_required_id_and_all_added_defaults,
+      team_all_explicit_fields_and_nullability, cached_timestamp_and_deleted_metadata,
+      team_empty_dict_roster_only, team_base_has_no_string_prepass,
+      team_all_eight_string_fields_and_error_order, ignored_extra_field_can_fail_json,
+      valid_extra_fields_ignored, model_spend_not_model_max_budget_decode,
+      budget_limits_array_and_null, validator_mutates_prior_fields_before_error,
+      base_model_input_is_dumped, fresh_defaults_and_unknown_fields,
+      membership_required_ids_and_nullable_counters, full_budget_valid_variant,
+      invalid_full_budget_falls_back_to_base and member_limits_none_zero_negative.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'postgres_team_model_defaults_differ_from_sql and postgres_membership_budget_projection
+      prove the storage contract without inventing writes. team_money_nonfinite_and_overflow_rejected,
+      native_team_row_size_and_depth_limits and native_nested_team_json_limits prove the documented
+      differences. replays_the_team_rows_corpus calls decode_team_rows, including nested strings.'
+    proof: [behavior-tests, postgres-tests, parser-corpus]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_rows::tests::/)
-        - test(/replays_the_/)'
+      why: Team validators, recursive shapes and every field default need assertions separate from replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_rows::tests::/) - test(replays_the_team_rows_corpus)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/team_rows.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Adapters must execute the actual pinned model validators and rate-limit accessors.
+      run: test -f tools/oracle/helpers/team_rows.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-rows-*")"
-        && grep -rlq "team_rows" tools/oracle/fuzz/corpus/helper_case/team-rows-* && cargo nextest run
-        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Require newly added team_rows cases in the shared typed envelope corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-rows-*")" && grep -rlq team_rows tools/oracle/fuzz/corpus/helper_case/team-rows-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_failure_effects$/)'
+      why: SQL defaults and joined budget rows must be compared with model construction explicitly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_team_model_defaults_differ_from_sql$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_rows::tests::postgres_membership_budget_projection$/)'
     - id: parser-corpus
-      why: The named production decoder target, added corpus or replay is missing or fails.
-      run: test -f crates/betterlite-db/fuzz/fuzz_targets/team_rows.rs && grep -q "team_rows" crates/betterlite-db/fuzz/Cargo.toml
-        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/team_rows)"
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_team_rows_corpus)'
+      why: Outer and nested stored-team JSON must reach bounded production parsing.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/team_rows.rs && grep -q team_rows crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/team_rows)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_team_rows_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/team-rows/member-id-or-email.yaml
-  - tools/oracle/cases/helpers/team-rows/team-model-alias-json.yaml
-  - tools/oracle/cases/helpers/team-rows/member-limits-absent.yaml
-  - tools/oracle/cases/helpers/team-rows/member-limits-zero.yaml
-  - tools/oracle/cases/helpers/team-rows/team-metadata.yaml
-  - tools/oracle/cases/helpers/team-rows/invalid-member-identity.yaml
+  - tools/oracle/cases/helpers/team-rows/member-identity-and-role.yaml
+  - tools/oracle/cases/helpers/team-rows/team-and-alias-fields.yaml
+  - tools/oracle/cases/helpers/team-rows/ordered-json-validation.yaml
+  - tools/oracle/cases/helpers/team-rows/cached-and-deleted-fields.yaml
+  - tools/oracle/cases/helpers/team-rows/membership-budget-union.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L1-L152
+  - what: Stored team JSON or nested decoded JSON above 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound recursive/external data; native_team_row_size_and_depth_limits and native_nested_team_json_limits cover both layers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L107-L133
+  - what: Team/budget-window/membership amounts outside Decimal's finite range fail decoding instead of remaining Python floats.
+    why: Checked monetary conversion is required by money-is-decimal; team_money_nonfinite_and_overflow_rejected prevents zero/unlimited fallbacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L45-L50
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2310 owns nested budget/full-budget and object-permission fields. B724 owns repository JSON
+    predecoding and the advisory-lock-precondition roster read, rather than these models.
 pitfalls:
-  - Member identity requires user_id or user_email according to the pinned validator; an empty identity
-    is not a member.
+  - An empty user_id passes the identity validator because it tests None, not truthiness.
+  - Malformed aliases/config/permissions/model_aliases text fails before those extra fields can be ignored.
+  - A malformed full-only budget field can disappear when the membership union successfully falls back to the base budget.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

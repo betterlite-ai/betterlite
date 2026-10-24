@@ -1,149 +1,210 @@
 id: B730
-title: Transactional master-key ciphertext migration
+title: Compare-and-swap migration of stored master-key ciphertexts
 description: >-
-  Implement CiphertextMigration with explicitly injected old/new StoredCipher instances. Enumerate the
-  pinned secret columns, count ciphertexts encrypted by each key, replace only decryptable values, and
-  atomically update rows while preserving unknown ciphertexts and nulls. This does not implement the cryptographic
-  format; B061 supplies it. Expose migration outcome and sanitized refusal counts for startup and credential-management
-  routes.
+  Implement master_key_migration.py in betterlite-db::database_reencryption, including every
+  function, the ordered _SECRET_COLUMNS registry and the three outcome variants. Use B700's
+  native raw-query interface, B714's writer connection and B2303's actual stored-secret codec
+  and litellm_enc:: callback marker. Do not introduce a migration-wide transaction: individual
+  row replacements commit in order, compare the previous column value, and can leave partial
+  progress after a later failure. This is startup key migration, not credential-route registration.
 
+  The registry order is ProxyModelTable(model_id,litellm_params), CredentialsTable(credential_id,
+  credential_values), Config(param_name,param_value), SSOConfig(id,sso_settings), CacheConfig(id,
+  cache_settings), ConfigOverrides(config_type,config_value), MCPServerTable(server_id,credentials),
+  MCPServerTable(server_id,static_headers), MCPServerTable(server_id,env_vars),
+  MCPServerTable(server_id,env), MCPServerOAuthClient(server_id,credentials),
+  MCPUserCredentials(id,credential_b64), MCPUserEnvVars(id,values_b64),
+  SSOIdentityAssertion(user_id,assertion_b64), TeamTable(team_id,metadata),
+  VerificationToken(token,metadata), UserTable(user_id,metadata), DeletedTeamTable(id,metadata)
+  and DeletedVerificationToken(id,metadata). Every table name has the LiteLLM_ prefix. Only the
+  credential_b64, values_b64 and assertion_b64 entries are scalar strings; every other entry is
+  JSON. Only the last five metadata entries use the marked-row prefilter. Keep all nineteen entries.
 
-  Build the production database_reencryption module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Discover existing (table_name,column_name) pairs through information_schema.columns where
+  table_schema=ANY(current_schemas(false)), retaining registry order and silently skipping missing
+  pairs. Discovery does not validate primary-key existence, column type or which schema wins an
+  unqualified relation lookup. SELECT each registered primary key and column from its quoted,
+  unqualified relation WHERE column IS NOT NULL. Metadata entries add column::text LIKE
+  '%litellm_enc::%'; this is SQL LIKE, with the underscore UNESCAPED. A marker in a JSON key or
+  another value can select the whole row, and an underscore wildcard match can select it too.
+  Then traverse ALL string values in that row, not only marked strings. Row order is unspecified;
+  table/column order is fixed. Preserve SQL NULL, JSON null and absent columns distinctly.
 
+  replace_ciphertexts starts at depth=0. If depth>DEFAULT_MAX_RECURSE_DEPTH, return the subtree
+  unchanged with count zero. Lists recurse in order; objects recurse through values without
+  changing keys; null/bool/numeric leaves pass through. For a string, remove exactly one leading
+  litellm_enc:: marker if present, call replacement_for on the suffix, and keep the original when
+  it returns None. Otherwise reattach the marker and count one, even if the replacement is empty
+  or equal to the original. Do not parse JSON inside a string. Child errors propagate immediately.
+  Keep the algorithm iterative/bounded by existing decoded input limits so a large configured
+  depth cannot overflow the Rust stack.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/master_key_migration.py:
-  replace_ciphertexts (L54-L69; 16 source lines), count_values_encrypted_with (L72-L82; 10 source lines),
-  count_values_encrypted_with_or_none (L85-L91; 7 source lines), reencrypt_stored_values (L94-L105; 11
-  source lines), _secret_columns_in (L111-L121; 11 source lines), _rows_of (L124-L135; 12 source lines),
-  _reencrypt_row (L138-L156; 19 source lines), _as_sql_parameter (L159-L160; 2 source lines), migrate_if_requested
-  (L183-L203; 21 source lines), migrate_from_previous_master_key (L206-L222; 17 source lines), _migrate_or_failure
-  (L225-L242; 18 source lines), _migrate (L245-L268; 24 source lines), describe_outcome (L271-L307; 37
-  source lines).
+  DEFAULT_MAX_RECURSE_DEPTH is an environment integer, default 100, read by int() at import in
+  the pin; invalid/empty values stop startup and there is no fallback. Signed, whitespace-padded
+  integer values are accepted without a positive floor. A negative depth limit suppresses even
+  a root-string replacement; zero allows root strings but not container children. Resolve it once
+  in B002's config loader and expose the same field to B747, which also consumes this setting.
+  There is no YAML key of that name. LITELLM_MIGRATE_FROM_MASTER_KEY is absent by default; its
+  explicit empty string is still a request. Own its shared name from master_key_boot_check.py L18
+  below B758. LITELLM_SALT_KEY presence, including empty, prevents migration; B2303 owns salt
+  resolution and general_settings.encryption_algorithm, default xsalsa20-poly1305. master_key is
+  injected from startup, not resolved again by this module.
 
+  count_values_encrypted_with validates each stored value as JsonValue, probes strings with
+  decrypt_if_encrypted_with(value, explicit signing key), and counts decryptable LEAVES, not
+  rows or columns. Unknown/plaintext values remain untouched; empty plaintext inside a valid
+  ciphertext counts, while empty/permissive-base64-to-no-bytes strings do not. No writes occur.
+  count_values_encrypted_with_or_none calls connect once and returns None on ordinary connect,
+  query or validation exceptions, without warning; it never turns a read failure into zero.
+  Cancellation propagates. Counting does not use the ambient salt as its signing key.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_MAX_RECURSE_DEPTH=100.
+  Re-encryption probes with from_key and passes successful plaintext to encrypt_value_helper
+  with to_key, validating its result as a string. Preserve B2303's algorithm selection and its
+  truthy override rule: an empty to_key falls back to the configured salt/master key. Preserve
+  undecryptable ciphertext, ordinary strings, markers, nulls and nonstrings. If a row has zero
+  replacements, do not write. Otherwise execute UPDATE table SET column=$1 WHERE primary_key=$2
+  AND column=$3, with ::jsonb on new/old parameters for JSON columns and no cast for scalar
+  columns. JSON values use JSON serialization; scalar values and primary keys must validate as
+  strings. JSONB equality compares structure, not serialized property order. A failed CAS returns
+  zero migrated leaves without retry or overwriting the concurrent change. A successful update
+  contributes that row's leaf count, not the affected-row count. Each updated column is its own
+  statement, including four separate columns on an MCP server row.
 
+  migrate_if_requested returns None with no database callback/log when previous key or master_key
+  is None. Otherwise it obtains the connected writer once, even if salt presence will skip work.
+  _migrate checks salt presence first, absent database second, equal old/new keys third, then
+  counts old-key values. Zero count skips writes. A positive count emits the re-encrypting warning,
+  runs sequential CAS replacements, then counts old-key values again. Return Migrated(migrated,
+  remaining), except (0,0) becomes NOTHING_ENCRYPTED_WITH_PREVIOUS_KEY because another worker
+  completed the work. A remaining count is informational; no automatic retry or rollback follows.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  _migrate_or_failure wraps ordinary exceptions as MigrationFailed retaining their typed cause;
+  cancellation escapes. migrate_from_previous_master_key logs describe_outcome exactly once
+  after the outcome, then returns it. migrate_if_requested calls raise_unless_tolerated only
+  for MigrationFailed, AFTER that outcome log; if tolerated, return the failed outcome, otherwise
+  propagate the same cause. The connected_database callback and final log are outside this catch.
+  A progress-log failure is inside it. The caller B124 supplies the database-outage policy and
+  warning logger; do not import a higher-level startup helper back into this service.
 
+  Outcome descriptions distinguish SALT_KEY_ENCRYPTS_STORED_VALUES, NO_DATABASE,
+  NOTHING_ENCRYPTED_WITH_PREVIOUS_KEY, Migrated with zero/nonzero remaining and MigrationFailed.
+  Salt/no-old-values/success advise removing LITELLM_MIGRATE_FROM_MASTER_KEY; no-database advice
+  is conditional on having no database. Remaining values advise KEEPING that variable and
+  restarting because values changed; failure says old-key values remain unreadable and to keep
+  the variable until the database is reachable. Source failure text includes exception class and
+  message truncated to 300 characters. Sanitize sensitive values before this 300-character bound;
+  do not expose old/new keys, plaintext or ciphertext through errors or Debug.
 
-  Write betterlite-config::database_reencryption::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 205 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  205 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 439 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Use real Postgres via B860, POSTGRES_TEST_URL when set and testcontainers otherwise, with failed
+  explicit URLs/setup fatal. Cover each registry entry using deterministic fixture ciphertext from
+  both legacy and AES codecs; inspect raw persisted rows and cross-decrypt with the pin. Interrupt
+  after a committed column update, fail a later write and restart to prove resumable partial progress.
+  Race two workers and a concurrent metadata edit to prove the value predicate protects the edit.
+  Only replace_ciphertexts, _as_sql_parameter and describe_outcome are pure helper-oracle operations;
+  adapters call the source functions and a fixture replacement map, never simulate database migration.
+  Existing B700/B2303 decoders own SQL JSON/ciphertext bytes, so this typed traversal adds no parser.
+  There are 261 nonblank noncomment source lines plus the one moved constant. Allow 260 production,
+  345 tests, 65 config, 65 adapters and 35 wiring, 770 within 800, with registry, traversal and runner
+  in separate source files.
 scope:
   paths:
     - crates/betterlite-db/src/database_reencryption.rs
     - crates/betterlite-db/src/database_reencryption/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/database_reencryption/fixtures/**
-    - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/database_reencryption.rs
     - crates/betterlite-config/src/database_reencryption/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*
+    - tools/oracle/src/helpers/database_reencryption.rs
+    - tools/oracle/helpers/database_reencryption.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/database-reencryption/**
+    - tools/oracle/fuzz/corpus/helper_case/database-reencryption-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L1-L307
-    why: Pinned implementation and exact ownership boundary for database_reencryption.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L54-L69
-    why: Own replace_ciphertexts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L72-L82
-    why: Own count_values_encrypted_with; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L85-L91
-    why: Own count_values_encrypted_with_or_none; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L94-L105
-    why: Own reencrypt_stored_values; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L111-L121
-    why: Own _secret_columns_in; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L124-L135
-    why: Own _rows_of; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L138-L156
-    why: Own _reencrypt_row; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L159-L160
-    why: Own _as_sql_parameter; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L183-L203
-    why: Own migrate_if_requested; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L206-L222
-    why: Own migrate_from_previous_master_key; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L225-L242
-    why: Own _migrate_or_failure; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L245-L268
-    why: Own _migrate; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L271-L307
-    why: Own describe_outcome; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L90
-    why: DEFAULT_MAX_RECURSE_DEPTH default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L17-L160
+    why: Nineteen columns, marker handling, depth cutoff, discovery and per-column optimistic UPDATE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L163-L307
+    why: Request/skip precedence, count-write-recount order, captured failures and distinct operator advice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L86
+    why: DEFAULT_MAX_RECURSE_DEPTH parses the environment with int and defaults to 100.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L17-L18
+    why: Move the migration-variable name to this lower task; salt configuration is B2303.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1347-L1353
+    why: B124 injects writer_db, warning logging and the database-outage failure policy.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: mixed_ciphertexts, nested_secret_columns,
-      null_secret, old_key_not_matching, rollback_on_write_error, dry_count_no_mutation, postgres_pinned_rows,
-      postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Traversal cases name scalar_and_container_preservation, dictionary_keys_not_replaced,
+      marker_removed_once_and_restored, replacement_none_vs_empty_vs_identical,
+      json_string_not_recursively_parsed, depth_boundary_inclusive,
+      zero_and_negative_depth_limits, child_error_stops_traversal and json_vs_scalar_sql_parameter.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Database cases name postgres_each_secret_column_<table>_<column> for all nineteen entries,
+      postgres_missing_columns_skipped_in_registry_order, postgres_search_path_discovery,
+      postgres_sql_null_vs_json_null, postgres_marked_metadata_prefilter,
+      postgres_like_underscore_and_marker_in_key, postgres_selected_metadata_unmarked_leaf,
+      postgres_leaf_count_without_writes, unreadable_count_returns_none_not_zero,
+      postgres_legacy_and_aes_reencrypted, postgres_empty_plaintext_counts,
+      unknown_ciphertext_and_empty_base64_unchanged, empty_target_uses_configured_key,
+      postgres_zero_count_no_update, postgres_jsonb_structural_cas,
+      postgres_concurrent_change_preserved, postgres_partial_progress_after_failure,
+      postgres_two_workers_resumable and malformed_row_or_primary_key_fails.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Orchestration cases name absent_key_skips_database_callback,
+      empty_previous_key_is_request, salt_before_database_before_same_key,
+      connected_callback_runs_before_salt_skip, count_write_recount_order,
+      no_old_ciphertexts_skip_write, other_worker_finished_zero_zero,
+      remaining_count_no_retry, progress_then_outcome_log,
+      outcome_before_failure_policy, tolerated_failure_returned,
+      cancellation_not_captured, callback_and_final_log_errors_escape and progress_log_error_captured.
+      Pure outcome cases name advice_salt, advice_no_database_conditional,
+      advice_no_old_values, advice_migrated_complete, advice_remaining_restart and advice_failed_unreadable.'
+    proof: [behavior-tests, postgres-tests, helper-python, oracle]
+  - text: 'Production config-loader tests name recurse_depth_default_hundred,
+      recurse_depth_env_signed_and_whitespace, recurse_depth_invalid_stops_startup,
+      recurse_depth_empty_stops_startup, migration_key_absent_vs_empty and salt_present_empty_skips.
+      Each passes the loaded value into traversal/startup policy; no DEFAULT_MAX_RECURSE_DEPTH YAML alias is added.'
+    proof: [config-tests, behavior-tests]
+  - text: native_migration_failure_redacts_secrets and failure_cause_limit_300_characters
+      exercise sanitized operator output separately from source equality cases.
+    proof: [behavior-tests]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_reencryption::tests::/)
-        - test(/replays_the_/)'
+      why: Traversal, partial progress and startup failure order require distinct assertions.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_reencryption::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::tests::postgres_failure_effects$/)'
+      why: Real compare-and-swap races and durable partial writes cannot be proved with a fake repository.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_partial_progress_after_failure$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_reencryption::.*postgres_concurrent_change_preserved$/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_reencryption::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*")"
-        && grep -rlq "DEFAULT_MAX_RECURSE_DEPTH" crates/betterlite-config/fuzz/corpus/config_yaml/database-reencryption-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases: []
-deviations: []
+      why: Invalid recursion depth must fail startup while empty migration/salt variables retain presence semantics.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_reencryption::tests::/)'
+    - id: helper-python
+      why: Pure traversal and outcome comparisons must invoke the pinned functions.
+      run: test -f tools/oracle/helpers/database_reencryption.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require new pure migration inputs before the shared envelope decoder replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-reencryption-*")" && grep -rlq database_reencryption tools/oracle/fuzz/corpus/helper_case/database-reencryption-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-reencryption/traversal-markers-and-leaves.yaml
+  - tools/oracle/cases/helpers/database-reencryption/depth-cutoff.yaml
+  - tools/oracle/cases/helpers/database-reencryption/sql-parameter-shapes.yaml
+  - tools/oracle/cases/helpers/database-reencryption/operator-outcomes.yaml
+deviations:
+  - what: Migration failure diagnostics redact key material, plaintext and ciphertext before truncating the cause to 300 characters.
+    why: Source includes arbitrary exception text in operator warnings; secret types must not leak their values through that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L299-L304
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B2303 owns cryptographic formats, algorithm/key resolution, cipher input limits and the shared callback marker; B2304 owns selecting callback fields for ordinary writes.
+  - B758 owns master_key_boot_check.py except its migration-variable name at L18; boot refusal/rendering is not implemented here.
+  - B124 invokes migration after connecting the writer and supplies logging/outage handling; B719 owns create_views.py and its Python query protocols, replaced here by B700 native sessions.
 pitfalls:
-  - Unknown ciphertext must be preserved rather than interpreted as decryptable plaintext.
+  - The metadata LIKE prefilter selects whole rows and leaves the underscore as a wildcard; it is not a per-leaf marker filter.
+  - A failed later update leaves earlier ciphertexts migrated, so remaining old-key values need a restart with the previous key retained.
+  - Salt-variable presence skips migration even for an empty string, while an empty new-key override in the codec falls back.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

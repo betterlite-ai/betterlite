@@ -1,11 +1,51 @@
 id: B855
 title: Authenticated request admission and budget handoff
 description: >-
-  Implement AuthAdmission over resolved principals and CommonAuthChecks, including team/user/end-user
-  object loading, temporary budget application, referenced-object prefetch and route/destination seeding.
-  Invoke the injected BudgetAdmission port after ordinary checks in the pinned order; B071 registers the
-  real reservation service. Source request-time/identity annotations are typed and cannot be supplied
-  by caller metadata.
+  Compose authenticated admission in its actual order: B883 should_call_route, B881 Claude-model
+  normalization, B881 router-settings alias normalization, then the protected managed-actor/common-check
+  block. The first three calls are OUTSIDE its try/except; failures there do not invoke this block's
+  B757 authentication error handler. force_virtual_key_checks defaults False and is forwarded unchanged
+  to B1221 _run_centralized_common_checks exactly once. Prefetch, temporary budgets, zero-cost skipping
+  and reservations belong to B1221's dependencies; do not execute them twice in this stage.
+
+  Inside the try block, create a managed identity store only when DB exists, admit a non-null agent_id,
+  then reject a non-null managed_agent_policy on a disallowed route/method with HTTPException 403
+  'Agent identities can only access inference and agent discovery routes'. For managed policies build
+  authorized_data with settings, CLI model, path model OR path model_name, and query model; ordinary
+  keys retain request_data. Resolve an invocation target for every caller; a non-null target prepares
+  invocation before common checks. billable is true only when original request_data.method is absent/
+  None, message/send, message/stream, SendMessage or SendStreamingMessage. Other methods are nonbillable.
+  Common checks consume authorized_data, but an exception handler receives ORIGINAL request_data,
+  route, API key, parent span and resolved identity. Return its recovered identity immediately; do not
+  continue end-user fallback. B757 preserves ProxyException, maps HTTP errors to auth_error with their
+  status and default param string 'None', BudgetExceededError to budget_exceeded/429 with null param,
+  and ordinary errors to 401 auth_error prefixed 'Authentication Error, '. Its DB-outage recovery and
+  callback transformation remain B757; test delegation rather than copying that mapper.
+
+  Managed implementations belong to the later B141 agent service, and telemetry implementations to
+  B124/B110 integration services. Define the required ManagedAdmission and TenantDestinations ports
+  here, with methods matching these calls and typed outcomes; those higher services install concrete
+  implementations. No direct dependency on B141/B124 (which depend on B052 and this stage) and no
+  allow-all/no-op stub for a configured capability. B732 server construction rejects a configured
+  capability without its port. B855 owns only ordering and exception boundaries, not agent policy,
+  registry lookups, pricing or exporter construction; use injected failure/results for native tests.
+
+  After successful common checks only, if end_user_id is None, call B880 extraction with B1100 safe
+  request headers; a non-null raw id is resolved/validated through B880 with B739's key budget id.
+  Assign only a non-null result. Existing ids (including empty string) skip fallback. These failures
+  occur AFTER the protected block and are not recovered by it. B880 owns validate_end_user_id_in_db
+  and its loader. Normal success returns None, meaning the caller retains its existing auth object.
+
+  Principal projection obtains B743 trusted CIDRs, trusts X-Forwarded-For only when that tuple is
+  nonempty, and resolves network context once. Truthy jwt_claims chooses BEARER_JWT, otherwise API_KEY.
+  Call B870 _principal_from_key with token as subject_fallback and CredentialRef.token_id; never infer
+  identity from client metadata. _spend_counter_redis_cache returns the injected cache's optional Redis
+  backend, without constructing another cache. Destination seeding defaults request=None, resolves
+  tenant destinations from safe headers (including x-litellm-disable-callbacks), filters through the
+  current fan-out provider's deliverable destinations, then sets request context. Any failure logs
+  debug 'OTel V2: tenant destination resolution failed: %s' and is swallowed. No destination is set
+  after an earlier resolution failure, and auth must proceed. The calling auth span inherits these
+  destinations; earlier DB spans are not retroactively moved.
 
 
   Build the production auth_admission module in betterlite-auth; reuse the typed dependencies listed in
@@ -23,11 +63,10 @@ description: >-
   column type; retain source storage types.
 
 
-  Add the auth_admission operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-admission-*
-  seed to B171 helper_case, which already owns this decoder.
+  These functions read request/runtime state and perform asynchronous admission; do not register a
+  helper operation for them. Native tests assert ordered collaborator calls and mutations, while B001
+  HTTP cases exercise the installed production stage. Postgres uses POSTGRES_TEST_URL, otherwise B860
+  testcontainers, with connection/startup failures failing the check.
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
@@ -54,10 +93,8 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 146 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  146 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 427 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Four functions contain 108 nonblank noncomment lines excluding docstrings. Allow 180 composition/
+  ports, 340 ordered and HTTP tests and 65 server wiring lines, 585 within 650.
 
 
   Server wiring tests live under betterlite-server::auth::auth_admission::tests: stage_is_registered and
@@ -70,14 +107,6 @@ scope:
     - crates/betterlite-auth/src/auth_admission/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/auth_admission.rs
-    - tools/oracle/src/helpers/auth_admission/**
-    - tools/oracle/helpers/auth_admission.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
-    - tools/oracle/cases/helpers/auth-admission/**
-    - tools/oracle/fuzz/corpus/helper_case/auth-admission-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
@@ -86,8 +115,6 @@ scope:
     - crates/betterlite-server/src/auth/auth_admission/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2755-L3429
-    why: Pinned implementation and exact ownership boundary for auth_admission.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3224-L3245
     why: Own _resolve_request_principal; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3248-L3355
@@ -99,17 +126,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: checks_before_reservation,
-      denied_no_reservation, end_user_default_budget, identity_prefetch, zero_cost_skip, request_destinations,
-      reservation_error.'
+  - text: 'Native cases route_then_normalization, pre_try_errors_bypass_handler, managed_store_optional,
+      actor_admit_before_route_gate, managed_input_precedence, target_before_common_checks,
+      billable_method_literals, common_checks_once_force_flag, original_data_on_error,
+      recovered_identity_returns_early, existing_end_user_skips, null_resolution_no_assignment,
+      fallback_error_outside_catch, cidrs_gate_forwarded_for, jwt_claims_truthiness,
+      token_principal_fallback, optional_redis_backend, destinations_resolve_filter_set,
+      disabled_callback_destination and telemetry_failure_debug_only cover the owned order.'
     proof:
       - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
       against the real MIT server.
     proof:
@@ -127,39 +152,21 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_admission::tests::/)
         - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/auth_admission.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-admission-*")"
-        && grep -rlq "auth_admission" tools/oracle/fuzz/corpus/helper_case/auth-admission-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_admission::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-admission/checks-before-reservation.yaml
-  - tools/oracle/cases/helpers/auth-admission/denied-no-reservation.yaml
-  - tools/oracle/cases/helpers/auth-admission/end-user-default-budget.yaml
-  - tools/oracle/cases/helpers/auth-admission/identity-prefetch.yaml
-  - tools/oracle/cases/helpers/auth-admission/zero-cost-skip.yaml
-  - tools/oracle/cases/helpers/auth-admission/request-destinations.yaml
-  - tools/oracle/cases/helpers/auth-admission/reservation-error.yaml
-  - tools/oracle/cases/auth/auth-admission/checks-before-reservation.yaml
-  - tools/oracle/cases/auth/auth-admission/denied-no-reservation.yaml
-  - tools/oracle/cases/auth/auth-admission/end-user-default-budget.yaml
-  - tools/oracle/cases/auth/auth-admission/identity-prefetch.yaml
-  - tools/oracle/cases/auth/auth-admission/zero-cost-skip.yaml
-  - tools/oracle/cases/auth/auth-admission/request-destinations.yaml
-  - tools/oracle/cases/auth/auth-admission/reservation-error.yaml
+  - tools/oracle/cases/auth/auth-admission/normalized-model-common-checks.yaml
+  - tools/oracle/cases/auth/auth-admission/common-http-error-envelope.yaml
+  - tools/oracle/cases/auth/auth-admission/common-budget-error-envelope.yaml
+  - tools/oracle/cases/auth/auth-admission/common-db-outage-recovery.yaml
+  - tools/oracle/cases/auth/auth-admission/fallback-end-user-validation.yaml
+  - tools/oracle/cases/auth/auth-admission/end-user-existing-retained.yaml
+  - tools/oracle/cases/auth/auth-admission/telemetry-failure-still-reaches-route.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B141 owns the concrete managed-agent policy/store adapter; B124/B110 own tenant destination resolution and OTLP delivery adapters behind this task's ports.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -204,8 +211,10 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Admission must stop before budget reservation whenever an earlier policy check denies the request.
+  - Model normalization and end-user fallback lie on opposite sides of the protected block; neither uses its local error recovery.
+  - The recovered identity return skips fallback, and common checks receive transformed data while error hooks receive original data.
+  - Any non-null agent_id triggers admission, including an empty string.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

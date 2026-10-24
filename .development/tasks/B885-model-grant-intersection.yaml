@@ -1,10 +1,34 @@
 id: B885
 title: Intersect entity model allowlists
 description: >-
-  Compute effective key/team/member/user/org/project model intersections and matched access-group stamps.
-  Preserve key access-group overrides, alias provenance and missing-versus-empty grant lists. Return the
-  matched group set as typed admission data without fetching agent records or accepting tokens from request
-  metadata.
+  Assemble the model allowlists actually enforced at each level and stamp budgeted access groups used
+  for spend attribution. This task does not itself intersect model permissions or override a team denial;
+  those checks belong to B886/B747. It returns ordered allowlist collections and sorted group names.
+
+  B747 resolves the key's model list. Without a DB, enforced_model_allowlists returns exactly key models
+  and tuple(token.team_models or []). With a DB, fetch the team through B737 when team_id is non-null;
+  only without a team object load the user through B736, with upsert disabled. Suppress UserNotFoundError
+  alone, not outages. Fetch a non-null project through B879. Return five lists in key, team, member,
+  user, project order; organization is deliberately absent from this enforcement helper. Missing rows
+  contribute empty lists and other lookup failures propagate.
+
+  Member scope requires a team object and user_id. If team_membership_loaded is false, B2318 loads it;
+  if true, reuse even a supplied None without another query. B2315 extracts allowed_models; None gives
+  an empty sequence. For attribution, _granted_model_lists instead returns key, team, member, project,
+  org, deliberately excluding user scope. The org ID is truthy key org_id before team.organization_id;
+  only None bypasses the lookup. B879 errors are debug-logged and contribute no org grants.
+
+  Collecting groups returns empty immediately if model, token, router or DB is missing. Load B740's
+  budget registry before any allowlist walk: empty set means no work; None means conservatively treat
+  all covering groups as budgeted. Union B302's get_model_access_groups across requested models using
+  the token's team_id. Intersect with a known registry, then with the union of literal names in the
+  five attribution lists. Wildcard/empty lists do not name a group, and a model's group membership
+  alone does not charge that group. Sort and deduplicate the matched names.
+
+  stamp_matched_model_access_groups returns empty for no token, catches every collection failure with
+  a debug log and returns empty, and writes matched_model_access_groups only when the result is nonempty.
+  Empty/error results leave any existing stamp untouched. This is best-effort attribution, not a new
+  authorization denial. There are no settings, DB writes, secret writes or agent lookups in these ranges.
 
 
   Build the production model_grant_intersection module in betterlite-auth; reuse the typed dependencies
@@ -27,33 +51,14 @@ description: >-
   a model-grant-intersection-* seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  Intersections use independently seeded user/team/member/project grants in B860 Postgres, from
+  POSTGRES_TEST_URL or testcontainers. Drive denial cases through the auth pipeline and inspect the
+  contributing entity sets in pure cases, particularly the different enforcement and attribution inputs.
 
 
   Sizing: 249 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  249 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 521 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  240 production, 240 behavior tests, 75 adapters and 65 wiring lines, 620 within a 650-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -103,7 +108,13 @@ references:
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: layered_grant_intersection,
-      member_narrowing, key_access_group_override, matched_group_stamping.'
+      member_narrowing, matched_group_stamping, no_db_two_lists, db_five_list_order,
+      team_suppresses_user_lookup, user_not_found_only_suppressed, team_project_errors_escape,
+      membership_loaded_none_no_query, missing_member_inputs_empty, attribution_five_list_order,
+      key_org_before_team_org, org_error_debug_empty, missing_collection_inputs,
+      empty_registry_short_circuit, unknown_registry_all_covering, team_scoped_group_union,
+      group_name_must_be_granted, wildcard_no_attribution, matched_sorted_deduplicated,
+      stamp_exception_debug_drop and empty_stamp_keeps_previous.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -146,16 +157,15 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/model-grant-intersection/layered-grant-intersection.yaml
   - tools/oracle/cases/helpers/model-grant-intersection/member-narrowing.yaml
-  - tools/oracle/cases/helpers/model-grant-intersection/key-access-group-override.yaml
+  - tools/oracle/cases/helpers/model-grant-intersection/enforced-versus-attribution-lists.yaml
+  - tools/oracle/cases/helpers/model-grant-intersection/registry-and-group-union.yaml
+  - tools/oracle/cases/helpers/model-grant-intersection/lookup-and-stamp-errors.yaml
   - tools/oracle/cases/helpers/model-grant-intersection/matched-group-stamping.yaml
   - tools/oracle/cases/auth/model-grant-intersection/layered-grant-intersection.yaml
   - tools/oracle/cases/auth/model-grant-intersection/member-narrowing.yaml
-  - tools/oracle/cases/auth/model-grant-intersection/key-access-group-override.yaml
   - tools/oracle/cases/auth/model-grant-intersection/matched-group-stamping.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -269,8 +279,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve key access-group overrides, alias provenance and missing-versus-empty grant lists.
+  - enforced_model_allowlists omits organizations while attribution includes them and omits users; sharing one list builder changes behavior.
+  - An empty matched result does not clear an earlier token stamp, even after a swallowed lookup error.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

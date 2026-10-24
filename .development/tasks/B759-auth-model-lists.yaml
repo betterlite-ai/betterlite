@@ -6,6 +6,49 @@ description: >-
   expose secrets in listing rows, and return all fallback names without granting them implicitly.
 
 
+  A wildcard means any asterisk anywhere. Provider '*' calls B2328 get_valid_models without a provider;
+  a provider in models_by_provider calls it with that provider, otherwise return null. Access-group
+  expansion keeps literals not naming a group, explicitly included group names, and group names also
+  deployed as models; then append all group members in input order. Key grants are copied, all-team
+  replaces the entire list with team grants, a nested all-team is removed and adds proxy models plus
+  optionally groups, and all-proxy replaces the list with proxy models plus optional groups. Deduplicate
+  by first occurrence and DEBUG-log count. only_model_access_groups is unused in get_key_models.
+  Team grants start as a set: all-team is removed and expands proxy models; all-proxy is expanded but
+  remains in the list. Group expansion then deduplicates; order inherited from Python sets is unspecified.
+
+
+  Complete lists choose nonempty key grants, else team grants, else proxy models plus optional groups,
+  truthy user_model and inferred valid models. Remove no-default-models and preserve first occurrence.
+  only_model_access_groups filters this list and returns before wildcard resolution. Otherwise remove
+  wildcard entries, optionally append their original names, and expand each using B302 team-scoped
+  deployments or a provider lookup without parameters. Append expansions without a final deduplication.
+  Invalid deployment parameter construction here propagates. A wildcard '*' may use a provider wildcard
+  from litellm_params.model. Patterns without slash return empty; choose provider from params when
+  present, hydrate credentials, then list provider models. For a partial suffix remove every '*': if
+  any model starts with that prefix, filter; otherwise prepend the prefix to all models. If a result
+  does not start with the wildcard's prefix, replace a recognized provider segment but preserve unknown
+  organization segments. This is starts-with logic, not an exact slash-prefix comparison.
+
+
+  Move CredentialAccessor.find_credential/get_credential_values (credential_accessor.py L11-L24) down
+  here as read-only methods over the injected credential snapshot: first matching name, missing gives
+  empty map, and return a copy. B061 retains credential loading/storage/upsert. Hydration returns the
+  original params for missing name or empty values; otherwise copy params, fill only fields declared by
+  CredentialLiteLLMParams whose current value is null (empty strings are not null), and clear the name
+  even if no field was filled. No stored credential mutation or re-encryption occurs.
+
+
+  Model-info expansion keeps concrete model_name unchanged even if the provider model is wildcard.
+  For wildcard names prefer its slash-containing pattern, then provider wildcard, then name alone.
+  Missing/non-dict params are empty. Invalid typed params or empty expansion retains the original row;
+  other lookup exceptions propagate. Each expanded row is a deep copy with model_name replaced and
+  params.model replaced only for dict params. Permission lookup uses B725 ObjectPermissionRepository;
+  absent DB/permission ID/row/servers or any query error returns [] silently. Fallback lookup defaults
+  general, selects fallbacks/context_window_fallbacks/content_policy_fallbacks, returns [] without a
+  router or config; an unknown type WARNs only when a router exists. B309 resolves the group; null
+  becomes [], any resolver error ERROR-logs and returns []. There are no database writes.
+
+
   Build the production auth_model_lists module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
@@ -27,40 +70,28 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  HTTP comparisons exercise existing /v1/models or /model/info listing routes, with production list
+  services installed in B732 server state. These helpers are not an auth admission stage and produce
+  no unauthorized-caller error of their own; route owners retain permissions and error translation.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Permission-row lookups use B860 and POSTGRES_TEST_URL with testcontainers fallback. Wildcard and
+  credential hydration cases instead inject distinct named credential snapshots and catalog entries.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Listing transforms parsed deployment and credential records. It must not turn model discovery
+  into a grant or overwrite encrypted credential storage while hydrating a copied parameter object.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 344 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  344 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 622 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  Sizing: about 358 source lines including the moved credential readers; allow 290 production,
+  300 table-driven tests, 90 helper adapters and 100 wiring lines, 780 within an 800-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Server wiring tests live under betterlite-server::auth::auth_model_lists::tests: stage_is_registered
-  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  Server wiring tests under betterlite-server::auth::auth_model_lists::tests are listing_service_is_registered
+  and listing_reads_authorized_models; invoke the actual constructor and listing route without turning
+  these helpers into a request admission stage.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_model_lists.rs
@@ -112,8 +143,17 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_team_list_intersection,
-      wildcard_known_models, team_public_name, credential_hydration, fallback_list, mcp_grants.'
+  - text: 'Named cases: wildcard_any_asterisk_and_provider_lookup, group_name_model_collision,
+      key_sentinel_replacement_and_ordered_dedup, key_only_groups_flag_unused,
+      team_set_order_and_all_proxy_sentinel_retained, complete_key_then_team_then_proxy_precedence,
+      no_default_sentinel_and_inferred_models, only_groups_returns_before_wildcards,
+      team_scoped_wildcard_lookup_and_duplicates, wildcard_missing_slash_and_star_param_redirect,
+      partial_suffix_filter_or_prepend, known_provider_prefix_replaced_org_prefix_preserved,
+      credential_first_match_copy_and_null_only_fields, credential_name_clear_and_no_mutation,
+      concrete_deployment_kept, invalid_params_or_empty_expansion_keeps_row,
+      expanded_rows_deep_copy_and_params_model, wildcard_lookup_error_propagates,
+      mcp_missing_context_and_query_error_silently_empty, fallback_three_categories,
+      unknown_fallback_warns_only_with_router, fallback_resolver_error_logs_and_returns_empty.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -127,8 +167,7 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
+  - text: The real server constructor installs the listing service and existing model-list routes consume it.
     proof:
       - stage-wiring-tests
       - behavior-tests
@@ -168,12 +207,12 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-model-lists/mcp-grants.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B061 owns encrypted storage, loading and upsert of credential snapshots; this task owns only their
+    read accessors and request-local hydration. Listing route owners redact output credentials.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - Listing fallback names does not grant permission to call them.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -2,8 +2,8 @@ id: B764
 title: Select an authorized JWT team and request header
 description: >-
   Implement JwtTeamSelection using verified claims, agent lookup, team/model grants and trusted selected-team
-  headers. Preserve alias lookup, multiple-team candidate order, model and pass-through checks, and object
-  ID validation. A header selects from authorized claim/db memberships and never creates membership.
+  headers. Team candidates are a set, so do not invent stable ordering between equally eligible teams.
+  A header outside the claims may select a provisional DB team; B891 performs the later membership check.
 
 
   Build the production jwt_team_selection module in betterlite-auth; reuse the typed dependencies listed
@@ -28,8 +28,41 @@ description: >-
   litellm_jwtauth.agent_id_jwt_field=None; litellm_jwtauth.enforce_team_based_model_access=False; litellm_jwtauth.team_claim_fallback=False;
   litellm_jwtauth.fallback_to_db_teams=False.
 
+  Also consume B760's team_id_default=None and team_ids_jwt_field=None, and enforce_rbac=False
+  for validate_object_id. Use B737 team/alias lookup, B742 route expansion, B886 can_team_access_model,
+  B871 team_model_aliases, B883 pass-through grants, B761 AgentLookup and B869 HeaderTeam.
+  Move the two-line has_legacy_identity predicate from agent_endpoints/identity.py L11-L12 into
+  this leaf: the B141 registry depends on auth and cannot be called in reverse. It tests presence
+  of the identity key even when its value is null. Registry reads are injected through AgentLookup.
 
-  Add the jwt_team_selection operation under B856 Management::jwt. Python calls only the owned MIT helper
+  agent_absent, agent_id_before_name, agent_unknown, agent_managed, agent_identity_present and
+  agent_legacy_null prove missing claims return None and all bound/unknown agents fail HTTP 403.
+  team_id_before_alias, alias_before_default, explicit_upsert_override and claim_404_fallback
+  check the ID/alias precedence and that only HTTP 404 with team_claim_fallback yields (None,None);
+  claim_non404_propagates covers other errors. required_team_missing, dot_index_hint and
+  bracket_index_hint cover the plain missing-team exception and operator hints (HTTP 401).
+  group_set_deduplicates proves get_all_team_ids only includes plural groups, despite its docstring.
+
+  no_groups_enforced gives 403 only when enforce_team_based_model_access and not fallback_to_db_teams.
+  candidate_lookup_swallowed continues on every exception; candidate_models_null skips that team;
+  candidate_no_model still checks routes. candidate_model_alias and candidate_model_grant call the
+  real B886 grant service. all_unresolved_fallback returns None only with team_claim_fallback;
+  resolved_model_denied gives 403 even with fallback enabled. pass_through_method_upper,
+  pass_through_config_grant, pass_through_metadata_grant and pass_through_denial_priority prove
+  method normalization, team-only metadata and the pass-through 403 taking precedence over model denial.
+
+  header_missing_empty and header_casefold check x-litellm-team-id; explicit_team_header performs
+  no DB query. alias_header and alias_ambiguous_denied resolve only unique aliases among allowed IDs.
+  provisional_id_disables_upsert, absent_id_tries_alias, id_read_error_membership_denial,
+  alias_no_db, alias_client_error_denied and alias_server_error_propagates preserve the different
+  ID and alias failure handling. The membership-denial message must not reveal a resolved team ID;
+  the claim-denial message lists sorted allowed IDs. object_identity_required is 403 only for
+  enforced non-admin RBAC with neither user nor team. B757 maps HTTP exceptions to auth_error,
+  param 'None', code equal to the status string; only message wording is ignored by HTTP comparison.
+
+
+  Add the jwt_team_selection operation under B856 Management::jwt for header normalization,
+  object validation and agent projection only. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
   Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
   warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-team-selection-*
@@ -50,7 +83,11 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::jwt_team_selection::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  All team lookup, candidate and provisional-header cases run through HTTP/Postgres; find_team_with_model_access
+  reads proxy_server.llm_router and must not be invoked by a helper adapter. Database fixtures use
+  POSTGRES_TEST_URL or testcontainers and fail rather than skip when neither can start.
+
+  Write betterlite-config::jwt_team_selection::tests::loads_settings, defaults_and_precedence and invalid_type_rejected.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -67,9 +104,10 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 330 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  330 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 658 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
+  Sizing: the twelve original ranges total 330 source lines before excluding docstrings, plus two
+  lines for has_legacy_identity. Allow 300 production, 300 parameterized behavior/Postgres tests,
+  65 helper adapters, 65 wiring and 50 config lines: 780 changed lines within an 800-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -140,8 +178,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2358-L2371
     why: Own JWTAuthManager._raise_header_team_membership_denial; preserve caller-visible values and failure
       ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.fallback_to_db_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1684-L1749
+    why: Team-model enforcement and both fallback switches are read here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5474-L5495
+    why: team_claim_fallback and fallback_to_db_teams both default to False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity.py#L11-L12
+    why: Own has_legacy_identity below its JWT and registry callers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
@@ -149,6 +191,11 @@ dod:
       alias_header, header_not_in_claims, multiple_team_model_selection, pass_through_team_denial, unknown_agent.'
     proof:
       - behavior-tests
+  - text: Every named agent, candidate, fallback and header branch in the description has a separately
+      named rstest case; database-dependent branches use booted-server cases, not a Python handler adapter.
+    proof:
+      - behavior-tests
+      - oracle
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -202,11 +249,9 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_team_selection::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/jwt-team-selection/explicit-team-header.yaml
-  - tools/oracle/cases/helpers/jwt-team-selection/alias-header.yaml
-  - tools/oracle/cases/helpers/jwt-team-selection/header-not-in-claims.yaml
-  - tools/oracle/cases/helpers/jwt-team-selection/multiple-team-model-selection.yaml
-  - tools/oracle/cases/helpers/jwt-team-selection/pass-through-team-denial.yaml
+  - tools/oracle/cases/helpers/jwt-team-selection/header-casefold.yaml
+  - tools/oracle/cases/helpers/jwt-team-selection/object-identity-required.yaml
+  - tools/oracle/cases/helpers/jwt-team-selection/agent-bindings.yaml
   - tools/oracle/cases/helpers/jwt-team-selection/unknown-agent.yaml
   - tools/oracle/cases/auth/jwt-team-selection/explicit-team-header.yaml
   - tools/oracle/cases/auth/jwt-team-selection/alias-header.yaml
@@ -214,10 +259,16 @@ oracle_cases:
   - tools/oracle/cases/auth/jwt-team-selection/multiple-team-model-selection.yaml
   - tools/oracle/cases/auth/jwt-team-selection/pass-through-team-denial.yaml
   - tools/oracle/cases/auth/jwt-team-selection/unknown-agent.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/team-claim-precedence.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/claim-fallback-errors.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/required-team-hints.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/candidate-failures.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/pass-through-grants.yaml
+  - tools/oracle/cases/auth/jwt-team-selection/provisional-header-errors.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B141 owns agent_endpoints/identity.py reject_legacy_identity (L15-L17) and the agent registry;
+    this task owns only its lower-level has_legacy_identity predicate and consumes AgentLookup.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -269,9 +320,9 @@ out_of_scope:
     (L2374-L2388).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A header outside JWT teams is provisional only under fallback_to_db_teams and needs DB membership
-    proof.
+  - Only TeamNotFoundError on the provisional ID path permits alias lookup; a generic HTTP failure becomes a membership denial.
+  - Candidate selection swallows exceptions, including permission errors, before deciding which final denial wins.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

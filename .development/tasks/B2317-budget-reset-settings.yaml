@@ -1,0 +1,169 @@
+id: B2317
+title: Budget reset clock settings and persistable durations
+description: >-
+  Move common_utils/timezone_utils.py below auth upserts, management writes and scheduled resets.
+  Implement budget_reset records/calculation in betterlite-core and settings normalization in
+  betterlite-config. B199 supplies duration parsing and calendar/DST reset calculations; do not
+  copy those algorithms or add a second timezone database. B124 startup and B071 jobs consume
+  this completed service, with an injected clock and current settings instead of module globals.
+
+  BudgetResetSettings is immutable, with timezone="UTC" and reset_time_of_day=00:00:00. Its
+  timezone field requires a string but is not checked against a timezone database at construction.
+  Extra model fields are ignored in the source constructor. Config reads litellm_settings.timezone
+  through the equivalent of getattr(...,None) or "UTC": absent, None, empty string and other falsey
+  JSON values select UTC; a truthy nonstring fails settings validation. Preserve nonempty strings
+  without trimming or case-folding. B199's actual reset calculation silently falls back to UTC
+  for an unknown zone; do not reject it earlier or manufacture a new warning.
+
+  litellm_settings.budget_reset_time defaults to None. parse_budget_reset_time accepts None or
+  exactly empty string as midnight. Every other nonstring, including numeric zero, false, lists
+  and a time-like object, fails with a typed error explaining the required quoted 24-hour string.
+  Try Python's %H:%M then %H:%M:%S semantics: one- or two-digit hour/minute/second components are
+  accepted, with ranges hour 0..23 and minute/second 0..59. Keep source Unicode decimal-digit
+  acceptance, including the single-digit Arabic forms; do not equate that with accepting arbitrary
+  numeric Unicode characters or every two-digit Unicode form. Reject whitespace padding, missing
+  components, extra components, signs, AM/PM, fractional seconds, timezone suffixes and leap seconds.
+  Return a time with zero microseconds and no timezone. A malformed string gets the distinct
+  expected-HH:MM-or-HH:MM:SS error. Native messages are its own and do not repeat arbitrary values.
+
+  Production config loading must actually call this parser before accepting budget_reset_time,
+  matching proxy_server.load_config L6611-L6617. There is no invalid-value fallback and neither
+  setting reads a dedicated environment variable; ordinary B002 os.environ/ references still
+  resolve before normalization. get_budget_reset_settings applies timezone fallback and parses
+  the current reset-time setting together. Consumers receive the resulting record: jobs may retain
+  their injected snapshot, while management calls use the current snapshot supplied by their caller.
+  Do not freeze all future calculations to a first global read.
+
+  compute_budget_reset_at takes a fresh UTC now and calls B199 get_next_standardized_reset_time
+  with duration, configured timezone and reset_time_of_day. get_budget_reset_time composes current
+  settings with this calculation; trivial wrappers become native composition rather than extra
+  one-line functions. Preserve B199's different paths: unparseable duration warns and returns the
+  next midnight, unknown reset unit returns next midnight without that warning, zero day/week/
+  hour/minute/second returns now, and a monthly interval other than 1mo raises. Time of day affects
+  calendar day/week/month resets, not the fixed smaller-unit calculations. Forward the result's
+  timezone/offset and checked date overflow rather than converting it to a naive local date.
+
+  _is_persistable_budget_duration first calls B199 duration_in_seconds; a result <=0 returns false
+  without reading reset settings or calculating a reset. A positive result must also survive
+  get_budget_reset_time. Catch exactly the source ValueError/OverflowError categories as false;
+  unrelated failures propagate. Thus 0h, negative/unparseable durations and 2mo cannot persist,
+  although direct reset calculation can return now for 0h. None in budget_duration_error returns
+  None without any check. An accepted duration also returns None; a rejected duration returns
+  a diagnostic naming budget_duration and examples 1h, 24h, 7d and 30d, with no HTTP status of its own.
+  The native error text follows the repository wording rule; route owners choose its wire mapping.
+
+  Do not replace this two-step predicate with a strict whole-string parser. For example 1hour has
+  a positive seconds prefix but an unknown reset unit, so it remains persistable and resets at next
+  midnight. Word aliases such as monthly use B199's 30-day alias, distinct from 1mo. For the month
+  seconds calculation, B199 uses a separately supplied process-local calendar context; the reset
+  calculator takes a second clock sample in UTC and then applies the configured zone. Keep those
+  contexts distinct and inject both in tests. B199 owns any trailing-input diagnostic required by
+  its existing task; this composition does not convert that diagnostic into duration rejection.
+
+  The budget_reset pure helper calls the pinned settings/time/persistability functions with a
+  controlled clock and module settings. Compare normalized time, acceptance, returned instants,
+  exception categories and warning presence; ignore only native diagnostic wording. Production
+  decode_reset_clock(&str) is the clock-string parser used after config type checking; add a
+  budget_reset_clock target to B199's existing core fuzz workspace and replay valid/unpadded/
+  Unicode/truncated/overflowing/trailing inputs. Inputs inherit B002's config byte bound and B171's
+  helper bound, with no new hidden truncation. Reuse the maintained time parser selected by B199,
+  adding only the compatibility normalization that its grammar needs.
+
+  The file has 51 nonblank noncomment lines excluding docstrings. Allow 100 core/settings logic,
+  260 tests, 90 oracle adapters, 65 config wiring, 55 fuzz/replay and 25 manifest/export lines,
+  595 within 650. Behavior checks run both crates; there is no database persistence in this task.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/src/error.rs
+    - crates/betterlite-core/src/budget_reset.rs
+    - crates/betterlite-core/src/budget_reset/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/budget_reset_clock.rs
+    - crates/betterlite-core/fuzz/corpus/budget_reset_clock/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/budget_reset.rs
+    - crates/betterlite-config/src/budget_reset/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/budget-reset-*
+    - tools/oracle/src/helpers/budget_reset.rs
+    - tools/oracle/helpers/budget_reset.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/budget-reset/**
+    - tools/oracle/fuzz/corpus/helper_case/budget-reset-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/timezone_utils.py#L9-L61
+    why: Record defaults, exact clock parsing and both litellm settings read sites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/timezone_utils.py#L64-L104
+    why: UTC clock injection, two-step persistability and the narrow exception filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6611-L6617
+    why: B124 validates budget_reset_time before installing its source setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L51-L106
+    why: B199 seconds conversion uses its own process-local calendar clock for mo.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L135-L199
+    why: B199 separates unknown timezone, unparseable duration and unknown-unit fallback behavior.
+dod:
+  - text: 'Parser/settings cases name immutable_utc_midnight_defaults, timezone_falsey_defaults_utc,
+      timezone_truthy_nonstring_rejected, timezone_string_not_normalized,
+      reset_time_none_or_empty_midnight, reset_time_nonstring_rejected,
+      padded_hm_and_hms, unpadded_components, source_unicode_digit_acceptance,
+      clock_range_and_leap_second_rejection, clock_whitespace_and_suffix_rejection,
+      clock_fraction_timezone_and_extra_component_rejection and current_settings_snapshot_used.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Calculation cases name configured_zone_and_clock_forwarded, invalid_zone_silent_utc,
+      malformed_duration_warning_midnight, unknown_reset_unit_silent_midnight,
+      direct_zero_interval_returns_now, monthly_interval_other_than_one_error,
+      time_of_day_calendar_units_only, offset_preserved and separate_local_and_utc_clock_samples.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Persistability cases name absent_duration_skips_everything, positive_duration_accepted,
+      nonpositive_short_circuits_settings, two_month_duration_rejected,
+      seconds_or_reset_value_error_rejected, overflow_rejected, unrelated_error_propagates,
+      positive_prefix_unknown_reset_unit_accepted, monthly_alias_differs_from_calendar_month
+      and invalid_duration_names_field_and_examples.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Production loader cases name loads_timezone_and_reset_time,
+      omitted_reset_settings_defaults, reset_settings_env_reference,
+      malformed_clock_stops_startup and constructor_settings_not_first_global_read.
+      Native diagnostic test clock_error_does_not_echo_input preserves the error category.'
+    proof: [behavior-tests, config-corpus]
+  - text: The actual decode_reset_clock target and its committed corpus replay every input without panic.
+    proof: [clock-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Core parsing/calculation and production config normalization must both have new behavior tests.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^budget_reset::/) - test(replays_the_reset_clock_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^budget_reset::/)'
+    - id: helper-python
+      why: Oracle time and duration predicates must invoke source functions under controlled clocks/settings.
+      run: test -f tools/oracle/helpers/budget_reset.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added budget-reset seeds must reach the shared helper parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/budget-reset-*")" && grep -rlq budget_reset tools/oracle/fuzz/corpus/helper_case/budget-reset-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-corpus
+      why: Both accepted config settings need real loader seeds, including env resolution and malformed clocks.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/budget-reset-*")" && grep -rlq budget_reset_time crates/betterlite-config/fuzz/corpus/config_yaml/budget-reset-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: clock-corpus
+      why: The new clock parser target and corpus must use the production parser.
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/budget_reset_clock.rs && grep -q budget_reset_clock crates/betterlite-core/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/budget_reset_clock)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_reset_clock_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-reset/settings-normalization.yaml
+  - tools/oracle/cases/helpers/budget-reset/clock-grammar.yaml
+  - tools/oracle/cases/helpers/budget-reset/zone-and-time-forwarding.yaml
+  - tools/oracle/cases/helpers/budget-reset/duration-fallbacks.yaml
+  - tools/oracle/cases/helpers/budget-reset/persistability.yaml
+deviations: []
+out_of_scope:
+  - B199 owns duration parsing, word aliases, timezone fallback and calendar/DST arithmetic; this task composes them with validated settings.
+  - B124 installs settings and schedules jobs; B071 owns budget reset persistence, not this shared calculation.
+pitfalls:
+  - A duration accepted by duration_in_seconds can still fail the monthly reset calculator.
+  - The parser accepts 1:2 even though its error examples spell HH:MM with padding.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

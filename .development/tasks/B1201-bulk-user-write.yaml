@@ -2,9 +2,57 @@ id: B1201
 title: Bulk user insert and locked team roster writes
 description: >-
   Execute prevalidated bulk user inserts and locked team roster assignments with bounded batches and typed
-  per-row results. Preserve source failure compensation and detached failed assignments; never promise
+  per-row results. Preserve source failure compensation and failed-team detachment; never promise
   one transaction for the complete bulk request. Return ordered write outcomes to B793 for per-user key/org
   follow-up.
+
+  Own the lower write-side contracts and constants at L75-L166, _ERROR_DETAIL/_JSON_OBJECT at L175-L176,
+  _UserCreateData L351-L372 and membership/roster/teams payload declarations L487-L498. B793 constructs these
+  contracts; this module never calls its orchestration. Reuse B790's BulkNewUserItem/NewUserRequestTeam.
+  _UserRow ignores extra fields, requires user_id, defaults spend to 0.0 and every other optional field to
+  None; retain all declared fields, including generation-only duration/key_alias/aliases/config/permissions,
+  blocked/agent_id/budget_fallbacks/budget_limits/organizations for B793's subsequent work.
+
+  The insert payload carries user_id, user_email, user_alias, user_role, team_id, max_budget, spend,
+  models, metadata, max_parallel_requests, tpm_limit, rpm_limit, budget_duration, budget_reset_at,
+  allowed_cache_controls, sso_user_id, object_permission_id, teams and model_max_budget. Falsey spend
+  becomes 0.0; falsey models/cache controls become empty arrays; falsey model_max_budget becomes the JSON
+  string "{}". Teams retain pending request order. Only truthy budget_duration calls B2317's reset-time
+  helper. Metadata goes through B893.metadata_json_with_limits with all seven limit/guardrail/policy/prompt
+  overrides and its B2304 callback encryption, including the pinned silent original-value fallback on
+  encryption failure. Preparation of all payloads occurs before the bulk-insert try block, so a bad payload
+  aborts without starting an INSERT. There is no organization field or key creation in this payload.
+
+  Empty input returns two empty tuples. One create_many INSERT is attempted; any exception logs
+  /user/bulk_new: create_many failed, retrying rows individually. Classify it with B872 and read back all
+  requested IDs. An infrastructure error with the entire requested set present counts as success; a partial
+  set, or any non-infrastructure error, treats present IDs as conflicts, never as successful partial writes.
+  Retry absent IDs individually with BULK_NEW_USER_CONCURRENCY=10. The bounded join captures BaseException
+  outcomes in input order. Success rows remain in input order; failures list taken IDs first and retry
+  failures second. The conflict text is User id=<id> already exists. HTTPException messages use detail.error
+  when detail is a mapping, otherwise the mapping/string detail; other exceptions use their string, even
+  empty. A failed readback propagates and does not run row retries.
+
+  Group assignments by first-seen team order and then user/team request order, using pending.user_id and
+  row.user_email. In each team's transaction acquire B819's TEAM_ADVISORY_LOCK_SQL before B724's locked
+  roster read; missing roster raises Team id=<id> does not exist. Existing truthy roster IDs suppress a new
+  entry, but duplicate new assignments are not deduplicated against each other. Resolve new member budgets
+  sequentially through B862, with the supplied max_budget_in_team, team's default_team_member_models or
+  None, budget_duration=None and metadata.team_member_budget_id if it is a string, including empty string.
+  Truthy malformed metadata fails validation; falsey metadata and non-string budget IDs give None.
+  Construct roster Member records through B859. Insert memberships with skip_duplicates=true, then
+  rewrite the roster as old members followed by new
+  members, even if there were no new members. Commit before returning all submitted user IDs in added,
+  including already-present members. Any transaction exception logs and returns empty after/added with
+  Failed to add user to team <id>: <message> for each affected ID; budget/membership/roster writes roll back,
+  while earlier user inserts remain.
+
+  _row_teams returns landed teams and failures in requested order; a missing write entry is an error.
+  Detach failed teams by updating user.teams only when its landed tuple differs from the requested tuple,
+  at concurrency 10. Failed compensation warns with the exception class and leaves the stale tuple.
+  Publish B111 team-member metrics first for writes with added members when a logger exists, using the
+  full after roster. Metric exceptions debug-log and continue. Then invalidate B734 member spend state
+  for every added ID at concurrency 10; eviction failures warn with the class and do not undo writes.
 
 
   Build the production bulk_user_write module in betterlite-server; reuse the typed dependencies listed
@@ -21,35 +69,20 @@ description: >-
   lines), _error_message (L185-L192; 8 source lines), _row_teams (L735-L745; 11 source lines).
 
 
-  Add the bulk_user_write operation under B856 Management::users. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a bulk-user-write-*
-  seed to B171 helper_case, which already owns this decoder.
+  B856 Management::users exposes only the pure payload, grouping, row-team and error-message helpers to
+  the oracle. Invoke the pinned functions with fixed time and compare complete payloads and messages;
+  seed B171 helper_case. Stateful insert, transaction, compensation and publication tests invoke the native
+  service with real Postgres and controlled metric/cache failures; no helper case impersonates a route.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Bulk insert and roster tests require the B860 fixture against POSTGRES_TEST_URL or, when unset,
+  testcontainers. Use independent schemas for each readback/compensation scenario and fail if Postgres
+  is unavailable. postgres_pinned_rows and postgres_failure_effects assert the durable rows specified below.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 242 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  242 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 482 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing adds approximately 100 contract/declaration lines to the 242 helper lines before docstring
+  exclusion: allow 345 production, 350 transaction/concurrency tests, 55 pure adapters and 30 wiring,
+  totaling 780 within 800. Shared row/request decoding stays with B714/B790; no new byte parser or setting.
 scope:
   paths:
     - crates/betterlite-server/src/bulk_user_write.rs
@@ -67,6 +100,8 @@ scope:
     - crates/betterlite-server/src/bulk_user_write/fixtures/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L75-L166
+    why: Lower write contracts, optional field defaults and fixed concurrency limit.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L260-L261
     why: Own _user_table; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L375-L408
@@ -94,8 +129,13 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L735-L745
     why: Own _row_teams; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: partial_insert, roster_transaction,
-      failed_team_detached, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Pure cases row_contract_defaults_and_ignored_extras, payload_all_fields_and_defaults, payload_callback_encryption_and_original_fallback,
+      reset_only_for_truthy_duration, assignment_first_seen_order, metadata_budget_string_only,
+      row_teams_requested_order and exception_message_shapes compare exact values. Native cases
+      bounded_ten_preserves_order_and_exception_values, empty_batch_no_io, payload_error_before_insert,
+      lost_response_all_landed_succeeds, partial_landed_ids_conflict, non_infrastructure_all_landed_conflict,
+      failed_readback_no_retries, retry_failures_after_taken, metrics_missing_or_error_continue,
+      eviction_error_warns and failed_detach_retains_stale_teams exercise all recovery paths.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -104,7 +144,10 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows covers lock-before-read, sequential budget resolution, duplicate new roster
+      assignments, skip-duplicate membership inserts, all-existing roster rewrites and requested added IDs.
+      postgres_failure_effects injects failures at each transaction write and compensation update, proving
+      team rollback, earlier user persistence and warning-only post-commit failures.'
     proof:
       - postgres-tests
 checks:
@@ -129,13 +172,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/bulk_user_write::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/bulk_user_write::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/bulk-user-write/partial-insert.yaml
-  - tools/oracle/cases/helpers/bulk-user-write/roster-transaction.yaml
-  - tools/oracle/cases/helpers/bulk-user-write/failed-team-detached.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/payload-fields-and-defaults.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/assignment-order.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/row-team-outcomes.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/error-message-shapes.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B893 owns metadata_json_with_limits and delegates callback encryption to B2304; this writer stores its returned string.
   - 'litellm/proxy/management_helpers/bulk_user_creation.py: B793 owns _requested_teams (L195-L201), _row_error
     (L204-L218), _normalized_email (L221-L222), _partition_rows (L225-L257), _existing_user_conflicts
     (L264-L280), _load_teams (L283-L287), _team_permission_error (L290-L293), _unusable_teams (L296-L315),
@@ -144,9 +187,9 @@ out_of_scope:
     (L759-L760), bulk_create_users (L763-L863).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve source failure compensation and detached failed assignments; never promise one transaction
-    for the complete bulk request.
+  - A partial landed set after a lost bulk-insert response is treated as conflicting users, not credited to this request.
+  - An existing roster member still appears in added and triggers spend-cache invalidation.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

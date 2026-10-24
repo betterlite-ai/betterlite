@@ -14,7 +14,7 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/handle_jwt.py:
   JWTHandler.__init__ (L251-L258; 7 source lines), JWTHandler.bind_agent_lookup (L260-L261; 2 source lines),
-  JWTHandler.update_environment (L263-L273; 11 source lines), JWTHandler.is_jwt (L276-L280; 5 source lines),
+  JWTHandler.update_environment (L263-L273; 11 source lines),
   JWTHandler.get_unverified_claims (L283-L302; 19 source lines), JWTHandler._is_trusted_issuer_normalized_token
   (L376-L383; 7 source lines), JWTHandler._has_trusted_issuer_normalized_claim (L385-L386; 2 source lines),
   JWTHandler.get_team_ids_from_jwt (L388-L409; 16 source lines), JWTHandler.get_all_jwt_team_ids (L411-L448;
@@ -110,7 +110,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L263-L273
     why: Own JWTHandler.update_environment; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L276-L280
-    why: Own JWTHandler.is_jwt; preserve caller-visible values and failure ordering.
+    why: B2314 supplies JWTHandler.is_jwt below the JWT backend and resolved-key constructor.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L283-L302
     why: Own JWTHandler.get_unverified_claims; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L376-L383
@@ -218,6 +218,7 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L251-L258
 out_of_scope:
+  - B2314 owns JWTHandler.is_jwt and the resolved-key/legacy-role records it serves.
   - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
     production fallback.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt

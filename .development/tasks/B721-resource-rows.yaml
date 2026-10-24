@@ -1,77 +1,84 @@
 id: B721
 title: Typed organization and resource database rows
 description: >-
-  Add typed organization, project, model, access-group, config, credential and object-permission database
-  row types for every field in the listed files. Preserve model blocked/team metadata, JSON/string coercion
-  and membership email projection. Keep encryption behind StoredCipher; these are storage contracts, not
-  feature execution.
+  Implement betterlite-db::resource_rows for AccessGroup, Config, the four credential classes,
+  ProxyModelTable, OrganizationTable and ProjectTable. B2310 supplies budgets, object permissions
+  and organization memberships; B720 supplies nested users. Decode these contracts without executing
+  features or encrypting values. In particular, CredentialItem accepts the credential_values it was
+  given; B061 prepares stored ciphertext and B725 performs repository projection. These models never
+  invoke StoredCipher, encrypt_callback_vars or a provider credential resolver.
 
+  AccessGroup requires access_group_id and access_group_name. description, created_at, created_by,
+  updated_at and updated_by default None. access_model_names, access_mcp_server_ids,
+  access_agent_ids, assigned_team_ids and assigned_key_ids are string lists defaulting to fresh [],
+  with explicit null invalid. Old access_model_ids is not an alias; like other undeclared fields it
+  is ignored. Config requires param_name string and param_value dict; it does not decode a JSON
+  string or accept arbitrary scalar/list values. B725's ConfigParam is a different repository wrapper.
 
-  The byte boundary is decode_resource_rows(&[u8]) for stored JSON/string columns read from Postgres and
-  Redis; its fuzz target calls this production decoder. Count field declarations as well as validators
-  when implementing the complete row contracts.
+  CredentialBase requires credential_name and credential_info dict. CredentialItem additionally
+  requires credential_values dict, accepting an empty map. CreateCredentialItem makes values
+  optional default None and adds model_id optional default None, but its before-validator requires
+  at least one truthy credential_values or model_id. Missing/null/empty values plus missing/null/empty
+  model_id produce ValueError 'Either credential_values or model_id must be set'. Nonempty whitespace
+  model_id is truthy; both populated fields are accepted, with no exclusivity check or model lookup.
+  A truthy wrong-shaped credential_values passes that guard but then fails field validation. Required
+  credential_name/info checks still apply. UpdateCredentialItem requires credential_name and
+  credential_info Mapping; credential_values Mapping and model_id are optional None. Update has
+  no create-style truthiness guard, so None/empty values are accepted. Preserve nested values and
+  unknown-field omission without redacting or transforming the credential payload on serialization;
+  do not emit payloads in diagnostics.
 
+  ProxyModelTable requires model_id, model_name and litellm_params dict. model_info defaults None,
+  blocked defaults false (explicit null invalid), and created_at/created_by/updated_at/updated_by
+  default None. Its before-validator only transforms a dict input: independently json.loads string
+  litellm_params and string model_info, catching only JSONDecodeError and retaining malformed strings
+  for subsequent model validation. Valid object text becomes a dict; litellm_params='null' fails
+  because params is required nonnullable, while model_info='null' succeeds as None. Arrays/scalars
+  decoded from either string fail that field's dict validation. Already-decoded dicts remain unchanged.
+  There is no second recursive decoding pass, no error warning, no encryption and no team-id inference
+  from litellm_params. Decode failures preserve the named field path rather than becoming an empty map.
 
-  Build the production resource_rows module in betterlite-db; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  OrganizationTable requires budget_id, created_by and updated_by. organization_id,
+  organization_alias, metadata, users, litellm_budget_table, object_permission and object_permission_id
+  default None; spend defaults 0.0, models to a string list [] and model_spend to nullable {}. Explicit
+  null spend/models is invalid. users is a list of B720 UserTable values and inherits their password
+  serialization exclusion and null normalization; nested budget/permission values use B2310. Do not
+  promote organization_id to a required field merely because the SQL table has a primary key.
 
+  ProjectTable requires only project_id. project_alias, description, team_id, budget_id, metadata,
+  model_spend, model_rpm_limit, model_tpm_limit, object_permission_id, created_by, updated_by,
+  created_at, updated_at, litellm_budget_table and object_permission default None. models defaults
+  to a string list [], spend to 0.0 and blocked to false, all nonnullable. Its budget and permissions
+  use B2310. Unlike user rows, neither project nor organization has a null-spend/models normalizer.
+  Preserve zero/false, mutable-default isolation, timestamp offsets and optional-null distinctions.
+  These classes inherit Pydantic's unknown-field-ignore policy, not deny_unknown_fields.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/models/access_group.py:
-  row_contracts (L1-L25; 20 source lines). litellm/models/config.py: row_contracts (L1-L13; 9 source lines).
-  litellm/models/credentials.py: row_contracts (L1-L38; 26 source lines). litellm/models/model.py: row_contracts
-  (L1-L60; 49 source lines). litellm/models/object_permission.py: row_contracts (L1-L26; 21 source lines).
-  litellm/models/organization.py: row_contracts (L1-L29; 24 source lines). litellm/models/organization_membership.py:
-  row_contracts (L1-L40; 31 source lines). litellm/models/project.py: row_contracts (L1-L40; 33 source
-  lines).
+  Register pure resource_rows construction/dump operations with B856 and new B171 HelperCase seeds.
+  Python instantiates the pinned classes and validators; no adapter calls a management handler or
+  repository. Explicitly compare credential creation/update validation and all-fields/minimal-default
+  projections. B860 Postgres tests use POSTGRES_TEST_URL or testcontainers and inspect existing raw
+  model/config/credential/project columns alongside decoded values; never store a plaintext test
+  double in place of the credential service's encryption. The row codec itself must leave supplied
+  ciphertext strings untouched. No new database mutation algorithm or configuration setting is owned.
 
+  decode_resource_rows consumes external stored-row JSON, including the ProxyModelTable nested
+  string decodes. Register its fuzz target in B2307's workspace. Limit each previously unbounded
+  JSON input to 1048576 bytes/depth 64, including nested decoded model strings, and preserve normal
+  field-validation failures below those limits. Replay malformed/truncated JSON, duplicate fields,
+  invalid nested scalar/container shapes, all resource variants and exact/over boundaries. Monetary
+  spend values use checked Decimal conversion with unchanged SQL DOUBLE PRECISION storage; nonfinite
+  and out-of-range values are a documented decode error, never zero.
 
-  Add the resource_rows operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a resource-rows-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This task owns the outside-byte boundary resource_rows::decode_resource_rows(&[u8]) -> Result<TypedValue,DecodeError>
-  for stored model/budget/object-permission JSON columns. Production calls this decoder before its typed
-  policy functions; the cargo-fuzz target resource_rows calls that same function. Seed valid, truncated,
-  malformed, duplicate-field and limit-boundary inputs and add resource_rows::tests::replays_the_resource_rows_corpus.
-  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
-  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B710 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without
-  recreating the workspace.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 213 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  213 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 507 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  After moving permission/membership rows to B2310 and excluding unused accessors, about 144
+  nonblank noncomment source lines remain. Allow 190 native fields/validators, 310 contract/Postgres
+  tests, 65 helper adapters, 55 parser/fuzz and 30 wiring lines, 650 within 750. Separate credential,
+  model and organization/project modules to keep each source file below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/resource_rows.rs
     - crates/betterlite-db/src/resource_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/resource_rows/fixtures/**
     - tools/oracle/src/helpers/resource_rows.rs
     - tools/oracle/src/helpers/resource_rows/**
     - tools/oracle/helpers/resource_rows.py
@@ -85,95 +92,82 @@ scope:
     - crates/betterlite-db/fuzz/corpus/resource_rows/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/__init__.py#L1-L68
-    why: Pinned implementation and exact ownership boundary for resource_rows.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L1-L25
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/config.py#L1-L13
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L1-L38
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L1-L60
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/object_permission.py#L1-L26
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization.py#L1-L29
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization_membership.py#L1-L40
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/project.py#L1-L40
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L13-L25
+    why: Exact required identifiers and five default-empty string lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/config.py#L11-L13
+    why: Config row requires a dict; repository scalar/string projection is a different contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L13-L38
+    why: Distinct create/update requirements and exact create-validator error, with no encryption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L16-L44
+    why: Model fields and independent string decoding that retains malformed strings for validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization.py#L14-L29
+    why: Optional organization id and nested users, budget and permissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/project.py#L15-L36
+    why: Project defaults and nullable per-model maps without null normalization.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: model_json_columns,
-      blocked_model, membership_email_population, credential_params, project_row, permission_arrays, postgres_pinned_rows,
-      postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: The production decode_resource_rows decoder is used by the service and its fuzz target and rejects
-      malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: 'Pure oracle cases name access_group_required_ids_and_all_defaults,
+      access_group_all_fields_and_null_lists, old_access_model_ids_not_an_alias,
+      config_requires_dict_without_string_decode, credential_base_and_item_required_fields,
+      credential_create_truthy_alternatives, credential_create_both_allowed,
+      credential_create_exact_missing_error, credential_create_wrong_shape_after_guard,
+      credential_update_empty_and_null_allowed, credential_payload_is_unmodified,
+      model_required_fields_and_all_defaults, model_two_json_strings_decode_independently,
+      model_malformed_strings_fail_field_validation, model_null_params_vs_null_info,
+      model_scalar_array_and_double_encoded_text_rejected, model_dict_unchanged,
+      organization_required_fields_and_all_defaults, organization_all_fields_nested_users,
+      nested_user_password_stays_excluded, project_required_id_and_all_defaults,
+      project_all_fields_nested_budget_and_permissions, organization_project_nulls_not_normalized,
+      fresh_defaults_and_unknown_fields and scalar_coercion_and_timestamp_boundaries.
+      Each all-fields test asserts every declared field, including explicit zero/false/null.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'postgres_resource_rows_keep_raw_storage compares pinned schema values and row projections,
+      including unchanged ciphertext. Native tests resource_money_nonfinite_and_overflow_rejected,
+      native_resource_row_limits and native_nested_model_json_limits prove decoder deviations.
+      replays_the_resource_rows_corpus reaches the same production decoder and nested string path.'
+    proof: [behavior-tests, postgres-tests, parser-corpus]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_rows::tests::/)
-        - test(/replays_the_/)'
+      why: Credential guard asymmetry and every resource default need assertions beyond corpus replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_rows::tests::/) - test(replays_the_resource_rows_corpus)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/resource_rows.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Oracle adapters must use the pinned row constructors and model validators.
+      run: test -f tools/oracle/helpers/resource_rows.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-rows-*")"
-        && grep -rlq "resource_rows" tools/oracle/fuzz/corpus/helper_case/resource-rows-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Require new resource_rows seeds through the shared HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-rows-*")" && grep -rlq resource_rows tools/oracle/fuzz/corpus/helper_case/resource-rows-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_rows::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_rows::tests::postgres_failure_effects$/)'
+      why: Raw JSON/ciphertext and typed rows must coexist without changing the database representation.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/resource_rows::tests::postgres_resource_rows_keep_raw_storage$/)'
     - id: parser-corpus
-      why: The named production decoder target, added corpus or replay is missing or fails.
-      run: test -f crates/betterlite-db/fuzz/fuzz_targets/resource_rows.rs && grep -q "resource_rows"
-        crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
-        -- crates/betterlite-db/fuzz/corpus/resource_rows)" && cargo nextest run --locked -p betterlite-db
-        --no-tests=fail -E 'test(replays_the_resource_rows_corpus)'
+      why: Nested model strings and outer stored JSON must share the bounded production parser path.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/resource_rows.rs && grep -q resource_rows crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/resource_rows)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_resource_rows_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/resource-rows/model-json-columns.yaml
-  - tools/oracle/cases/helpers/resource-rows/blocked-model.yaml
-  - tools/oracle/cases/helpers/resource-rows/membership-email-population.yaml
-  - tools/oracle/cases/helpers/resource-rows/credential-params.yaml
-  - tools/oracle/cases/helpers/resource-rows/project-row.yaml
-  - tools/oracle/cases/helpers/resource-rows/permission-arrays.yaml
+  - tools/oracle/cases/helpers/resource-rows/access-group-and-config-fields.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-json-validation.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-and-project-fields.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L1-L25
+  - what: Outer stored-resource JSON and decoded model JSON strings over 1048576 bytes or depth 64 fail with a typed decode-limit error.
+    why: Bound both external-data layers; native_resource_row_limits and native_nested_model_json_limits cover the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L30-L44
+  - what: Organization/project spend outside Decimal's finite range fails row decoding rather than remaining a Python float.
+    why: The checked money-is-decimal boundary cannot silently map invalid spend to zero; resource_money_nonfinite_and_overflow_rejected proves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/project.py#L25-L26
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2310 owns object_permission.py and organization_membership.py, including populate_user_email,
+    and budget.py. B720 owns the users nested in organization rows.
+  - ProxyModelTable.is_blocked and team_public_model_name, ProjectTable.is_blocked, and the
+    ProxyModelTable.team_id accessor used only by the uncalled find_by_team_id convenience method
+    have no live caller at the pin; do not add unused accessors or their oracle cases.
+  - models/__init__.py only re-exports classes owned by B720, B721, B858, B859 and B2310; native
+    modules expose their own types without recreating a Python import-time umbrella or dependency cycle.
 pitfalls:
-  - Credential parameters stay encrypted behind StoredCipher even though model/config JSON accepts string
-    storage.
+  - CreateCredentialItem rejects two empty alternatives, while UpdateCredentialItem has no such guard.
+  - Model params text 'null' is invalid, but model_info text 'null' is accepted.
+  - Config's dict-only model is stricter than the ConfigParam wrapper used by repository reads.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security
