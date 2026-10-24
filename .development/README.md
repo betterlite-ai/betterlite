@@ -8,8 +8,8 @@ This folder drives the agents that build betterlite, a Rust rewrite of LiteLLM's
 |---|---|---|---|
 | Architect | main Claude session with Max | backlog, specs, merges | numbered questions for Max |
 | Planner | Codex gpt-6-astra, xhigh effort | task files on a plan branch | report JSON |
-| Worker | Codex gpt-reserve, then gpt-6-astra | code on its task branch | report JSON |
-| Reviewer | Claude Sonnet, or Codex gpt-6-astra when the worker was Claude | nothing | review JSON |
+| Worker | Codex gpt-reserve, then gpt-6-astra, then one try on Claude Opus | code on its task branch | report JSON |
+| Reviewer | Claude Sonnet (Opus for tasks with review_level security), or Codex gpt-6-astra when the worker was Claude | nothing | review JSON |
 
 Each role has its rules in roles/ and its output format in schema/. The worker and reviewer rows are what `cargo gate dispatch <ID>` runs; the planner is started by the architect as roles/architect.md describes. Models, effort, attempts and timeouts live in agents.yaml, so changing who plays a role is a one-line edit that `cargo gate validate` checks.
 
@@ -20,7 +20,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 ## Files
 
 - backlog.yaml lists every task with its milestone, status, dependencies and the LiteLLM paths it covers. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
-- tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls and budget.
+- tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls, review level and budget.
 - rules.yaml is the code standard: 33 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
 - checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
 - agents.yaml maps roles to runners, models and limits.
@@ -55,6 +55,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: LiteLLM's Terraform provider and VS Code extension are not rewritten. B155 and B156 make them work against betterlite.
 - 2026-10-24: betterlite ships a Python package over the Rust core with LiteLLM's public API, used as `import betterlite as litellm`, and the proxy runs the Python callbacks and hooks config.yaml names (M12). The module is named betterlite because LiteLLM's name stays out of what betterlite ships.
 - 2026-10-24: the rule questions R1 to R21 are answered. The answers live in rules.yaml, the clippy.toml and Cargo.toml templates, the no-loops-in-tests ast-grep rule and the 300-line source limit in checks.yaml.
+- 2026-10-24: the pyramid questions are answered. Security tasks get an Opus review, Claude Opus gets one try after the Codex rungs, at most 3 dispatches run at once, every task gets a review, and `cargo gate plan` waits until 2 or 3 real dispatches show where the planner trips.
 
 ## Writing a task
 

@@ -75,6 +75,7 @@ pitfalls:
   - cargo deny downloads the advisory database on its first run, so the deny check needs network once.
   - The hooks check runs prek on tracked files only, so commit before running the gate.
   - Pick dependency versions released at least 7 days ago.
+review_level: standard
 budget:
   max_changed_lines: 1200
   max_new_expects: 0

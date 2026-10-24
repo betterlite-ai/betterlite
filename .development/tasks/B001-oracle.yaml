@@ -80,6 +80,7 @@ pitfalls:
   - "The crate needs reqwest::Client::builder and serde_json::Value, both disallowed in gateway code. Use one crate-level #![expect(clippy::disallowed_types, reason = ...)] and one #[expect(clippy::disallowed_methods, reason = ...)] on the client constructor, not one per use."
   - Root Cargo.toml members becomes ["crates/*", "tools/*"]. A members glob that matches no directory breaks cargo. That is why B000 left tools/* out.
   - reqwest with rustls pulls in webpki-root-certs under CDLA-Permissive-2.0. Allow it in deny.toml as an exception for that one crate, not as a global license.
+review_level: standard
 budget:
   max_changed_lines: 900
   max_new_expects: 2

@@ -59,6 +59,7 @@ pitfalls:
   - Timing tests use a mock provider that pauses between chunks and tokio's paused clock where the code allows it, not real sleeps of seconds.
   - An SSE parser that splits on newlines inside one read breaks on events split across reads. Buffer until the blank line.
   - B004 created the fuzz crate under crates/betterlite-openai/fuzz/. Add sse_events as a second target there instead of a second fuzz crate.
+review_level: standard
 budget:
   max_changed_lines: 800
   max_new_expects: 0

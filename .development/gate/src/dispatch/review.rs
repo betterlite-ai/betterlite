@@ -1,17 +1,19 @@
 use crate::answer::parse_answer;
 use crate::development::Development;
 use crate::dispatch::seat::{Seat, invoke};
-use crate::dispatch::{Attempt, Step, find_runner};
+use crate::dispatch::{Attempt, Step, find_runner, reviewer_role};
 use crate::error::GateError;
 use crate::facts::Facts;
 use crate::review_check::review_problems;
 use crate::spec::agents::{Agents, Rung, Runner};
 use crate::spec::review::{Review, ReviewVerdict};
 use crate::spec::rules::Rules;
+use crate::spec::task::ReviewLevel;
 use crate::yaml::read_yaml;
 
 fn reviewer_rung<'agents>(
     agents: &'agents Agents,
+    level: ReviewLevel,
     worker_runner: &Runner,
 ) -> Option<&'agents Rung> {
     let vendor_of = |id: &str| {
@@ -21,7 +23,7 @@ fn reviewer_rung<'agents>(
             .find(|runner| runner.id == id)
             .map(|runner| runner.vendor)
     };
-    let mut ladder = agents.roles.reviewer.ladder.iter();
+    let mut ladder = reviewer_role(agents, level).ladder.iter();
     ladder.find(|candidate| {
         !agents.policy.review_by_other_vendor
             || vendor_of(&candidate.runner) != Some(worker_runner.vendor)
@@ -63,7 +65,7 @@ pub(crate) fn review(
         task: brief.task.id.clone(),
         reason,
     };
-    let rung = reviewer_rung(attempt.agents, worker_runner)
+    let rung = reviewer_rung(attempt.agents, brief.task.review_level, worker_runner)
         .ok_or_else(|| refused("no reviewer rung fits the vendor policy".to_owned()))?;
     let runner = find_runner(attempt.agents, &rung.runner)?;
     let prompt = format!(

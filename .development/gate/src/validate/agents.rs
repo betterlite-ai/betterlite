@@ -64,19 +64,23 @@ fn vendor_problems(agents: &Agents) -> Vec<String> {
             .map(|runner| runner.vendor)
     };
     let mut problems = Vec::new();
+    let reviewers = [
+        ("reviewer", &agents.roles.reviewer),
+        ("security reviewer", &agents.roles.security_reviewer),
+    ];
     for rung in &agents.roles.worker.ladder {
         let worker_vendor = vendor(&rung.runner);
-        let covered = agents
-            .roles
-            .reviewer
-            .ladder
-            .iter()
-            .any(|reviewer| vendor(&reviewer.runner) != worker_vendor);
-        if !covered {
-            problems.push(format!(
-                "agents.yaml: no reviewer runs on another vendor than the {} worker rung",
-                rung.model
-            ));
+        for (name, role) in reviewers {
+            let covered = role
+                .ladder
+                .iter()
+                .any(|reviewer| vendor(&reviewer.runner) != worker_vendor);
+            if !covered {
+                problems.push(format!(
+                    "agents.yaml: no {name} runs on another vendor than the {} worker rung",
+                    rung.model
+                ));
+            }
         }
     }
     problems
@@ -96,6 +100,7 @@ pub(crate) fn problems(folder: &Path, agents: &Agents) -> Vec<String> {
     let roles = [
         ("worker", &agents.roles.worker),
         ("reviewer", &agents.roles.reviewer),
+        ("security reviewer", &agents.roles.security_reviewer),
         ("planner", &agents.roles.planner),
     ];
     for (name, role) in roles {

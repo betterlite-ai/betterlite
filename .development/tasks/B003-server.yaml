@@ -78,6 +78,7 @@ pitfalls:
   - betterlite writes its own error messages, so every error case lists /error/message in compare.ignore with that reason and still compares type, param and code.
   - clap's env feature reads HOST and PORT itself, so the code never calls std::env.
   - Sending SIGTERM in a test means running kill -TERM <pid>; tests may spawn processes, gateway code may not.
+review_level: security
 budget:
   max_changed_lines: 800
   max_new_expects: 0

@@ -67,6 +67,8 @@ pub(crate) enum OutputMode {
 pub(crate) struct Roles {
     pub(crate) worker: Role,
     pub(crate) reviewer: Role,
+    #[schemars(description = "Reviews tasks whose review_level is security.")]
+    pub(crate) security_reviewer: Role,
     pub(crate) planner: Role,
 }
 
