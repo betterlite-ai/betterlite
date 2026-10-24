@@ -1956,10 +1956,18 @@ tasks:
     milestone: M1 openai data plane
     title: Anthropic prompt and tool conversion helpers
     status: todo
-    depends_on: [B177, B179, B183]
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    - B223
+    - B224
+    - B225
+    - B226
     file: tasks/B180-anthropic-prompts.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/factory.py"
+    - litellm/litellm_core_utils/prompt_templates/factory.py
   - id: B181
     milestone: M1 openai data plane
     title: Bedrock message and tool conversion helpers
@@ -2326,3 +2334,60 @@ tasks:
     file: tasks/B221-system-placement.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py
+  - id: B222
+    milestone: M1 openai data plane
+    title: Anthropic tool results and image blocks
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    file: tasks/B222-anthropic-results.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B223
+    milestone: M1 openai data plane
+    title: Anthropic tool invokes, caching and documents
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    file: tasks/B223-anthropic-invokes.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B224
+    milestone: M1 openai data plane
+    title: Anthropic tool-history repair
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B224-anthropic-history.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B225
+    milestone: M1 openai data plane
+    title: Anthropic user blocks and system projection
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    - B223
+    - B224
+    file: tasks/B225-anthropic-user-blocks.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B226
+    milestone: M1 openai data plane
+    title: Normalized response tool-call extraction
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B226-response-tool-calls.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
