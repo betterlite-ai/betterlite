@@ -1,0 +1,99 @@
+id: B016
+title: Router call pipeline and response metadata
+description: Finish the router core by composing B302's catalog, B303's clients and B304's observations
+  with B014's call dispatcher. Introduce typed request routing context, an exhaustive strategy enum and
+  pre-routing/filter/attempt/post-call phases, preserving the existing simple-shuffle choice. Implement
+  static eligibility checks for blocked/environment-disabled deployments, supported parameters, token
+  context limits, web-search capability and deployment order using B010/B013 facts. Route all call types
+  B014 currently supports through the same selection path and return typed no-deployment errors through
+  B011. Carry selected model identity and routing response metadata without exposing credentials. Keep
+  later retries, fallback and strategy filters as explicit insertion points; they must not require a second
+  dispatcher. The monolithic router.py/type files remain covered here only for this orchestration; B017-B022
+  and B162 own their named mechanisms and Python wrappers. Use the existing Rust crate boundaries from
+  B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Extend the existing config_yaml fuzz target and committed corpus for every newly accepted config form;
+  unsupported keys still fail by full path. Keep the implementation, adapters and tests within 800 changed
+  lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/router-core/**
+  - tools/oracle/src/router_probes/router-core/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/router_core.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12444-L12625
+  why: Static pre-call capability and context checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12995-L13160
+  why: Eligibility phase ordering.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1751-L1898
+  why: Strategy selection boundaries.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/handle_error.py#L71-L97
+  why: No-deployment exception selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L108-L225
+  why: Typed response metadata attachment.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(router_core)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/router-core/chat-and-embedding-shared-pool.yaml
+- tools/oracle/cases/routing/router-core/blocked-specific-deployment.yaml
+- tools/oracle/cases/routing/router-core/context-limit-filter.yaml
+- tools/oracle/cases/routing/router-core/unsupported-parameter-filter.yaml
+- tools/oracle/cases/routing/router-core/web-search-filter.yaml
+- tools/oracle/cases/routing/router-core/order-filter.yaml
+- tools/oracle/cases/routing/router-core/no-deployment-error.yaml
+- tools/oracle/cases/routing/router-core/stream-selected-model-headers.yaml
+deviations: []
+out_of_scope:
+- B008's weighted random algorithm.
+- Retries (B017), cooldown/fallback (B018), extra selectors (B019), policy routing (B020), automatic routing
+  (B021) and admission (B022).
+- Python callbacks and class compatibility (B162/B165).
+pitfalls:
+- Do not make B016 depend on B125, B126 or B130, since those entries depend on B016.
+- response_headers.py is empty at the pin; it requires no implementation.
+- Only metadata fields introduced here belong in this task; retry and fallback header values arrive in
+  their own tasks.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
