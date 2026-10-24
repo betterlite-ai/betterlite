@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-use serde::{Serialize, Serializer};
-use uuid::Uuid;
+use serde::Serialize;
 
 use crate::error::ContextError;
 
 mod tests;
 
 pub const RESPONSE_FORMAT_TOOL: &str = "json_tool_call";
+
+// a chat completion id is this prefix followed by a hyphenated UUID4 from the caller's id source
+pub const CHAT_COMPLETION_ID_PREFIX: &str = "chatcmpl-";
 
 // None is a JSON null, so a key set to null stays apart from an absent key
 pub type Record<Field> = BTreeMap<String, Option<Field>>;
@@ -234,15 +236,3 @@ impl<Stream, Response> From<Stream> for StreamState<Stream, Response> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BatchConfigBase;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChatCompletionId(pub Uuid);
-
-impl Serialize for ChatCompletionId {
-    fn serialize<Wire>(&self, serializer: Wire) -> Result<Wire::Ok, Wire::Error>
-    where
-        Wire: Serializer,
-    {
-        serializer.collect_str(&format_args!("chatcmpl-{}", self.0))
-    }
-}

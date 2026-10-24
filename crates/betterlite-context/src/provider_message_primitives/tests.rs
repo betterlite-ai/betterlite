@@ -10,10 +10,10 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use uuid::Uuid;
 
 use super::{
-    BatchConfigBase, ChatCompletionId, ChoiceFunction, ChoicePolicy, FormatParams, FormatSupport,
-    FunctionChoice, FunctionKind, FunctionTool, NestedSchema, ProviderMessage, Record,
-    ResponseFormat, Schema, StreamState, SystemRole, ToolCallProjection, ToolChoice, ToolFunction,
-    ToolParam, add_response_format, developer_to_system, project_tool_call,
+    BatchConfigBase, CHAT_COMPLETION_ID_PREFIX, ChoiceFunction, ChoicePolicy, FormatParams,
+    FormatSupport, FunctionChoice, FunctionKind, FunctionTool, NestedSchema, ProviderMessage,
+    Record, ResponseFormat, Schema, StreamState, SystemRole, ToolCallProjection, ToolChoice,
+    ToolFunction, ToolParam, add_response_format, developer_to_system, project_tool_call,
 };
 use crate::error::ContextError;
 
@@ -236,7 +236,7 @@ fn batch_initializer() {
 
 fn chat_id_prefix() {
     let id = Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
-    let rendered = serde_json::to_value(ChatCompletionId(id)).unwrap();
+    let rendered = format!("{CHAT_COMPLETION_ID_PREFIX}{id}");
     assert_eq!(rendered, "chatcmpl-01234567-89ab-4def-8123-456789abcdef");
 }
 

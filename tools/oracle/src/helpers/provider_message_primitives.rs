@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_context::error::ContextError;
 use betterlite_context::provider_message_primitives::{
-    BatchConfigBase, ChatCompletionId, ChoicePolicy, FormatParams, FormatSupport, NestedSchema,
-    Record, ResponseFormat, Schema, StreamState, ToolCallProjection, ToolParam,
+    BatchConfigBase, CHAT_COMPLETION_ID_PREFIX, ChoicePolicy, FormatParams, FormatSupport,
+    NestedSchema, Record, ResponseFormat, Schema, StreamState, ToolCallProjection, ToolParam,
     add_response_format, developer_to_system, project_tool_call,
 };
 use serde_json::{Map, Value, json};
@@ -91,7 +91,7 @@ fn outcome(input: PrimitivesInput) -> Result<Value, Failure> {
             Ok(json!({"attributes": size_of_val(&BatchConfigBase)}))
         }
         PrimitivesInput::ChatId { uuid } => uuid::Uuid::parse_str(&uuid)
-            .map(|id| json!(ChatCompletionId(id)))
+            .map(|id| json!(format!("{CHAT_COMPLETION_ID_PREFIX}{id}")))
             .map_err(Failure::Uuid),
         PrimitivesInput::ToolCall { record } => Ok(project_tool_call(record, &Recorder)),
     }
