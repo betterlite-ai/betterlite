@@ -1,0 +1,95 @@
+id: B356
+title: Start and stop automatic-router shadow evaluations
+description: Add POST /auto_router/shadow_eval/start and POST /auto_router/shadow_eval/{job_id}/stop with
+  B345 validation, B051 job repositories and B118's sampling runtime. Keep job creation/stop transitions
+  in the repository, preserve immutable arm/target configuration and enforce authentication before any
+  database or model operation. Expose shared typed lifecycle response builders for B357. Reuse B118's
+  job types and cache invalidation; the architect must settle its exact adapter path before dispatch if
+  outside these crates. Use the existing Rust crate boundaries from B004 and B008; integrate through the
+  server when the provider dispatcher or callbacks live in another core crate. This task's source slices
+  are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching
+  adapters to B301's component runner where state is not observable over HTTP; adapters call production
+  logic and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
+  and separate seeded distribution tests for random choices. Add a cargo-fuzz target shadow_eval_start
+  under crates/betterlite-server/fuzz and a normal replays_the_shadow_eval_start_corpus test using the
+  production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures and
+  oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/shadow-eval-lifecycle/**
+  - tools/oracle/src/router_probes/shadow-eval-lifecycle/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/shadow_eval_lifecycle.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1580-L1800
+  why: Target validation, conflicts, job rows and advisory funnel seeds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1897-L1933
+  why: Atomic stop claim and repeated-stop errors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L514
+  why: Start body validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L618-L752
+  why: Job response and status computation.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(shadow_eval_lifecycle)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_eval_start.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/shadow_eval_start)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_eval_start_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/shadow-eval-lifecycle/start-admin-only.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/unknown-targets-400.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/key-team-user-targets.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/concurrent-target-direction-conflict.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/forward-and-reverse-coexist.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/independent-target-budgets.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/seed-failure-keeps-job.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/stop-all-active-legs.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/stop-keeps-exhausted-timestamp.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/repeat-stop-400.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/missing-job-404.yaml
+- tools/oracle/cases/routing/shadow-eval-lifecycle/no-secret-key-returned.yaml
+deviations: []
+out_of_scope:
+- Executing shadow requests or writing the judge, owned by B118.
+- Changing tables or adding uniqueness constraints outside B051.
+pitfalls:
+- The start route ends in /start; GET /shadow_eval is the listing route.
+- Shadow and judge calls bill to the sampled identity, so B118 and B070 must enforce the same attribution
+  contract.
+- Never retry an ambiguous database write by minting another job ID.
+- A proxy-admin-viewer may inspect jobs but may not start or stop them.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

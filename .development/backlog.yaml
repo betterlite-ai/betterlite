@@ -285,6 +285,7 @@ tasks:
     - B353
     - B354
     - B355
+    - B356
     file: null
     covers:
     - router_plugins.json
@@ -2573,6 +2574,20 @@ tasks:
     - B343
     - B052
     file: tasks/B355-auto-router-read-api.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+
+  - id: B356
+    milestone: M2 routing
+    title: Start and stop automatic-router shadow evaluations
+    status: todo
+    depends_on:
+    - B345
+    - B118
+    - B051
+    - B052
+    file: tasks/B356-shadow-eval-lifecycle.yaml
     covers:
     - litellm/proxy/management_endpoints/auto_router_endpoints.py
     - litellm/types/management_endpoints/auto_router_endpoints.py
